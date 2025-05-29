@@ -190,6 +190,7 @@ export const registerUser = async (req, res) => {
 };
 
 export const loginUser = async (req, res) => {
+  console.log("auth")
   const { email, password } = req.body;
   try {
     const user = await models.User.findOne({ where: { email } });
@@ -197,7 +198,7 @@ export const loginUser = async (req, res) => {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) return res.status(401).json({ error: "Invalid credentials" });
     const token = signToken({ id: user.id, type: "user" });
-    res.json({ token });
+    res.json({ token, user });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });

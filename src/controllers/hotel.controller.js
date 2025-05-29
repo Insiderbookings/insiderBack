@@ -37,3 +37,27 @@ export const getHotelById = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
+
+export const getHotelImages = async (req, res) => {
+  try {
+    const hotelId = req.params.id;
+
+    console.log(hotelId)
+
+    const images = await models.HotelImage.findAll({
+      where: { hotel_id: hotelId },
+      order: [
+        ["order", "ASC"],         // primero por el campo `order`
+        ["is_primary", "DESC"]    // luego las primarias adelante
+      ],
+    });
+
+    console.log(images, "imagenes")
+
+    return res.json(images);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+

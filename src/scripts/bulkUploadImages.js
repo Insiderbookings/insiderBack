@@ -1,32 +1,51 @@
-// scripts/bulkUploadImages.js
-import fs   from "fs/promises";
-import path from "path";
-import { globSync } from "glob";      // ← glob ≥10 ya no exporta default
+// src/scripts/bulkUploadImages.js
+import { fileURLToPath } from "url";
+import { dirname, resolve, relative, basename } from "path";
+import { globSync } from "glob";
 import "dotenv/config";
+
 import cloudinary from "../utils/cloudinary.js";
 import models     from "../models/index.js";
 
-const ROOT_DIR = path.resolve("seed-images"); // carpeta raíz con tus fotos
+// ─── Obtener __dirname en ESM ───────────────────────────────────────────────
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = dirname(__filename);
+
+// ─── Directorio raíz de tus imágenes ────────────────────────────────────────
+// seed-images está al mismo nivel que src/, dentro de insiderBack/
+const ROOT_DIR = resolve(__dirname, "../../seed-images");
 
 async function run() {
-  const pattern = path.join(ROOT_DIR, "**/*.{jpg,jpeg,png,webp}");
-  const files   = globSync(pattern, { nodir: true });       // todos los archivos
+  console.log("🔍 Buscando imágenes en:", ROOT_DIR);
 
-  for (const file of files) {
-    const relPath = path.relative(ROOT_DIR, file);          // 0002-croydon/hero.jpg
-    const [folder] = relPath.split(path.sep);               // 0002-croydon
-    const hotelId  = Number(folder.split("-")[0]);          // 2
-    const fileName = path.basename(file);
+  // ─── Listar todos los archivos de imagen, con cwd para Windows ─────────────
+  const relativePaths = globSync("**/*.{jpg,jpeg,png,webp}", {
+    cwd:   ROOT_DIR,
+    nodir: true
+  });
+
+  console.log("🗂️  Imágenes encontradas (relativas):", relativePaths.length);
+  if (relativePaths.length === 0) {
+    console.warn("⚠️  No se encontraron imágenes. Revisa que seed-images exista y tenga fotos.");
+    process.exit(0);
+  }
+
+  for (const rel of relativePaths) {
+    const absPath   = resolve(ROOT_DIR, rel);          // ruta absoluta al archivo
+    const relPath   = relative(ROOT_DIR, absPath);     // e.g. "0002-croydon/hero.jpg"
+    const [folder]  = relPath.split(/[\\/]/);          // e.g. "0002-croydon"
+    const hotelId   = Number(folder.split("-")[0]);    // e.g. 2
+    const fileName  = basename(absPath);
 
     try {
-      /* 1) Subir a Cloudinary → carpeta hotels/0002-croydon */
-      const { secure_url } = await cloudinary.uploader.upload(file, {
-        folder    : `hotels/${folder}`,
-        overwrite : false,
+      // 1) Subir a Cloudinary → carpeta hotels/0002-croydon
+      const { secure_url } = await cloudinary.uploader.upload(absPath, {
+        folder         : `hotels/${folder}`,
+        overwrite      : false,
         unique_filename: true,
       });
 
-      /* 2) Registrar en la base */
+      // 2) Registrar en la base de datos
       await models.HotelImage.create({
         hotel_id : hotelId,
         url      : secure_url,
@@ -39,7 +58,7 @@ async function run() {
     }
   }
 
-  console.log("Todas las imágenes listas 🎉");
+  console.log("🎉 Todas las imágenes subidas y registradas.");
   process.exit(0);
 }
 
