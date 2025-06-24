@@ -5,6 +5,8 @@ import {
   getBookingsForStaff,
   getBookingById,
   cancelBooking,
+  getOutsideBookingByConfirmation,
+  getOutsideBookingWithAddOns
 } from "../controllers/booking.controller.js"
 import { authenticate, authorizeStaff } from "../middleware/auth.js"
 
@@ -19,5 +21,8 @@ router.get("/:id", getBookingById)
 
 // ───────── Ruta para cancelar una reserva ─────────
 router.put("/:id/cancel", authenticate, cancelBooking)
+
+router.get("/outside/:confirmation", getOutsideBookingByConfirmation);
+router.get("/outside/id/:id", getOutsideBookingWithAddOns)
 
 export default router

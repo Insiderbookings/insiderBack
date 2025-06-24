@@ -106,21 +106,28 @@ export const createAddOnSession = async (req, res) => {
 export const handleWebhook = async (req, res) => {
   const sig = req.headers["stripe-signature"];
   let event;
+
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
   } catch (err) {
     console.error("⚠️  Webhook signature failed:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  /* helpers */
+  /* ─── Helpers para marcar como pagado ─── */
   const markBookingAsPaid = async ({ bookingId, paymentId }) => {
     try {
       await models.Booking.update(
         { status: "confirmed", paymentStatus: "paid", payment_id: paymentId },
         { where: { id: bookingId } }
       );
-    } catch (e) { console.error("DB error (Booking):", e); }
+    } catch (e) {
+      console.error("DB error (Booking):", e);
+    }
   };
 
   const markUpsellAsPaid = async ({ upsellCodeId, paymentId }) => {
@@ -129,31 +136,48 @@ export const handleWebhook = async (req, res) => {
         { status: "used", payment_id: paymentId },
         { where: { id: upsellCodeId } }
       );
-    } catch (e) { console.error("DB error (UpsellCode):", e); }
+    } catch (e) {
+      console.error("DB error (UpsellCode):", e);
+    }
   };
 
-  /* checkout.session.completed */
-  if (event.type === "checkout.session.completed") {
-    const s             = event.data.object;
-    const bookingId     = Number(s.metadata?.bookingId)     || 0;
-    const upsellCodeId  = Number(s.metadata?.upsellCodeId)  || 0;
+  const markOutsideAddOnsAsPaid = async ({ outsideBookingId }) => {
+    try {
+      await models.OutsideBookingAddOn.update(
+        { paymentStatus: "paid" },
+        { where: { outsidebooking_id: outsideBookingId } }
+      );
+    } catch (e) {
+      console.error("DB error (OutsideBookingAddOn):", e);
+    }
+  };
 
-    if (bookingId) await markBookingAsPaid({ bookingId, paymentId: s.payment_intent || s.id });
-    if (upsellCodeId) await markUpsellAsPaid({ upsellCodeId, paymentId: s.payment_intent || s.id });
+  /* ─── Procesar eventos que confirman pago ─── */
+  if (event.type === "checkout.session.completed") {
+    const s              = event.data.object;
+    const bookingId      = Number(s.metadata?.bookingId)      || 0;
+    const upsellCodeId   = Number(s.metadata?.upsellCodeId)   || 0;
+    const outsideBooking = Number(s.metadata?.outsideBookingId) || 0;
+
+    if (bookingId)      await markBookingAsPaid({ bookingId, paymentId: s.payment_intent || s.id });
+    if (upsellCodeId)   await markUpsellAsPaid({ upsellCodeId, paymentId: s.payment_intent || s.id });
+    if (outsideBooking) await markOutsideAddOnsAsPaid({ outsideBookingId: outsideBooking });
   }
 
-  /* payment_intent.succeeded */
   if (event.type === "payment_intent.succeeded") {
-    const pi            = event.data.object;
-    const bookingId     = Number(pi.metadata?.bookingId)    || 0;
-    const upsellCodeId  = Number(pi.metadata?.upsellCodeId) || 0;
+    const pi             = event.data.object;
+    const bookingId      = Number(pi.metadata?.bookingId)      || 0;
+    const upsellCodeId   = Number(pi.metadata?.upsellCodeId)   || 0;
+    const outsideBooking = Number(pi.metadata?.outsideBookingId) || 0;
 
-    if (bookingId) await markBookingAsPaid({ bookingId, paymentId: pi.id });
-    if (upsellCodeId) await markUpsellAsPaid({ upsellCodeId, paymentId: pi.id });
+    if (bookingId)      await markBookingAsPaid({ bookingId, paymentId: pi.id });
+    if (upsellCodeId)   await markUpsellAsPaid({ upsellCodeId, paymentId: pi.id });
+    if (outsideBooking) await markOutsideAddOnsAsPaid({ outsideBookingId: outsideBooking });
   }
 
   res.json({ received: true });
 };
+
 
 /* ============================================================================
    3. VALIDAR MERCHANT (Apple Pay dominio)
@@ -210,3 +234,44 @@ export const processApplePay = async (req, res) => {
     res.status(500).json({ error: "Apple Pay charge failed" });
   }
 };
+
+export const createOutsideAddOnsSession = async (req, res) => {
+  const { outsideBookingId, amount, currency = "usd" } = req.body;
+
+  console.log(req.body, "body")
+  if (!outsideBookingId || !amount) {
+    return res.status(400).json({ error: "outsideBookingId y amount son obligatorios" });
+  }
+
+  // Verificamos que exista la reserva externa
+  const booking = await models.OutsideBooking.findByPk(outsideBookingId);
+  if (!booking) {
+    return res.status(404).json({ error: "Outside-booking not found" });
+  }
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [{
+        price_data: {
+          currency,
+          product_data: { name: `Add-Ons Outside #${outsideBookingId}` },
+          unit_amount: amount,
+        },
+        quantity: 1,
+      }],
+      mode       : "payment",
+      success_url: `${YOUR_DOMAIN}payment/outside-addons-success?outsideBookingId=${outsideBookingId}`,
+      cancel_url : `${YOUR_DOMAIN}payment/outside-addons-fail?outsideBookingId=${outsideBookingId}`,
+      metadata   : { outsideBookingId },
+      payment_intent_data: { metadata: { outsideBookingId } },
+    });
+
+    // Opcional: podrías guardar session.id en algún campo si lo necesitaras
+    res.json({ sessionId: session.id });
+  } catch (err) {
+    console.error("Stripe create outside-addons session error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+

@@ -603,3 +603,84 @@ VALUES
  220.00, 4, '2 Double',
  ARRAY['Free Wi-Fi','Mini-fridge','42" TV'], 10,
  '2025-05-28 00:00:00-03','2025-05-28 00:00:00-03', NULL);
+
+
+ //-------------------//
+
+ // ADDONS //
+
+INSERT INTO "AddOn" (name, description, price, created_at, updated_at) VALUES
+-- 1
+('Incidentals Coverage',
+ 'Protection against minor-accident charges (towel stains, key loss, etc.)',
+ 10.00, NOW(), NOW()),
+-- 2
+('Late Check-Out',
+ 'Extend your departure time.',
+ 45.60, NOW(), NOW()),
+-- 3
+('Early Check-In',
+ 'Room ready by 1 PM instead of 4 PM.',
+ 68.40, NOW(), NOW()),
+-- 4
+('Room Upgrade',
+ 'Larger room or better view for the rest of the stay.',
+ 102.60, NOW(), NOW()),
+-- 5
+('Breakfast',
+ 'Daily breakfast for two guests at Maxine’s (8 AM – 10 AM).',
+ 22.80, NOW(), NOW()),
+-- 6
+('Welcome Basket',
+ 'In-room champagne and assorted snacks on arrival.',
+ 36.00, NOW(), NOW()),
+-- 7
+('Valet Parking',
+ 'Valet service until 1 PM next day.',
+ 50.00, NOW(), NOW()),
+-- 8
+('Airport / Cruise-Port Taxi',
+ 'One-way private ride to MIA Airport or Port of Miami.',
+ 75.00, NOW(), NOW()),
+-- 9
+('Laundry Service',
+ 'Normal wash & fold or dry-clean items charged per piece.',
+ 0.00, NOW(), NOW()),        -- precio base 0: depende de la opción
+-- 10
+('Beach Equipment Rental',
+ 'Chairs / umbrella delivered and set up on the beach.',
+ 25.00, NOW(), NOW()),       -- precio base = opción más barata
+-- 11
+('Miami Tours',
+ 'Partnered city and day tours in and around Miami.',
+ 40.00, NOW(), NOW());       -- precio base = opción más barata
+
+ ///---aDDONS OPTIONS----//
+
+ /* -- Beach Equipment Rental --------------------------------------- */
+WITH beach AS (
+  SELECT id FROM add_on WHERE name = 'Beach Equipment Rental'
+)
+INSERT INTO add_on_option (add_on_id, name, price) VALUES
+((SELECT id FROM beach), '1 Chair',                                  25.00),
+((SELECT id FROM beach), '1 Umbrella',                               30.00),
+((SELECT id FROM beach), '2 Chairs + 1 Umbrella (Bundle)',           65.00);
+
+/* -- Miami Tours --------------------------------------------------- */
+WITH tours AS (
+  SELECT id FROM add_on WHERE name = 'Miami Tours'
+)
+INSERT INTO add_on_option (add_on_id, name, price) VALUES
+((SELECT id FROM tours), 'City Tour',                                40.00),
+((SELECT id FROM tours), 'City + Boat Combo',                        65.00),
+((SELECT id FROM tours), 'Everglades Safari',                        65.00),
+((SELECT id FROM tours), 'Key West Day Trip',                        70.00),
+((SELECT id FROM tours), 'Bahamas Day Tour',                        310.00);
+
+/* -- Laundry Service ---------------------------------------------- */
+WITH laundry AS (
+  SELECT id FROM add_on WHERE name = 'Laundry Service'
+)
+INSERT INTO add_on_option (add_on_id, name, price) VALUES
+((SELECT id FROM laundry), 'Normal Wash + Fold',                      5.00),
+((SELECT id FROM laundry), 'Dry Cleaning',                           10.00);

@@ -167,9 +167,9 @@ export const getBookingsForUser = async (req, res) => {
         guestPhone: booking.guestPhone,
         discountCode: booking.DiscountCode
           ? {
-              code: booking.DiscountCode.code,
-              percentage: booking.DiscountCode.percentage,
-            }
+            code: booking.DiscountCode.code,
+            percentage: booking.DiscountCode.percentage,
+          }
           : null,
         createdAt: booking.createdAt,
         updatedAt: booking.updatedAt,
@@ -311,5 +311,105 @@ export const cancelBooking = async (req, res) => {
   } catch (err) {
     console.error("Error cancelling booking:", err)
     return res.status(500).json({ error: "Server error" })
+  }
+}
+
+export const getOutsideBookingByConfirmation = async (req, res) => {
+  try {
+    const { confirmation } = req.params;
+
+    if (!confirmation) {
+      return res.status(400).json({ error: "bookingConfirmation is required" });
+    }
+
+    const outsideBooking = await models.OutsideBooking.findOne({
+      where: { bookingConfirmation: confirmation },
+    });
+
+    if (!outsideBooking) {
+      return res.status(404).json({ error: "OutsideBooking not found" });
+    }
+
+    return res.json(outsideBooking);
+  } catch (err) {
+    console.error("Error fetching OutsideBooking:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const getOutsideBookingWithAddOns = async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!id) {
+      return res.status(400).json({ error: 'Invalid outsideBooking ID' })
+    }
+
+    const booking = await models.OutsideBooking.findByPk(id, {
+      include: [
+        {
+          model: models.User,
+          attributes: ['id', 'name', 'email']
+        },
+        {
+          model: models.Hotel,
+          attributes: ['id', 'name', 'address', 'city', 'country']
+        },
+        {
+          model: models.AddOn,
+          attributes: ["id", "name", "slug", "description", "price"],
+          through: {
+            attributes: ["id", "qty", "unitPrice", "paymentStatus", "add_on_option_id"]
+          },
+          include: [{
+            model: models.AddOnOption,
+            attributes: ["id", "name", "price"]
+          }]
+        }
+      ]
+    });
+
+    if (!booking) {
+      return res.status(404).json({ error: 'OutsideBooking not found' })
+    }
+
+    // Format response: extract through data into a flat array
+    const addons = booking.AddOns.map(addon => {
+      const pivot = addon.OutsideBookingAddOn
+      const option = addon.AddOnOptions?.find(o => o.id === pivot.add_on_option_id) || null
+
+      return {
+        bookingAddOnId: pivot.id,
+        addOnId: addon.id,
+        addOnName: addon.name,
+        addOnSlug: addon.slug,
+        qty: pivot.qty,
+        unitPrice: Number(pivot.unitPrice),
+        paymentStatus: pivot.paymentStatus,
+        optionId: option?.id ?? null,
+        optionName: option?.name ?? null,
+        optionPrice: option?.price ?? null
+      }
+    })
+
+    console.log(addons, "addons")
+
+    return res.json({
+      id: booking.id,
+      bookingConfirmation: booking.bookingConfirmation,
+      guestName: booking.guestName,
+      guestLastName: booking.guestLastName,
+      guestEmail: booking.guestEmail,
+      guestPhone: booking.guestPhone,
+      checkIn: booking.checkIn,
+      checkOut: booking.checkOut,
+      status: booking.status,
+      paymentStatus: booking.paymentStatus,
+      user: booking.User,
+      hotel: booking.Hotel,
+      addons
+    })
+  } catch (err) {
+    console.error('Error fetching OutsideBooking with add-ons:', err)
+    return res.status(500).json({ error: 'Server error' })
   }
 }

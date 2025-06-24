@@ -33,6 +33,7 @@ export const validateDiscount = async (req, res) => {
       percentage : discount.percentage,
       validatedBy: discount.staff?.name || "Staff",
       hotel      : discount.Hotel,
+      specialDiscountPrice: discount.specialDiscountPrice || null
     });
   } catch (err) {
     console.error("validateDiscount:", err);
@@ -46,40 +47,44 @@ export const validateDiscount = async (req, res) => {
 /* ----------------------------------------------------------- */
 export const createCustomCode = async (req, res) => {
   try {
-    /* Body sólo trae porcentaje, hotel y (opcional) fechas / usos */
+    /* Body trae precio final, hotel y (opcional) fechas / usos */
     const {
-      percentage,     // libre 1-100 %
+      specialDiscountPrice, // importe final (10-200 000)
       hotelId,
       startsAt,
       endsAt,
       maxUses = 1,
     } = req.body;
 
-    if (!hotelId)    return res.status(400).json({ error: "hotelId missing" });
-    if (!percentage) return res.status(400).json({ error: "percentage missing" });
+    if (!hotelId)              return res.status(400).json({ error: "hotelId missing" });
+    if (!specialDiscountPrice) return res.status(400).json({ error: "specialDiscountPrice missing" });
 
-    if (!Number.isInteger(percentage) || percentage < 1 || percentage > 100)
-      return res.status(400).json({ error: "percentage must be an integer 1-100" });
+    if (
+      !Number.isInteger(specialDiscountPrice) ||
+      specialDiscountPrice < 10 ||
+      specialDiscountPrice > 200000
+    )
+      return res
+        .status(400)
+        .json({ error: "specialDiscountPrice must be an integer 10-200000" });
 
     /* ───────── Tomar datos del JWT ───────── */
-    const authUser = req.user || {};                 // viene de authenticate
-    const staffId  = authUser.id;                    // obligatorio en token
+    const authUser = req.user || {}; // viene de middleware authenticate
+    const staffId  = authUser.id;
     if (!staffId) return res.status(401).json({ error: "Unauthorized" });
 
-    /* Rol manager (tres formas posibles) */
-    const isManager =
-
-      authUser.roleName === 'Hotel Manager';
-
-    if (!isManager)
-      return res.status(403).json({ error: "Insufficient privileges" });
+    /* Sólo hotel-manager puede crear */
+    const isManager = authUser.roleName === "Hotel Manager";
+    if (!isManager) return res.status(403).json({ error: "Insufficient privileges" });
 
     /* ───────── Generar código único de 4 dígitos ───────── */
     const genCode = () => Math.floor(1000 + Math.random() * 9000).toString();
     let code;
     for (let i = 0; i < 10; i += 1) {
       // eslint-disable-next-line no-await-in-loop
-      const exists = await models.DiscountCode.findOne({ where: { code: (code = genCode()) } });
+      const exists = await models.DiscountCode.findOne({
+        where: { code: (code = genCode()) },
+      });
       if (!exists) break;
       if (i === 9) return res.status(500).json({ error: "Could not generate unique code" });
     }
@@ -87,26 +92,30 @@ export const createCustomCode = async (req, res) => {
     /* ───────── Crear registro ───────── */
     const discount = await models.DiscountCode.create({
       code,
-      percentage,
+      specialDiscountPrice,
+      percentage: 1,
       staff_id : staffId,
       hotel_id : hotelId,
       startsAt : startsAt ? new Date(startsAt) : new Date(),
       endsAt   : endsAt   ? new Date(endsAt)   : new Date(Date.now() + 24 * 60 * 60 * 1000),
+      default: false,
       maxUses,
     });
 
     /* ───────── Responder ───────── */
     res.status(201).json({
-      message   : "Custom discount code created",
-      code      : discount.code,
-      percentage: discount.percentage,
-      expiresAt : discount.endsAt,
-      maxUses   : discount.maxUses,
+      message             : "Custom discount code created",
+      code                : discount.code,
+      specialDiscountPrice: discount.specialDiscountPrice,
+      expiresAt           : discount.endsAt,
+      maxUses             : discount.maxUses,
     });
   } catch (err) {
     console.error("createCustomCode:", err);
     if (err.name === "SequelizeValidationError")
-      return res.status(400).json({ error: err.errors?.[0]?.message || "Validation error" });
+      return res
+        .status(400)
+        .json({ error: err.errors?.[0]?.message || "Validation error" });
 
     res.status(500).json({ error: "Server error" });
   }

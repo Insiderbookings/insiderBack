@@ -15,7 +15,9 @@ import BookingAddOnModel   from "./BookingAddOn.js";
 import MessageModel        from "./Message.js";
 import UpsellCodeModel     from "./UpsellCode.js";
 import HotelStaffModel     from "./HotelStaff.js";
-
+import OutsideBooking from "./OutsideBooking.js";
+import OutsideBookingAddOn from "./OutsideBookingAddOn.js";
+import AddOnOption from "./AddonOption.js";
 /* ---------- Construir objetos ---------- */
 const models = {};
 
@@ -33,6 +35,9 @@ models.BookingAddOn   = BookingAddOnModel(sequelize);
 models.Message        = MessageModel(sequelize);
 models.UpsellCode     = UpsellCodeModel(sequelize);
 models.HotelStaff     = HotelStaffModel(sequelize);
+models.OutsideBooking = OutsideBooking(sequelize);
+models.OutsideBookingAddOn = OutsideBookingAddOn(sequelize);
+models.AddOnOption = AddOnOption(sequelize)
 
 /* ---------- Ejecutar asociaciones ---------- */
 Object.values(models)

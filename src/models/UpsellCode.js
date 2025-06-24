@@ -16,7 +16,8 @@ export default (sequelize) => {
       add_on_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: { model: "AddOn", key: "id" },
+        references: { model: "add_on", key: "id" },  
+        onDelete: "NO ACTION",
       },
       staff_id: {
         type: DataTypes.INTEGER,

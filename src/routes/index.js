@@ -8,11 +8,13 @@ import bookingRoutes from "./booking.routes.js"
 import commissionRoutes from "./commission.routes.js"
 import upsellCodeRoutes from "./upsellCode.routes.js"
 import paymentRoutes from "./payment.routes.js"
+import emailRoutes from "./email.routes.js"
+import addonRoutes from "./addon.routes.js"
 
 const router = Router()
 
 router.use("/auth", authRoutes)
-router.use("/users", userRoutes) // ← NUEVO
+router.use("/users", userRoutes)
 router.use("/hotels", hotelRoutes)
 router.use("/hotels/:hotelId/rooms", roomRoutes)
 router.use("/discounts", discountRoutes)
@@ -20,5 +22,7 @@ router.use("/bookings", bookingRoutes)
 router.use("/commissions", commissionRoutes)
 router.use("/upsell-code", upsellCodeRoutes)
 router.use("/payments", paymentRoutes)
+router.use("/email", emailRoutes)
+router.use("/addons", addonRoutes)
 
 export default router
