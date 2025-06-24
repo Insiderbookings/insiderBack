@@ -90,94 +90,101 @@ const reservationTemplate = ({
   firstName,
   lastName,
   bookingConfirmation,
-  roomType,
-  roomNumber,
-  phoneNumber,
 }) => `
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Reservation Confirmation Required</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  /* ─────────── General reset ─────────── */
-  body      { margin: 0; padding: 0; background: #f5f7fb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
-  table     { border-collapse: collapse; width: 100%; }
-  img       { border: 0; line-height: 100%; }
-  a         { color: inherit; text-decoration: none; }
-
-  /* ─────────── Brand palette ─────────── */
-  :root {
-    --brand-primary: #0a66ff;   /* botón y acentos  */
-    --brand-light   : #eaf1ff;  /* icon bullet      */
-    --brand-grey    : #444;
-    --bg-card       : #ffffff;
-    --bg-topbar     : #f0f2f5;
-    --border-card   : #e3e8ee;
-  }
-
-  /* ─────────── Container card ─────────── */
-  .card      { max-width: 600px; margin: 40px auto; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 8px; overflow: hidden; box-shadow: 0 3px 12px rgba(55,71,79,.08); }
-  .topbar    { background: var(--bg-topbar); padding: 10px 24px; font-size: 14px; color: var(--brand-grey); }
-  .content   { padding: 32px 40px 40px; color: #1e1e1e; line-height: 1.55; }
-  .content h1{ font-size: 22px; margin: 0 0 12px; }
-  .content h2{ font-size: 16px; margin: 28px 0 10px; color: #111; display:flex; align-items:center; gap:8px; }
-  .bullet    { width:10px; height:10px; background: var(--brand-primary); border-radius:50%; display:inline-block; }
-  p          { margin: 0 0 14px; }
-  hr         { border:none; border-top:1px solid var(--border-card); margin: 32px 0; }
-
-  /* ─────────── CTA button ─────────── */
-  .btn       { display:inline-block; background: var(--brand-primary); color:#ffffff!important; font-weight:600; padding:14px 26px; border-radius:6px; transition:background .2s ease-in; }
-  .btn:hover { background:#004ce1; }
-
-  /* ─────────── Footer ─────────── */
-  .footer    { font-size:12px; color:#6b6b6b; }
-
-  /* ─────────── Responsive tweaks ─────────── */
-  @media(max-width:600px){
-    .content { padding: 28px 22px 36px; }
-  }
-</style>
+  <meta charset="UTF-8" />
+  <!--[if !mso]><!-->
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!--<![endif]-->
+  <title>Reservation Confirmation Required</title>
 </head>
-<body>
-  <!-- Card -->
-  <div class="card">
-    <!-- Top bar -->
-    <div class="topbar">✔ Fast Check-In</div>
-
-    <!-- Main content -->
-    <div class="content">
-      <h1>Reservation Confirmation Required</h1>
-
-      <p>Hi <strong>${firstName} ${lastName}</strong>,</p>
-      <p>We’re looking forward to welcoming you <strong>${arrivalDate}</strong> – <strong>${departureDate}</strong>.</p>
-      <p>To ensure a seamless arrival, please confirm your reservation in advance.</p>
-
-      <!-- Booking reference -->
-      <p><strong>Booking #:</strong> ${bookingConfirmation}</p>
-
-      <!-- Step headline -->
-      <h2><span class="bullet"></span> Step 1: Confirm Your Reservation</h2>
-      <p>A USD 2 validation charge is required to verify your card and finalize check-in.</p>
-
-      <!-- CTA -->
-      <p style="text-align:center; margin:26px 0 34px;">
-        <a href="${process.env.CLIENT_URL}/fast-checkin?booking=${bookingConfirmation}" class="btn">
-          Confirm reservation – $2
-        </a>
-      </p>
-
-      <hr>
-
-      <!-- Footer note -->
-      <p class="footer">
-        Thank you for confirming in advance — we’ll be ready when you arrive!<br>
-        See you soon,<br>
-        Guest Services Team
-      </p>
-    </div>
-  </div>
+<body style="margin:0; padding:0; background:#f5f5f5; font-family:Arial,Helvetica,sans-serif;">
+  <!-- WRAPPER -->
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f5f5f5;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+      
+        <!-- CARD -->
+        <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="max-width:600px; width:100%; background:#ffffff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.08);">
+          
+          <!-- TOP BAR -->
+          <tr>
+            <td style="background:#fff4d6; padding:10px 24px; font-size:14px; font-weight:600; color:#333333;">
+              <span style="display:inline-block; width:18px; height:18px; background:#007aff; color:#ffffff; text-align:center; border-radius:4px; line-height:18px;">✓</span>
+              &nbsp;Fast&nbsp;Check-In
+            </td>
+          </tr>
+          
+          <!-- TITLE -->
+          <tr>
+            <td style="padding:24px 32px 8px 32px;">
+              <h1 style="margin:0; font-size:22px; line-height:1.3; color:#101010;">
+                <span style="font-size:26px;">⚫</span>&nbsp;
+                Reservation Confirmation Required
+              </h1>
+            </td>
+          </tr>
+          
+          <!-- BODY -->
+          <tr>
+            <td style="padding:0 32px 32px 32px; font-size:15px; line-height:1.6; color:#333333;">
+              
+              <p style="margin:0 0 12px 0;">Hi <strong>${firstName} ${lastName}</strong>,</p>
+              
+              <p style="margin:0 0 12px 0;">
+                We’re looking forward to welcoming you <strong>${arrivalDate} – ${departureDate}</strong>.
+              </p>
+              
+              <p style="margin:0 0 12px 0;">
+                To ensure a seamless arrival, please confirm your reservation in advance.
+              </p>
+              
+              <p style="margin:0 0 24px 0;"><strong>Booking #:</strong> ${bookingConfirmation}</p>
+              
+              <!-- STEP -->
+              <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 24px 0;">
+                <tr>
+                  <td style="font-size:16px; font-weight:bold; color:#101010; padding-bottom:4px;">
+                    <span style="color:#007aff; font-size:18px;">♦</span>
+                    &nbsp;Step&nbsp;1:&nbsp;Confirm&nbsp;Your&nbsp;Reservation
+                  </td>
+                </tr>
+                <tr>
+                  <td style="font-size:14px; color:#333333; padding-bottom:18px;">
+                    A USD 2 validation charge is required to verify your card and finalize check-in.
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding-bottom:24px;">
+                    <!-- BUTTON -->
+                    <a href="${process.env.CLIENT_URL}/fast-checkin?booking=${bookingConfirmation}"
+                       style="background:#007aff; color:#ffffff; text-decoration:none; padding:12px 24px; border-radius:4px; font-weight:bold; display:inline-block;"
+                       target="_blank">
+                      Confirm reservation — $2
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              
+              <!-- FOOTER -->
+              <p style="margin:0 0 4px 0;">
+                Thank you for confirming in advance&nbsp;— we’ll be ready when you arrive!
+              </p>
+              <p style="margin:0;">
+                See you soon,<br/>
+                Guest Services Team
+              </p>
+              
+            </td>
+          </tr>
+          
+        </table><!-- /CARD -->
+        
+      </td>
+    </tr>
+  </table><!-- /WRAPPER -->
 </body>
 </html>
 `;
