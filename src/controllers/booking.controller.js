@@ -283,17 +283,6 @@ export const getBookingById = async (req, res) => {
         { model: models.Room,  attributes: ["id","name","price","image","beds","capacity"] },
         {
           model     : models.AddOn,                 // ★ NEW block
-          attributes: ["id","name","slug","description","price"],
-          through   : {
-            attributes: [
-              "id",
-              "qty",
-              "unitPrice",
-              "paymentStatus",
-              "status",            // ★ NEW
-              "add_on_option_id"
-            ],
-          },
           include   : [
             { model: models.AddOnOption, attributes:["id","name","price"] },
           ],
@@ -315,7 +304,6 @@ export const getBookingById = async (req, res) => {
         addOnId       : addon.id,
         addOnName     : addon.name,
         addOnSlug     : addon.slug,
-        qty           : pivot.qty,
         unitPrice     : Number(pivot.unitPrice),
         paymentStatus : pivot.paymentStatus,
         status        : pivot.status,             // ★ NEW

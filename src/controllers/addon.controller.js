@@ -106,21 +106,22 @@ export const getAddOns = async (req, res) => {
 export const requestAddOn = async (req, res) => {
   const userId = req.user.id;
   const {
-    bookingId          = null,     // puede venir o no
+    bookingId = null,      // puede venir o no
     addOnId,
-    optionId           = null,
-    qty                = 1,
+    optionId = null,
+    qty      = 1,
   } = req.body;
 
+  /* ─────────────────── Validaciones iniciales ─────────────────── */
   if (!addOnId)
     return res.status(400).json({ error: "Missing addOnId" });
 
-  /* 1. localizar la reserva del usuario
-        – si se pasa bookingId => se usa
-        – si no, se trae la última (más reciente) con status confirmed        */
+  /* 1. Localizar la reserva del usuario
+        – si viene bookingId se usa;
+        – si no, se busca la última con status = confirmed           */
   const whereBooking = {
-    user_id : userId,
-    status  : { [Op.eq]: "confirmed" },
+    user_id: userId,
+    status : { [Op.eq]: "confirmed" },
   };
   if (bookingId) whereBooking.id = bookingId;
 
@@ -131,14 +132,16 @@ export const requestAddOn = async (req, res) => {
   });
 
   if (!booking)
-    return res.status(404).json({ error: "Booking not found or not eligible" });
+    return res
+      .status(404)
+      .json({ error: "Booking not found or not eligible" });
 
-  /* 2. localizar el add-on                                                */
+  /* 2. Localizar el add-on                                        */
   const addOn = await models.AddOn.findByPk(addOnId);
   if (!addOn)
     return res.status(404).json({ error: "Add-on not found" });
 
-  /* 3. variante (opcional) y precio                                       */
+  /* 3. Variante (opcional) y precio                               */
   let unitPrice = Number(addOn.price);
   if (optionId) {
     const opt = await models.AddOnOption.findByPk(optionId);
@@ -147,33 +150,46 @@ export const requestAddOn = async (req, res) => {
     unitPrice = Number(opt.price);
   }
 
-  /* 4. crear la fila pivote en outsidebooking_add_on                      */
-  const pivot = await models.OutsideBookingAddOn.create({
-    outsidebooking_id : booking.id,
-    add_on_id         : addOn.id,
-    add_on_option_id  : optionId,
-    qty,
-    unitPrice,
-    paymentStatus     : "unpaid",
-  });
+  /* 4‒6. Crear pivote, notificar y responder                      */
+  try {
+    /* 4. Crear la fila pivote en outsidebooking_add_on            */
+    const pivot = await models.OutsideBookingAddOn.create({
+      outsidebooking_id : booking.id,
+      add_on_id         : addOn.id,
+      add_on_option_id  : optionId,
+      qty,
+      unitPrice,
+      paymentStatus     : "unpaid",
+    });
 
-  /* 5. notificar al hotel                                                 */
-  if (booking.Hotel?.email) {
-    try {
-      await transporter.sendMail({
-        from   : `"Insider Bookings" <${process.env.SMTP_USER}>`,
-        to     : "partners@insiderbookings.com",
-        subject: `New add-on request – ${addOn.name}`,
-        text   : `Guest ${req.user.name || req.user.email} requested ${addOn.name}
+    /* 5. Notificar al hotel                                       */
+    if (booking.Hotel?.email) {
+      try {
+        await transporter.sendMail({
+          from   : `"Insider Bookings" <${process.env.SMTP_USER}>`,
+          to     : "ramiro.alet@hotmail.com",
+          subject: `New add-on request – ${addOn.name}`,
+          text   : `Guest ${req.user.name || req.user.email} requested ${addOn.name}
 for booking #${booking.bookingConfirmation ?? booking.id}.`,
-      });
-    } catch (e) {
-      console.error("Send mail:", e);
+        });
+      } catch (mailErr) {
+        console.error("Send mail error:", mailErr);
+        /* No corta el flujo: si el mail falla, igual respondemos  */
+      }
     }
-  }
 
-  /* 6. respuesta al cliente                                               */
-  return res.status(201).json({ ok: true, bookingAddOnId: pivot.id });
+    /* 6. Respuesta al cliente                                     */
+    return res
+      .status(201)
+      .json({ ok: true, bookingAddOnId: pivot.id });
+  } catch (e) {
+    /* Detalle del error de Postgres / Sequelize                   */
+    console.error("PG error:", e.original || e);
+    return res.status(500).json({
+      error : "Could not save add-on",
+      detail: e.original?.detail || e.message,
+    });
+  }
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
