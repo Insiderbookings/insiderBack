@@ -1,28 +1,40 @@
 import { Router } from "express"
 import {
   createBooking,
+  /* unified handlers */
+  getBookingsUnified,
+  getLatestStayForUser,
+  /* legacy & staff extras */
   getBookingsForUser,
   getBookingsForStaff,
   getBookingById,
   cancelBooking,
   getOutsideBookingByConfirmation,
-  getOutsideBookingWithAddOns
+  getOutsideBookingWithAddOns,
 } from "../controllers/booking.controller.js"
 import { authenticate, authorizeStaff } from "../middleware/auth.js"
 
 const router = Router()
 
+/* ---- Create ---- */
 router.post("/", createBooking)
-router.get("/me", authenticate, getBookingsForUser)
+
+/* ---- Unified user list & latest ---- */
+router.get("/me",         authenticate, getBookingsUnified)      // full or ?latest=true
+router.get("/me/latest",  authenticate, getLatestStayForUser)    // explicit shortcut
+
+/* ---- Legacy filtered list (optional; kept for compatibility) */
+router.get("/legacy/me",  authenticate, getBookingsForUser)
+
+/* ---- Staff list ---- */
 router.get("/staff/me", authenticate, authorizeStaff, getBookingsForStaff)
 
-// ───────── Ruta para obtener una reserva por su ID ─────────
-router.get("/:id", getBookingById)
+/* ---- Single booking / cancel ---- */
+router.get("/:id",              getBookingById)
+router.put("/:id/cancel",       authenticate, cancelBooking)
 
-// ───────── Ruta para cancelar una reserva ─────────
-router.put("/:id/cancel", authenticate, cancelBooking)
-
-router.get("/outside/:confirmation", getOutsideBookingByConfirmation);
-router.get("/outside/id/:id", getOutsideBookingWithAddOns)
+/* ---- Outside-booking helpers ---- */
+router.get("/outside/:confirmation", getOutsideBookingByConfirmation)
+router.get("/outside/id/:id",        getOutsideBookingWithAddOns)
 
 export default router

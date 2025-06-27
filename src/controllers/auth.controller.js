@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import { sequelize } from "../models/index.js"
 dotenv.config();
 
-const signToken = (payload) => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
+export const signToken = (payload) => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
 
 export const registerStaff = async (req, res) => {
   /* 0. Validación de inputs */
@@ -205,3 +205,4 @@ export const loginUser = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
+

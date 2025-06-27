@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { body } from "express-validator";
 import { registerStaff, loginStaff, registerUser, loginUser } from "../controllers/auth.controller.js";
-
+import { autoSignupOrLogin } from "../controllers/auth.auto.controller.js";
 const router = Router();
+
 
 router.post("/staff/register", [
   body("name").notEmpty(),
@@ -20,5 +21,7 @@ router.post("/user/register", [
 ], registerUser);
 
 router.post("/user/login", loginUser);
+
+router.post("/auto-signup", autoSignupOrLogin);
 
 export default router;

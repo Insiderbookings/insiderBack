@@ -61,3 +61,17 @@ export const getHotelImages = async (req, res) => {
   }
 };
 
+
+
+export const getHotelsWithRooms = async (req, res) => {
+  try {
+    const hotels = await models.Hotel.findAll({include: [{
+                model      : models.Room
+              }]})
+    res.json(hotels)
+    console.log("hotelswithrooms", hotels)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: "Server error" })
+  }
+}
