@@ -111,3 +111,40 @@ export const getUpsellCode = async (req, res) => {
     res.status(500).json({ error: "Server error retrieving upsell info" });
   }
 };
+
+export const getMyUpsellCodes = async (req, res) => {
+  try {
+    const staffId = req.user.id;                // ← viene del middleware auth
+
+    const codes = await models.UpsellCode.findAll({
+      where: { staff_id: staffId },
+      include: [
+        {
+          model     : models.AddOn,
+          attributes: ["id", "name", "description", "price"],
+        },
+      ],
+      order: [["created_at", "DESC"]],
+    });
+
+    /* Formateo opcional: aplanar datos para el front  */
+    const result = codes.map(c => ({
+      id          : c.id,
+      room_number : c.room_number,
+      code        : c.code,
+      status      : c.status,
+      expires_at  : c.expires_at,
+      created_at  : c.created_at,
+      used_at     : c.status === "used" ? c.updated_at : null,
+      addOnId     : c.AddOn.id,
+      addOnName   : c.AddOn.name,
+      addOnPrice  : c.AddOn.price,
+      addOnDesc   : c.AddOn.description,
+    }));
+
+    return res.json(result);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
+  }
+};

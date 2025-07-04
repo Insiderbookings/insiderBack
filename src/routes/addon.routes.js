@@ -1,9 +1,13 @@
+// src/routes/addon.routes.js
 import { Router } from "express"
 import {
   getAddOns,
   saveOutsideAddOns,
-  requestAddOn,          // ← NEW
-  confirmAddOnRequest,   // ← NEW (staff side, included for completeness)
+  requestAddOn,
+  confirmAddOnRequest,
+  getRequestedAddOns,
+  markOutsideAddOnReady,
+  getRequestedAddOnsByStaff,    // ← NEW
 } from "../controllers/addon.controller.js"
 import { authenticate, authorizeStaff } from "../middleware/auth.js"
 
@@ -20,6 +24,31 @@ router.post("/bookings/outside/:id", saveOutsideAddOns)
 router.post("/request", authenticate, requestAddOn)
 
 /* staff dashboard: confirm / reject */
-router.put("/request/:id/confirm", authenticate, authorizeStaff, confirmAddOnRequest)
+router.put(
+  "/request/:id/confirm",
+  authenticate,
+  authorizeStaff,
+  confirmAddOnRequest
+)
+router.get(
+  "/requests",
+  authenticate,
+  authorizeStaff,
+  getRequestedAddOns
+)
 
+/* staff dashboard: mark an outside-booking add-on as “ready” */
+router.put(
+  "/bookings/outside/ready/:id",
+  authenticate,
+  markOutsideAddOnReady
+)
+
+
+router.get(
+  "/staff-requests",
+  authenticate,
+  authorizeStaff,
+getRequestedAddOnsByStaff
+)
 export default router

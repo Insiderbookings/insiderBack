@@ -13,11 +13,11 @@ export default (sequelize) => {
       allowNull  : true,              // huésped invitado = null
       references : { model: "User", key: "id" },
     },
-            bookingConfirmation: {
-            type: DataTypes.STRING(60), 
-            allowNull: false,
-            unique: true,
-        },
+    bookingConfirmation: {
+      type    : DataTypes.STRING(60),
+      allowNull: false,
+      unique   : true,
+    },
     hotel_id: {
       type      : DataTypes.INTEGER,
       allowNull : true,
@@ -25,49 +25,57 @@ export default (sequelize) => {
     },
     room_number: {
       type      : DataTypes.INTEGER,
-      allowNull : false
+      allowNull : false,
     },
-     room_type: {
+    room_type: {
       type      : DataTypes.STRING,
-      allowNull : false
+      allowNull : false,
     },
     /* ---------------- Fechas y ocupación ---------------- */
     checkIn : { type: DataTypes.DATEONLY, allowNull: false },
     checkOut: { type: DataTypes.DATEONLY, allowNull: false },
- 
+
     /* ---------------- Datos huésped --------------------- */
-    guestName : { type: DataTypes.STRING(120), allowNull: false },
-    guestLastName: { type: DataTypes.STRING(120), allowNull: false },
+    guestName :      { type: DataTypes.STRING(120), allowNull: false },
+    guestLastName:   { type: DataTypes.STRING(120), allowNull: false },
     guestEmail: {
-      type   : DataTypes.STRING(150),
-      allowNull: false,
-      validate : { isEmail: true },
+      type      : DataTypes.STRING(150),
+      allowNull : false,
+      validate  : { isEmail: true },
     },
-    guestPhone: DataTypes.STRING(50),
-    status        : {
+    guestPhone:      DataTypes.STRING(50),
+
+    /* ---------------- Pago y estatus -------------------- */
+    status: {
       type        : DataTypes.ENUM("pending", "confirmed", "cancelled"),
       defaultValue: "confirmed",
     },
-    paymentStatus : {
+    paymentStatus: {
       type        : DataTypes.ENUM("unpaid", "paid", "refunded"),
       defaultValue: "paid",
     },
     payment_id: {
-      type     : DataTypes.STRING(100), // id de PaymentIntent (pi_...) ó Session
+      type     : DataTypes.STRING(100),  // id de PaymentIntent (pi_...) ó Session
       allowNull: true,
+    },
+
+    /* ************ NUEVO ATRIBUTO **************** */
+    outside: {
+      type        : DataTypes.BOOLEAN,
+      allowNull   : false,
+      defaultValue: true,
     },
   });
 
   /* ---------------- Asociaciones ---------------- */
   OutsideBooking.associate = (models) => {
-    OutsideBooking.belongsTo(models.User,         { foreignKey: "user_id" });
-    OutsideBooking.belongsTo(models.Hotel,        { foreignKey: "hotel_id" });
+    OutsideBooking.belongsTo(models.User,  { foreignKey: "user_id" });
+    OutsideBooking.belongsTo(models.Hotel, { foreignKey: "hotel_id" });
     OutsideBooking.belongsToMany(models.AddOn, {
-      through    : models.OutsideBookingAddOn,
-      foreignKey : "outsidebooking_id",
-      otherKey   : "add_on_id",
+      through   : models.OutsideBookingAddOn,
+      foreignKey: "outsidebooking_id",
+      otherKey  : "add_on_id",
     });
-
   };
 
   return OutsideBooking;

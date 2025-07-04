@@ -29,6 +29,12 @@ export default (sequelize) => {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
     },
+    // ─────────── Nuevo atributo “role” ───────────
+    role: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
   });
 
   User.associate = (models) => {

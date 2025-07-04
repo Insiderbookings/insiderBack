@@ -12,7 +12,8 @@ const diffDays = (from, to) =>
 /* ───────────── Helper – flattener ────────────────
    Recibe una fila de Booking  | OutsideBooking y la
    convierte en el formato que usa todo el FE            */
-const mapStay = (row, source) => {
+const   mapStay = (row, source) => {
+  console.log(row, "row")
   const hotel = row.Hotel ?? null            // siempre presente con include
   const nights = diffDays(row.checkIn, row.checkOut)
 
@@ -47,6 +48,7 @@ const mapStay = (row, source) => {
     /* ─────────── guests / total ───── */
     guests          : row.adults ? row.adults + row.children : null,
     total           : Number.parseFloat(row.total ?? 0),
+    outside: source === "outside" ? row.outside : false,
   }
 }
 
@@ -121,44 +123,53 @@ export const createBooking = async (req, res) => {
 export const getBookingsUnified = async (req, res) => {
   try {
     const { latest, status, limit = 50, offset = 0 } = req.query
-    const { id: userId, email } = req.user
+    const { id: userId } = req.user
 
-    /* ─── Insider bookings ─── */
+    // Obtener el usuario por ID para extraer su email
+    const user = await models.User.findByPk(userId)
+    if (!user) {
+      return res.status(404).json({ error: "User not found" })
+    }
+    const { email } = user
+
+    /* ─── Insider bookings (filtradas por guestEmail) ─── */
     const insiderRows = await models.Booking.findAll({
-      where : { user_id: userId, ...(status && { status }) },
+      where: {
+        guestEmail: email,
+        ...(status && { status }),
+      },
       include: [
         {
-          model      : models.Hotel,
-          attributes : ["id","name","location","image","city","country","rating"],
+          model: models.Hotel,
+          attributes: ["id", "name", "location", "image", "city", "country", "rating"],
         },
-        { model: models.Room,  attributes: ["name"] },
+        {
+          model: models.Room,
+          attributes: ["name"],
+        },
       ],
-      order : [["checkIn","DESC"]],
+      order : [["checkIn", "DESC"]],
       limit : latest ? 1 : Number(limit),
       offset: latest ? 0 : Number(offset),
     })
 
-    /* ─── Outside bookings ─── */
-    const outsideWhere = { ...(status && { status }) }
-    if (email) {
-      outsideWhere[Op.or] = [{ user_id: userId }, { guestEmail: email }]
-    } else {
-      outsideWhere.user_id = userId
-    }
-
+    /* ─── Outside bookings (filtradas por guestEmail) ─── */
     const outsideRows = await models.OutsideBooking.findAll({
-      where : outsideWhere,
+      where: {
+        guestEmail: email,
+        ...(status && { status }),
+      },
       include: [
         {
-          model      : models.Hotel,
-          attributes : ["id","name","location","image","city","country","rating"],
+          model: models.Hotel,
+          attributes: ["id", "name", "location", "image", "city", "country", "rating"],
         },
         {
-          model      : models.User,
-          attributes : ["id","name","email"],
+          model: models.User,
+          attributes: ["id", "name", "email"],
         },
       ],
-      order : [["checkIn","DESC"]],
+      order : [["checkIn", "DESC"]],
       limit : latest ? 1 : Number(limit),
       offset: latest ? 0 : Number(offset),
     })
@@ -169,13 +180,14 @@ export const getBookingsUnified = async (req, res) => {
       ...outsideRows.map(r => mapStay(r, "outside")),
     ].sort((a, b) => new Date(b.checkIn) - new Date(a.checkIn))
 
+    console.log(merged, "bookings")
+
     return res.json(latest ? merged[0] ?? null : merged)
   } catch (err) {
     console.error(err)
     return res.status(500).json({ error: "Server error" })
   }
 }
-
 /* alias explícito */
 export const getLatestStayForUser = (req, res) =>
   (req.query.latest = "true", getBookingsUnified(req, res))
@@ -399,68 +411,128 @@ export const getOutsideBookingByConfirmation = async (req, res) => {
 export const getOutsideBookingWithAddOns = async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ error: "Invalid outsideBooking ID" });
+    if (!id) {
+      return res.status(400).json({ error: "Invalid outsideBooking ID" });
+    }
 
+    // 1) Traigo la reserva + User, Hotel y AddOns (sin rooms)
     const ob = await models.OutsideBooking.findByPk(id, {
       include: [
-        { model: models.User,  attributes: ["id", "name", "email"] },
-        { model: models.Hotel },
         {
-          model     : models.AddOn,
+          model: models.User,
+          attributes: ["id", "name", "email"],
+        },
+        {
+          model: models.Hotel,
+          attributes: [
+            "id",
+            "name",
+            "location",
+            "address",
+            "city",
+            "country",
+            "image",
+            "phone",
+            "price",
+            "rating",
+            "starRating",
+            "category",
+            "amenities",
+            "lat",
+            "lng",
+            "description",
+          ],
+        },
+        {
+          model: models.AddOn,
           attributes: ["id", "name", "slug", "description", "price"],
-          through   : {                       // ★ NEW → pedimos status
+          through: {
             attributes: [
               "id",
               "qty",
               "unitPrice",
               "paymentStatus",
               "add_on_option_id",
-              "status"                     // ★ NEW
+              "status",
             ],
           },
-          include   : [
-            { model: models.AddOnOption, attributes: ["id", "name", "price"] },
+          include: [
+            {
+              model: models.AddOnOption,
+              attributes: ["id", "name", "price"],
+            },
           ],
         },
       ],
     });
-    if (!ob) return res.status(404).json({ error: "OutsideBooking not found" });
 
-    const addons = ob.AddOns.map(addon => {
-      const pivot  = addon.OutsideBookingAddOn;
-      const option = addon.AddOnOptions?.find(
-        o => o.id === pivot.add_on_option_id
-      ) || null;
+    if (!ob) {
+      return res.status(404).json({ error: "OutsideBooking not found" });
+    }
+
+    // 2) Mapeo de Add-Ons para el front
+    const addons = ob.AddOns.map((addon) => {
+      const pivot = addon.OutsideBookingAddOn;
+      const option =
+        addon.AddOnOptions?.find((o) => o.id === pivot.add_on_option_id) ||
+        null;
 
       return {
         bookingAddOnId: pivot.id,
-        addOnId       : addon.id,
-        addOnName     : addon.name,
-        addOnSlug     : addon.slug,
-        qty           : pivot.qty,
-        unitPrice     : Number(pivot.unitPrice),
-        paymentStatus : pivot.paymentStatus,
-        status        : pivot.status,       // ★ NEW
-        optionId      : option?.id    ?? null,
-        optionName    : option?.name  ?? null,
-        optionPrice   : option?.price ?? null,
+        addOnId: addon.id,
+        addOnName: addon.name,
+        addOnSlug: addon.slug,
+        qty: pivot.qty,
+        unitPrice: Number(pivot.unitPrice),
+        paymentStatus: pivot.paymentStatus,
+        status: pivot.status,
+        optionId: option?.id ?? null,
+        optionName: option?.name ?? null,
+        optionPrice: option?.price ?? null,
       };
     });
 
+    // 3) Convierto el Hotel a objeto plano
+    const hotelPlain = ob.Hotel.get({ plain: true });
+
+    // 4) Traigo manualmente todas las rooms de ese hotel
+    const roomRows = await models.Room.findAll({
+      where: { hotel_id: hotelPlain.id },
+      attributes: [
+        "id",
+        "roomNumber",
+        "name",
+        "description",
+        "image",
+        "price",
+        "capacity",
+        "beds",
+        "amenities",
+        "available",
+      ],
+    });
+    const rooms = roomRows.map((r) => r.get({ plain: true }));
+
+    // 5) Inyecto el array rooms en el hotel
+    hotelPlain.rooms = rooms;
+    console.log(rooms, "room")
+    // 6) Devuelvo la estructura completa
     return res.json({
-      id                 : ob.id,
+      id: ob.id,
       bookingConfirmation: ob.bookingConfirmation,
-      guestName          : ob.guestName,
-      guestLastName      : ob.guestLastName,
-      guestEmail         : ob.guestEmail,
-      guestPhone         : ob.guestPhone,
-      checkIn            : ob.checkIn,
-      checkOut           : ob.checkOut,
-      status             : ob.status,
-      paymentStatus      : ob.paymentStatus,
-      user               : ob.User,
-      hotel              : ob.Hotel,
-      addons,                                // ← ya con status
+      guestName: ob.guestName,
+      guestLastName: ob.guestLastName,
+      guestEmail: ob.guestEmail,
+      guestRoomType: ob.room_type,
+      guestPhone: ob.guestPhone,
+      checkIn: ob.checkIn,
+      checkOut: ob.checkOut,
+      status: ob.status,
+      paymentStatus: ob.paymentStatus,
+      user: ob.User,
+      hotel: hotelPlain,
+      addons,
+      outside: ob.outside
     });
   } catch (err) {
     console.error(err);

@@ -9,7 +9,6 @@ export const authenticate = (req, res, next) => {
   jwt.verify(token, process.env.JWT_SECRET, (err, payload) => {
     if (err) return res.status(401).json({ error: "Invalid token" });
     req.user = payload;
-    console.log(req.user, "en middles")
     next();
   });
 };

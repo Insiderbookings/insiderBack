@@ -182,7 +182,7 @@ export const registerUser = async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await models.User.create({ name, email, passwordHash });
     const token = signToken({ id: user.id, type: "user" });
-    res.status(201).json({ token });
+    res.status(201).json({ token, user });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
