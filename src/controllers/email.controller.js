@@ -20,7 +20,7 @@ const transporter = nodemailer.createTransport({
 })
 
 /* ─────────────────────────────────────
-      CONTROLLER
+     CONTROLLER
 ───────────────────────────────────── */
 export const sendReservationEmail = async (req, res) => {
   const {
@@ -29,8 +29,8 @@ export const sendReservationEmail = async (req, res) => {
     firstName,
     lastName,
     bookingConfirmation,
-    hotelId,          // ← numeric FK
-    hotel,            // ← readable name (string)
+    hotelId, // ← numeric FK
+    hotel, // ← readable name (string)
     roomType,
     roomNumber,
     email,
@@ -39,10 +39,17 @@ export const sendReservationEmail = async (req, res) => {
 
   /* ─────── Validation ─────── */
   if (
-    !arrivalDate        || !departureDate     || !firstName ||
-    !lastName           || !bookingConfirmation            ||
-    !hotelId            || !hotel            || !roomType  ||
-    !roomNumber         || !email            || !phoneNumber
+    !arrivalDate ||
+    !departureDate ||
+    !firstName ||
+    !lastName ||
+    !bookingConfirmation ||
+    !hotelId ||
+    !hotel ||
+    !roomType ||
+    !roomNumber ||
+    !email ||
+    !phoneNumber
   ) {
     return res.status(400).json({ message: "Missing required data." })
   }
@@ -50,23 +57,22 @@ export const sendReservationEmail = async (req, res) => {
   try {
     /* verify hotel exists (defensive) */
     const foundHotel = await Hotel.findByPk(hotelId)
-    if (!foundHotel)
-      return res.status(404).json({ message: "Hotel not found." })
+    if (!foundHotel) return res.status(404).json({ message: "Hotel not found." })
 
     /* ─────── 1.  Persist booking ─────── */
     await OutsideBooking.create({
       bookingConfirmation,
-      hotel_id   : hotelId,
+      hotel_id: hotelId,
       room_number: roomNumber,
-      room_type  : roomType,
-      checkIn    : arrivalDate,
-      checkOut   : departureDate,
-      guestName  : firstName,
-      guestLastName : lastName,
-      guestEmail : email,
-      guestPhone : phoneNumber,
-      status        : "pending",
-      paymentStatus : "paid",
+      room_type: roomType,
+      checkIn: arrivalDate,
+      checkOut: departureDate,
+      guestName: firstName,
+      guestLastName: lastName,
+      guestEmail: email,
+      guestPhone: phoneNumber,
+      status: "confirmed",
+      paymentStatus: "paid",
     })
 
     /* ─────── 2. Compose HTML ─────── */
@@ -84,8 +90,8 @@ export const sendReservationEmail = async (req, res) => {
 
     /* ─────── 3. Send email ─────── */
     await transporter.sendMail({
-      from   : `"Insider Bookings" <${process.env.SMTP_USER}>`,
-      to     : email,
+      from: `"Insider Bookings" <${process.env.SMTP_USER}>`,
+      to: email,
       subject: `Please confirm your stay at ${hotel}`,
       html,
     })
@@ -98,7 +104,7 @@ export const sendReservationEmail = async (req, res) => {
 }
 
 /* ─────────────────────────────────────
-      TEMPLATE
+     TEMPLATE
 ───────────────────────────────────── */
 const reservationTemplate = ({
   arrivalDate,
@@ -110,8 +116,7 @@ const reservationTemplate = ({
   roomType,
   roomNumber,
   phoneNumber,
-}) => `
-<!DOCTYPE html>
+}) => `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -138,15 +143,22 @@ const reservationTemplate = ({
           </tr>
           <tr>
             <td style="padding:0 32px 32px 32px;font-size:15px;line-height:1.6;color:#333333;">
-              <p style="margin:0 0 12px 0;">Hi <strong>${firstName} ${lastName}</strong>,</p>
+       
+              
+              <p style="margin:0 0 18px 0;padding:16px;background:#f8f9ff;border-left:4px solid #007aff;border-radius:4px;">
+                <strong>Hi ${firstName}, we're glad you're already checked in!</strong><br/>
+                Complete your reservation with a $2 confirmation to unlock all perks like late checkout, room upgrades, and premium services.
+              </p>
+              
               <p style="margin:0 0 12px 0;">
-                We’re looking forward to welcoming you at <strong>${hotel}</strong>
+                We're looking forward to welcoming you at <strong>${hotel}</strong>
                 from <strong>${arrivalDate}</strong> to <strong>${departureDate}</strong>.
               </p>
               <p style="margin:0 0 12px 0;">
                 <strong>Room:</strong> ${roomType} ( #${roomNumber} )
               </p>
               <p style="margin:0 0 24px 0;"><strong>Booking #:</strong> ${bookingConfirmation}</p>
+              
               <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 24px 0;">
                 <tr>
                   <td style="font-size:16px;font-weight:bold;color:#101010;padding-bottom:4px;">
@@ -168,9 +180,12 @@ const reservationTemplate = ({
                   </td>
                 </tr>
               </table>
-              <p style="margin:0 0 4px 0;">Thank you for confirming in advance&nbsp;— we’ll be ready when you arrive!</p>
+              
+              <p style="margin:0 0 4px 0;">Thank you for confirming in advance&nbsp;— we'll be ready when you arrive!</p>
               <p style="margin:0;">See you soon,<br/>Guest Services Team</p>
+              
               <hr style="border:none;border-top:1px solid #ececec;margin:24px 0;" />
+              
               <p style="margin:0;font-size:12px;color:#777;">
                 If you have any questions call us at <strong>${phoneNumber}</strong>.
               </p>
@@ -181,5 +196,4 @@ const reservationTemplate = ({
     </tr>
   </table>
 </body>
-</html>
-`
+</html>`

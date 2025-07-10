@@ -15,11 +15,21 @@ export const getHotels = async (req, res) => {
     const { location, category, rating } = req.query
     const where = {}
 
-    if (location)  where.location  = { [Op.iLike]: `%${location}%` }
-    if (category)  where.category  = category
-    if (rating)    where.rating    = { [Op.gte]: Number(rating) }
+    if (location) where.location = { [Op.iLike]: `%${location}%` }
+    if (category) where.category = category
+    if (rating) where.rating = { [Op.gte]: Number(rating) }
 
-    const hotels = await models.Hotel.findAll({ where })
+    const hotels = await models.Hotel.findAll({
+      where,
+      include: [
+        {
+          model: models.Room,
+          // si quieres, puedes limitar atributos:
+          // attributes: ["id", "name", "price", "capacity", "beds", "image", "available"]
+        }
+      ],
+    })
+
     res.json(hotels)
   } catch (err) {
     console.error(err)

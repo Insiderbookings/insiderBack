@@ -57,17 +57,19 @@ export default (sequelize) => {
         defaultValue: "unpaid",
       },
       payment_id   : {
-        type     : DataTypes.STRING(100), // PaymentIntent (pi_...) ó Session
+        type     : DataTypes.STRING(100),
         allowNull: true,
       },
-
-      /* ─── NUEVO ─── */
-      /** Marca si esta reserva proviene de un OTAs / sistema externo */
       outside: {
         type        : DataTypes.BOOLEAN,
         allowNull   : false,
         defaultValue: false,
       },
+      active: {
+        type    : DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+      }
     },
     {
       tableName      : "booking",

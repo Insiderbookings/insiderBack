@@ -49,6 +49,7 @@ const   mapStay = (row, source) => {
     guests          : row.adults ? row.adults + row.children : null,
     total           : Number.parseFloat(row.total ?? 0),
     outside: source === "outside" ? row.outside : false,
+    active: row.active
   }
 }
 
@@ -61,7 +62,7 @@ export const createBooking = async (req, res) => {
       user_id, hotel_id, room_id, checkIn, checkOut,
       adults, children, rooms,
       guestName, guestEmail, guestPhone,
-      discountCode,
+      discountCode, active
     } = req.body
 
     if (!hotel_id || !room_id || !checkIn || !checkOut || !guestName || !guestEmail)
@@ -99,8 +100,9 @@ export const createBooking = async (req, res) => {
       checkIn, checkOut, adults, children,
       guestName, guestEmail, guestPhone,
       total,
-      status       : "pending",
+      status       : "confirmed",
       paymentStatus: "unpaid",
+      active: true
     })
 
     /* ─── Staff commission (if applicable) ─── */

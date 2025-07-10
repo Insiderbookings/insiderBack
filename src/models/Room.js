@@ -28,11 +28,9 @@ export default (sequelize) => {
     capacity   : { type: DataTypes.INTEGER, allowNull: false },        // adultos + niños
     beds       : DataTypes.STRING(50),
     amenities  : { type: DataTypes.ARRAY(DataTypes.STRING), defaultValue: [] },
-    available  : { type: DataTypes.INTEGER, defaultValue: 0 },         // stock de unidades
+    available  : { type: DataTypes.INTEGER, defaultValue: 0 },
+    suite      : {type: DataTypes.BOOLEAN, defaultValue: false}
 
-    /* ─────────── Si quieres mantener compatibilidad antigua ───────────
-       pricePerNight, capacityAdults, capacityChildren … (opcionales)
-    -------------------------------------------------------------------*/
   }, {
     underscored: true,
     timestamps : true,

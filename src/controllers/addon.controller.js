@@ -365,7 +365,7 @@ export const saveOutsideAddOns = async (req, res) => {
         qty,
         unitPrice,
         paymentStatus     : "paid",
-        status: "Ready"
+        status: "ready"
       }, { transaction: t });
     }
 

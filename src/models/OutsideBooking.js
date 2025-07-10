@@ -65,6 +65,11 @@ export default (sequelize) => {
       allowNull   : false,
       defaultValue: true,
     },
+    active: {
+        type    : DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+      }
   });
 
   /* ---------------- Asociaciones ---------------- */
