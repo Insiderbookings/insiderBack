@@ -47,7 +47,7 @@ export default (sequelize) => {
 
     /* ---------------- Pago y estatus -------------------- */
     status: {
-      type        : DataTypes.ENUM("pending", "confirmed", "cancelled"),
+      type        : DataTypes.ENUM("pending", "confirmed", "cancelled", "discount"),
       defaultValue: "confirmed",
     },
     paymentStatus: {

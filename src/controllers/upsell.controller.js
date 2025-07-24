@@ -4,84 +4,141 @@ import models from "../models/index.js";
 /* ──────────────────────────── 1. Staff genera un código ──────────────────────────── */
 export const generateUpsellCode = async (req, res) => {
   try {
-    const staffId          = req.user.id;              // ← viene del middleware auth
-    const { roomNumber, addOnId } = req.body;
+    const staffId          = req.user.id;                // viene del middleware auth
+    const { roomNumber, addOnId, price, optionId, qty } = req.body;
 
-    if (!roomNumber || !addOnId)
-      return res.status(400).json({ error: "roomNumber and addOnId are required" });
+    // Validaciones mínimas
+    if (!roomNumber || !addOnId || price == null) {
+      return res.status(400).json({
+        error: "roomNumber, addOnId y price son obligatorios"
+      });
+    }
 
-    /* Verificar que el add-on exista */
+    // Verificar que el add-on exista
     const addOn = await models.AddOn.findByPk(addOnId);
-    if (!addOn) return res.status(404).json({ error: "Add-On not found" });
+    if (!addOn) {
+      return res.status(404).json({ error: "Add‑On not found" });
+    }
 
-    /* Generar código único de 4 dígitos */
+    // Si viene optionId, verificar que exista esa opción
+    if (optionId != null) {
+      const addOnOption = await models.AddOnOption.findOne({
+        where: { id: optionId, add_on_id: addOnId }
+      });
+      if (!addOnOption) {
+        return res.status(404).json({ error: "Add‑On Option not found" });
+      }
+    }
+
+    // Generar código único de 4 dígitos
     let code;
     do {
       code = Math.floor(1000 + Math.random() * 9000).toString();
-    } while (await models.UpsellCode.findOne({ where: { code } }));
+    } while (
+      await models.UpsellCode.findOne({ where: { code } })
+    );
 
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 h
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
+    // Crear el registro, pasando price y, si aplican, optionId y qty
     const record = await models.UpsellCode.create({
-      room_number: roomNumber,
-      add_on_id : addOnId,
-      staff_id  : staffId,
+      room_number         : roomNumber,
+      add_on_id           : addOnId,
+      staff_id            : staffId,
       code,
-      expires_at: expiresAt,
-      status    : "pending",
+      expires_at          : expiresAt,
+      status              : "pending",
+
+      // NUEVOS CAMPOS
+      price,
+      add_on_option_id    : optionId ?? null,
+      qty                  : qty ?? null
     });
 
-    res.json({
+    return res.json({
       code      : record.code,
       expiresAt : record.expires_at,
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error generating code" });
+  }
+  catch (err) {
+    console.error("generateUpsellCode:", err);
+    return res.status(500).json({
+      error: "Server error generating code"
+    });
   }
 };
-
 /* ──────────────────────────── 2. Cliente valida el código ──────────────────────────── */
 export const validateUpsellCode = async (req, res) => {
   try {
-    const { code } = req.body;
+    // 1) ahora esperamos también bookingId en el body
+    const { code, addOnId, bookingId } = req.body;
+    console.log(req.body, "validateUpsellCode payload");
 
-    if (!code || code.length !== 4)
-      return res.status(400).json({ error: "Code must be 4 digits" });
+    if (
+      !code ||
+      code.length !== 4 ||
+      !addOnId ||
+      !bookingId
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Code (4 dígitos), addOnId y bookingId son obligatorios" });
+    }
 
-    /* Buscar código pendiente */
+    // 2) buscamos el UpsellCode pendiente
     const record = await models.UpsellCode.findOne({
-      where: { code, status: "pending" },
-      include: {
-        model     : models.AddOn,
-        attributes: ["id", "name", "description", "price"],
-      },
+      where: { code, add_on_id: addOnId, status: "pending" },
+      include: [
+        {
+          association: "addOn",
+          attributes: ["id", "name", "description", "price"],
+        },
+        {
+          association: "selectedOption",
+          // corregimos aquí: la columna en add_on_option es "name", no "label"
+          attributes: ["id", "name", "price"],
+        },
+      ],
     });
 
-    if (!record)
-      return res.status(404).json({ error: "Invalid or already used code" });
+    if (!record) {
+      return res.status(404).json({ error: "Código inválido o ya usado" });
+    }
+    if (record.expires_at && record.expires_at < new Date()) {
+      return res.status(410).json({ error: "Código expirado" });
+    }
 
-    /* Verificar expiración */
-    if (record.expires_at && record.expires_at < new Date())
-      return res.status(410).json({ error: "Code expired" });
-
-    /* Marcar como usado (opcional, para que no se reutilice) */
-    record.status = "pending";
+    // 3) marcamos el código como usado
+    record.status = "used";
     await record.save();
 
-    /* Responder con info para el checkout */
-    res.json({
-      roomNumber : record.room_number,
-      addOn      : record.AddOn,
-      total      : record.AddOn.price,
-      addOnId: record.id
+    // 4) creamos la fila en outsidebooking_add_on
+    const pivot = await models.OutsideBookingAddOn.create({
+      outsidebooking_id: bookingId,
+      add_on_id: record.add_on_id,
+      add_on_option_id: record.add_on_option_id,
+      qty: record.qty ?? 1,
+      unitPrice: record.price,
+      status: "ready",
+      paymentStatus: "paid",
+      // opcional: room_id si lo quieres pasar aquí
+      // room_id: <id_de_habitación>,
+    });
+
+    return res.json({
+      code,
+      roomNumber: record.room_number,
+      addOn: record.addOn,
+      selectedOption: record.selectedOption || null,
+      total: record.price,
+      addOnId: record.addOn.id,
+      bookingAddOnId: pivot.id,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error validating code" });
+    console.error("validateUpsellCode:", err);
+    return res.status(500).json({ error: "Error en servidor" });
   }
 };
-
 export const getUpsellCode = async (req, res) => {
   try {
     const { id } = req.params;
@@ -121,6 +178,7 @@ export const getMyUpsellCodes = async (req, res) => {
       include: [
         {
           model     : models.AddOn,
+          as: 'addOn',
           attributes: ["id", "name", "description", "price"],
         },
       ],

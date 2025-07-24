@@ -4,6 +4,8 @@ import { validationResult } from "express-validator";
 import models from "../models/index.js";
 import dotenv from "dotenv";
 import { sequelize } from "../models/index.js"
+import { random4 } from "../utils/random4.js"
+import transporter from "../services/transporter.js";
 
 dotenv.config();
 
@@ -164,6 +166,7 @@ export const loginStaff = async (req, res) => {
       id      : staff.id,
       type    : "staff",
       roleName: staff.role.name,
+      roleId: staff.role.id
     });
 
     /* 5. Respuesta */
@@ -267,5 +270,106 @@ export const setPasswordWithToken = async (req, res) => {
   } catch (err) {
     console.error("setPassword error:", err);
     return res.status(400).json({ error: "Token expired or invalid" });
+  }
+};
+
+export const hireStaff = async (req, res) => {
+  /* ── validación express-validator ── */
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const { firstName, lastName, email, staff_role_id, hotelId } = req.body;
+
+  /* ── genera contraseña: apellido + 4 dígitos ── */
+  const rawPassword  = `${lastName.toLowerCase()}${random4()}`
+  const passwordHash = await bcrypt.hash(rawPassword, 10);
+
+  try {
+    /* 1 ▸ crear registro Staff */
+    const staff = await models.Staff.create({
+      name          : `${firstName} ${lastName}`,
+      email,
+      staff_role_id,
+      passwordHash,
+    });
+
+    /* 2 ▸ generar staff_code de 4 dígitos único dentro del hotel */
+    let staff_code;
+    let attempts = 0;
+    do {
+      staff_code = String(random4())
+      // verifica que no exista ya en ese hotel
+      // eslint-disable-next-line no-await-in-loop
+      const exists = await models.HotelStaff.findOne({ where: { hotel_id: hotelId, staff_code } });
+      if (!exists) break;
+      attempts += 1;
+    } while (attempts < 10);
+
+    if (attempts === 10) {
+      return res.status(500).json({ error: "Could not generate unique staff code" });
+    }
+
+    /* 3 ▸ vincular en tabla pivote */
+    await models.HotelStaff.create({
+      hotel_id : hotelId,
+      staff_id : staff.id,
+      staff_code,
+      since    : new Date(),
+      is_primary: false,
+    });
+
+    /* 4 ▸ enviar e-mail */
+    await transporter.sendMail({
+      to      : email,
+      subject : "Your new staff account at Insider Hotels",
+      html    : `
+        <h3>Welcome aboard!</h3>
+        <p>Your account for Hotel #${hotelId} is ready.</p>
+        <p>
+          <strong>Login:</strong> ${email}<br/>
+          <strong>Password:</strong> ${rawPassword}
+        </p>
+        <p>Please log in and change your password as soon as possible.</p>
+      `,
+    });
+
+    return res.json({
+      ok       : true,
+      staffId  : staff.id,
+      staffCode: staff_code,
+    });
+  } catch (err) {
+    console.error(err);
+    // manejo específico para e-mail duplicado
+    if (err.name === "SequelizeUniqueConstraintError") {
+      return res.status(400).json({ error: "E-mail already exists" });
+    }
+    return res.status(500).json({ error: "Could not create staff" });
+  }
+};
+
+export const listByHotel = async (req, res, next) => {
+  try {
+    const { hotelId } = req.params;
+    if (!hotelId) return res.status(400).json({ error: "hotelId is required" });
+
+   const staff = await models.Staff.findAll({
+  attributes: ["id", "name", "email", "staff_role_id"],
+  include   : [
+    {
+      model   : models.Hotel,
+      as      : "hotels",      // ← alias del belongsToMany en Staff
+      where   : { id: hotelId },
+      through : { attributes: [] },
+    },
+    { model: models.StaffRole, as: "role", attributes: ["name"] },
+  ],
+});
+
+    return res.json(staff);
+  } catch (err) {
+    next(err);
   }
 };

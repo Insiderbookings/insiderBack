@@ -16,7 +16,7 @@ export default (sequelize) => {
     staff_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      references: { model: "Staff", key: "id" },
+      references: { model: "staff", key: "id" },
     },
     amount: {
       type: DataTypes.DECIMAL(10, 2),

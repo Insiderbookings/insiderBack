@@ -2,18 +2,18 @@
    src/controllers/addon.controller.js
 ──────────────────────────────────────────────────────────────────────────── */
 
-import models         from "../models/index.js";
-import { Op }         from "sequelize";
-import nodemailer     from "nodemailer";
+import models from "../models/index.js";
+import { Op } from "sequelize";
+import nodemailer from "nodemailer";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SMTP TRANSPORT
    ═════════════════════════════════════════════════════════════════════════ */
 const transporter = nodemailer.createTransport({
-  host  : process.env.SMTP_HOST,
-  port  : Number(process.env.SMTP_PORT) || 465,
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT) || 465,
   secure: true,
-  auth  : {
+  auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
@@ -35,79 +35,147 @@ const iconFromSlug = (slug) => {
   const root = slug.split("-")[0];
   switch (root) {
     case "incidentals": return "ShieldCheck";
-    case "late":        return "Clock";
-    case "early":       return "Sun";
-    case "room":        return "BedDouble";
-    case "breakfast":   return "Utensils";
-    case "welcome":     return "Gift";
-    case "valet":       return "Car";
-    case "airport":     return "Bus";
-    case "laundry":     return "Shirt";
-    case "beach":       return "Umbrella";
-    case "miami":       return "TreePalm";
-    default:            return "Gift";
+    case "late": return "Clock";
+    case "early": return "Sun";
+    case "room": return "BedDouble";
+    case "breakfast": return "Utensils";
+    case "welcome": return "Gift";
+    case "valet": return "Car";
+    case "airport": return "Bus";
+    case "laundry": return "Shirt";
+    case "beach": return "Umbrella";
+    case "miami": return "TreePalm";
+    default: return "Gift";
   }
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
    GET  /api/addons
    ═════════════════════════════════════════════════════════════════════════ */
-export const getAddOns = async (req, res) => {
+/* ──────────────────────────────────────────────────────────────
+   GET  /api/addons/:hotelId/hotel-addons
+   Devuelve el catálogo de add-ons para un hotel, incluyendo:
+     • datos base del AddOn global
+     • override/visibilidad del pivote hotel_add_on
+     • (opcional) override de precio en cada opción
+   ──────────────────────────────────────────────────────────── */
+export const getHotelAddOns = async (req, res) => {
   try {
-    const { withOptions, q } = req.query;
-    const includeOpts = withOptions === "false" ? false : true;
+    const { hotelId } = req.params
+    const { withOptions = 'true', q } = req.query
+    const includeOpts = withOptions !== 'false'
 
-    const where = q
+    /** 1 ▪ Filtro de búsqueda **/
+    const whereFilter = q && q.trim()
       ? { name: { [Op.iLike]: `%${q.trim()}%` } }
-      : {};
+      : {}
 
+    /** 2 ▪ Traer catálogo + pivote + opciones **/
     const addons = await models.AddOn.findAll({
-      where,
-      order      : [["id", "ASC"]],
-      attributes : [
-        "id", "slug", "name", "description", "price",
-        "type", "defaultQty", "icon", "subtitle", "footnote",
+      where: whereFilter,
+      order: [['id', 'ASC']],
+      attributes: [
+        'id', 'slug', 'name', 'description', 'price',
+        'type', 'defaultQty', 'icon', 'subtitle', 'footnote',
       ],
-      include: includeOpts
-        ? [{
-            model      : models.AddOnOption,
-            as         : "AddOnOptions",
-            attributes : ["id", "name", "price"],
-            order      : [["price", "ASC"]],
+      include: [
+        {
+          model: models.HotelAddOn,
+          required: true,
+          where: { hotel_id: hotelId },
+          attributes: [
+            'id', 'price', 'defaultQty', 'name',
+            'description', 'icon', 'subtitle', 'footnote', 'active'
+          ]
+        },
+        ...(includeOpts ? [{
+          model: models.AddOnOption,
+          as: 'AddOnOptions',
+          attributes: ['id', 'name', 'price'],
+          include: [{
+            model: models.HotelAddOnOption,
+            required: false,
+            attributes: ['price'],
+            include: [{
+              model: models.HotelAddOn,
+              required: true,
+              attributes: [],
+              where: { hotel_id: hotelId }
+            }]
           }]
-        : [],
-    });
+        }] : [])
+      ]
+    })
 
+    /** 3 ▪ Extraer IDs de pivote **/
+    const pivotIds = addons
+      .map(a => a.HotelAddOns?.[0]?.id)
+      .filter(Boolean)
+
+    /** 4 ▪ Cargar todas las asignaciones staff ↔ pivote **/
+    const links = await models.HotelStaffAddOn.findAll({
+      where: { hotel_add_on_id: pivotIds },
+      attributes: ['hotel_add_on_id', 'staff_id']
+    })
+
+    /** 5 ▪ Construir mapa pivotId → [staffId,…] **/
+    const staffMap = {}
+    pivotIds.forEach(id => { staffMap[id] = [] })
+    links.forEach(link => {
+      staffMap[link.hotel_add_on_id].push(link.staff_id)
+    })
+
+    /** 6 ▪ Armar respuesta final – con id = hotelAddOn.id **/
     const payload = addons.map(a => {
-      const opts = a.AddOnOptions ?? [];
-      let   type = a.type;
-      if (opts.length && type !== "options") type = "options";
+      const ha = a.HotelAddOns?.[0] || {}
+
+      const title       = ha.name        ?? a.name
+      const description = ha.description ?? a.description
+      const price       = Number(ha.price ?? a.price)
+      const iconName    = ha.icon        ?? a.icon
+      const subtitle    = ha.subtitle    ?? a.subtitle
+      const footnote    = ha.footnote    ?? a.footnote
+      const defaultQty  = a.type === 'quantity'
+        ? ha.defaultQty ?? a.defaultQty ?? 1
+        : null
+
+      const options = (a.AddOnOptions || []).map(o => ({
+        id:    o.id,
+        label: o.name,
+        price: Number(o.HotelAddOnOptions?.[0]?.price ?? o.price)
+      }))
+
+      let type = a.type
+      if (options.length && type !== 'options') type = 'options'
+
+      const staffIds = staffMap[ha.id] || []
 
       return {
-        id          : a.id,
-        slug        : a.slug,
-        title       : a.name,
-        description : a.description,
-        price       : Number(a.price),
-        iconName    : a.icon || iconFromSlug(a.slug),
-        subtitle    : a.subtitle,
-        footnote    : a.footnote,
+        id:            a.id,        // ahora el ID es el de HotelAddOn
+        hoteladdonId: ha.id,         // si necesitas el base AddOn ID
+        slug:          a.slug,
+        hotelAddOnId:  ha.id,
+        active:        ha.active ?? true,
+        title,
+        description,
+        price,
+        iconName,
+        subtitle,
+        footnote,
+        staffIds,
         type,
-        defaultQty  : type === "quantity" ? a.defaultQty ?? 1 : null,
-        options     : opts.map(o => ({
-          id    : o.id,
-          label : o.name,
-          price : Number(o.price),
-        })),
-      };
-    });
+        defaultQty,
+        options,
+      }
+    })
 
-    return res.json(payload);
-  } catch (err) {
-    console.error("Error fetching add-ons:", err);
-    return res.status(500).json({ error: "Server error" });
+    return res.json(payload)
   }
-};
+  catch (err) {
+    console.error('🔥 Error fetching hotel add‑ons:', err)
+    return res.status(500).json({ error: 'Server error' })
+  }
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    POST /api/addons/request   (guest – insider booking)
@@ -121,69 +189,84 @@ const diffDays = (from, to) =>
 
 export const requestAddOn = async (req, res) => {
   const userId = req.user.id
+  const {
+    bookingId = null,
+    addOnId,
+    optionId = null,
+    qty = 1,
+    roomId = null,
+    id
+  } = req.body
 
-  const { bookingId = null, addOnId, optionId = null, qty = 1, roomId = null } = req.body
-
-  console.log(req.body, "body")
-  console.log(userId, "userid")
+  console.log(req.body,"body")
 
   /* ───────── Validations ───────── */
-  if (!addOnId) return res.status(400).json({ error: "Missing addOnId" })
+  if (!addOnId) {
+    return res.status(400).json({ error: "Missing addOnId" })
+  }
 
   /* 1. Load booking (with hotel & user) */
-  const whereBooking = { id: bookingId, status: { [Op.eq]: "confirmed" } }
   const booking = await models.OutsideBooking.findOne({
-    where: whereBooking,
-    include: [{ model: models.Hotel }, { model: models.User, attributes: ["name", "email"] }],
+    where: {
+      id: bookingId,
+      status: { [Op.eq]: "confirmed" }
+    },
+    include: [
+      { model: models.Hotel },
+      { model: models.User, attributes: ["name", "email"] }
+    ],
     order: [["createdAt", "DESC"]],
   })
-
-  console.log(booking, "booking")
-
-  if (!booking) return res.status(404).json({ error: "Booking not found or not eligible" })
+  if (!booking) {
+    return res.status(404).json({ error: "Booking not found or not eligible" })
+  }
 
   /* 2. Load add-on */
   const addOn = await models.AddOn.findByPk(addOnId)
-
-  if (!addOn) return res.status(404).json({ error: "Add-on not found" })
+  if (!addOn) {
+    return res.status(404).json({ error: "Add-on not found" })
+  }
 
   /* 3. If roomUpgrade, validate roomId and load newRoom */
   let newRoom = null
   if (addOn.slug === "roomUpgrade") {
-    if (!roomId) return res.status(400).json({ error: "Missing roomId for roomUpgrade" })
-
+    if (!roomId) {
+      return res.status(400).json({ error: "Missing roomId for roomUpgrade" })
+    }
     newRoom = await models.Room.findOne({
-      where: { id: roomId, hotel_id: booking.hotel_id },
+      where: { id: roomId, hotel_id: booking.hotel_id }
     })
-
-    if (!newRoom) return res.status(404).json({ error: "Room not found in this hotel" })
+    if (!newRoom) {
+      return res.status(404).json({ error: "Room not found in this hotel" })
+    }
   }
 
   /* 4. Calculate unitPrice */
-  let unitPrice = Number.parseFloat(addOn.price)
-
+  let unitPrice = parseFloat(addOn.price)
   if (addOn.slug === "roomUpgrade") {
     const originalRoom = await models.Room.findOne({
       where: {
         hotel_id: booking.hotel_id,
         name: booking.room_type,
-      },
+      }
     })
-
-    if (!originalRoom) return res.status(500).json({ error: "Original room data missing" })
-
+    if (!originalRoom) {
+      return res.status(500).json({ error: "Original room data missing" })
+    }
     const nights = diffDays(booking.checkIn, booking.checkOut)
-    unitPrice = (Number.parseFloat(newRoom.price) - Number.parseFloat(originalRoom.price)) * nights
+    unitPrice = (parseFloat(newRoom.price) - parseFloat(originalRoom.price)) * nights
   } else if (optionId) {
     const opt = await models.AddOnOption.findByPk(optionId)
-    if (!opt) return res.status(404).json({ error: "Option not found" })
-
-    unitPrice = Number.parseFloat(opt.price)
+    if (!opt) {
+      return res.status(404).json({ error: "Option not found" })
+    }
+    unitPrice = parseFloat(opt.price)
   }
 
   /* 5. Create pivot */
+  let pivot
   try {
-    const pivot = await models.OutsideBookingAddOn.create({
+    pivot = await models.OutsideBookingAddOn.create({
       outsidebooking_id: booking.id,
       add_on_id: addOn.id,
       add_on_option_id: optionId,
@@ -192,120 +275,6 @@ export const requestAddOn = async (req, res) => {
       unitPrice,
       paymentStatus: "unpaid",
     })
-
-    /* 6. If roomUpgrade, update booking */
-    if (addOn.slug === "roomUpgrade") {
-      await booking.update({
-        room_type: newRoom.name,
-        room_number: newRoom.roomNumber,
-      })
-    }
-
-    /* 7. Build email details */
-    const guestName = booking.User?.name || booking.User?.email || "Guest"
-    const hotel = booking.Hotel
-    const detailLines = []
-
-    // Hotel & booking info
-    detailLines.push(`Hotel: ${hotel.name}`)
-    if (hotel.address) detailLines.push(`Address: ${hotel.address}`)
-    if (hotel.city) detailLines.push(`City: ${hotel.city}`)
-    detailLines.push(`Check-in: ${booking.checkIn}`)
-    detailLines.push(`Check-out: ${booking.checkOut}`)
-    detailLines.push(`Booking #: ${booking.bookingConfirmation || booking.id}`)
-
-    // Add-on specifics
-    detailLines.push(`Add-on: ${addOn.name}`)
-
-    if (addOn.slug === "roomUpgrade") {
-      const nights = diffDays(booking.checkIn, booking.checkOut)
-      detailLines.push(`Upgraded from "${booking.room_type}" to "${newRoom.name}"`)
-      detailLines.push(`Price diff for ${nights} night(s): $${unitPrice.toFixed(2)}`)
-    } else if (addOn.type === "options" && optionId) {
-      const opt = await models.AddOnOption.findByPk(optionId)
-      detailLines.push(`Option: ${opt.name} — $${Number.parseFloat(opt.price).toFixed(2)}`)
-      detailLines.push(`Quantity: 1 — Subtotal: $${unitPrice.toFixed(2)}`)
-    } else if (addOn.type === "quantity") {
-      detailLines.push(`Quantity: ${qty} × $${Number.parseFloat(addOn.price).toFixed(2)}`)
-      detailLines.push(`Subtotal: $${(qty * Number.parseFloat(addOn.price)).toFixed(2)}`)
-    } else {
-      detailLines.push(`Price: $${unitPrice.toFixed(2)}`)
-    }
-
-    /* 8. Send email */
-    const emailHotel = "developers@insiderbookings.com"
-    if (emailHotel) {
-      const subject = `🔔 New add-on request – ${addOn.name} for ${hotel.name}`
-
-      await transporter
-        .sendMail({
-          from: `"Insider Bookings" <${process.env.SMTP_USER}>`,
-          to: emailHotel,
-          subject,
-          html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-            <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-              
-              <!-- Header -->
-              <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #2c5aa0; margin: 0; font-size: 24px;">🔔 New Add-on Request</h1>
-                <p style="color: #666; margin: 10px 0 0 0; font-size: 16px;">Action required from hotel staff</p>
-              </div>
-
-              <!-- Guest Info -->
-              <div style="background-color: #e3f2fd; padding: 20px; border-radius: 8px; border-left: 4px solid #2196f3; margin-bottom: 25px;">
-                <h3 style="color: #1976d2; margin: 0 0 10px 0; font-size: 18px;">👤 Guest Information</h3>
-                <p style="color: #333; margin: 0; font-size: 16px; font-weight: bold;">${guestName}</p>
-              </div>
-
-              <!-- Booking Details -->
-              <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-                <h3 style="color: #2c5aa0; margin: 0 0 15px 0; font-size: 18px;">📋 Booking & Add-on Details</h3>
-                
-                <table style="width: 100%; border-collapse: collapse;">
-                  ${detailLines
-                    .map((line) => {
-                      const [label, ...valueParts] = line.split(": ")
-                      const value = valueParts.join(": ")
-                      return `
-                      <tr>
-                        <td style="padding: 8px 0; color: #666; font-weight: bold; width: 35%; vertical-align: top;">${label}:</td>
-                        <td style="padding: 8px 0; color: #333; vertical-align: top;">${value}</td>
-                      </tr>
-                    `
-                    })
-                    .join("")}
-                </table>
-              </div>
-
-              <!-- Action Required -->
-              <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 25px;">
-                <h3 style="color: #856404; margin: 0 0 10px 0; font-size: 18px;">⚡ Action Required</h3>
-                <p style="color: #856404; margin: 0; font-size: 16px;">
-                  Please review this request and approve/reject it through the hotel management system.
-                </p>
-              </div>
-
-              <!-- Footer -->
-              <div style="border-top: 1px solid #eee; padding-top: 20px; margin-top: 30px; text-align: center;">
-                <p style="color: #666; font-size: 14px; margin: 0;">
-                  <strong>Insider Bookings</strong> - Hotel Management System
-                </p>
-                <p style="color: #999; font-size: 12px; margin: 10px 0 0 0;">
-                  This is an automated notification. Please do not reply to this email.
-                </p>
-              </div>
-
-            </div>
-          </div>
-        `,
-          text: [`Guest: ${guestName}`, ...detailLines].join("\n"),
-        })
-        .catch((err) => console.error("Mail error:", err))
-    }
-
-    /* 9. Respond */
-    return res.status(201).json({ ok: true, bookingAddOnId: pivot.id })
   } catch (e) {
     console.error("DB error:", e.original || e)
     return res.status(500).json({
@@ -313,6 +282,127 @@ export const requestAddOn = async (req, res) => {
       detail: e.original?.detail || e.message,
     })
   }
+
+  /* 6. If roomUpgrade, update booking */
+  if (addOn.slug === "roomUpgrade") {
+    await booking.update({
+      room_type: newRoom.name,
+      room_number: newRoom.roomNumber,
+    })
+  }
+
+  /* 7. Build email details */
+  const guestName = booking.User?.name || booking.User?.email || "Guest"
+  const hotel = booking.Hotel
+  const detailLines = [
+    `Hotel: ${hotel.name}`,
+    hotel.address && `Address: ${hotel.address}`,
+    hotel.city && `City: ${hotel.city}`,
+    `Check-in: ${booking.checkIn}`,
+    `Check-out: ${booking.checkOut}`,
+    `Booking #: ${booking.bookingConfirmation || booking.id}`,
+    `Add-on: ${addOn.name}`,
+  ].filter(Boolean)
+
+  if (addOn.slug === "roomUpgrade") {
+    const nights = diffDays(booking.checkIn, booking.checkOut)
+    detailLines.push(`Upgraded from "${booking.room_type}" to "${newRoom.name}"`)
+    detailLines.push(`Price diff for ${nights} night(s): $${unitPrice.toFixed(2)}`)
+  } else if (addOn.type === "options" && optionId) {
+    const opt = await models.AddOnOption.findByPk(optionId)
+    detailLines.push(`Option: ${opt.name} — $${parseFloat(opt.price).toFixed(2)}`)
+    detailLines.push(`Quantity: 1 — Subtotal: $${unitPrice.toFixed(2)}`)
+  } else if (addOn.type === "quantity") {
+    detailLines.push(`Quantity: ${qty} × $${parseFloat(addOn.price).toFixed(2)}`)
+    detailLines.push(`Subtotal: $${(qty * parseFloat(addOn.price)).toFixed(2)}`)
+  } else {
+    detailLines.push(`Price: $${unitPrice.toFixed(2)}`)
+  }
+
+  /* 8. Find all staff assigned to this add-on */
+  const assignments = await models.HotelStaffAddOn.findAll({
+    where: { hotel_add_on_id: id },
+    include: [{
+      model: models.Staff,
+      as: "staff",
+      attributes: ["email", "name"]
+    }]
+  })
+
+  console.log()
+
+
+  const staffEmails = assignments
+    .map(a => a.staff?.email)
+    .filter(Boolean)
+
+  /* 9. Send email to Insider + assigned staff */
+  const toEmails = [
+/*     "developers@insiderbookings.com", */
+"ramiro.alet@gmail.com",
+    ...new Set(staffEmails)
+  ].join(", ")
+
+  console.log(toEmails, "emails")
+
+  try {
+    await transporter.sendMail({
+      from: `"Insider Bookings" <${process.env.SMTP_USER}>`,
+      to: toEmails,
+      subject: `🔔 New add-on request – ${addOn.name} for ${hotel.name}`,
+      text: [`Guest: ${guestName}`, ...detailLines].join("\n"),
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+          <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #2c5aa0; margin: 0; font-size: 24px;">🔔 New Add-on Request</h1>
+              <p style="color: #666; margin: 10px 0 0 0; font-size: 16px;">Action required from hotel staff</p>
+            </div>
+            <div style="background-color: #e3f2fd; padding: 20px; border-radius: 8px; border-left: 4px solid #2196f3; margin-bottom: 25px;">
+              <h3 style="color: #1976d2; margin: 0 0 10px 0; font-size: 18px;">👤 Guest Information</h3>
+              <p style="color: #333; margin: 0; font-size: 16px; font-weight: bold;">${guestName}</p>
+            </div>
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <h3 style="color: #2c5aa0; margin: 0 0 15px 0; font-size: 18px;">📋 Booking & Add-on Details</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                ${detailLines.map(line => {
+        const [label, ...valueParts] = line.split(": ")
+        const value = valueParts.join(": ")
+        return `
+                    <tr>
+                      <td style="padding: 8px 0; color: #666; font-weight: bold; width: 35%; vertical-align: top;">${label}:</td>
+                      <td style="padding: 8px 0; color: #333; vertical-align: top;">${value}</td>
+                    </tr>
+                  `
+      }).join("")}
+              </table>
+            </div>
+            <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 25px;">
+              <h3 style="color: #856404; margin: 0 0 10px 0; font-size: 18px;">⚡ Action Required</h3>
+              <p style="color: #856404; margin: 0; font-size: 16px;">
+                Please review this request and approve/reject it through the hotel management system.
+              </p>
+            </div>
+            <div style="border-top: 1px solid #eee; padding-top: 20px; margin-top: 30px; text-align: center;">
+              <p style="color: #666; font-size: 14px; margin: 0;">
+                <strong>Insider Bookings</strong> - Hotel Management System
+              </p>
+              <p style="color: #999; font-size: 12px; margin: 10px 0 0 0;">
+                This is an automated notification. Please do not reply to this email.
+              </p>
+            </div>
+          </div>
+        </div>
+      `
+    })
+  } catch (e) {
+    console.error("DB error:", e.original || e)
+    return res.status(500).json({
+      error: "Could not save add-on",
+      detail: e.original?.detail || e.message,
+    })
+  }
+  return res.status(201).json({ ok: true, bookingAddOnId: pivot.id })
 }
 
 
@@ -320,63 +410,78 @@ export const requestAddOn = async (req, res) => {
    POST /api/addons/bookings/outside/:id   (outside booking)
    ═════════════════════════════════════════════════════════════════════════ */
 export const saveOutsideAddOns = async (req, res) => {
-  const outsideId = Number(req.params.id);
-  const { addons } = req.body;               // [{ id:slug , optionId , qty }]
+  const outsideId = Number(req.params.id)
 
+  /* ---------- body ---------- */
+  const { addons, discount = false } = req.body  // ← NUEVO
   if (!outsideId || !Array.isArray(addons))
-    return res.status(400).json({ error: "Invalid payload" });
+    return res.status(400).json({ error: "Invalid payload" })
 
-  const booking = await models.OutsideBooking.findByPk(outsideId);
+  /* ---------- booking ---------- */
+  const booking = await models.OutsideBooking.findByPk(outsideId)
   if (!booking)
-    return res.status(404).json({ error: "Outside-booking not found" });
+    return res.status(404).json({ error: "Outside‑booking not found" })
 
-  const t = await models.OutsideBookingAddOn.sequelize.transaction();
+  /* ---------- transaction ---------- */
+  const t = await models.OutsideBookingAddOn.sequelize.transaction()
   try {
-    /* limpiamos lo anterior */
+    /* 1. limpiar add‑ons previos */
     await models.OutsideBookingAddOn.destroy({
-      where       : { outsidebooking_id: outsideId },
-      transaction : t,
-    });
+      where: { outsidebooking_id: outsideId },
+      transaction: t,
+    })
 
-    /* volvemos a insertar */
+    /* 2. insertar los nuevos */
     for (const item of addons) {
       const addOn = await models.AddOn.findOne({
-        where       : { slug: item.id },
-        transaction : t,
-      });
-      if (!addOn) continue;
+        where: { slug: item.id },
+        transaction: t,
+      })
+      if (!addOn) continue
 
-      let optionId  = null;
-      let unitPrice = Number(addOn.price);
-      const qty     = item.qty ?? 1;
+      let optionId  = null
+      let unitPrice = Number(addOn.price)
+      const qty     = item.qty ?? 1
 
       if (item.optionId) {
-        const opt = await models.AddOnOption.findByPk(item.optionId, { transaction: t });
+        const opt = await models.AddOnOption.findByPk(item.optionId, { transaction: t })
         if (opt) {
-          optionId  = opt.id;
-          unitPrice = Number(opt.price);
+          optionId  = opt.id
+          unitPrice = Number(opt.price)
         }
       }
 
-      await models.OutsideBookingAddOn.create({
-        outsidebooking_id : outsideId,
-        add_on_id         : addOn.id,
-        add_on_option_id  : optionId,
-        qty,
-        unitPrice,
-        paymentStatus     : "paid",
-        status: "ready"
-      }, { transaction: t });
+      await models.OutsideBookingAddOn.create(
+        {
+          outsidebooking_id : outsideId,
+          add_on_id         : addOn.id,
+          add_on_option_id  : optionId,
+          qty,
+          unitPrice,
+          paymentStatus     : "paid",
+          status            : "ready",
+        },
+        { transaction: t },
+      )
     }
 
-    await t.commit();
-    return res.status(201).json({ ok: true, count: addons.length });
+    /* 3. actualizar estado del booking si se usó Insider Code */
+    if (discount) {
+      await booking.update({ status: "discount" }, { transaction: t })
+    }
+
+    await t.commit()
+    return res.status(201).json({
+      ok           : true,
+      count        : addons.length,
+      statusUpdate : discount ? "discount" : booking.status,
+    })
   } catch (err) {
-    await t.rollback();
-    console.error("Save OutsideBookingAddOns:", err);
-    return res.status(500).json({ error: "Server error" });
+    await t.rollback()
+    console.error("Save OutsideBookingAddOns:", err)
+    return res.status(500).json({ error: "Server error" })
   }
-};
+}
 export const confirmAddOnRequest = async (req, res) => {
   const id = Number(req.params.id)
   const approved = true // siempre "confirm" en esta ruta
@@ -437,17 +542,15 @@ export const confirmAddOnRequest = async (req, res) => {
             <!-- Status Message -->
             <div style="background-color: ${statusBg}; padding: 20px; border-radius: 8px; border-left: 4px solid ${statusColor}; margin-bottom: 25px;">
               <p style="font-size: 16px; color: #333; line-height: 1.6; margin: 0;">
-                ${
-                  isApproved
-                    ? `Good news! Your request for "<strong>${addOnName}</strong>" has been approved.`
-                    : `Unfortunately we couldn't add "<strong>${addOnName}</strong>" to your booking.`
-                }
+                ${isApproved
+          ? `Good news! Your request for "<strong>${addOnName}</strong>" has been approved.`
+          : `Unfortunately we couldn't add "<strong>${addOnName}</strong>" to your booking.`
+        }
               </p>
             </div>
 
-            ${
-              isApproved
-                ? `
+            ${isApproved
+          ? `
               <!-- Action for Approved -->
               <div style="text-align: center; margin: 30px 0;">
                 <div style="background-color: #007bff; color: white; padding: 15px 30px; border-radius: 25px; display: inline-block; font-weight: bold; font-size: 16px;">
@@ -455,7 +558,7 @@ export const confirmAddOnRequest = async (req, res) => {
                 </div>
               </div>
             `
-                : `
+          : `
               <!-- Message for Rejected -->
               <div style="text-align: center; margin: 30px 0;">
                 <p style="color: #666; font-size: 16px; font-style: italic;">
@@ -463,7 +566,7 @@ export const confirmAddOnRequest = async (req, res) => {
                 </p>
               </div>
             `
-            }
+        }
 
             <!-- Footer -->
             <div style="border-top: 1px solid #eee; padding-top: 20px; margin-top: 30px; text-align: center;">
@@ -684,81 +787,306 @@ Thank you for choosing Insider Bookings!`,
 ──────────────────────────────────────────────────────────────────────────── */
 export const getRequestedAddOnsByStaff = async (req, res) => {
   try {
-    /* ───── 1) Normalizar y validar los IDs de hotel ────────────────────── */
-    let raw = req.query.hotelIds
-            ?? req.query["hotelIds[]"]        // forma ?hotelIds[]=12
-            ?? [];                            // undefined → []
-
-    if (!Array.isArray(raw)) raw = String(raw).split(",");   // "12,11" → ["12","11"]
-
-    const hotelIds = raw.map(Number).filter(Boolean);        // [12,11]
-
+    // 1) Normalizar y validar hotelIds de query
+    let raw = req.query.hotelIds ?? req.query["hotelIds[]"] ?? []
+    if (!Array.isArray(raw)) raw = [raw]
+    const hotelIds = raw.map(Number).filter(id => !Number.isNaN(id))
     if (!hotelIds.length) {
-      return res.status(400).json({ error: "Missing or invalid hotelIds" });
+      return res.status(400).json({ error: "Missing or invalid hotelIds" })
     }
 
-    /* ───── 2) INSIDER  (BookingAddOn → Booking) ────────────────────────── */
-    const insider = await models.BookingAddOn.findAll({
-  include : [
-    {
-      model     : models.Booking,
-      as        : "booking",
-      required  : true,
-      where     : { hotel_id: { [Op.in]: hotelIds } },
-      attributes: [
-        "id",          // PK de la reserva
-        "hotel_id",    // para saber a qué hotel pertenece
-        "room_id",     // FK a la habitación
-        "guestName",   // nombre del huésped
-        "checkIn",
-        "checkOut",
-      ],
-      include: [
-        {                 // podemos traer la habitación para mostrar nombre / nº
-          model     : models.Room,
-          attributes: ["name", "roomNumber"],
-        },
-      ],
-    },
-    {
-      model : models.AddOn,
-      as    : "addOn",
-      include: [{ model: models.AddOnOption, as: "AddOnOptions" }],
-    },
-    { model: models.AddOnOption, as: "option" },
-  ],
-  order   : [["createdAt", "DESC"]],
-});
+    // 2) Extraer rol y staffId from JWT
+    const roleId = Number(req.user.roleId)
+    const staffId = Number(req.user.id)
 
-    /* ───── 3) OUTSIDE (OutsideBookingAddOn → OutsideBooking) ───────────── */
-    const outside = await models.OutsideBookingAddOn.findAll({
-      include : [
+    // ── Caso MANAGER (rol 3): traer TODO de esos hoteles ──────────────
+    if (roleId === 3) {
+      const insider = await models.BookingAddOn.findAll({
+        include: [
+          {
+            model: models.Booking,
+            as: "booking",
+            required: true,
+            where: { hotel_id: { [Op.in]: hotelIds } },
+            attributes: ["id", "hotel_id", "room_id", "guestName", "checkIn", "checkOut"],
+            include: [{ model: models.Room, attributes: ["name", "roomNumber"] }],
+          },
+          { model: models.AddOn, as: "addOn", include: [{ model: models.AddOnOption, as: "AddOnOptions" }] },
+          { model: models.AddOnOption, as: "option" },
+        ],
+        order: [["createdAt", "DESC"]],
+      })
+
+      const outside = await models.OutsideBookingAddOn.findAll({
+        include: [
+          {
+            model: models.OutsideBooking,
+            as: "booking",
+            required: true,
+            where: { hotel_id: { [Op.in]: hotelIds } },
+            attributes: ["id", "hotel_id", "bookingConfirmation", "room_type", "room_number", "guestName"],
+          },
+          { model: models.AddOn, as: "addOn", include: [{ model: models.AddOnOption, as: "AddOnOptions" }] },
+          { model: models.AddOnOption, as: "option" },
+          { model: models.Room, as: "room" },
+        ],
+        order: [["createdAt", "DESC"]],
+      })
+
+      return res.json({ insider, outside })
+    }
+
+    // ── Caso STAFF normal: solo mis add‑ons asignados ──────────────────
+    // a) IDs de hotel_add_on asignados a este staff, con el add_on_id real
+    const assigned = await models.HotelStaffAddOn.findAll({
+      where: { staff_id: staffId },
+      include: [{
+        model: models.HotelAddOn,
+        as: "hotelAddOn",
+        attributes: ["add_on_id"]
+      }]
+    })
+    const assignedAddOnIds = assigned
+      .map(a => a.hotelAddOn?.add_on_id)
+      .filter(id => Number.isInteger(id))
+
+    if (!assignedAddOnIds.length) {
+      return res.json({ insider: [], outside: [] })
+    }
+
+    // b) Filtrar BookingAddOn y OutsideBookingAddOn por esos add_on_id y hoteles
+    const insider = await models.BookingAddOn.findAll({
+      where: { add_on_id: { [Op.in]: assignedAddOnIds } },
+      include: [
         {
-          model     : models.OutsideBooking,
-          as        : "booking",
-          required  : true,
-          where     : { hotel_id: { [Op.in]: hotelIds } },
+          model: models.Booking,
+          as: "booking",
+          required: true,
+          where: { hotel_id: { [Op.in]: hotelIds } },
+          attributes: ["id", "hotel_id", "room_id", "guestName", "checkIn", "checkOut"],
+          include: [{ model: models.Room, attributes: ["name", "roomNumber"] }],
+        },
+        { model: models.AddOn, as: "addOn", include: [{ model: models.AddOnOption, as: "AddOnOptions" }] },
+        { model: models.AddOnOption, as: "option" },
+      ],
+      order: [["createdAt", "DESC"]],
+    })
+
+    const outside = await models.OutsideBookingAddOn.findAll({
+      where: { add_on_id: { [Op.in]: assignedAddOnIds } },
+      include: [
+        {
+          model: models.OutsideBooking,
+          as: "booking",
+          required: true,
+          where: { hotel_id: { [Op.in]: hotelIds } },
           attributes: [
             "id", "hotel_id", "bookingConfirmation",
-            "room_type", "room_number", "guestName"
+            "room_type", "room_number", "guestName",
+          ],
+        },
+        { model: models.AddOn, as: "addOn", include: [{ model: models.AddOnOption, as: "AddOnOptions" }] },
+        { model: models.AddOnOption, as: "option" },
+        { model: models.Room, as: "room" },
+      ],
+      order: [["createdAt", "DESC"]],
+    })
+
+    return res.json({ insider, outside })
+
+  } catch (err) {
+    console.error("getRequestedAddOnsByStaff:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+/* ────────────────────────────────────────────────────────────────
+   LIST  /api/addons/:hotelId/manage-addons
+   Devuelve **todos** los add-ons (activos o no) con los overrides
+   del hotel para que el staff pueda editarlos.
+───────────────────────────────────────────────────────────────── */
+export const listHotelAddOnsForEdit = async (req, res) => {
+  try {
+    const { hotelId } = req.params
+    const { q = "" } = req.query
+    const whereAddOn = q ? { name: { [Op.iLike]: `%${q.trim()}%` } } : {}
+
+    const records = await models.AddOn.findAll({
+      where: whereAddOn,
+      order: [["id", "ASC"]],
+      attributes: ["id", "slug", "name", "description", "price", "icon"],
+      include: [
+        {
+          model: models.HotelAddOn,
+          required: false,                  // ← incluimos aunque no exista override
+          where: { hotel_id: hotelId },
+          attributes: [
+            "id", "price", "name", "description",
+            "icon", "subtitle", "footnote",
+            "defaultQty", "active",
           ],
         },
         {
-          model : models.AddOn,
-          as    : "addOn",
-          include: [{ model: models.AddOnOption, as: "AddOnOptions" }],
+          model: models.AddOnOption,
+          as: "AddOnOptions",
+          attributes: ["id", "name", "price"],
+          include: [
+            {
+              model: models.HotelAddOnOption,
+              required: false,
+              attributes: ["id", "price"],
+              include: [
+                {
+                  model: models.HotelAddOn,
+                  required: true,
+                  attributes: [],
+                  where: { hotel_id: hotelId },
+                },
+              ],
+            },
+          ],
         },
-        { model: models.AddOnOption, as: "option" },
-        { model: models.Room,        as: "room"   },
       ],
-      order   : [["createdAt", "DESC"]],
-    });
-      console.log(insider, outside, "addons")
-    /* ───── 4) Respuesta ─────────────────────────────────────────────────── */
-    return res.json({ insider, outside });
+    })
 
+    const payload = records.map((a) => {
+      const ha = a.HotelAddOns?.[0] || {}
+      const opts = a.AddOnOptions?.map((o) => ({
+        id: o.id,
+        label: o.name,
+        basePrice: Number(o.price),
+        overridePrice: Number(o.HotelAddOnOptions?.[0]?.price ?? o.price),
+      })) ?? []
+
+      return {
+        id: a.id,
+        slug: a.slug,
+        baseName: a.name,
+        baseDesc: a.description,
+        basePrice: Number(a.price),
+        override: {
+          id: ha.id || null,
+          active: ha.active ?? false,
+          name: ha.name ?? null,
+          description: ha.description ?? null,
+          price: ha.price ?? null,
+          icon: ha.icon ?? null,
+          subtitle: ha.subtitle ?? null,
+          footnote: ha.footnote ?? null,
+          defaultQty: ha.defaultQty ?? null,
+        },
+        options: opts,
+      }
+    })
+
+    return res.json(payload)
   } catch (err) {
-    console.error("getRequestedAddOnsByStaff:", err);
+    console.error("listHotelAddOnsForEdit:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────
+   PUT /api/addons/:hotelId/manage-addons/:addOnId
+   Crea (o actualiza) el pivot hotel_add_on con los campos enviados.
+   Body permitido: { active, price, name, description, icon, subtitle,
+                     footnote, defaultQty }
+───────────────────────────────────────────────────────────────── */
+export const updateHotelAddOn = async (req, res) => {
+  const { hotelId, id } = req.params;
+  const { description, price, active, staffIds } = req.body;
+
+  try {
+    const pivot = await models.HotelAddOn.findOne({
+      where: { id, hotel_id: hotelId },
+    });
+    if (!pivot) {
+      return res.status(404).json({ error: "Hotel‑add‑on not found" });
+    }
+
+    const t = await pivot.sequelize.transaction();
+    try {
+      const updates = {};
+      if (description !== undefined) updates.description = description;
+      if (price !== undefined) updates.price = price;
+      if (active !== undefined) updates.active = active;
+      if (Object.keys(updates).length) {
+        await pivot.update(updates, { transaction: t });
+      }
+
+      if (Array.isArray(staffIds)) {
+        const currentStaff = await pivot.getAssignedStaff({ transaction: t });
+        const currentIds = currentStaff.map(s => s.id);
+
+        const toAdd = staffIds.filter(sid => !currentIds.includes(sid));
+        const toRemove = currentIds.filter(cid => !staffIds.includes(cid));
+
+        if (toRemove.length) {
+          await models.HotelStaffAddOn.destroy({
+            where: { hotel_add_on_id: pivot.id, staff_id: toRemove },
+            force: true,
+            transaction: t
+          });
+        }
+        for (const staffId of toAdd) {
+          await models.HotelStaffAddOn.create({
+            hotel_add_on_id: pivot.id,
+            staff_id: staffId
+          }, { transaction: t });
+        }
+      }
+
+      await t.commit();
+    } catch (syncErr) {
+      await t.rollback();
+      throw syncErr;
+    }
+
+    const updated = await models.HotelAddOn.findOne({
+      where: { id, hotel_id: hotelId },
+      include: [{
+        model: models.Staff,
+        as: "assignedStaff",
+        attributes: ["id", "name", "email"]
+      }]
+    });
+
+    return res.json({ ok: true, hotelAddOn: updated });
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({ error: "Server error" });
   }
 };
+
+/* ────────────────────────────────────────────────────────────────
+   PUT /api/addons/:hotelId/manage-addons/:addOnId/options/:optionId
+   Actualiza SOLO el precio override de una opción concreta.
+   Body: { price: 12.34 }
+───────────────────────────────────────────────────────────────── */
+export const updateHotelAddOnOption = async (req, res) => {
+  try {
+    const { hotelId, addOnId, optionId } = req.params
+    const { price } = req.body
+    if (typeof price !== "number")
+      return res.status(400).json({ error: "Invalid price" })
+
+    /* buscamos (o creamos) pivote hotel_add_on */
+    const [ha] = await models.HotelAddOn.findOrCreate({
+      where: { hotel_id: hotelId, add_on_id: addOnId },
+      defaults: { active: true },
+    })
+
+    /* buscamos (o creamos) pivote option */
+    const [hao] = await models.HotelAddOnOption.findOrCreate({
+      where: { hotel_add_on_id: ha.id, add_on_option_id: optionId },
+      defaults: { price },
+    })
+
+    hao.price = price
+    await hao.save()
+
+    return res.json({ ok: true, id: hao.id, price })
+  } catch (err) {
+    console.error("updateHotelAddOnOption:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}

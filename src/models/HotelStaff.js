@@ -6,55 +6,58 @@ export default (sequelize) => {
     "HotelStaff",
     {
       id: {
-        type        : DataTypes.INTEGER,
-        primaryKey  : true,
+        type: DataTypes.INTEGER,
+        primaryKey: true,
         autoIncrement: true,
       },
 
-      /* FK → hotels */
       hotel_id: {
-        type       : DataTypes.INTEGER,
-        allowNull  : false,
-        references : { model: "Hotel", key: "id" }, // usa el nombre real de tu tabla
-        onDelete   : "CASCADE",
-      },
-
-      /* FK → staff */
-      staff_id: {
-        type       : DataTypes.INTEGER,
-        allowNull  : false,
-        references : { model: "Staff", key: "id" }, // idem
-        onDelete   : "CASCADE",
-      },
-
-      /* Código único para esa relación staff–hotel */
-      staff_code: {
-        type     : DataTypes.STRING(4),
+        type: DataTypes.INTEGER,
         allowNull: false,
-        validate : { len: [4, 4], isNumeric: true },
+        references: {
+          model: "hotel",   // nombre de tu tabla de hoteles
+          key  : "id",
+        },
+        onDelete: "CASCADE",
+        onUpdate: "CASCADE",
+      },
+
+      staff_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+          model: "staff",   // ¡usa minúscula!
+          key  : "id",
+        },
+        onDelete: "CASCADE",
+        onUpdate: "CASCADE",
+      },
+
+      staff_code: {
+        type: DataTypes.STRING(4),
+        allowNull: false,
       },
 
       is_primary: {
-        type        : DataTypes.BOOLEAN,
+        type: DataTypes.BOOLEAN,
         defaultValue: false,
       },
-
-      since: DataTypes.DATEONLY,
     },
     {
-      tableName      : "hotel_staff", // nombre exacto de la tabla en tu BD
+      tableName      : "hotel_staff",
       freezeTableName: true,
-      underscored    : true,          // created_at, updated_at
-      paranoid       : true,          // deleted_at
+      underscored    : true,
+      paranoid       : true,
+      indexes        : [
+        { unique: true, fields: ["hotel_id", "staff_id"] },
+      ],
     }
   );
 
-  /* ─────────── Asociaciones ─────────── */
   HotelStaff.associate = (models) => {
-    HotelStaff.belongsTo(models.Hotel, { as: "hotel", foreignKey: "hotel_id" });
-    HotelStaff.belongsTo(models.Staff, { as: "staff", foreignKey: "staff_id" });
+    HotelStaff.belongsTo(models.Hotel, { foreignKey: "hotel_id", as: "hotel" });
+    HotelStaff.belongsTo(models.Staff, { foreignKey: "staff_id", as: "staff" });
   };
 
   return HotelStaff;
 };
-  

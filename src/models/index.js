@@ -18,6 +18,9 @@ import HotelStaffModel     from "./HotelStaff.js";
 import OutsideBooking from "./OutsideBooking.js";
 import OutsideBookingAddOn from "./OutsideBookingAddOn.js";
 import AddOnOption from "./AddonOption.js";
+import HotelAddOn from "./HotelAddOn.js";
+import HotelAddOnOption from "./HotelAddOnOption.js";
+import HotelStaffAddOn from "./HotelStaffAddOn.js";
 /* ---------- Construir objetos ---------- */
 const models = {};
 
@@ -38,7 +41,9 @@ models.HotelStaff     = HotelStaffModel(sequelize);
 models.OutsideBooking = OutsideBooking(sequelize);
 models.OutsideBookingAddOn = OutsideBookingAddOn(sequelize);
 models.AddOnOption = AddOnOption(sequelize)
-
+models.HotelAddOn = HotelAddOn(sequelize);
+models.HotelAddOnOption = HotelAddOnOption(sequelize)
+models.HotelStaffAddOn = HotelStaffAddOn(sequelize)
 /* ---------- Ejecutar asociaciones ---------- */
 Object.values(models)
   .filter((m) => typeof m.associate === "function")

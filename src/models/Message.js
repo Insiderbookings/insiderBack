@@ -15,7 +15,7 @@ export default (sequelize) => {
     staff_id: {
       type: DataTypes.INTEGER,
       allowNull: true,
-      references: { model: "Staff", key: "id" },
+      references: { model: "staff", key: "id" },
     },
     content: {
       type: DataTypes.TEXT,

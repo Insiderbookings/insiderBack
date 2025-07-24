@@ -9,38 +9,62 @@ import models  from "../models/index.js";
 /* POST /api/discounts/validate                                */
 /* ----------------------------------------------------------- */
 export const validateDiscount = async (req, res) => {
+  console.log("validating log")
+
   try {
-    const payload = req.body.code?.code ? req.body.code : req.body;
-    const { code, checkIn, checkOut } = payload;
+    /* ---------- payload ---------- */
+    const payload = req.body.code?.code ? req.body.code : req.body
+    const { code, checkIn, checkOut } = payload    // checkIn/out reservados para validaciones futuras
 
     if (!code || code.length !== 4)
-      return res.status(400).json({ error: "Code must be 4 digits" });
+      return res.status(400).json({ error: "Code must be 4 digits" })
 
-    const discount = await models.DiscountCode.findOne({
-      where  : { code: code.toUpperCase() },
+    /* ---------- buscar código en hotel_staff ---------- */
+    const hotelStaff = await models.HotelStaff.findOne({
+      where  : { staff_code: code.toUpperCase() },
       include: [
-        { model: models.Staff, as: "staff", attributes: ["name"] },
-        { model: models.Hotel, attributes: ["id", "name", "image", "location"] },
+        /* Staff + rol (para % de descuento / comisión) */
+        {
+          model     : models.Staff,
+          as        : "staff",
+          attributes: ["name", "staff_role_id"],
+          include   : [
+            {
+              model     : models.StaffRole,
+              as        : "role",
+              attributes: ["defaultDiscountPct", "commissionPct"],
+            },
+          ],
+        },
+        /* Hotel relacionado */
+        {
+          model     : models.Hotel,
+          as        : "hotel",
+          attributes: ["id", "name", "image", "location"],
+        },
       ],
-    });
-    if (!discount) return res.status(404).json({ error: "Invalid discount code" });
-  
+    })
 
-    discount.timesUsed += 1;
-    await discount.save();
+    if (!hotelStaff)
+      return res.status(404).json({ error: "Invalid discount code" })
 
-    res.json({
-      percentage : discount.percentage,
-      validatedBy: discount.staff?.name || "Staff",
-      hotel      : discount.Hotel,
-      specialDiscountPrice: discount.specialDiscountPrice || null
-    });
+    /* ---------- armar respuesta ---------- */
+    const discountPct =
+      hotelStaff.staff?.role?.defaultDiscountPct ?? null       // p.ej. 15
+    const staffName   = hotelStaff.staff?.name || "Staff"
+    const hotelData   = hotelStaff.hotel                       // { id, name, ... }
+
+    return res.json({
+      percentage           : discountPct,
+      validatedBy          : staffName,
+      hotel                : hotelData,
+      specialDiscountPrice : null,          // por ahora sin precio especial
+    })
   } catch (err) {
-    console.error("validateDiscount:", err);
-    res.status(500).json({ error: "Server error" });
+    console.error("validateDiscount:", err)
+    return res.status(500).json({ error: "Server error" })
   }
-};
-
+}
 /* ----------------------------------------------------------- */
 /* POST /api/discounts/createCustom                            */
 /* Genera códigos especiales — sólo manager (role id 3)        */

@@ -1,54 +1,55 @@
-// src/routes/addon.routes.js
 import { Router } from "express"
 import {
-  getAddOns,
+  /* catálogo & flujo de reservas */
+  getHotelAddOns,
   saveOutsideAddOns,
   requestAddOn,
   confirmAddOnRequest,
   getRequestedAddOns,
   markOutsideAddOnReady,
-  getRequestedAddOnsByStaff,    // ← NEW
+  getRequestedAddOnsByStaff,
+
+  /* 🔧 NUEVO: edición de add-ons por hotel (staff role 3) */
+  listHotelAddOnsForEdit,
+  updateHotelAddOn,
+  updateHotelAddOnOption,
 } from "../controllers/addon.controller.js"
 import { authenticate, authorizeStaff } from "../middleware/auth.js"
 
 const router = Router()
 
-/* catalogue & public endpoints */
-router.get("/", getAddOns)
+/* ──────────── Catálogo público ──────────── */
+router.get("/:hotelId/hotel-addons", getHotelAddOns)
 
-/* outside-booking bulk save (existing) */
+/* ──────────── Bulk save (outside) ──────────── */
 router.post("/bookings/outside/:id", saveOutsideAddOns)
 
-/* ----- NEW FLOW --------------------------------------------------------- */
-/* guest requests an add-on when booking is already confirmed */
-router.post("/request", authenticate, requestAddOn)
+/* ──────────── Flujo de requests de huésped ──────────── */
+router.post("/request",              authenticate, requestAddOn)
+router.put ("/request/:id/confirm",  authenticate, authorizeStaff, confirmAddOnRequest)
+router.get ("/requests",             authenticate, authorizeStaff, getRequestedAddOns)
 
-/* staff dashboard: confirm / reject */
-router.put(
-  "/request/:id/confirm",
+/* staff marca ready */
+router.put("/bookings/outside/ready/:id", authenticate, markOutsideAddOnReady)
+
+/* staff dashboard: listar solicitudes de sus hoteles */
+router.get("/staff-requests", authenticate, authorizeStaff, getRequestedAddOnsByStaff)
+
+/* ──────────── 🔧  NUEVO  ─ staff edita add-ons ──────────── */
+router.get("/:hotelId/manage-addons",
+  authenticate, authorizeStaff, listHotelAddOnsForEdit)
+
+router.put("/:hotelId/manage-addons/:addOnId",
+  authenticate, authorizeStaff, updateHotelAddOn)
+
+router.put("/:hotelId/manage-addons/:addOnId/options/:optionId",
+  authenticate, authorizeStaff, updateHotelAddOnOption)
+
+  router.put(
+  "/:hotelId/hotel-addons/:id",
   authenticate,
   authorizeStaff,
-  confirmAddOnRequest
-)
-router.get(
-  "/requests",
-  authenticate,
-  authorizeStaff,
-  getRequestedAddOns
+  updateHotelAddOn           // ⬅️ nuevo controlador
 )
 
-/* staff dashboard: mark an outside-booking add-on as “ready” */
-router.put(
-  "/bookings/outside/ready/:id",
-  authenticate,
-  markOutsideAddOnReady
-)
-
-
-router.get(
-  "/staff-requests",
-  authenticate,
-  authorizeStaff,
-getRequestedAddOnsByStaff
-)
 export default router

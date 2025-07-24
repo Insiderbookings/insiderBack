@@ -17,6 +17,8 @@ import {
   /* Magic-link  */
   setPasswordWithToken,
   validateToken,
+  hireStaff,
+  listByHotel,
 } from "../controllers/auth.controller.js";
 
 import { autoSignupOrLogin } from "../controllers/auth.auto.controller.js";
@@ -85,6 +87,24 @@ router.post(
    VALIDAR TOKEN (solo lectura) — usado antes de mostrar el form
    ════════════════════════════════════════════════════════════════ */
 router.get("/validate-token/:token", validateToken);
+
+router.post(
+  "/hire",
+
+  [
+    body("firstName").notEmpty(),
+    body("lastName").notEmpty(),
+    body("email").isEmail(),
+    body("staff_role_id").isInt(),
+    body("hotelId").isInt(),
+  ],
+  hireStaff,
+)
+
+router.get(
+  "/by-hotel/:hotelId",
+  listByHotel,
+);
 
 /* ---------------------------------------------------------------- */
 export default router;
