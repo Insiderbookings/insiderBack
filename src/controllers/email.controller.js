@@ -1,10 +1,11 @@
 import nodemailer from "nodemailer"
 import db         from "../models/index.js"   // adjust if your path differs
 
+
 /* ─────────────────────────────────────
       DB MODELS
 ───────────────────────────────────── */
-const { OutsideBooking, Hotel } = db
+const { Hotel, Booking, OutsideMeta } = db
 
 /* ─────────────────────────────────────
       TRANSPORT
@@ -29,53 +30,60 @@ export const sendReservationEmail = async (req, res) => {
     firstName,
     lastName,
     bookingConfirmation,
-    hotelId, // ← numeric FK
-    hotel, // ← readable name (string)
+    hotelId,
+    hotel,              // nombre legible
     roomType,
     roomNumber,
     email,
     phoneNumber,
   } = req.body
 
-  /* ─────── Validation ─────── */
+  /* ─────── Validación mínima ─────── */
   if (
-    !arrivalDate ||
-    !departureDate ||
-    !firstName ||
-    !lastName ||
-    !bookingConfirmation ||
-    !hotelId ||
-    !hotel ||
-    !roomType ||
-    !roomNumber ||
-    !email ||
-    !phoneNumber
+    !arrivalDate || !departureDate || !firstName || !lastName ||
+    !bookingConfirmation || !hotelId || !hotel || !roomType ||
+    !roomNumber || !email || !phoneNumber
   ) {
     return res.status(400).json({ message: "Missing required data." })
   }
 
   try {
-    /* verify hotel exists (defensive) */
+    /* 1) Verifica que el hotel exista  */
     const foundHotel = await Hotel.findByPk(hotelId)
     if (!foundHotel) return res.status(404).json({ message: "Hotel not found." })
 
-    /* ─────── 1.  Persist booking ─────── */
-    await OutsideBooking.create({
-      bookingConfirmation,
-      hotel_id: hotelId,
-      room_number: roomNumber,
-      room_type: roomType,
-      checkIn: arrivalDate,
-      checkOut: departureDate,
-      guestName: firstName,
-      guestLastName: lastName,
-      guestEmail: email,
-      guestPhone: phoneNumber,
-      status: "confirmed",
-      paymentStatus: "paid",
+    /* 2) Crea la reserva principal (Booking) */
+    const booking = await Booking.create({
+      user_id      : null,            // huésped invitado
+      hotel_id     : hotelId,
+      room_id      : null,            // fuera de sistema
+      source       : "OUTSIDE",
+      external_ref : bookingConfirmation,
+      check_in     : arrivalDate,
+      check_out    : departureDate,
+      adults       : 2,               // ajusta según tu front
+      children     : 0,
+      guest_name   : `${firstName} ${lastName}`,
+      guest_email  : email,
+      guest_phone  : phoneNumber,
+      status       : "CONFIRMED",
+      payment_status: "PAID",
+      gross_price  : 0,
+      net_cost     : 0,
+      currency     : "USD",
     })
 
-    /* ─────── 2. Compose HTML ─────── */
+    /* 3) Guarda la meta específica de outside */
+    await OutsideMeta.create({
+      booking_id         : booking.id,
+      confirmation_token : bookingConfirmation,
+      confirmed_at       : null,
+      staff_user_id      : null,      // si algún staff la cargó
+      room_number        : roomNumber,
+      notes              : { roomType },
+    })
+
+    /* 4) Prepara HTML y envía e-mail */
     const html = reservationTemplate({
       arrivalDate,
       departureDate,
@@ -88,10 +96,9 @@ export const sendReservationEmail = async (req, res) => {
       phoneNumber,
     })
 
-    /* ─────── 3. Send email ─────── */
     await transporter.sendMail({
-      from: `"Insider Bookings" <${process.env.SMTP_USER}>`,
-      to: email,
+      from   : `"Insider Bookings" <${process.env.SMTP_USER}>`,
+      to     : email,
       subject: `Please confirm your stay at ${hotel}`,
       html,
     })

@@ -179,37 +179,47 @@ export const loginStaff = async (req, res) => {
 };
 
 export const registerUser = async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password } = req.body
   try {
-    const exists = await models.User.findOne({ where: { email } });
-    if (exists) return res.status(409).json({ error: "Email taken" });
-    const passwordHash = await bcrypt.hash(password, 10);
-    const user = await models.User.create({ name, email, passwordHash });
-    const token = signToken({ id: user.id, type: "user" });
-    res.status(201).json({ token, user });
+    const exists = await models.User.findOne({ where: { email } })
+    if (exists) return res.status(409).json({ error: "Email taken" })
+
+    const hash = await bcrypt.hash(password, 10)
+
+
+    const user = await models.User.create({
+      name,
+      email,
+      password_hash: hash,   
+    })
+
+    const token = signToken({ id: user.id, type: "user" })
+    return res.status(201).json({ token, user })
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
+    console.error(err)
+    return res.status(500).json({ error: "Server error" })
   }
-};
+}
 
 export const loginUser = async (req, res) => {
-  console.log("auth")
-  const { email, password } = req.body;
+  const { email, password } = req.body
   try {
-    const user = await models.User.findOne({ where: { email } });
-    console.log(user, "user")
-    if (!user) return res.status(404).json({ error: "Not found" });
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) return res.status(401).json({ error: "Invalid credentials" });
-    const token = signToken({ id: user.id, type: "user" });
-    console.log(user, "user en controller login")
-    res.json({ token, user });
+    /* 1 ▸ Buscar usuario por email */
+    const user = await models.User.findOne({ where: { email } })
+    if (!user) return res.status(404).json({ error: "Invalid credentials" })
+
+    /* 2 ▸ Comparar contraseña  (¡usa la columna correcta!) */
+    const valid = await bcrypt.compare(password, user.password_hash)
+    if (!valid) return res.status(401).json({ error: "Invalid credentials" })
+
+    /* 3 ▸ Emitir JWT */
+    const token = signToken({ id: user.id, type: "user" })
+    return res.json({ token, user })
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
+    console.error(err)
+    return res.status(500).json({ error: "Server error" })
   }
-};
+}
 
 export const validateToken = (req, res) => {
   const { token } = req.params;

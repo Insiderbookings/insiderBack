@@ -1,52 +1,63 @@
 // src/controllers/auth.auto.controller.js
 import bcrypt from "bcrypt";
 import { v4 as uuid } from "uuid";
+import jwt from "jsonwebtoken";
+import { validationResult } from "express-validator";
 import models from "../models/index.js";
 import { signToken } from "./auth.controller.js";   // re-usamos helper existente
 import sendMagicLink from "../services/sendMagicLink.js";
 
-const { User, OutsideBooking } = models;
+const { User, Booking } = models;
 
 export const autoSignupOrLogin = async (req, res) => {
-  const { email, firstName, lastName, phone, outsideBookingId } = req.body;
+  const { email, firstName, lastName, phone, bookingId } = req.body
 
-  if (!email || !firstName || !lastName)
-    return res.status(400).json({ error: "Missing data" });
+  // 1. Validar datos mínimos
+  if (!email || !firstName || !lastName) {
+    return res.status(400).json({ error: 'Missing data' })
+  }
 
   try {
-    /* 1. Buscar (o crear) usuario ----------------------------- */
-    let user = await User.findOne({ where: { email } });
+    const { User, Booking } = models
 
+    // 2. Buscar usuario existente
+    let user = await User.findOne({ where: { email } })
+
+    // 3. Si no existe, crearlo con password_hash no nulo
     if (!user) {
-      const fakePass = await bcrypt.hash(uuid(), 10);      // placeholder
+      // Generar contraseña temporal y hashearla
+      const tempPassword  = uuid()
+      const password_hash = await bcrypt.hash(tempPassword, 10)
+
+      // Crear el usuario
       user = await User.create({
-        name : `${firstName} ${lastName}`,
+        name          : `${firstName} ${lastName}`.trim(),
         email,
-        passwordHash: fakePass,
         phone,
-      });
+        password_hash  // cumple la restricción NOT NULL
+      })
 
-      // magic-link para que establezca contraseña
-      await sendMagicLink(user);
+      // Enviar magic link para que el usuario establezca su contraseña definitiva
+      await sendMagicLink(user)
     }
 
-    /* 2. Adoptar la OutsideBooking ---------------------------- */
-    if (outsideBookingId) {
-      await OutsideBooking.update(
+    // 4. Asociar la reserva si viene bookingId y está sin usuario
+    if (bookingId) {
+      await Booking.update(
         { user_id: user.id },
-        { where: { id: outsideBookingId, user_id: null } },
-      );
+        { where: { id: bookingId, user_id: null } }
+      )
     }
 
-    /* 3. JWT -------------------------------------------------- */
-    const token = signToken({ id: user.id, type: "user" });
+    // 5. Generar JWT para el usuario
+    const token = signToken({ id: user.id, type: 'user' })
 
-    return res.json({ token, user });
+    return res.json({ token, user })
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Server error" });
+    console.error('autoSignupOrLogin:', err)
+    return res.status(500).json({ error: 'Server error' })
   }
-};
+}
 
 export const setPasswordWithToken = async (req, res) => {
   /* 0. validación body --------------------------- */

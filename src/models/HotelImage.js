@@ -1,3 +1,4 @@
+// src/models/HotelImage.js
 import { DataTypes } from "sequelize";
 
 export default (sequelize) => {
@@ -9,16 +10,22 @@ export default (sequelize) => {
         primaryKey   : true,
         autoIncrement: true,
       },
-      hotel_id : { type: DataTypes.INTEGER, allowNull: false },
-      url      : { type: DataTypes.STRING(500), allowNull: false },
-      caption  : DataTypes.STRING(255),
+      hotel_id: {
+        type       : DataTypes.INTEGER,
+        allowNull  : false,
+        references : { model: "hotel", key: "id" },
+        onDelete   : "CASCADE",
+      },
+      url       : { type: DataTypes.STRING(500), allowNull: false },
+      caption   : DataTypes.STRING(255),
       is_primary: { type: DataTypes.BOOLEAN, defaultValue: false },
-      order    : DataTypes.INTEGER, // para ordenar la galería
+      order     : DataTypes.INTEGER,
     },
     {
-      tableName      : "HotelImage",
+      tableName      : "hotel_image",   // ← snake_case singular
       freezeTableName: true,
       underscored    : true,
+      paranoid       : true,
     }
   );
 
