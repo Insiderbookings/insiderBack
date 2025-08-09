@@ -11,7 +11,7 @@ export default (sequelize) => {
       type: DataTypes.INTEGER,
       allowNull: false,
       unique: true,
-      references: { model: "Booking", key: "id" },
+      references: { model: "booking", key: "id" },
     },
     staff_id: {
       type: DataTypes.INTEGER,

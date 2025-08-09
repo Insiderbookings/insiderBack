@@ -10,7 +10,7 @@ export default (sequelize) => {
     user_id: {
       type: DataTypes.INTEGER,
       allowNull: true,
-      references: { model: "User", key: "id" },
+      references: { model: "user", key: "id" },
     },
     staff_id: {
       type: DataTypes.INTEGER,

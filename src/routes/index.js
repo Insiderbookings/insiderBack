@@ -11,6 +11,8 @@ import paymentRoutes from "./payment.routes.js"
 import emailRoutes from "./email.routes.js"
 import addonRoutes from "./addon.routes.js"
 import staffAddonRoutes from "./staffAddon.routes.js"
+import travelGateRoutes from "./travelgate.routes.js"
+import travelgatepaymentRoutes from "./travelgate-payment.routes.js"
 
 const router = Router()
 
@@ -26,5 +28,7 @@ router.use("/payments", paymentRoutes)
 router.use("/email", emailRoutes)
 router.use("/addons", addonRoutes)
 router.use("/api/staff-addon", staffAddonRoutes)
+router.use("/tgx", travelGateRoutes)
+router.use("/tgx-payment", travelgatepaymentRoutes)
 
 export default router

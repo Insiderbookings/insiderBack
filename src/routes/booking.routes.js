@@ -34,7 +34,7 @@ router.get("/:id",              getBookingById)
 router.put("/:id/cancel",       authenticate, cancelBooking)
 
 /* ---- Outside-booking helpers ---- */
-router.get("/outside/:confirmation", getOutsideBookingByConfirmation)
+router.get("/confirmation/:confirmation", getOutsideBookingByConfirmation)
 router.get("/outside/id/:id",        getOutsideBookingWithAddOns)
 
 export default router

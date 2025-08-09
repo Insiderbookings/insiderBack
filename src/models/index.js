@@ -1,53 +1,68 @@
-import sequelize from "../config/database.js";
+// src/models/index.js
+import sequelize from "../config/database.js"
 
 /* ---------- Importar modelos ---------- */
-import UserModel           from "./User.js";
-import StaffRoleModel      from "./StaffRole.js";
-import StaffModel          from "./Staff.js";
-import HotelModel          from "./Hotel.js";
-import HotelImageModel     from "./HotelImage.js";
-import RoomModel           from "./Room.js";
-import DiscountCodeModel   from "./DiscountCode.js";
-import BookingModel        from "./Booking.js";
-import CommissionModel     from "./Commission.js";
-import AddOnModel          from "./AddOn.js";
-import BookingAddOnModel   from "./BookingAddOn.js";
-import MessageModel        from "./Message.js";
-import UpsellCodeModel     from "./UpsellCode.js";
-import HotelStaffModel     from "./HotelStaff.js";
-import OutsideBooking from "./OutsideBooking.js";
-import OutsideBookingAddOn from "./OutsideBookingAddOn.js";
-import AddOnOption from "./AddonOption.js";
-import HotelAddOn from "./HotelAddOn.js";
-import HotelAddOnOption from "./HotelAddOnOption.js";
-import HotelStaffAddOn from "./HotelStaffAddOn.js";
-/* ---------- Construir objetos ---------- */
-const models = {};
+import UserModel            from "./User.js"
+import StaffRoleModel       from "./StaffRole.js"
+import StaffModel           from "./Staff.js"
+import HotelModel           from "./Hotel.js"
+import HotelImageModel      from "./HotelImage.js"
+import RoomModel            from "./Room.js"               // o RoomType.js si lo renombraste
+import DiscountCodeModel    from "./DiscountCode.js"
+import BookingModel         from "./Booking.js"
+import PaymentModel         from "./Payment.js"            // 1-a-1 con Booking
+import TGXMetaModel         from "./TGXMeta.js"
+import OutsideMetaModel     from "./OutsideMeta.js"
+import CommissionModel      from "./Commission.js"
 
-models.User           = UserModel(sequelize);
-models.StaffRole      = StaffRoleModel(sequelize);
-models.Staff          = StaffModel(sequelize);
-models.Hotel          = HotelModel(sequelize);
-models.HotelImage     = HotelImageModel(sequelize);
-models.Room           = RoomModel(sequelize);
-models.DiscountCode   = DiscountCodeModel(sequelize);
-models.Booking        = BookingModel(sequelize);
-models.Commission     = CommissionModel(sequelize);
-models.AddOn          = AddOnModel(sequelize);
-models.BookingAddOn   = BookingAddOnModel(sequelize);
-models.Message        = MessageModel(sequelize);
-models.UpsellCode     = UpsellCodeModel(sequelize);
-models.HotelStaff     = HotelStaffModel(sequelize);
-models.OutsideBooking = OutsideBooking(sequelize);
-models.OutsideBookingAddOn = OutsideBookingAddOn(sequelize);
-models.AddOnOption = AddOnOption(sequelize)
-models.HotelAddOn = HotelAddOn(sequelize);
-models.HotelAddOnOption = HotelAddOnOption(sequelize)
-models.HotelStaffAddOn = HotelStaffAddOn(sequelize)
+import AddOnModel           from "./AddOn.js"
+import AddOnOptionModel     from "./AddOnOption.js"
+import BookingAddOnModel    from "./BookingAddOn.js"
+
+import HotelAddOnModel      from "./HotelAddOn.js"
+import HotelAddOnOptionModel from "./HotelAddOnOption.js"
+import HotelStaffModel      from "./HotelStaff.js"
+import HotelStaffAddOnModel from "./HotelStaffAddOn.js"
+
+import MessageModel         from "./Message.js"
+import UpsellCodeModel      from "./UpsellCode.js"
+import TgxHotelModel from "./TGXHotel.js"
+
+/* ---------- Construir objetos ---------- */
+const models = {
+  User           : UserModel(sequelize),
+  StaffRole      : StaffRoleModel(sequelize),
+  Staff          : StaffModel(sequelize),
+
+  Hotel          : HotelModel(sequelize),
+  HotelImage     : HotelImageModel(sequelize),
+  Room           : RoomModel(sequelize),
+
+  DiscountCode   : DiscountCodeModel(sequelize),
+  Booking        : BookingModel(sequelize),
+  Payment        : PaymentModel(sequelize),        // ← nuevo
+  TGXMeta        : TGXMetaModel(sequelize),        // ← nuevo
+  OutsideMeta    : OutsideMetaModel(sequelize),    // ← nuevo
+  Commission     : CommissionModel(sequelize),
+
+  AddOn          : AddOnModel(sequelize),
+  AddOnOption    : AddOnOptionModel(sequelize),
+  BookingAddOn   : BookingAddOnModel(sequelize),
+
+  HotelAddOn         : HotelAddOnModel(sequelize),
+  HotelAddOnOption   : HotelAddOnOptionModel(sequelize),
+  HotelStaff         : HotelStaffModel(sequelize),
+  HotelStaffAddOn    : HotelStaffAddOnModel(sequelize),
+
+  Message        : MessageModel(sequelize),
+  UpsellCode     : UpsellCodeModel(sequelize),
+  TgxHotel       : TgxHotelModel(sequelize)
+}
+
 /* ---------- Ejecutar asociaciones ---------- */
 Object.values(models)
   .filter((m) => typeof m.associate === "function")
-  .forEach((m) => m.associate(models));
+  .forEach((m) => m.associate(models))
 
-export { sequelize };
-export default models;
+export { sequelize }
+export default models

@@ -56,14 +56,6 @@ export default (sequelize) => {
       foreignKey : "add_on_id",
       otherKey   : "booking_id",
     })
-
-    /* Booking externo */
-    AddOn.belongsToMany(models.OutsideBooking, {
-      through    : models.OutsideBookingAddOn,
-      foreignKey : "add_on_id",
-      otherKey   : "outsidebooking_id",
-    })
-
     /* Many-to-many con Hotel (acceso por alias "hotels") */
     AddOn.belongsToMany(models.Hotel, {
       through    : models.HotelAddOn,
