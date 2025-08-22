@@ -8,24 +8,29 @@
     "dev": "nodemon src/app.js"
   },
   "dependencies": {
+    "axios": "^1.11.0",
     "bcrypt": "^5.1.1",
     "cloudinary": "^2.6.1",
     "cors": "^2.8.5",
+    "dayjs": "^1.11.13",
     "dotenv": "^16.6.1",
     "dotenv-expand": "^12.0.2",
     "express": "^5.1.0",
     "express-validator": "^7.2.1",
     "glob": "^11.0.2",
+    "google-auth-library": "^10.2.1",
     "graphql-request": "^7.2.0",
     "graphql-tag": "^2.12.6",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "nodemailer": "^7.0.3",
+    "pdfkit": "^0.17.1",
     "pg": "^8.15.6",
     "pg-hstore": "^2.3.4",
     "redis": "^5.6.1",
     "sequelize": "^6.37.7",
-    "stripe": "^18.1.0"
+    "stripe": "^18.1.0",
+    "undici": "^6.21.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

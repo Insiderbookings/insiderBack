@@ -34,6 +34,8 @@ export const getRoomsByHotel = async (req, res) => {
     }
 
     const rooms = await models.Room.findAll({ where: conditions });
+
+    console.log(rooms, "en back rooms")
     res.json(rooms);
   } catch (err) {
     console.error("getRoomsByHotel:", err.message);

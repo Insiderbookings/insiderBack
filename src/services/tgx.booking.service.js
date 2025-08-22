@@ -1,101 +1,116 @@
-/* ────────────────────────────────────────────────   TravelgateX — Quote · Book · Cancel services   ──────────────────────────────────────────────── */
+/*********************************************************************************************
+ * src/services/tgx.booking.service.js
+ * TravelgateX — Quote · Book · Cancel services
+ * - Client singleton con GraphQLRequest
+ * - Retries con backoff exponencial para errores de red
+ * - Captura de RQ/RS para certificación (TGX_CERT_MODE=true y CERT_CAPTURE=rf|nrf|direct)
+ *   -> genera: rq_quote_*.json / rs_quote_*.json / rq_book_*.json / rs_book_*.json / rq_cancel_*.json / rs_cancel_*.json
+ *********************************************************************************************/
+
 import { GraphQLClient, gql } from "graphql-request"
+import { requestWithCapture } from "./tgx.capture.js"
 
 /* ---------- helper: client singleton ---------- */
 let _client
 function tgxClient() {
   if (_client) return _client
-  _client = new GraphQLClient(process.env.TGX_ENDPOINT, {
+  const endpoint = process.env.TGX_ENDPOINT || "https://api.travelgate.com"
+  _client = new GraphQLClient(endpoint, {
     headers: {
       Authorization: `ApiKey ${process.env.TGX_KEY}`,
+      "User-Agent": "InsiderBookings/1.0",
+      "Content-Type": "application/json",
       "Accept-Encoding": "gzip",
       Connection: "keep-alive",
     },
+    timeout: 30_000,
   })
   return _client
 }
 
-/* ---------- GraphQL fragments ---------- */
-// Adjusting PRICE_FRAGMENT based on new errors
-const PRICE_FRAGMENT = `
-price {
-  currency
-  net
-  # Removed 'amount' and 'public' as they seem to be causing issues
+/* ---------- retry helper (backoff exponencial para errores de red) ---------- */
+async function requestWithRetry(doc, variables, { attempts = 3, baseDelayMs = 700 } = {}) {
+  let lastErr
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await tgxClient().request(doc, variables)
+    } catch (err) {
+      lastErr = err
+      const code = err?.cause?.code || err?.code
+      const netErrs = ["UND_ERR_CONNECT_TIMEOUT", "UND_ERR_CONNECT", "ECONNRESET", "ETIMEDOUT"]
+      const isNetErr = netErrs.includes(code)
+      if (!isNetErr || i === attempts - 1) throw err
+      const delay = baseDelayMs * (2 ** i) // 700ms, 1400ms, 2800ms
+      console.warn(`[TGX] Network error (${code}). Retry ${i + 1}/${attempts} in ${delay}ms`)
+      await new Promise((r) => setTimeout(r, delay))
+    }
+  }
+  throw lastErr
 }
-cancelPolicy {
-  refundable
-  # Removed 'from', 'amount', 'currency' as they seem to be causing issues
-}`
 
-/* ---------- QUOTE ---------------------- */
+/* ---------- Fragments ---------- */
+const PRICE_FRAGMENT = `
+  price {
+    currency
+    net
+    gross
+    binding
+  }
+`
+
+/* ================================== QUOTE ================================== */
+
 const QUOTE_Q = gql`
-query ($input: HotelCriteriaQuoteInput!, $settings: HotelSettingsInput!) {
-  hotelX {
-    quote(criteria: $input, settings: $settings) {
-      # Removed 'stats' field as it requires subfields and a 'token' argument
-      optionQuote {
-        optionRefId
-        ${PRICE_FRAGMENT}
-        rooms {
-          code # Changed from roomCode based on error hint
-          # Removed boardCode as it was causing an error
-          refundable
+  query ($input: HotelCriteriaQuoteInput!, $settings: HotelSettingsInput!) {
+    hotelX {
+      quote(criteria: $input, settings: $settings) {
+        optionQuote {
+          optionRefId
+          status
+          ${PRICE_FRAGMENT}
+          searchPrice { currency net gross binding }
+          rooms {
+            code
+            refundable
+          }
+          
         }
-      }
-      errors {
-        code
-        type
-        description
-      }
-      warnings {
-        code
-        type
-        description
+        errors   { code type description }
+        warnings { code type description }
       }
     }
   }
-}`
+`
+
 
 export async function quoteTGX(rateKey, settings) {
-  const vars = {
-    input: { optionRefId: rateKey }, // Reverted to input object for criteria
-    settings,
+  const vars = { input: { optionRefId: rateKey }, settings }
+  const exec = () => requestWithRetry(QUOTE_Q, vars, { attempts: 2 })
+
+  // Siempre pasamos por el capturador; si no está habilitado, no escribe archivos.
+  const data = await requestWithCapture("quote", vars, exec, { doc: QUOTE_Q })
+
+  const payload = data?.hotelX?.quote
+  if (payload?.errors?.length) {
+    throw new Error(`Quote error: ${payload.errors[0].description}`)
   }
-  console.log("🔍 TGX Quote request:", { rateKey, settings })
-  try {
-    const data = await tgxClient().request(QUOTE_Q, vars)
-    console.log("✅ TGX Quote response:", data)
-    if (data.hotelX.quote.errors && data.hotelX.quote.errors.length > 0) {
-      throw new Error(`Quote error: ${data.hotelX.quote.errors[0].description}`)
-    }
-    return data.hotelX.quote.optionQuote
-  } catch (error) {
-    console.error("❌ TGX Quote error:", error)
-    throw error
-  }
+  return payload?.optionQuote
 }
 
-/* ---------- BOOK ----------------------- */
+/* =================================== BOOK =================================== */
+/* Importante:
+   - NO enviar 'email' en holder (solo name, surname). Si necesitás el mail, adjúntalo en remarks.
+   - cancelPolicy se pide UNA sola vez con sus subcampos (debajo). */
+
 const BOOK_MUT = gql`
   mutation ($input: HotelBookInput!, $settings: HotelSettingsInput!) {
     hotelX {
       book(input: $input, settings: $settings) {
         booking {
-          bookingID
           status
-          supplierReference
-          reference {
-            bookingID
-            client
-            supplier
-            hotel
-          }
-          ${PRICE_FRAGMENT}
-          holder {
-            name
-            surname
-          }
+          reference { bookingID client supplier hotel }
+          price { currency net gross binding }
+          holder { name surname }
           cancelPolicy {
             refundable
             cancelPenalties {
@@ -113,104 +128,77 @@ const BOOK_MUT = gql`
             start
             end
             boardCode
-            occupancies {
-              id
-              paxes {
-                age
-              }
-            }
+            occupancies { id paxes { age } }
             rooms {
               code
               description
               occupancyRefId
-              price {
-                currency
-                binding
-                net
-                gross
-                exchange {
-                  currency
-                  rate
-                }
-              }
+              price { currency binding net gross }
             }
           }
           remarks
         }
-        errors {
-          code
-          type
-          description
-        }
-        warnings {
-          code
-          type
-          description
-        }
+        errors   { code type description }
+        warnings { code type description }
       }
     }
   }
 `
-
+/**
+ * Realiza la reserva en TGX.
+ * Recomendación durante certificación: activar auditTransactions para trazabilidad.
+ */
 export async function bookTGX(input, settings) {
-  const vars = { input, settings }
-  console.log("🎯 TGX Book request:", { input, settings })
-  try {
-    const data = await tgxClient().request(BOOK_MUT, vars)
-    console.log("✅ TGX Book response:", data)
-    if (data.hotelX.book.errors && data.hotelX.book.errors.length > 0) {
-      throw new Error(`Booking error: ${data.hotelX.book.errors[0].description}`)
-    }
-    return data.hotelX.book.booking // Retornar el objeto booking
-  } catch (error) {
-    console.error("❌ TGX Book error:", error)
-    throw error
+  const vars = {
+    input,
+    settings: { ...settings, auditTransactions: true },
   }
+  const exec = () => requestWithRetry(BOOK_MUT, vars, { attempts: 3 })
+
+  const data = await requestWithCapture("book", vars, exec, { doc: BOOK_MUT })
+
+  const payload = data?.hotelX?.book
+  if (payload?.errors?.length) {
+    throw new Error(`Booking error: ${payload.errors[0].description}`)
+  }
+  return payload?.booking
 }
 
-/* ---------- CANCEL --------------------- */
-const CANCEL_MUT = gql`
-mutation ($input: HotelXCancelInput!, $settings: HotelSettingsInput!) {
-  hotelX {
-    cancel(input: $input, settings: $settings) {
-      bookingID
-      status
-      supplierReference
-      refund {
-        amount
-        currency
-      }
-      errors {
-        code
-        type
-        description
-      }
-      warnings {
-        code
-        type
-        description
-      }
-    }
-  }
-}`
+/* ================================== CANCEL ================================== */
+/* IMPORTANTE:
+   - El input es HotelCancelInput (bookingID o { accessCode, hotelCode, reference }) */
 
-/**
- * Cancel by bookingID (from Book response)
- * or by { accessCode, hotelCode, reference }
- */
-export async function cancelTGX(bookingIDOrObj, settings) {
-  const input = typeof bookingIDOrObj === "string" ? { bookingID: bookingIDOrObj } : bookingIDOrObj // { accessCode, hotelCode, reference }
-  const vars = { input, settings }
-  console.log("🚫 TGX Cancel request:", { input, settings })
-  try {
-    const data = await tgxClient().request(CANCEL_MUT, vars)
-    console.log("✅ TGX Cancel response:", data)
-    if (data.hotelX.cancel.errors && data.hotelX.cancel.errors.length > 0) {
-      throw new Error(`Cancel error: ${data.hotelX.cancel.errors[0].description}`)
+const CANCEL_MUT = gql`
+  mutation CancelBooking($input: HotelCancelInput!, $settings: HotelSettingsInput!) {
+    hotelX {
+      cancel(input: $input, settings: $settings) {
+        errors   { type code description }
+        warnings { code description }
+        cancellation {
+          status
+          cancelReference
+          reference { bookingID client supplier hotel }
+        }
+      }
     }
-    return data.hotelX.cancel
-  } catch (error) {
-    console.error("❌ TGX Cancel error:", error)
-    throw error
   }
+`;
+
+
+export async function cancelTGX(bookingIDOrObj, settings) {
+  const input =
+    typeof bookingIDOrObj === "string"
+      ? { bookingID: bookingIDOrObj.trim() }
+      : bookingIDOrObj
+
+  // ayuda durante cert: deja trazas en audit
+  const vars = { input, settings: { ...settings, auditTransactions: true } }
+  const exec = () => requestWithRetry(CANCEL_MUT, vars, { attempts: 2 })
+
+  const data = await requestWithCapture("cancel", vars, exec, { doc: CANCEL_MUT })
+  const payload = data?.hotelX?.cancel
+  if (payload?.errors?.length) {
+    throw new Error(`Cancel error: ${payload.errors[0].description}`)
+  }
+  return payload?.cancellation   // ← devuelve todo el objeto cancellation (con status)
 }

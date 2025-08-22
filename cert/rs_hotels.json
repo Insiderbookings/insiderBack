@@ -1,0 +1,1591 @@
+{
+  "data": {
+    "hotelX": {
+      "hotels": {
+        "token": null,
+        "count": 20,
+        "edges": [
+          {
+            "node": {
+              "createdAt": "2025-03-13T03:04:13.7786877Z",
+              "updatedAt": "2025-06-02T14:40:58.7578606Z",
+              "hotelData": {
+                "hotelCode": "60711",
+                "hotelName": "Central Athens Hotel",
+                "categoryCode": "3",
+                "chainCode": null,
+                "location": {
+                  "address": "21 Apollonos Street",
+                  "zipCode": "10557",
+                  "city": "Atenas",
+                  "country": "GR",
+                  "coordinates": {
+                    "latitude": 37.98016,
+                    "longitude": 23.72979
+                  },
+                  "closestDestination": {
+                    "code": "101109",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Atenas",
+                        "language": "en"
+                      },
+                      {
+                        "text": "Atenas",
+                        "language": "es"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "reservation@centralhotel.gr",
+                  "telephone": "30 210 323 43579",
+                  "fax": "30 210 3225 244",
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "2",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "91729",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "1329",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2025-03-13T03:04:13.7786877Z",
+              "updatedAt": "2025-06-02T14:40:58.7579643Z",
+              "hotelData": {
+                "hotelCode": "2",
+                "hotelName": "Hotel Test Pruebas Travelgate 2",
+                "categoryCode": "1",
+                "chainCode": null,
+                "location": {
+                  "address": "Parc Bit, 1",
+                  "zipCode": "07121",
+                  "city": "Andorra la Vella",
+                  "country": "AD",
+                  "coordinates": null,
+                  "closestDestination": {
+                    "code": "1042",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Andorra la Vella",
+                        "language": "es"
+                      },
+                      {
+                        "text": "Andorra la Vella",
+                        "language": "en"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "hotelpush@xmltravelgate.com",
+                  "telephone": "971858585",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "6930",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "2679",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "1360",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "6451",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2025-03-13T03:04:13.7786877Z",
+              "updatedAt": "2025-06-02T14:40:58.7579799Z",
+              "hotelData": {
+                "hotelCode": "65378",
+                "hotelName": "Hotel Palma",
+                "categoryCode": "3",
+                "chainCode": null,
+                "location": {
+                  "address": "Club Hotel Palma, st. \"Slanchev bryag\"",
+                  "zipCode": "8240",
+                  "city": "Sunny beach",
+                  "country": "BG",
+                  "coordinates": {
+                    "latitude": 42.65,
+                    "longitude": 27.65
+                  },
+                  "closestDestination": {
+                    "code": "101246",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Sunny beach",
+                        "language": "en"
+                      },
+                      {
+                        "text": "Sunny beach",
+                        "language": "es"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "palmbg@abv.bg",
+                  "telephone": "359 897 948 730",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "3210",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "1325",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2025-06-02T14:40:58.7580147Z",
+              "updatedAt": "2025-06-02T14:40:58.7580147Z",
+              "hotelData": {
+                "hotelCode": "83826",
+                "hotelName": "The Hotel @ Fifth Avenue",
+                "categoryCode": "4",
+                "chainCode": null,
+                "location": {
+                  "address": "17 W 32nd St New York",
+                  "zipCode": "10001",
+                  "city": "Nueva York ",
+                  "country": "US",
+                  "coordinates": {
+                    "latitude": 40.77,
+                    "longitude": -73.97
+                  },
+                  "closestDestination": {
+                    "code": "101823",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Nueva York ",
+                        "language": "en"
+                      },
+                      {
+                        "text": "Nueva York ",
+                        "language": "es"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "Reservations@hotelatfifthavenyc.com",
+                  "telephone": "2127361600",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": null
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2025-03-13T03:04:13.7786877Z",
+              "updatedAt": "2025-06-02T14:40:58.7580215Z",
+              "hotelData": {
+                "hotelCode": "10236",
+                "hotelName": "Hotel Test GTP",
+                "categoryCode": "2",
+                "chainCode": null,
+                "location": {
+                  "address": "nose",
+                  "zipCode": "0732",
+                  "city": "Qasim",
+                  "country": "AF",
+                  "coordinates": null,
+                  "closestDestination": {
+                    "code": "1149",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Qasim",
+                        "language": "es"
+                      },
+                      {
+                        "text": "Qasim",
+                        "language": "en"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "hotelpush@xmltravelgate.com",
+                  "telephone": "74834345",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "4988",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "1329",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2025-03-13T03:04:13.7786877Z",
+              "updatedAt": "2025-06-02T14:40:58.7580446Z",
+              "hotelData": {
+                "hotelCode": "83897",
+                "hotelName": "Hotel Test 3",
+                "categoryCode": "2",
+                "chainCode": null,
+                "location": {
+                  "address": "migjorn",
+                  "zipCode": "08002",
+                  "city": "Andorra",
+                  "country": "ES",
+                  "coordinates": {
+                    "latitude": 39.54,
+                    "longitude": 3.33
+                  },
+                  "closestDestination": {
+                    "code": "28914",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Andorra",
+                        "language": "en"
+                      },
+                      {
+                        "text": "Andorra",
+                        "language": "es"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "hotelpush@xmltravelgate.com",
+                  "telephone": "66666556",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "1",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2025-03-13T03:04:13.7786877Z",
+              "updatedAt": "2025-06-02T14:40:58.7580481Z",
+              "hotelData": {
+                "hotelCode": "103183",
+                "hotelName": "Platja de Porto Cristo",
+                "categoryCode": "15",
+                "chainCode": null,
+                "location": {
+                  "address": " C/ Test",
+                  "zipCode": "07680",
+                  "city": "Porto Cristo",
+                  "country": "ES",
+                  "coordinates": {
+                    "latitude": 39.541334,
+                    "longitude": 3.336124
+                  },
+                  "closestDestination": {
+                    "code": "31256",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Porto Cristo",
+                        "language": "en"
+                      },
+                      {
+                        "text": "Porto Cristo",
+                        "language": "es"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "test@test.test",
+                  "telephone": "612345678",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": null
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2025-03-13T03:04:13.7786877Z",
+              "updatedAt": "2025-06-02T14:40:58.7580515Z",
+              "hotelData": {
+                "hotelCode": "7098",
+                "hotelName": "Hotel Testing",
+                "categoryCode": "7",
+                "chainCode": null,
+                "location": {
+                  "address": "calle aragon, 2",
+                  "zipCode": "01505",
+                  "city": "Vilanant",
+                  "country": "ES",
+                  "coordinates": {
+                    "latitude": 41.66856,
+                    "longitude": 1.217258
+                  },
+                  "closestDestination": {
+                    "code": "32234",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Vilanant",
+                        "language": "es"
+                      },
+                      {
+                        "text": "Vilanant",
+                        "language": "en"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "hotelpush@xmltravelgate.com",
+                  "telephone": "666696969",
+                  "fax": "666696969",
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "1",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2025-03-13T03:04:13.7786877Z",
+              "updatedAt": "2025-06-02T14:40:58.7580589Z",
+              "hotelData": {
+                "hotelCode": "72602",
+                "hotelName": "Santorini Palace",
+                "categoryCode": "4",
+                "chainCode": null,
+                "location": {
+                  "address": "Fira",
+                  "zipCode": "84700",
+                  "city": "Santorini",
+                  "country": "GR",
+                  "coordinates": {
+                    "latitude": 36.4244,
+                    "longitude": 25.429501
+                  },
+                  "closestDestination": {
+                    "code": "101402",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Santorini",
+                        "language": "en"
+                      },
+                      {
+                        "text": "Santorini",
+                        "language": "es"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "spalace@otenet.gr",
+                  "telephone": "0030 2286022771",
+                  "fax": "0030 2286023705",
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "29445",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2025-03-13T03:04:13.7786877Z",
+              "updatedAt": "2025-06-02T14:40:58.7580751Z",
+              "hotelData": {
+                "hotelCode": "1",
+                "hotelName": "Hotel Test",
+                "categoryCode": "1",
+                "chainCode": null,
+                "location": {
+                  "address": "Parc Bit",
+                  "zipCode": "07121",
+                  "city": "Andorra la Vella",
+                  "country": "AD",
+                  "coordinates": {
+                    "latitude": 39.63667,
+                    "longitude": 2.631524
+                  },
+                  "closestDestination": {
+                    "code": "1042",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Andorra la Vella",
+                        "language": "es"
+                      },
+                      {
+                        "text": "Andorra la Vella",
+                        "language": "en"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "hotelpush@xmltravelgate.com",
+                  "telephone": "871 96 81 81",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "2269",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "33841",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "3741",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "3210",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "2679",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "5060",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "5683",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2020-12-11T10:54:09.1480676Z",
+              "updatedAt": "2025-06-02T14:40:58.7578826Z",
+              "hotelData": {
+                "hotelCode": "63017",
+                "hotelName": "Hotel Test Push",
+                "categoryCode": "18",
+                "chainCode": null,
+                "location": {
+                  "address": "Edificio Europa, Local 1, bajos - ParcBIT",
+                  "zipCode": "07121",
+                  "city": "Mallorca",
+                  "country": "ES",
+                  "coordinates": {
+                    "latitude": 39.63669,
+                    "longitude": 2.631489
+                  },
+                  "closestDestination": {
+                    "code": "30669",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Mallorca",
+                        "language": "es"
+                      },
+                      {
+                        "text": "Mallorca",
+                        "language": "en"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "hotelpush@xmltravelgate.com",
+                  "telephone": "871968181",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "5826",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "2269",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2020-12-11T10:54:09.1480676Z",
+              "updatedAt": "2025-06-02T14:40:58.7579398Z",
+              "hotelData": {
+                "hotelCode": "84328",
+                "hotelName": "Testeli Hotel",
+                "categoryCode": "6",
+                "chainCode": null,
+                "location": {
+                  "address": "Calle falsa, 123",
+                  "zipCode": "07300",
+                  "city": "Inca",
+                  "country": "ES",
+                  "coordinates": {
+                    "latitude": 0,
+                    "longitude": 0
+                  },
+                  "closestDestination": {
+                    "code": "30253",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Inca",
+                        "language": "es"
+                      },
+                      {
+                        "text": "Inca",
+                        "language": "en"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "hotelpush@xmltravelgate.com",
+                  "telephone": "666666666",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "2679",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "80822",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "11500",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "6451",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "1325",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "83913",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "11309",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "92039",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "56478",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "54618",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "49018",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "5683",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "41046",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "94525",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "83914",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "11075",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2023-04-10T09:23:45.7566097Z",
+              "updatedAt": "2025-06-02T14:40:58.7579721Z",
+              "hotelData": {
+                "hotelCode": "91415",
+                "hotelName": "Hotel Reina Cristina",
+                "categoryCode": "3",
+                "chainCode": null,
+                "location": {
+                  "address": "Calle Tablas 4",
+                  "zipCode": "18002",
+                  "city": "Granada",
+                  "country": "ES",
+                  "coordinates": {
+                    "latitude": 37.176822,
+                    "longitude": -3.60269
+                  },
+                  "closestDestination": {
+                    "code": "30120",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Granada",
+                        "language": "en"
+                      },
+                      {
+                        "text": "Granada",
+                        "language": "es"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "clientes@hotelreinacristina.com",
+                  "telephone": "958253211",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "2269",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "5683",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2020-12-11T10:54:09.1480676Z",
+              "updatedAt": "2025-06-02T14:40:58.7579877Z",
+              "hotelData": {
+                "hotelCode": "63181",
+                "hotelName": "Angeles Hotel Test",
+                "categoryCode": "7",
+                "chainCode": null,
+                "location": {
+                  "address": "Traveltino",
+                  "zipCode": "07008",
+                  "city": "Santa Cruz de Tenerife",
+                  "country": "ES",
+                  "coordinates": {
+                    "latitude": 28.462322,
+                    "longitude": -16.252322
+                  },
+                  "closestDestination": {
+                    "code": "31739",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Santa Cruz de Tenerife",
+                        "language": "es"
+                      },
+                      {
+                        "text": "Santa Cruz de Tenerife",
+                        "language": "en"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "angeles.garcia@traveltino.com",
+                  "telephone": "666666666",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "11309",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "2764",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2025-03-12T23:54:57.4723543Z",
+              "updatedAt": "2025-06-02T14:40:58.7579948Z",
+              "hotelData": {
+                "hotelCode": "86914",
+                "hotelName": "Numa Bay Exclusive",
+                "categoryCode": "6",
+                "chainCode": null,
+                "location": {
+                  "address": "Turkler Mahallesi, Golcuk Mevki",
+                  "zipCode": "07400",
+                  "city": "Antalya",
+                  "country": "TR",
+                  "coordinates": {
+                    "latitude": 36.607048,
+                    "longitude": 31.778456
+                  },
+                  "closestDestination": {
+                    "code": "76652",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Antalya",
+                        "language": "en"
+                      },
+                      {
+                        "text": "Antalya",
+                        "language": "es"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "sistemayt@dianatravel.com.tr",
+                  "telephone": "90 242 255 56 04",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "2679",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "33307",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2023-04-10T09:23:45.7566097Z",
+              "updatedAt": "2025-06-02T14:40:58.7580005Z",
+              "hotelData": {
+                "hotelCode": "93046",
+                "hotelName": "Creta Palm (Creta)",
+                "categoryCode": "3",
+                "chainCode": null,
+                "location": {
+                  "address": "Stalos 731 00, Grecia",
+                  "zipCode": "731 00",
+                  "city": "Crete",
+                  "country": "GR",
+                  "coordinates": {
+                    "latitude": 35.513598,
+                    "longitude": 23.94479
+                  },
+                  "closestDestination": {
+                    "code": "101105",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Crete",
+                        "language": "en"
+                      },
+                      {
+                        "text": "Crete",
+                        "language": "es"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "t.samaras@bigtravel.gr",
+                  "telephone": "302821083660",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "29445",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2024-10-21T09:59:07.3384475Z",
+              "updatedAt": "2025-06-02T14:40:58.7580107Z",
+              "hotelData": {
+                "hotelCode": "101931",
+                "hotelName": "Hotel Ballast Wilmington, Tapestry Collection by Hilton",
+                "categoryCode": "3",
+                "chainCode": null,
+                "location": {
+                  "address": "301 North Water Street",
+                  "zipCode": "28401",
+                  "city": "Palma de Mallorca",
+                  "country": "ES",
+                  "coordinates": {
+                    "latitude": 34.238827,
+                    "longitude": -77.950806
+                  },
+                  "closestDestination": {
+                    "code": "31104",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Palma de Mallorca",
+                        "language": "en"
+                      },
+                      {
+                        "text": "Palma de Mallorca",
+                        "language": "es"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "ilmwr_gm@hilton.com",
+                  "telephone": "(910) 763-5900",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "2679",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "84621",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "88644",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "4988",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2020-12-11T10:54:09.1480676Z",
+              "updatedAt": "2025-06-02T14:40:58.7580284Z",
+              "hotelData": {
+                "hotelCode": "1610",
+                "hotelName": "Hotel Test2",
+                "categoryCode": "13",
+                "chainCode": null,
+                "location": {
+                  "address": "test address",
+                  "zipCode": "34343",
+                  "city": "Barcelona",
+                  "country": "ES",
+                  "coordinates": null,
+                  "closestDestination": {
+                    "code": "29098",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Barcelona",
+                        "language": "es"
+                      },
+                      {
+                        "text": "Barcelona",
+                        "language": "en"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "test@test.com",
+                  "telephone": "3434",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "14",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "4574",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2024-10-21T09:59:07.3384475Z",
+              "updatedAt": "2025-06-02T14:40:58.7580353Z",
+              "hotelData": {
+                "hotelCode": "101930",
+                "hotelName": "Hotel Nord Easy Patos",
+                "categoryCode": "3",
+                "chainCode": null,
+                "location": {
+                  "address": "Rua Darcílio Vanderlei da Nobrega, 399",
+                  "zipCode": "58700-320",
+                  "city": "Patos",
+                  "country": "BR",
+                  "coordinates": {
+                    "latitude": -7.023832,
+                    "longitude": -37.275318
+                  },
+                  "closestDestination": {
+                    "code": "8509",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Patos",
+                        "language": "en"
+                      },
+                      {
+                        "text": "Patos",
+                        "language": "es"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "reservas@nordhoteis.com.br",
+                  "telephone": "(83) 3421-2829",
+                  "fax": null,
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "1329",
+                          "allAmenities": null
+                        }
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "84624",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          },
+          {
+            "node": {
+              "createdAt": "2020-12-11T10:54:09.1480676Z",
+              "updatedAt": "2025-06-02T14:40:58.7580414Z",
+              "hotelData": {
+                "hotelCode": "23",
+                "hotelName": "Porto Cristo ",
+                "categoryCode": "3",
+                "chainCode": null,
+                "location": {
+                  "address": "Avinguda de Gabriel Roca",
+                  "zipCode": "07014",
+                  "city": "Porto Cristo",
+                  "country": "ES",
+                  "coordinates": {
+                    "latitude": 39.564795,
+                    "longitude": 2.627481
+                  },
+                  "closestDestination": {
+                    "code": "31256",
+                    "available": false,
+                    "texts": [
+                      {
+                        "text": "Porto Cristo",
+                        "language": "es"
+                      },
+                      {
+                        "text": "Porto Cristo",
+                        "language": "en"
+                      }
+                    ],
+                    "type": null,
+                    "parent": null
+                  }
+                },
+                "contact": {
+                  "email": "hotelpush@xmltravelgate.com",
+                  "telephone": "971 28 14 00",
+                  "fax": "4564",
+                  "web": null
+                },
+                "propertyType": null,
+                "descriptions": [],
+                "medias": null,
+                "rooms": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "",
+                        "roomData": {
+                          "code": "",
+                          "roomCode": "2269",
+                          "allAmenities": null
+                        }
+                      }
+                    }
+                  ]
+                },
+                "allAmenities": null
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

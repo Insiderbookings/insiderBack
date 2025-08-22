@@ -11,6 +11,7 @@ import bodyParser      from "body-parser";
 import models, { sequelize } from "./models/index.js";
 import router          from "./routes/index.js";
 import { handleWebhook } from "./controllers/payment.controller.js";
+import { setGlobalDispatcher, Agent } from "undici";
 
 const app = express();
 
@@ -29,6 +30,8 @@ app.use(morgan("dev"));
 /* ---------- Resto de tu API ---------- */
 app.get("/", (req, res) => res.json({ status: "API running" }));
 app.use("/api", router);          // incluye /payments/* menos /webhook
+
+
 
 /* ---------- Arranque ---------- */
 const PORT = process.env.PORT || 3000;

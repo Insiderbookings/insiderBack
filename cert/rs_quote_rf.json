@@ -1,0 +1,27 @@
+{
+  "data": {
+    "hotelX": {
+      "quote": {
+        "optionQuote": {
+          "optionRefId": "31[a1[b250813[c250814[d1[e14[f0[gES[hES[ies[jEUR[k0[l2[m1[n14[o0[p1[x13082030[M62[N0[Ofalse[PEUR[Q[R0[S[T[z1|30|1|2025-08-13|1|4247163|4247164|14|11|0[A5683[B5683[C30[EDouble Suite Deluxe[FDouble Suite Deluxe[G1[U120[V2[WEUR[X62[Y2025-08-07T10:00:00Z[Z0[H1[I1|30|1|2025-08-13|1|4247163|4247164|14|11|0[J1[K1[L1[H701[Ifcef9bcc-6181-4e14-92d6-f7fb803a79e3[J0[K0[L0[H704[ICipSAAgBEiQIeBjSByEAAAAAAABPQCoUMjAyNS0wOC0wN1QxMDowMDowMFoSCwi29/jXyaytPhAFIhcI0gcZAAAAAAAAT0AhAAAAAAAAT0AoAQ==[J0[K1[L0[tOK[uConnectors[v0[w[yPACKAGE[q[q0[",
+          "status": "OK",
+          "price": {
+            "currency": "EUR",
+            "net": 62,
+            "gross": 62,
+            "binding": false
+          },
+          "searchPrice": null,
+          "rooms": [
+            {
+              "code": "5683",
+              "refundable": true
+            }
+          ]
+        },
+        "errors": null,
+        "warnings": null
+      }
+    }
+  }
+}

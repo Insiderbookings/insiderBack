@@ -29,6 +29,7 @@ router.use("/email", emailRoutes)
 router.use("/addons", addonRoutes)
 router.use("/api/staff-addon", staffAddonRoutes)
 router.use("/tgx", travelGateRoutes)
-router.use("/tgx-payment", travelgatepaymentRoutes)
+console.log("[routes] mount /tgx-payment");
+router.use("/tgx-payment", travelgatepaymentRoutes);
 
 export default router

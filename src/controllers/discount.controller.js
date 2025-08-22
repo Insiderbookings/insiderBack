@@ -9,25 +9,60 @@ import models  from "../models/index.js";
 /* POST /api/discounts/validate                                */
 /* ----------------------------------------------------------- */
 export const validateDiscount = async (req, res) => {
-  console.log("validating log")
+  console.log("validating log", req.body)
 
   try {
     /* ---------- payload ---------- */
     const payload = req.body.code?.code ? req.body.code : req.body
-    const { code, checkIn, checkOut } = payload    // checkIn/out reservados para validaciones futuras
+    let { code, checkIn, checkOut } = payload // checkIn/out reserved for future validations
 
-    if (!code || code.length !== 4)
+    if (!code) return res.status(400).json({ error: "Code is required" })
+
+    /* ---------- normalize code ---------- */
+    const CODE = String(code).trim().toUpperCase()
+    const isInfluencer = CODE.startsWith("I")
+
+    /* ---------- basic validation ---------- */
+    // For influencer codes (I...), do not require 4-length numeric.
+    if (!isInfluencer && CODE.length !== 4) {
       return res.status(400).json({ error: "Code must be 4 digits" })
+    }
 
-    /* ---------- buscar código en hotel_staff ---------- */
+    /* ─────────────────────────────────────────────────────────────
+       INFLUENCER branch: codes starting with "I"
+       - Look up in User.user_code
+       - Fixed discount = 15%
+       - hotel = null
+    ───────────────────────────────────────────────────────────── */
+    if (isInfluencer) {
+      const user = await models.User.findOne({
+        where: { user_code: CODE },
+        attributes: ["id", "name", "user_code"],
+      })
+
+      if (!user) return res.status(404).json({ error: "Invalid discount code" })
+
+      const validatedBy = { name: user.name || "Influencer", user_id: user.id }
+
+      return res.json({
+        percentage          : 15,
+        validatedBy,
+        hotel               : null,
+        specialDiscountPrice: null,
+      })
+    }
+
+    /* ─────────────────────────────────────────────────────────────
+       STAFF branch: 4-digit codes (existing behavior)
+    ───────────────────────────────────────────────────────────── */
     const hotelStaff = await models.HotelStaff.findOne({
-      where  : { staff_code: code.toUpperCase() },
+      where  : { staff_code: CODE },
       include: [
-        /* Staff + rol (para % de descuento / comisión) */
+        /* Staff + role (for % discount / commission) */
         {
           model     : models.Staff,
           as        : "staff",
-          attributes: ["name", "staff_role_id"],
+          attributes: ["id", "name", "staff_role_id"], // ← ensure "id" is present
           include   : [
             {
               model     : models.StaffRole,
@@ -36,7 +71,7 @@ export const validateDiscount = async (req, res) => {
             },
           ],
         },
-        /* Hotel relacionado */
+        /* Related Hotel */
         {
           model     : models.Hotel,
           as        : "hotel",
@@ -45,26 +80,35 @@ export const validateDiscount = async (req, res) => {
       ],
     })
 
-    if (!hotelStaff)
+    if (!hotelStaff) {
       return res.status(404).json({ error: "Invalid discount code" })
+    }
 
-    /* ---------- armar respuesta ---------- */
+    /* ---------- build response ---------- */
     const discountPct =
-      hotelStaff.staff?.role?.defaultDiscountPct ?? null       // p.ej. 15
-    const staffName   = hotelStaff.staff?.name || "Staff"
-    const hotelData   = hotelStaff.hotel                       // { id, name, ... }
+      hotelStaff.staff?.role?.defaultDiscountPct != null
+        ? Number(hotelStaff.staff.role.defaultDiscountPct)
+        : 0
+
+    const validatedBy = {
+      name    : hotelStaff.staff?.name || "Staff",
+      staff_id: hotelStaff.staff?.id ?? null,
+    }
+
+    const hotelData = hotelStaff.hotel || null
 
     return res.json({
-      percentage           : discountPct,
-      validatedBy          : staffName,
-      hotel                : hotelData,
-      specialDiscountPrice : null,          // por ahora sin precio especial
+      percentage          : discountPct,
+      validatedBy,
+      hotel               : hotelData,
+      specialDiscountPrice: null,
     })
   } catch (err) {
     console.error("validateDiscount:", err)
     return res.status(500).json({ error: "Server error" })
   }
 }
+
 /* ----------------------------------------------------------- */
 /* POST /api/discounts/createCustom                            */
 /* Genera códigos especiales — sólo manager (role id 3)        */

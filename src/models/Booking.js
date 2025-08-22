@@ -21,7 +21,7 @@ export default (sequelize) => {
       // Hoteles propios/partners (puede ser null si es TGX)
       hotel_id: {
         type: DataTypes.INTEGER,
-        allowNull: true, // <- AHORA puede ser null porque usamos tgx_hotel_id para TGX
+        allowNull: true, // puede ser null si usamos tgx_hotel_id
         references: { model: 'hotel', key: 'id' }
       },
 
@@ -35,7 +35,7 @@ export default (sequelize) => {
 
       room_id: {
         type: DataTypes.INTEGER,
-        allowNull: true, // puede ser null en OUTSIDE o si la room es TGX sin mapeo local
+        allowNull: true,
         references: { model: 'room', key: 'id' }
       },
 
@@ -51,8 +51,8 @@ export default (sequelize) => {
         allowNull: false
       },
 
-      // Sugerencia: guardar aquí el localizador final del proveedor (ej. locator TGX)
-      external_ref: DataTypes.STRING(120),
+      // Localizador/ID externo del proveedor (ej. booking.reference.bookingID)
+      external_ref: { type: DataTypes.STRING(120) },
 
       /* ─── Fechas & ocupación ─── */
       check_in:  { type: DataTypes.DATEONLY, allowNull: false },
@@ -81,11 +81,11 @@ export default (sequelize) => {
       currency:    { type: DataTypes.STRING(3), allowNull: false },
 
       /* ─── Info de medios de pago ─── */
-      payment_provider: {
-        type: DataTypes.ENUM('STRIPE', 'PAYPAL'),
-        defaultValue: 'STRIPE'
-      },
-      payment_intent_id: { type: DataTypes.STRING(100) }, // ej. pi_xxx (Stripe) u otro id del PSP
+  payment_provider: {
+  type: DataTypes.ENUM('STRIPE', 'PAYPAL', 'CARD_ON_FILE'),
+  defaultValue: 'STRIPE'
+},
+      payment_intent_id: { type: DataTypes.STRING(100) }, // ej. pi_xxx (Stripe)
 
       /* ─── Timestamps de negocio ─── */
       booked_at:    { type: DataTypes.DATE },
@@ -107,28 +107,25 @@ export default (sequelize) => {
         { fields: ['hotel_id'] },
         { fields: ['tgx_hotel_id'] },
         { fields: ['status'] },
-        { fields: ['payment_status'] }
-      ],
-      // Regla de negocio sugerida (a nivel servicio):
-      // - Debe venir hotel_id (partner) O tgx_hotel_id (TGX)
+        { fields: ['payment_status'] },
+        // Evita duplicados desde el proveedor
+        { fields: ['source', 'external_ref'], unique: false }
+      ]
     }
   )
 
   /* ─────────────────── Asociaciones ─────────────────── */
   Booking.associate = (models) => {
-    /* FK directas */
     Booking.belongsTo(models.User,  { foreignKey: 'user_id' })
     Booking.belongsTo(models.Hotel, { foreignKey: 'hotel_id' })
     Booking.belongsTo(models.TgxHotel, { foreignKey: 'tgx_hotel_id', as: 'tgxHotel' })
     Booking.belongsTo(models.Room,  { foreignKey: 'room_id' })
     Booking.belongsTo(models.DiscountCode, { foreignKey: 'discount_code_id' })
 
-    /* Pagos y metadatos específicos por canal */
     Booking.hasOne(models.Payment, { foreignKey: 'booking_id' })
     Booking.hasOne(models.OutsideMeta, { foreignKey: 'booking_id', as: 'outsideMeta' })
     Booking.hasOne(models.TGXMeta,     { foreignKey: 'booking_id', as: 'tgxMeta' })
 
-    /* Perks / Add-ons */
     Booking.belongsToMany(models.AddOn, {
       through: models.BookingAddOn,
       foreignKey: 'booking_id',
@@ -136,7 +133,6 @@ export default (sequelize) => {
     })
     Booking.hasMany(models.BookingAddOn, { foreignKey: 'booking_id' })
 
-    /* Comisión (si la manejas aparte) */
     if (models.Commission) {
       Booking.hasOne(models.Commission, { foreignKey: 'booking_id' })
     }

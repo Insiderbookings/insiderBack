@@ -58,7 +58,7 @@ export async function fetchBoardsTGX(criteria) {
   try {
     const data = await tgxClient.request(BOARDS_Q, vars)
     if (DEBUG) {
-      console.debug("\n[DEBUG_TGX] ⬇︎ Boards Response:\n", JSON.stringify(data, null, 2))
+      
     }
     return data.hotelX.boards
   } catch (err) {

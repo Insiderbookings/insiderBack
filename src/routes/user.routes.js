@@ -1,10 +1,23 @@
+// src/routes/user.routes.js
 import { Router } from "express"
-import { getCurrentUser, updateUserProfile, changePassword, deleteAccount } from "../controllers/user.controller.js"
+import {
+  getCurrentUser,
+  updateUserProfile,
+  changePassword,
+  deleteAccount,
+  getInfluencerStats,
+  requestPartnerInfo,
+} from "../controllers/user.controller.js"
 import { authenticate } from "../middleware/auth.js"
 
 const router = Router()
 
-// Todas las rutas requieren autenticación
+/** ⚠️ TEMP: ruta pública (sin authenticate) */
+router.get("/me/influencer/stats", getInfluencerStats)
+
+router.post("/request-info", requestPartnerInfo)
+
+// Todas las demás requieren autenticación
 router.use(authenticate)
 
 // GET /api/users/me - Obtener datos del usuario actual

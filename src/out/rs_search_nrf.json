@@ -1,0 +1,352 @@
+{
+  "data": {
+    "hotelX": {
+      "search": {
+        "context": "HOTELTEST",
+        "options": [
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d2!~|e14!~|f0!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m2!~|n14!~|o1!~|p0!~|x11082145!~|rBAR!~|sBAR!~|M55!~|N15!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|2|2025-08-11|1|4184561|4184562|14|0|0!~|A6930!~|B6930!~|C30!~|EAlmanac Double Room For Sole Use!~|FAlmanac Double Room For Sole Use!~|G1!~|H1!~|I1|30|2|2025-08-11|1|4184561|4184562|14|0|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1##!~|J0!~|K1!~|L0!~|H708!~|I157e11d6-d48f-4698-9d28-be99e9fa0b90!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "2",
+            "hotelName": "Hotel Test Pruebas Travelgate 2",
+            "boardCode": "14",
+            "paymentType": "MERCHANT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "6930",
+                "description": "Almanac Double Room For Sole Use",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 46.75,
+                    "gross": 55,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 46.75,
+                        "gross": 55,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BAR",
+                    "name": "BAR RATE (Commissionable)"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 46.75,
+              "gross": 55,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "EXCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 10,
+                  "gross": 10,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": null,
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-07-21T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "EUR",
+                  "value": 75
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d2!~|e1!~|f0!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m2!~|n1!~|o1!~|p0!~|x11082145!~|rSUP!~|sSUP!~|M50!~|N2!~|Ofalse!~|PUSD!~|Q!~|R0!~|S!~|T!~|z1|30|2|2025-08-11|1|1490964|6316200|1|0|0!~|A2679!~|B2679!~|C30!~|EDouble!~|FDouble!~|G1!~|H1!~|I1|30|2|2025-08-11|1|1490964|6316200|1|0|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1##!~|J0!~|K1!~|L0!~|H708!~|I157e11d6-d48f-4698-9d28-be99e9fa0b90!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "2",
+            "hotelName": "Hotel Test Pruebas Travelgate 2",
+            "boardCode": "1",
+            "paymentType": "MERCHANT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "2679",
+                "description": "Double",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "USD",
+                    "binding": false,
+                    "net": 49,
+                    "gross": 50,
+                    "exchange": {
+                      "currency": "USD",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "USD",
+                        "binding": false,
+                        "net": 49,
+                        "gross": 50,
+                        "exchange": {
+                          "currency": "USD",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "SUP",
+                    "name": "Superior Rate"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "USD",
+              "binding": false,
+              "net": 49,
+              "gross": 50,
+              "exchange": {
+                "currency": "USD",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "EXCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "USD",
+                  "binding": true,
+                  "net": 1,
+                  "gross": 1,
+                  "exchange": {
+                    "currency": "USD",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": null,
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-05T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "USD",
+                  "value": 49
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d2!~|e1!~|f1!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m2!~|n1!~|o1!~|p0!~|x11082145!~|rSUP!~|sSUP!~|M50!~|N2!~|Ofalse!~|PUSD!~|Q!~|R0!~|S!~|T!~|z1|30|2|2025-08-11|1|1490964|6316200|1|0|0!~|A2679!~|B2679!~|C30!~|EDouble!~|FDouble!~|G1!~|H1!~|I1|30|2|2025-08-11|1|1490964|6316200|1|0|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1##!~|J0!~|K1!~|L0!~|H708!~|I157e11d6-d48f-4698-9d28-be99e9fa0b90!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "2",
+            "hotelName": "Hotel Test Pruebas Travelgate 2",
+            "boardCode": "1",
+            "paymentType": "DIRECT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "2679",
+                "description": "Double",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "USD",
+                    "binding": false,
+                    "net": 49,
+                    "gross": 50,
+                    "exchange": {
+                      "currency": "USD",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "USD",
+                        "binding": false,
+                        "net": 49,
+                        "gross": 50,
+                        "exchange": {
+                          "currency": "USD",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "SUP",
+                    "name": "Superior Rate"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "USD",
+              "binding": false,
+              "net": 49,
+              "gross": 50,
+              "exchange": {
+                "currency": "USD",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "EXCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "USD",
+                  "binding": true,
+                  "net": 1,
+                  "gross": 1,
+                  "exchange": {
+                    "currency": "USD",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": null,
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-05T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "USD",
+                  "value": 49
+                }
+              ]
+            },
+            "remarks": null
+          }
+        ],
+        "errors": null,
+        "warnings": null
+      }
+    }
+  }
+}

@@ -1,25 +1,24 @@
 // src/routes/travelgate-payment.routes.js
-import { Router } from "express"
-import express from "express"
+import { Router } from "express";
+import express from "express";
+console.log("[tgx-payment] routes file loaded");
 
 import {
   createTravelgatePaymentIntent,
   confirmPaymentAndBook,
   handleTravelgateWebhook,
-} from "../controllers/travelgate-payment.controller.js" // ⬅️ corregido el import
+  bookWithCard,
+} from "../controllers/travelgate-payment.controller.js";
 
-const router = Router()
+const router = Router();
+console.log("[tgx-payment] registering endpoints...");
 
-// Estas rutas normalmente las montas bajo /api/tgx-payment en tu app principal:
-// app.use("/api/tgx-payment", router)
+router.post("/create-payment-intent", createTravelgatePaymentIntent);
+router.post("/confirm-and-book", confirmPaymentAndBook);
+router.post("/webhook", express.raw({ type: "application/json" }), handleTravelgateWebhook);
+router.post("/book-with-card", (req, res, next) => {
+  console.log("[tgx-payment] /book-with-card hit");
+  next();
+}, bookWithCard);
 
-// Crear Payment Intent para TravelgateX
-router.post("/create-payment-intent", createTravelgatePaymentIntent)
-
-// Confirmar pago y hacer booking
-router.post("/confirm-and-book", confirmPaymentAndBook)
-
-// Webhook específico para TravelgateX (raw body SOLO aquí)
-router.post("/webhook", express.raw({ type: "application/json" }), handleTravelgateWebhook)
-
-export default router
+export default router;

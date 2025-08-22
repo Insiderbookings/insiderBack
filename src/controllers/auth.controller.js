@@ -1,23 +1,32 @@
+// src/controllers/auth.controller.js
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import models from "../models/index.js";
 import dotenv from "dotenv";
-import { sequelize } from "../models/index.js"
-import { random4 } from "../utils/random4.js"
+import { sequelize } from "../models/index.js";
+import { random4 } from "../utils/random4.js";
 import transporter from "../services/transporter.js";
+import { OAuth2Client } from "google-auth-library"; // ← para Google Sign-In
 
 dotenv.config();
 
-export const signToken = (payload) => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
+const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
+export const signToken = (payload) =>
+  jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
+
+/* ────────────────────────────────────────────────────────────────
+   STAFF: REGISTER
+   ──────────────────────────────────────────────────────────────── */
 export const registerStaff = async (req, res) => {
   /* 0. Validación de inputs */
   const errors = validationResult(req);
-  if (!errors.isEmpty()) 
-   { 
-    console.log("here1")
-    return res.status(400).json({ errors: errors.array() });}
+  if (!errors.isEmpty()) {
+    console.log("here1");
+    return res.status(400).json({ errors: errors.array() });
+  }
 
   const { name, email, password, staff_role_id, hotelIds = [] } = req.body;
 
@@ -31,8 +40,9 @@ export const registerStaff = async (req, res) => {
 
     /* 2. Verificar array hotelIds */
     if (!Array.isArray(hotelIds) || hotelIds.length === 0) {
-      console.log("her2")
-      return res.status(400).json({ error: "hotelIds array required (≥1)" });}
+      console.log("her2");
+      return res.status(400).json({ error: "hotelIds array required (≥1)" });
+    }
 
     const foundHotels = await models.Hotel.findAll({ where: { id: hotelIds } });
     if (foundHotels.length !== hotelIds.length)
@@ -80,7 +90,7 @@ export const registerStaff = async (req, res) => {
             code: staffCode,
             percentage: role.defaultDiscountPct,
             staff_id: staff.id,
-            hotel_id,               // asegúrate de tener esta FK en DiscountCode
+            hotel_id, // asegúrate de tener esta FK en DiscountCode
             startsAt: new Date(),
           },
           { transaction: t }
@@ -90,27 +100,27 @@ export const registerStaff = async (req, res) => {
       }
 
       const links = await models.HotelStaff.findAll({
-      where: { staff_id: staff.id },
-      include: {
-        association: "hotel",                // alias definido en HotelStaff
-        attributes : ["id", "name", "image", "city", "country"],
-      },
-      attributes: ["staff_code", "is_primary"],
-    });
+        where: { staff_id: staff.id },
+        include: {
+          association: "hotel", // alias definido en HotelStaff
+          attributes: ["id", "name", "image", "city", "country"],
+        },
+        attributes: ["staff_code", "is_primary"],
+      });
 
-    /* 3.a. Formatear resultado */
-    const hotels = links.map((l) => {
-      const h = l.hotel;                     // ← minúsculas
-      return {
-        id       : h.id,
-        name     : h.name,
-        image    : h.image,
-        city     : h.city,
-        country  : h.country,
-        staffCode: l.staff_code,
-        isPrimary: l.is_primary,
-      };
-    });
+      /* 3.a. Formatear resultado */
+      const hotels = links.map((l) => {
+        const h = l.hotel; // ← minúsculas
+        return {
+          id: h.id,
+          name: h.name,
+          image: h.image,
+          city: h.city,
+          country: h.country,
+          staffCode: l.staff_code,
+          isPrimary: l.is_primary,
+        };
+      });
 
       /* 4.3 Token + respuesta */
       const token = signToken({ id: staff.id, type: "staff", roleName: role.name });
@@ -122,14 +132,17 @@ export const registerStaff = async (req, res) => {
   }
 };
 
+/* ────────────────────────────────────────────────────────────────
+   STAFF: LOGIN
+   ──────────────────────────────────────────────────────────────── */
 export const loginStaff = async (req, res) => {
   const { email, password } = req.body;
 
   try {
     /* 1. Buscar staff + rol */
     const staff = await models.Staff.findOne({
-      where   : { email },
-      include : { model: models.StaffRole, as: "role" },
+      where: { email },
+      include: { model: models.StaffRole, as: "role" },
     });
     if (!staff) return res.status(404).json({ error: "Not found" });
 
@@ -141,21 +154,21 @@ export const loginStaff = async (req, res) => {
     const links = await models.HotelStaff.findAll({
       where: { staff_id: staff.id },
       include: {
-        association: "hotel",                // alias definido en HotelStaff
-        attributes : ["id", "name", "image", "city", "country"],
+        association: "hotel", // alias definido en HotelStaff
+        attributes: ["id", "name", "image", "city", "country"],
       },
       attributes: ["staff_code", "is_primary"],
     });
 
     /* 3.a. Formatear resultado */
     const hotels = links.map((l) => {
-      const h = l.hotel;                     // ← minúsculas
+      const h = l.hotel; // ← minúsculas
       return {
-        id       : h.id,
-        name     : h.name,
-        image    : h.image,
-        city     : h.city,
-        country  : h.country,
+        id: h.id,
+        name: h.name,
+        image: h.image,
+        city: h.city,
+        country: h.country,
         staffCode: l.staff_code,
         isPrimary: l.is_primary,
       };
@@ -163,14 +176,14 @@ export const loginStaff = async (req, res) => {
 
     /* 4. JWT */
     const token = signToken({
-      id      : staff.id,
-      type    : "staff",
+      id: staff.id,
+      type: "staff",
       roleName: staff.role.name,
-      roleId: staff.role.id
+      roleId: staff.role.id,
     });
 
     /* 5. Respuesta */
-    console.log(hotels, "hotels")
+    console.log(hotels, "hotels");
     res.json({ token, staff, hotels });
   } catch (err) {
     console.error(err);
@@ -178,49 +191,57 @@ export const loginStaff = async (req, res) => {
   }
 };
 
+/* ────────────────────────────────────────────────────────────────
+   USER: REGISTER (local)
+   ──────────────────────────────────────────────────────────────── */
 export const registerUser = async (req, res) => {
-  const { name, email, password } = req.body
+  const { name, email, password } = req.body;
   try {
-    const exists = await models.User.findOne({ where: { email } })
-    if (exists) return res.status(409).json({ error: "Email taken" })
+    const exists = await models.User.findOne({ where: { email } });
+    if (exists) return res.status(409).json({ error: "Email taken" });
 
-    const hash = await bcrypt.hash(password, 10)
-
+    const hash = await bcrypt.hash(password, 10);
 
     const user = await models.User.create({
       name,
       email,
-      password_hash: hash,   
-    })
+      password_hash: hash,
+    });
 
-    const token = signToken({ id: user.id, type: "user" })
-    return res.status(201).json({ token, user })
+    const token = signToken({ id: user.id, type: "user" });
+    return res.status(201).json({ token, user });
   } catch (err) {
-    console.error(err)
-    return res.status(500).json({ error: "Server error" })
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
   }
-}
+};
 
+/* ────────────────────────────────────────────────────────────────
+   USER: LOGIN (local)
+   ──────────────────────────────────────────────────────────────── */
 export const loginUser = async (req, res) => {
-  const { email, password } = req.body
+  const { email, password } = req.body;
   try {
     /* 1 ▸ Buscar usuario por email */
-    const user = await models.User.findOne({ where: { email } })
-    if (!user) return res.status(404).json({ error: "Invalid credentials" })
+    const user = await models.User.findOne({ where: { email } });
+    if (!user) return res.status(404).json({ error: "Invalid credentials" });
 
-    /* 2 ▸ Comparar contraseña  (¡usa la columna correcta!) */
-    const valid = await bcrypt.compare(password, user.password_hash)
-    if (!valid) return res.status(401).json({ error: "Invalid credentials" })
+    /* 2 ▸ Comparar contraseña (usa la columna correcta password_hash) */
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: "Invalid credentials" });
 
     /* 3 ▸ Emitir JWT */
-    const token = signToken({ id: user.id, type: "user" })
-    return res.json({ token, user })
+    const token = signToken({ id: user.id, type: "user" });
+    return res.json({ token, user });
   } catch (err) {
-    console.error(err)
-    return res.status(500).json({ error: "Server error" })
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
   }
-}
+};
 
+/* ────────────────────────────────────────────────────────────────
+   TOKEN: Validar token (lectura)
+   ──────────────────────────────────────────────────────────────── */
 export const validateToken = (req, res) => {
   const { token } = req.params;
 
@@ -232,14 +253,17 @@ export const validateToken = (req, res) => {
 
     return res.json({ valid: true, payload: decoded });
   } catch (err) {
-    console.log(err)
+    console.log(err);
     return res.status(400).json({
-      valid : false,
-      error : "Token expired or invalid",
+      valid: false,
+      error: "Token expired or invalid",
     });
   }
 };
 
+/* ────────────────────────────────────────────────────────────────
+   USER: Set password con token (Magic Link)
+   ──────────────────────────────────────────────────────────────── */
 export const setPasswordWithToken = async (req, res) => {
   /* 0. validación body --------------------------- */
   const errors = validationResult(req);
@@ -261,7 +285,8 @@ export const setPasswordWithToken = async (req, res) => {
 
     /* 3. hashear y guardar nueva contraseña ------- */
     const hash = await bcrypt.hash(password, 10);
-    await user.update({ passwordHash: hash });
+    // ⚠️ tu columna es snake_case: password_hash
+    await user.update({ password_hash: hash });
 
     /* 4. emitir JWT de sesión -------------------- */
     const sessionToken = signToken({ id: user.id, type: "user" });
@@ -269,12 +294,12 @@ export const setPasswordWithToken = async (req, res) => {
     /* 5. respuesta                                 */
     return res.json({
       token: sessionToken,
-      user : {
-        id   : user.id,
-        name : user.name,
+      user: {
+        id: user.id,
+        name: user.name,
         email: user.email,
         phone: user.phone,
-        role : user.role,
+        role: user.role,
       },
     });
   } catch (err) {
@@ -283,6 +308,9 @@ export const setPasswordWithToken = async (req, res) => {
   }
 };
 
+/* ────────────────────────────────────────────────────────────────
+   STAFF: Hire staff
+   ──────────────────────────────────────────────────────────────── */
 export const hireStaff = async (req, res) => {
   /* ── validación express-validator ── */
   const errors = validationResult(req);
@@ -293,13 +321,13 @@ export const hireStaff = async (req, res) => {
   const { firstName, lastName, email, staff_role_id, hotelId } = req.body;
 
   /* ── genera contraseña: apellido + 4 dígitos ── */
-  const rawPassword  = `${lastName.toLowerCase()}${random4()}`
+  const rawPassword = `${lastName.toLowerCase()}${random4()}`;
   const passwordHash = await bcrypt.hash(rawPassword, 10);
 
   try {
     /* 1 ▸ crear registro Staff */
     const staff = await models.Staff.create({
-      name          : `${firstName} ${lastName}`,
+      name: `${firstName} ${lastName}`,
       email,
       staff_role_id,
       passwordHash,
@@ -309,10 +337,12 @@ export const hireStaff = async (req, res) => {
     let staff_code;
     let attempts = 0;
     do {
-      staff_code = String(random4())
+      staff_code = String(random4());
       // verifica que no exista ya en ese hotel
       // eslint-disable-next-line no-await-in-loop
-      const exists = await models.HotelStaff.findOne({ where: { hotel_id: hotelId, staff_code } });
+      const exists = await models.HotelStaff.findOne({
+        where: { hotel_id: hotelId, staff_code },
+      });
       if (!exists) break;
       attempts += 1;
     } while (attempts < 10);
@@ -323,18 +353,18 @@ export const hireStaff = async (req, res) => {
 
     /* 3 ▸ vincular en tabla pivote */
     await models.HotelStaff.create({
-      hotel_id : hotelId,
-      staff_id : staff.id,
+      hotel_id: hotelId,
+      staff_id: staff.id,
       staff_code,
-      since    : new Date(),
+      since: new Date(),
       is_primary: false,
     });
 
     /* 4 ▸ enviar e-mail */
     await transporter.sendMail({
-      to      : email,
-      subject : "Your new staff account at Insider Hotels",
-      html    : `
+      to: email,
+      subject: "Your new staff account at Insider Hotels",
+      html: `
         <h3>Welcome aboard!</h3>
         <p>Your account for Hotel #${hotelId} is ready.</p>
         <p>
@@ -346,8 +376,8 @@ export const hireStaff = async (req, res) => {
     });
 
     return res.json({
-      ok       : true,
-      staffId  : staff.id,
+      ok: true,
+      staffId: staff.id,
       staffCode: staff_code,
     });
   } catch (err) {
@@ -360,26 +390,129 @@ export const hireStaff = async (req, res) => {
   }
 };
 
+/* ────────────────────────────────────────────────────────────────
+   STAFF: Listar por hotel
+   ──────────────────────────────────────────────────────────────── */
 export const listByHotel = async (req, res, next) => {
   try {
     const { hotelId } = req.params;
     if (!hotelId) return res.status(400).json({ error: "hotelId is required" });
 
-   const staff = await models.Staff.findAll({
-  attributes: ["id", "name", "email", "staff_role_id"],
-  include   : [
-    {
-      model   : models.Hotel,
-      as      : "hotels",      // ← alias del belongsToMany en Staff
-      where   : { id: hotelId },
-      through : { attributes: [] },
-    },
-    { model: models.StaffRole, as: "role", attributes: ["name"] },
-  ],
-});
+    const staff = await models.Staff.findAll({
+      attributes: ["id", "name", "email", "staff_role_id"],
+      include: [
+        {
+          model: models.Hotel,
+          as: "hotels", // ← alias del belongsToMany en Staff
+          where: { id: hotelId },
+          through: { attributes: [] },
+        },
+        { model: models.StaffRole, as: "role", attributes: ["name"] },
+      ],
+    });
 
     return res.json(staff);
   } catch (err) {
     next(err);
+  }
+};
+
+/* ────────────────────────────────────────────────────────────────
+   GOOGLE SIGN-IN: Exchange code → tokens → user
+   (GIS popup + Authorization Code con PKCE)
+   Ruta: POST /auth/google/exchange
+   Body: { code }
+   ──────────────────────────────────────────────────────────────── */
+export const googleExchange = async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: "Missing code" });
+
+    // 1) Intercambio code → tokens (incluye id_token)
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: "postmessage", // GIS popup usa 'postmessage'
+        grant_type: "authorization_code",
+      }),
+    });
+
+    const tokens = await tokenRes.json();
+    if (!tokenRes.ok) {
+      return res
+        .status(400)
+        .json({ error: "Token exchange failed", detail: tokens });
+    }
+
+    const { id_token } = tokens;
+    if (!id_token) return res.status(400).json({ error: "No id_token from Google" });
+
+    // 2) Verificar id_token (firma + audiencia)
+    const ticket = await googleClient.verifyIdToken({
+      idToken: id_token,
+      audience: GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+
+    const sub = payload.sub; // id único Google
+    const email = payload.email;
+    const name = payload.name || email;
+    const picture = payload.picture || null;
+    const emailVerified = !!payload.email_verified;
+
+    // 3) Upsert usuario
+    // 3a) ¿ya está vinculado a Google?
+    let user = await models.User.findOne({
+      where: { auth_provider: "google", provider_sub: sub },
+    });
+
+    if (!user) {
+      // 3b) ¿existe por email? (posible cuenta local previa)
+      user = await models.User.findOne({ where: { email } });
+
+      if (user) {
+        // Vincular proveedor (merge de cuentas)
+        await user.update({
+          auth_provider: "google",
+          provider_sub: sub,
+          email_verified: emailVerified || user.email_verified,
+          avatar_url: user.avatar_url || picture,
+        });
+      } else {
+        // 3c) Crear usuario nuevo (sin password)
+        user = await models.User.create({
+          name,
+          email,
+          password_hash: null, // social login → sin password local
+          auth_provider: "google",
+          provider_sub: sub,
+          email_verified: emailVerified,
+          avatar_url: picture,
+          // is_active, role → usan defaults del modelo
+        });
+      }
+    }
+
+    // 4) Emitir JWT (mismo formato que login local)
+    const token = signToken({ id: user.id, type: "user" });
+
+    return res.json({
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        avatar_url: user.avatar_url,
+      },
+    });
+  } catch (err) {
+    console.error("googleExchange error:", err);
+    return res.status(500).json({ error: "Internal error" });
   }
 };

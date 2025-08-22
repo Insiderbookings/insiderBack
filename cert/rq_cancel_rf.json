@@ -1,0 +1,20 @@
+{
+  "query": "\n  mutation CancelBooking($input: HotelCancelInput!, $settings: HotelSettingsInput!) {\n    hotelX {\n      cancel(input: $input, settings: $settings) {\n        errors   { type code description }\n        warnings { code description }\n        cancellation {\n          status\n          cancelReference\n          reference { bookingID client supplier hotel }\n        }\n      }\n    }\n  }\n",
+  "variables": {
+    "input": {
+      "accessCode": "2",
+      "hotelCode": "1",
+      "reference": {
+        "supplier": "4636718",
+        "client": "IB-meafdjzh-ai9z"
+      }
+    },
+    "settings": {
+      "client": "insiderbookings",
+      "context": "HOTELTEST",
+      "timeout": 10000,
+      "testMode": true,
+      "auditTransactions": true
+    }
+  }
+}

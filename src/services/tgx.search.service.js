@@ -1,30 +1,29 @@
 /*********************************************************************************************
  * src/services/tgx/search.service.js
- * Wrapper para la operación Search de Hotel‑X
- * – Compatible con las credenciales demo (jun‑2025).
- * – Incluye modo DEBUG_TGX para ver variables y respuesta/errores en consola.
+ * Search de Hotel-X con soporte de filtros y capturas (certificación).
  *********************************************************************************************/
 
 import { GraphQLClient } from "graphql-request"
 import gql from "graphql-tag"
+import { requestWithCapture } from "./tgx.capture.js"
 
 const DEBUG = process.env.DEBUG_TGX === "true"
+const CERT_MODE = process.env.TGX_CERT_MODE === "true"
 
-/* ────────────────────────────── 1. Cliente GraphQL reutilizable ────────────────────────────── */
+/* ── 1. Cliente GraphQL ────────────────────────────────────────────────────────────────────── */
 const tgxClient = new GraphQLClient(
-  // Usa la URL de la variable de entorno o, por defecto, la oficial demo
   process.env.TGX_ENDPOINT ?? "https://api.travelgate.com",
   {
     headers: {
-      Authorization: `Apikey ${process.env.TGX_KEY}`,
+      Authorization: `ApiKey ${process.env.TGX_KEY}`,
       "Accept-Encoding": "gzip",
       Connection: "keep-alive",
     },
-    timeout: 30_000, // ms
+    timeout: 30_000,
   },
 )
 
-/* ────────────────────────────── 2. Query Search (AST) - COMPLETA ────────────────────────────── */
+/* ── 2. Query Search (AST) ─────────────────────────────────────────────────────────────────── */
 const SEARCH_Q = gql`
   query SearchTGX(
     $criteria: HotelCriteriaSearchInput!
@@ -32,11 +31,7 @@ const SEARCH_Q = gql`
     $filter: HotelXFilterSearchInput
   ) {
     hotelX {
-      search(
-        criteria: $criteria
-        settings: $settings
-        filterSearch: $filter
-      ) {
+      search(criteria: $criteria, settings: $settings, filterSearch: $filter) {
         context
         options {
           id
@@ -49,9 +44,7 @@ const SEARCH_Q = gql`
           status
           occupancies {
             id
-            paxes {
-              age
-            }
+            paxes { age }
           }
           rooms {
             occupancyRefId
@@ -64,10 +57,7 @@ const SEARCH_Q = gql`
                 binding
                 net
                 gross
-                exchange {
-                  currency
-                  rate
-                }
+                exchange { currency rate }
               }
               breakdown {
                 start
@@ -77,40 +67,21 @@ const SEARCH_Q = gql`
                   binding
                   net
                   gross
-                  exchange {
-                    currency
-                    rate
-                  }
+                  exchange { currency rate }
                   minimumSellingPrice
                 }
               }
             }
-            beds {
-              type
-              count
-            }
-            ratePlans {
-              start
-              end
-              code
-              name
-            }
-            promotions {
-              start
-              end
-              code
-              name
-            }
+            beds { type count }
+            ratePlans { start end code name }
+            promotions { start end code name }
           }
           price {
             currency
             binding
             net
             gross
-            exchange {
-              currency
-              rate
-            }
+            exchange { currency rate }
             minimumSellingPrice
             markups {
               channel
@@ -118,16 +89,8 @@ const SEARCH_Q = gql`
               binding
               net
               gross
-              exchange {
-                currency
-                rate
-              }
-              rules {
-                id
-                name
-                type
-                value
-              }
+              exchange { currency rate }
+              rules { id name type value }
             }
           }
           supplements {
@@ -142,21 +105,8 @@ const SEARCH_Q = gql`
             durationType
             quantity
             unit
-            resort {
-              code
-              name
-              description
-            }
-            price {
-              currency
-              binding
-              net
-              gross
-              exchange {
-                currency
-                rate
-              }
-            }
+            resort { code name description }
+            price { currency binding net gross exchange { currency rate } }
           }
           surcharges {
             code
@@ -168,20 +118,14 @@ const SEARCH_Q = gql`
               binding
               net
               gross
-              exchange {
-                currency
-                rate
-              }
+              exchange { currency rate }
               markups {
                 channel
                 currency
                 binding
                 net
                 gross
-                exchange {
-                  currency
-                  rate
-                }
+                exchange { currency rate }
               }
             }
           }
@@ -198,23 +142,15 @@ const SEARCH_Q = gql`
           }
           remarks
         }
-        errors {
-          code
-          type
-          description
-        }
-        warnings {
-          code
-          type
-          description
-        }
+        errors { code type description }
+        warnings { code type description }
       }
     }
   }
 `
 
-/* ────────────────────────────── 3. Función de bajo nivel: Search ────────────────────────────── */
-export async function searchTGX(criteria, settings, filter = null) {
+/* ── 3. Low-level search ───────────────────────────────────────────────────────────────────── */
+export async function searchTGX(criteria, settings, filter = null, captureLabel = undefined) {
   const vars = { criteria, settings, filter }
 
   if (DEBUG) {
@@ -222,12 +158,25 @@ export async function searchTGX(criteria, settings, filter = null) {
   }
 
   try {
-    const data = await tgxClient.request(SEARCH_Q, vars)
+    const exec = () => tgxClient.request(SEARCH_Q, vars)
+
+    const data = CERT_MODE
+      ? await requestWithCapture(
+          "search",
+          vars,
+          exec,
+          {
+            doc: SEARCH_Q,
+            // 🆕 si tu requestWithCapture soporta label/naming, lo usamos para nombrar rq/rs
+            // Por ejemplo: rq_search_rf.json / rs_search_rf.json
+            label: captureLabel
+          }
+        )
+      : await exec()
 
     if (DEBUG) {
       console.debug("\n[DEBUG_TGX] ⬇︎ Respuesta:\n", JSON.stringify(data, null, 2))
     }
-
     return data.hotelX.search
   } catch (err) {
     if (DEBUG) {
@@ -237,10 +186,9 @@ export async function searchTGX(criteria, settings, filter = null) {
   }
 }
 
-/* ────────────────────────────── 4. Helper de mapeo para el front ────────────────────────────── */
+/* ── 4. Mapper para el front ───────────────────────────────────────────────────────────────── */
 export function mapSearchOptions(search) {
   if (!search?.options?.length) return []
-
   return search.options.map((option) => ({
     rateKey: option.id,
     hotelCode: option.hotelCode,
@@ -262,12 +210,12 @@ export function mapSearchOptions(search) {
     cancelPolicy: option.cancelPolicy,
     rateRules: option.rateRules,
     surcharges:
-      option.surcharges?.map((surcharge) => ({
-        code: surcharge.code,
-        description: surcharge.description,
-        mandatory: surcharge.mandatory,
-        price: surcharge.price?.net,
-        currency: surcharge.price?.currency,
+      option.surcharges?.map((s) => ({
+        code: s.code,
+        description: s.description,
+        mandatory: s.mandatory,
+        price: s.price?.net,
+        currency: s.price?.currency,
       })) ?? [],
   }))
 }

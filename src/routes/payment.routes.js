@@ -7,6 +7,9 @@ import {
   validateMerchant,
   processApplePay,
   createOutsideAddOnsSession,
+  createPartnerPaymentIntent,
+  confirmPartnerPayment,
+  handlePartnerWebhook,
 } from "../controllers/payment.controller.js";
 
 import express from "express";
@@ -29,5 +32,14 @@ router.post("/stripe/webhook",
 
 /* Apple Pay merchant validation */
 router.post("/stripe/validate-merchant", validateMerchant);
+
+router.post("/create-payment-intent", createPartnerPaymentIntent);
+router.post("/confirm-and-book",      confirmPartnerPayment);
+
+// (opcional) webhook específico de partner si quieres auditar
+router.post("/webhook",
+  express.raw({ type: "application/json" }),
+  handlePartnerWebhook
+);
 
 export default router;
