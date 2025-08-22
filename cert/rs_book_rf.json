@@ -1,0 +1,62 @@
+{
+  "data": {
+    "hotelX": {
+      "book": {
+        "booking": {
+          "status": "OK",
+          "reference": {
+            "bookingID": "n1@1[250813[250814[250813[1[es[EUR[2[IB-meafdjzh-ai9z[4636718[",
+            "client": "IB-meafdjzh-ai9z",
+            "supplier": "4636718",
+            "hotel": ""
+          },
+          "price": {
+            "currency": "EUR",
+            "net": 62,
+            "gross": 62,
+            "binding": false
+          },
+          "holder": {
+            "name": "testA",
+            "surname": "testA"
+          },
+          "cancelPolicy": null,
+          "hotel": {
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "bookingDate": "2025-08-13",
+            "start": "2025-08-13",
+            "end": "2025-08-14",
+            "boardCode": "14",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "code": "5683",
+                "description": "Double Suite Deluxe",
+                "occupancyRefId": 1,
+                "price": {
+                  "currency": "EUR",
+                  "binding": false,
+                  "net": 62,
+                  "gross": 62
+                }
+              }
+            ]
+          },
+          "remarks": "Guest email: ramiro.alet@gmail.com"
+        },
+        "errors": null,
+        "warnings": null
+      }
+    }
+  }
+}

@@ -1,0 +1,1966 @@
+{
+  "data": {
+    "hotelX": {
+      "search": {
+        "context": "HOTELTEST",
+        "options": [
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e14!~|f0!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n14!~|o0!~|p0!~|x11082053!~|rBARRF!~|sBARRF!~|M62!~|N0!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|4247163|4247164|14|11|0!~|A5683!~|B5683!~|C30!~|EDouble Suite Deluxe!~|FDouble Suite Deluxe!~|G1!~|H1!~|I1|30|1|2025-08-11|1|4247163|4247164|14|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "14",
+            "paymentType": "MERCHANT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "5683",
+                "description": "Double Suite Deluxe",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 62,
+                    "gross": 62,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 60,
+                        "gross": 60,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BARRF",
+                    "name": "BAR TEST RF"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 62,
+              "gross": 62,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "INCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 2,
+                  "gross": 2,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE"
+            ],
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-05T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "EUR",
+                  "value": 62
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e14!~|f0!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n14!~|o0!~|p0!~|x11082053!~|rBAR_USD!~|sBAR_USD!~|M67!~|N0!~|Ofalse!~|PUSD!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|5747340|5747342|14|11|0!~|A2269!~|B2269!~|C30!~|EDouble Standard!~|FDouble Standard!~|G1!~|H1!~|I1|30|1|2025-08-11|1|5747340|5747342|14|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "14",
+            "paymentType": "MERCHANT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "2269",
+                "description": "Double Standard",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "USD",
+                    "binding": false,
+                    "net": 67,
+                    "gross": 67,
+                    "exchange": {
+                      "currency": "USD",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "USD",
+                        "binding": false,
+                        "net": 67,
+                        "gross": 67,
+                        "exchange": {
+                          "currency": "USD",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BAR_USD",
+                    "name": "BAR Rate USD"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "USD",
+              "binding": false,
+              "net": 67,
+              "gross": 67,
+              "exchange": {
+                "currency": "USD",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "2",
+                "chargeType": "EXCLUDE",
+                "description": "Resort Fee",
+                "mandatory": true,
+                "price": {
+                  "currency": "USD",
+                  "binding": true,
+                  "net": 4,
+                  "gross": 4,
+                  "exchange": {
+                    "currency": "USD",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE"
+            ],
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-06T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "USD",
+                  "value": 67
+                },
+                {
+                  "deadline": "2025-08-07T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "USD",
+                  "value": 134
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e14!~|f0!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n14!~|o0!~|p0!~|x11082053!~|rBAR!~|sBAR!~|M98!~|N2!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|4132467|4132468|14|11|0!~|A2269!~|B2269!~|C30!~|EDouble Standard!~|FDouble Standard!~|G1!~|H1!~|I1|30|1|2025-08-11|1|4132467|4132468|14|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE|NON_REFUNDABLE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "14",
+            "paymentType": "MERCHANT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "2269",
+                "description": "Double Standard",
+                "refundable": false,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 96.04,
+                    "gross": 98,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 96.04,
+                        "gross": 98,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BAR",
+                    "name": "TEST BAR NRF"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 96.04,
+              "gross": 98,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "EXCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 3,
+                  "gross": 3,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE",
+              "NON_REFUNDABLE"
+            ],
+            "cancelPolicy": {
+              "refundable": false,
+              "cancelPenalties": null
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e14!~|f0!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n14!~|o1!~|p0!~|x11082053!~|rSUMMER_RATE!~|sSUMMER_RATE!~|M111!~|N0!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|5765992|5765993|14|0|0!~|A33841!~|B33841!~|C30!~|EJunior Suite!~|FJunior Suite!~|G1!~|H1!~|I1|30|1|2025-08-11|1|5765992|5765993|14|0|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1##!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "14",
+            "paymentType": "MERCHANT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "33841",
+                "description": "Junior Suite",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 111,
+                    "gross": 111,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 108,
+                        "gross": 108,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "SUMMER_RATE",
+                    "name": "Summer Rate"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 111,
+              "gross": 111,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "1",
+                "chargeType": "INCLUDE",
+                "description": "Local",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 3,
+                  "gross": 3,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": null,
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-09T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "EUR",
+                  "value": 55.5
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e14!~|f0!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n14!~|o0!~|p0!~|x11082053!~|rBARRF!~|sBARRF!~|M152!~|N0!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|4247163|4247170|14|11|0!~|A5060!~|B5060!~|C30!~|ETriple Suite Sea View!~|FTriple Suite Sea View!~|G1!~|H1!~|I1|30|1|2025-08-11|1|4247163|4247170|14|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "14",
+            "paymentType": "MERCHANT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "5060",
+                "description": "Triple Suite Sea View",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 152,
+                    "gross": 152,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 150,
+                        "gross": 150,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BARRF",
+                    "name": "BAR TEST RF"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 152,
+              "gross": 152,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "INCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 2,
+                  "gross": 2,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE"
+            ],
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-05T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "EUR",
+                  "value": 152
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e14!~|f3!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n14!~|o0!~|p0!~|x11082053!~|rBARRF!~|sBARRF!~|M62!~|N0!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|4247163|4247164|14|11|0!~|A5683!~|B5683!~|C30!~|EDouble Suite Deluxe!~|FDouble Suite Deluxe!~|G1!~|H1!~|I1|30|1|2025-08-11|1|4247163|4247164|14|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "14",
+            "paymentType": "CARD_CHECK_IN",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "5683",
+                "description": "Double Suite Deluxe",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 62,
+                    "gross": 62,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 60,
+                        "gross": 60,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BARRF",
+                    "name": "BAR TEST RF"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 62,
+              "gross": 62,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "INCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 2,
+                  "gross": 2,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE"
+            ],
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-05T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "EUR",
+                  "value": 62
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e14!~|f3!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n14!~|o0!~|p0!~|x11082053!~|rBARRF!~|sBARRF!~|M152!~|N0!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|4247163|4247170|14|11|0!~|A5060!~|B5060!~|C30!~|ETriple Suite Sea View!~|FTriple Suite Sea View!~|G1!~|H1!~|I1|30|1|2025-08-11|1|4247163|4247170|14|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "14",
+            "paymentType": "CARD_CHECK_IN",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "5060",
+                "description": "Triple Suite Sea View",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 152,
+                    "gross": 152,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 150,
+                        "gross": 150,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BARRF",
+                    "name": "BAR TEST RF"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 152,
+              "gross": 152,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "INCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 2,
+                  "gross": 2,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE"
+            ],
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-05T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "EUR",
+                  "value": 152
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e14!~|f1!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n14!~|o0!~|p0!~|x11082053!~|rBAR_USD!~|sBAR_USD!~|M67!~|N0!~|Ofalse!~|PUSD!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|5747340|5747342|14|11|0!~|A2269!~|B2269!~|C30!~|EDouble Standard!~|FDouble Standard!~|G1!~|H1!~|I1|30|1|2025-08-11|1|5747340|5747342|14|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "14",
+            "paymentType": "DIRECT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "2269",
+                "description": "Double Standard",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "USD",
+                    "binding": false,
+                    "net": 67,
+                    "gross": 67,
+                    "exchange": {
+                      "currency": "USD",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "USD",
+                        "binding": false,
+                        "net": 67,
+                        "gross": 67,
+                        "exchange": {
+                          "currency": "USD",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BAR_USD",
+                    "name": "BAR Rate USD"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "USD",
+              "binding": false,
+              "net": 67,
+              "gross": 67,
+              "exchange": {
+                "currency": "USD",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "2",
+                "chargeType": "EXCLUDE",
+                "description": "Resort Fee",
+                "mandatory": true,
+                "price": {
+                  "currency": "USD",
+                  "binding": true,
+                  "net": 4,
+                  "gross": 4,
+                  "exchange": {
+                    "currency": "USD",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE"
+            ],
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-06T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "USD",
+                  "value": 67
+                },
+                {
+                  "deadline": "2025-08-07T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "USD",
+                  "value": 134
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e14!~|f1!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n14!~|o0!~|p0!~|x11082053!~|rBAR!~|sBAR!~|M98!~|N2!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|4132467|4132468|14|11|0!~|A2269!~|B2269!~|C30!~|EDouble Standard!~|FDouble Standard!~|G1!~|H1!~|I1|30|1|2025-08-11|1|4132467|4132468|14|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE|NON_REFUNDABLE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "14",
+            "paymentType": "DIRECT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "2269",
+                "description": "Double Standard",
+                "refundable": false,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 96.04,
+                    "gross": 98,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 96.04,
+                        "gross": 98,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BAR",
+                    "name": "TEST BAR NRF"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 96.04,
+              "gross": 98,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "EXCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 3,
+                  "gross": 3,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE",
+              "NON_REFUNDABLE"
+            ],
+            "cancelPolicy": {
+              "refundable": false,
+              "cancelPenalties": null
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e1!~|f0!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n1!~|o0!~|p0!~|x11082053!~|rBARRF!~|sBARRF!~|M92!~|N0!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|4247163|4247164|1|11|0!~|A5683!~|B5683!~|C30!~|EDouble Suite Deluxe!~|FDouble Suite Deluxe!~|G1!~|H1!~|I1|30|1|2025-08-11|1|4247163|4247164|1|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "1",
+            "paymentType": "MERCHANT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "5683",
+                "description": "Double Suite Deluxe",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 92,
+                    "gross": 92,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 90,
+                        "gross": 90,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BARRF",
+                    "name": "BAR TEST RF"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 92,
+              "gross": 92,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "INCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 2,
+                  "gross": 2,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE"
+            ],
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-05T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "EUR",
+                  "value": 92
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e1!~|f0!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n1!~|o0!~|p0!~|x11082053!~|rBAR_USD!~|sBAR_USD!~|M97!~|N0!~|Ofalse!~|PUSD!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|5747340|5747342|1|11|0!~|A2269!~|B2269!~|C30!~|EDouble Standard!~|FDouble Standard!~|G1!~|H1!~|I1|30|1|2025-08-11|1|5747340|5747342|1|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "1",
+            "paymentType": "MERCHANT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "2269",
+                "description": "Double Standard",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "USD",
+                    "binding": false,
+                    "net": 97,
+                    "gross": 97,
+                    "exchange": {
+                      "currency": "USD",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "USD",
+                        "binding": false,
+                        "net": 97,
+                        "gross": 97,
+                        "exchange": {
+                          "currency": "USD",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BAR_USD",
+                    "name": "BAR Rate USD"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "USD",
+              "binding": false,
+              "net": 97,
+              "gross": 97,
+              "exchange": {
+                "currency": "USD",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "2",
+                "chargeType": "EXCLUDE",
+                "description": "Resort Fee",
+                "mandatory": true,
+                "price": {
+                  "currency": "USD",
+                  "binding": true,
+                  "net": 4,
+                  "gross": 4,
+                  "exchange": {
+                    "currency": "USD",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE"
+            ],
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-06T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "USD",
+                  "value": 97
+                },
+                {
+                  "deadline": "2025-08-07T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "USD",
+                  "value": 194
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e1!~|f0!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n1!~|o0!~|p0!~|x11082053!~|rBAR!~|sBAR!~|M128!~|N2!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|4132467|4132468|1|11|0!~|A2269!~|B2269!~|C30!~|EDouble Standard!~|FDouble Standard!~|G1!~|H1!~|I1|30|1|2025-08-11|1|4132467|4132468|1|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE|NON_REFUNDABLE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "1",
+            "paymentType": "MERCHANT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "2269",
+                "description": "Double Standard",
+                "refundable": false,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 125.44,
+                    "gross": 128,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 125.44,
+                        "gross": 128,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BAR",
+                    "name": "TEST BAR NRF"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 125.44,
+              "gross": 128,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "EXCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 3,
+                  "gross": 3,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE",
+              "NON_REFUNDABLE"
+            ],
+            "cancelPolicy": {
+              "refundable": false,
+              "cancelPenalties": null
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e1!~|f3!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n1!~|o0!~|p0!~|x11082053!~|rBARRF!~|sBARRF!~|M92!~|N0!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|4247163|4247164|1|11|0!~|A5683!~|B5683!~|C30!~|EDouble Suite Deluxe!~|FDouble Suite Deluxe!~|G1!~|H1!~|I1|30|1|2025-08-11|1|4247163|4247164|1|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "1",
+            "paymentType": "CARD_CHECK_IN",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "5683",
+                "description": "Double Suite Deluxe",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 92,
+                    "gross": 92,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 90,
+                        "gross": 90,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BARRF",
+                    "name": "BAR TEST RF"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 92,
+              "gross": 92,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "INCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 2,
+                  "gross": 2,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE"
+            ],
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-05T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "EUR",
+                  "value": 92
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e1!~|f1!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n1!~|o0!~|p0!~|x11082053!~|rBAR_USD!~|sBAR_USD!~|M97!~|N0!~|Ofalse!~|PUSD!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|5747340|5747342|1|11|0!~|A2269!~|B2269!~|C30!~|EDouble Standard!~|FDouble Standard!~|G1!~|H1!~|I1|30|1|2025-08-11|1|5747340|5747342|1|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "1",
+            "paymentType": "DIRECT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "2269",
+                "description": "Double Standard",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "USD",
+                    "binding": false,
+                    "net": 97,
+                    "gross": 97,
+                    "exchange": {
+                      "currency": "USD",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "USD",
+                        "binding": false,
+                        "net": 97,
+                        "gross": 97,
+                        "exchange": {
+                          "currency": "USD",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BAR_USD",
+                    "name": "BAR Rate USD"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "USD",
+              "binding": false,
+              "net": 97,
+              "gross": 97,
+              "exchange": {
+                "currency": "USD",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "2",
+                "chargeType": "EXCLUDE",
+                "description": "Resort Fee",
+                "mandatory": true,
+                "price": {
+                  "currency": "USD",
+                  "binding": true,
+                  "net": 4,
+                  "gross": 4,
+                  "exchange": {
+                    "currency": "USD",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE"
+            ],
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-06T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "USD",
+                  "value": 97
+                },
+                {
+                  "deadline": "2025-08-07T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "USD",
+                  "value": 194
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e1!~|f1!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n1!~|o0!~|p0!~|x11082053!~|rBAR!~|sBAR!~|M128!~|N2!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|4132467|4132468|1|11|0!~|A2269!~|B2269!~|C30!~|EDouble Standard!~|FDouble Standard!~|G1!~|H1!~|I1|30|1|2025-08-11|1|4132467|4132468|1|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE|NON_REFUNDABLE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "1",
+            "paymentType": "DIRECT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "2269",
+                "description": "Double Standard",
+                "refundable": false,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 125.44,
+                    "gross": 128,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 125.44,
+                        "gross": 128,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BAR",
+                    "name": "TEST BAR NRF"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 125.44,
+              "gross": 128,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "EXCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 3,
+                  "gross": 3,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE",
+              "NON_REFUNDABLE"
+            ],
+            "cancelPolicy": {
+              "refundable": false,
+              "cancelPenalties": null
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e19!~|f0!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n19!~|o0!~|p0!~|x11082053!~|rBARRF!~|sBARRF!~|M74!~|N0!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|4247163|4247164|19|11|0!~|A5683!~|B5683!~|C30!~|EDouble Suite Deluxe!~|FDouble Suite Deluxe!~|G1!~|H1!~|I1|30|1|2025-08-11|1|4247163|4247164|19|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "19",
+            "paymentType": "MERCHANT",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "5683",
+                "description": "Double Suite Deluxe",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 74,
+                    "gross": 74,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 72,
+                        "gross": 72,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BARRF",
+                    "name": "BAR TEST RF"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 74,
+              "gross": 74,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "INCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 2,
+                  "gross": 2,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE"
+            ],
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-05T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "EUR",
+                  "value": 74
+                }
+              ]
+            },
+            "remarks": null
+          },
+          {
+            "id": "33!~|a0!~|b250811!~|c250812!~|d1!~|e19!~|f3!~|gES!~|hES!~|ies!~|jEUR!~|k0!~|l2!~|m1!~|n19!~|o0!~|p0!~|x11082053!~|rBARRF!~|sBARRF!~|M74!~|N0!~|Ofalse!~|PEUR!~|Q!~|R0!~|S!~|T!~|z1|30|1|2025-08-11|1|4247163|4247164|19|11|0!~|A5683!~|B5683!~|C30!~|EDouble Suite Deluxe!~|FDouble Suite Deluxe!~|G1!~|H1!~|I1|30|1|2025-08-11|1|4247163|4247164|19|11|0!~|J1!~|K1!~|L1!~|H2!~|IES!~|J1!~|K0!~|L1!~|H703!~|I1#3@#!~|J0!~|K1!~|L0!~|H708!~|If87f68b7-f5f9-4f87-b4cd-ded2c2a67de7!~|J0!~|K0!~|L0!~|tOK!~|uConnectors!~|v0!~|w!~|yPACKAGE!~|q!~|q0!~|",
+            "accessCode": "2",
+            "supplierCode": "HOTELTEST",
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "boardCode": "19",
+            "paymentType": "CARD_CHECK_IN",
+            "status": "OK",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "occupancyRefId": 1,
+                "code": "5683",
+                "description": "Double Suite Deluxe",
+                "refundable": true,
+                "roomPrice": {
+                  "price": {
+                    "currency": "EUR",
+                    "binding": false,
+                    "net": 74,
+                    "gross": 74,
+                    "exchange": {
+                      "currency": "EUR",
+                      "rate": 1
+                    }
+                  },
+                  "breakdown": [
+                    {
+                      "start": "2025-08-11",
+                      "end": "2025-08-12",
+                      "price": {
+                        "currency": "EUR",
+                        "binding": false,
+                        "net": 72,
+                        "gross": 72,
+                        "exchange": {
+                          "currency": "EUR",
+                          "rate": 1
+                        },
+                        "minimumSellingPrice": null
+                      }
+                    }
+                  ]
+                },
+                "beds": null,
+                "ratePlans": [
+                  {
+                    "start": null,
+                    "end": null,
+                    "code": "BARRF",
+                    "name": "BAR TEST RF"
+                  }
+                ],
+                "promotions": null
+              }
+            ],
+            "price": {
+              "currency": "EUR",
+              "binding": false,
+              "net": 74,
+              "gross": 74,
+              "exchange": {
+                "currency": "EUR",
+                "rate": 1
+              },
+              "minimumSellingPrice": null,
+              "markups": null
+            },
+            "supplements": null,
+            "surcharges": [
+              {
+                "code": "0",
+                "chargeType": "INCLUDE",
+                "description": "City",
+                "mandatory": true,
+                "price": {
+                  "currency": "EUR",
+                  "binding": true,
+                  "net": 2,
+                  "gross": 2,
+                  "exchange": {
+                    "currency": "EUR",
+                    "rate": 1
+                  },
+                  "markups": null
+                }
+              }
+            ],
+            "rateRules": [
+              "PACKAGE"
+            ],
+            "cancelPolicy": {
+              "refundable": true,
+              "cancelPenalties": [
+                {
+                  "deadline": "2025-08-05T10:00:00Z",
+                  "isCalculatedDeadline": false,
+                  "penaltyType": "IMPORT",
+                  "currency": "EUR",
+                  "value": 74
+                }
+              ]
+            },
+            "remarks": null
+          }
+        ],
+        "errors": null,
+        "warnings": null
+      }
+    }
+  }
+}

@@ -11,6 +11,7 @@ import {
   cancelBooking,
   getOutsideBookingByConfirmation,
   getOutsideBookingWithAddOns,
+  downloadBookingCertificate,
 } from "../controllers/booking.controller.js"
 import { authenticate, authorizeStaff } from "../middleware/auth.js"
 
@@ -36,5 +37,7 @@ router.put("/:id/cancel",       authenticate, cancelBooking)
 /* ---- Outside-booking helpers ---- */
 router.get("/confirmation/:confirmation", getOutsideBookingByConfirmation)
 router.get("/outside/id/:id",        getOutsideBookingWithAddOns)
+
+router.get("/bookings/:id/certificate.pdf", downloadBookingCertificate)
 
 export default router

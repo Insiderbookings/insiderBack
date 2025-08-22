@@ -1,0 +1,33 @@
+{
+  "query": "\n  mutation ($input: HotelBookInput!, $settings: HotelSettingsInput!) {\n    hotelX {\n      book(input: $input, settings: $settings) {\n        booking {\n          status\n          reference { bookingID client supplier hotel }\n          price { currency net gross binding }\n          holder { name surname }\n          cancelPolicy {\n            refundable\n            cancelPenalties {\n              deadline\n              isCalculatedDeadline\n              penaltyType\n              currency\n              value\n            }\n          }\n          hotel {\n            hotelCode\n            hotelName\n            bookingDate\n            start\n            end\n            boardCode\n            occupancies { id paxes { age } }\n            rooms {\n              code\n              description\n              occupancyRefId\n              price { currency binding net gross }\n            }\n          }\n          remarks\n        }\n        errors   { code type description }\n        warnings { code type description }\n      }\n    }\n  }\n",
+  "variables": {
+    "input": {
+      "optionRefId": "31[a1[b250813[c250814[d1[e14[f0[gES[hES[ies[jEUR[k0[l2[m1[n14[o0[p1[x13082030[M62[N0[Ofalse[PEUR[Q[R0[S[T[z1|30|1|2025-08-13|1|4247163|4247164|14|11|0[A5683[B5683[C30[EDouble Suite Deluxe[FDouble Suite Deluxe[G1[U120[V2[WEUR[X62[Y2025-08-07T10:00:00Z[Z0[H1[I1|30|1|2025-08-13|1|4247163|4247164|14|11|0[J1[K1[L1[H701[Ifcef9bcc-6181-4e14-92d6-f7fb803a79e3[J0[K0[L0[H704[ICipSAAgBEiQIeBjSByEAAAAAAABPQCoUMjAyNS0wOC0wN1QxMDowMDowMFoSCwi29/jXyaytPhAFIhcI0gcZAAAAAAAAT0AhAAAAAAAAT0AoAQ==[J0[K1[L0[tOK[uConnectors[v0[w[yPACKAGE[q[q0[",
+      "clientReference": "IB-meafdjzh-ai9z",
+      "holder": {
+        "name": "Ramiro",
+        "surname": "Alet"
+      },
+      "rooms": [
+        {
+          "occupancyRefId": 1,
+          "paxes": [
+            {
+              "name": "Ramiro",
+              "surname": "Alet",
+              "age": 30
+            }
+          ]
+        }
+      ],
+      "remarks": "Guest email: ramiro.alet@gmail.com"
+    },
+    "settings": {
+      "client": "insiderbookings",
+      "context": "HOTELTEST",
+      "timeout": 60000,
+      "testMode": true,
+      "auditTransactions": true
+    }
+  }
+}

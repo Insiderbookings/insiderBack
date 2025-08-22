@@ -1,0 +1,40 @@
+{
+  "query": "query SearchTGX($criteria: HotelCriteriaSearchInput!, $settings: HotelSettingsInput!, $filter: HotelXFilterSearchInput) {\n  hotelX {\n    search(criteria: $criteria, settings: $settings, filterSearch: $filter) {\n      context\n      options {\n        id\n        accessCode\n        supplierCode\n        hotelCode\n        hotelName\n        boardCode\n        paymentType\n        status\n        occupancies {\n          id\n          paxes {\n            age\n          }\n        }\n        rooms {\n          occupancyRefId\n          code\n          description\n          refundable\n          roomPrice {\n            price {\n              currency\n              binding\n              net\n              gross\n              exchange {\n                currency\n                rate\n              }\n            }\n            breakdown {\n              start\n              end\n              price {\n                currency\n                binding\n                net\n                gross\n                exchange {\n                  currency\n                  rate\n                }\n                minimumSellingPrice\n              }\n            }\n          }\n          beds {\n            type\n            count\n          }\n          ratePlans {\n            start\n            end\n            code\n            name\n          }\n          promotions {\n            start\n            end\n            code\n            name\n          }\n        }\n        price {\n          currency\n          binding\n          net\n          gross\n          exchange {\n            currency\n            rate\n          }\n          minimumSellingPrice\n          markups {\n            channel\n            currency\n            binding\n            net\n            gross\n            exchange {\n              currency\n              rate\n            }\n            rules {\n              id\n              name\n              type\n              value\n            }\n          }\n        }\n        supplements {\n          start\n          end\n          code\n          name\n          description\n          supplementType\n          chargeType\n          mandatory\n          durationType\n          quantity\n          unit\n          resort {\n            code\n            name\n            description\n          }\n          price {\n            currency\n            binding\n            net\n            gross\n            exchange {\n              currency\n              rate\n            }\n          }\n        }\n        surcharges {\n          code\n          chargeType\n          description\n          mandatory\n          price {\n            currency\n            binding\n            net\n            gross\n            exchange {\n              currency\n              rate\n            }\n            markups {\n              channel\n              currency\n              binding\n              net\n              gross\n              exchange {\n                currency\n                rate\n              }\n            }\n          }\n        }\n        rateRules\n        cancelPolicy {\n          refundable\n          cancelPenalties {\n            deadline\n            isCalculatedDeadline\n            penaltyType\n            currency\n            value\n          }\n        }\n        remarks\n      }\n      errors {\n        code\n        type\n        description\n      }\n      warnings {\n        code\n        type\n        description\n      }\n    }\n  }\n}",
+  "variables": {
+    "criteria": {
+      "checkIn": "2025-08-13",
+      "checkOut": "2025-08-14",
+      "occupancies": [
+        {
+          "paxes": [
+            {
+              "age": 30
+            }
+          ]
+        }
+      ],
+      "hotels": [
+        "1"
+      ],
+      "currency": "EUR",
+      "markets": [
+        "ES"
+      ],
+      "language": "es",
+      "nationality": "ES"
+    },
+    "settings": {
+      "client": "insiderbookings",
+      "context": "HOTELTEST",
+      "timeout": 25000,
+      "testMode": true
+    },
+    "filter": {
+      "access": {
+        "includes": [
+          "2"
+        ]
+      }
+    }
+  }
+}

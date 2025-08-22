@@ -19,6 +19,9 @@ import {
   validateToken,
   hireStaff,
   listByHotel,
+
+  /* Google (GIS popup + code exchange) */
+  googleExchange,
 } from "../controllers/auth.controller.js";
 
 import { autoSignupOrLogin } from "../controllers/auth.auto.controller.js";
@@ -42,7 +45,7 @@ router.post(
 router.post("/staff/login", loginStaff);
 
 /* ════════════════════════════════════════════════════════════════
-   USER AUTH
+   USER AUTH (local)
    ════════════════════════════════════════════════════════════════ */
 router.post(
   "/user/register",
@@ -55,6 +58,15 @@ router.post(
 );
 
 router.post("/user/login", loginUser);
+
+/* ════════════════════════════════════════════════════════════════
+   SOCIAL LOGIN — Google (GIS popup + Authorization Code con PKCE)
+   ════════════════════════════════════════════════════════════════ */
+router.post(
+  "/google/exchange",
+  [ body("code").notEmpty() ],
+  googleExchange,
+);
 
 /* ════════════════════════════════════════════════════════════════
    AUTO-SIGNUP (outside bookings)  →  crea/relaciona usuario
@@ -88,9 +100,11 @@ router.post(
    ════════════════════════════════════════════════════════════════ */
 router.get("/validate-token/:token", validateToken);
 
+/* ════════════════════════════════════════════════════════════════
+   STAFF: crear/vincular y listar
+   ════════════════════════════════════════════════════════════════ */
 router.post(
   "/hire",
-
   [
     body("firstName").notEmpty(),
     body("lastName").notEmpty(),
@@ -99,7 +113,7 @@ router.post(
     body("hotelId").isInt(),
   ],
   hireStaff,
-)
+);
 
 router.get(
   "/by-hotel/:hotelId",

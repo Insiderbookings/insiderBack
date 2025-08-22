@@ -1,0 +1,20 @@
+{
+  "data": {
+    "hotelX": {
+      "cancel": {
+        "errors": null,
+        "warnings": null,
+        "cancellation": {
+          "status": "CANCELLED",
+          "cancelReference": "",
+          "reference": {
+            "bookingID": "",
+            "client": "IB-meafdjzh-ai9z",
+            "supplier": "4636718",
+            "hotel": null
+          }
+        }
+      }
+    }
+  }
+}

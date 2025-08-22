@@ -1,0 +1,14 @@
+{
+  "query": "\n  mutation ($input: HotelCancelInput!, $settings: HotelSettingsInput!) {\n    hotelX {\n      cancel(input: $input, settings: $settings) {\n        errors   { code type description }\n        warnings { code type description }\n      }\n    }\n  }\n",
+  "variables": {
+    "input": {
+      "bookingID": "n1@1[250812[250813[250811[1[es[USD[2[IB-me7guqzu-ilih[4629212["
+    },
+    "settings": {
+      "client": "insiderbookings",
+      "context": "HOTELTEST",
+      "timeout": 10000,
+      "testMode": true
+    }
+  }
+}

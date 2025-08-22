@@ -1,0 +1,66 @@
+{
+  "data": {
+    "hotelX": {
+      "book": {
+        "booking": {
+          "status": "OK",
+          "reference": {
+            "bookingID": "n1@1[250811[250812[250811[1[es[USD[2[IB-me7qy2ah-6mag[4629927[",
+            "client": "IB-me7qy2ah-6mag",
+            "supplier": "4629927",
+            "hotel": ""
+          },
+          "price": {
+            "currency": "USD",
+            "net": 67,
+            "gross": 67,
+            "binding": false
+          },
+          "holder": {
+            "name": "testA",
+            "surname": "testA"
+          },
+          "cancelPolicy": null,
+          "hotel": {
+            "hotelCode": "1",
+            "hotelName": "Hotel Test",
+            "bookingDate": "2025-08-11",
+            "start": "2025-08-11",
+            "end": "2025-08-12",
+            "boardCode": "14",
+            "occupancies": [
+              {
+                "id": 1,
+                "paxes": [
+                  {
+                    "age": 30
+                  }
+                ]
+              }
+            ],
+            "rooms": [
+              {
+                "code": "2269",
+                "description": "Double Standard",
+                "occupancyRefId": 1,
+                "price": {
+                  "currency": "USD",
+                  "binding": false,
+                  "net": 67,
+                  "gross": 67,
+                  "exchange": {
+                    "currency": "USD",
+                    "rate": 1
+                  }
+                }
+              }
+            ]
+          },
+          "remarks": "Guest email: ramiro.alet@gmail.com"
+        },
+        "errors": null,
+        "warnings": null
+      }
+    }
+  }
+}
