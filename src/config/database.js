@@ -8,7 +8,7 @@ const sequelize = new Sequelize(
   process.env.DB_PASSWORD,
   {
     host: process.env.DB_HOST,
-    dialect: 'postgres',
+    dialect: process.env.DB_DIALECT || "postgres",
     logging: false,
     dialectOptions: { timezone: process.env.DB_TIMEZONE || "Etc/UTC" },
     define: { underscored: true, freezeTableName: true, timestamps: true, paranoid: true }

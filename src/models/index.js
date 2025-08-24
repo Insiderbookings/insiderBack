@@ -28,6 +28,11 @@ import MessageModel         from "./Message.js"
 import UpsellCodeModel      from "./UpsellCode.js"
 import TgxHotelModel from "./TGXHotel.js"
 
+import WcTenantFactory from './WcTenant.js';
+import WcAccountFactory from './WcAccount.js';
+import WcSiteConfigFactory from './WcSiteConfig.js';
+import WcTemplateFactory from './WcTemplate.js'
+
 /* ---------- Construir objetos ---------- */
 const models = {
   User           : UserModel(sequelize),
@@ -56,7 +61,13 @@ const models = {
 
   Message        : MessageModel(sequelize),
   UpsellCode     : UpsellCodeModel(sequelize),
-  TgxHotel       : TgxHotelModel(sequelize)
+  TgxHotel       : TgxHotelModel(sequelize),
+
+  WcTenant       : WcTenantFactory(sequelize),
+  WcAccount      : WcAccountFactory(sequelize),
+  WcSiteConfig   : WcSiteConfigFactory(sequelize),
+  WcTemplate     : WcTemplateFactory(sequelize)
+
 }
 
 /* ---------- Ejecutar asociaciones ---------- */
