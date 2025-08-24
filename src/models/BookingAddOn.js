@@ -2,73 +2,53 @@
 import { DataTypes } from "sequelize";
 
 export default (sequelize) => {
+  const isMySQLFamily = ["mysql", "mariadb"].includes(sequelize.getDialect());
+  const JSON_TYPE = isMySQLFamily ? DataTypes.JSON : DataTypes.JSONB;
+
   const BookingAddOn = sequelize.define(
     "BookingAddOn",
     {
-      /* ───────── Clave primaria ───────── */
-      id: {
-        type         : DataTypes.INTEGER,
-        primaryKey   : true,
-        autoIncrement: true,
-      },
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
 
-      /* ───────── FKs ───────── */
-      booking_id: {
-        type       : DataTypes.INTEGER,
-        allowNull  : false,
-        references : { model: "booking", key: "id" },
-        onDelete   : "CASCADE",
-      },
-      add_on_id: {
-        type       : DataTypes.INTEGER,
-        allowNull  : false,
-        references : { model: "add_on", key: "id" },
-        onDelete   : "CASCADE",
-      },
-      add_on_option_id: {
-        type       : DataTypes.INTEGER,
-        allowNull  : true,                       // solo si el add-on usa opciones
-        references : { model: "add_on_option", key: "id" },
-        onDelete   : "SET NULL",
-      },
+      // Dejo los tipos, pero SIN references; la FK la agrega la asociación
+      booking_id: { type: DataTypes.INTEGER, allowNull: false },
+      add_on_id: { type: DataTypes.INTEGER, allowNull: false },
+      add_on_option_id: { type: DataTypes.INTEGER, allowNull: true },
+      room_id: { type: DataTypes.INTEGER, allowNull: true },
 
-      /* ───────── Datos de la solicitud ───────── */
-      quantity:    { type: DataTypes.INTEGER,      defaultValue: 1 },
-      unit_price:  { type: DataTypes.DECIMAL(10,2), allowNull: false },
+      quantity: { type: DataTypes.INTEGER, defaultValue: 1 },
+      unit_price: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
 
       status: {
-        type        : DataTypes.ENUM("pending","confirmed","cancelled","ready"),
+        type: DataTypes.ENUM("pending", "confirmed", "cancelled", "ready"),
         defaultValue: "pending",
       },
       payment_status: {
-        type        : DataTypes.ENUM("unpaid","paid","refunded"),
+        type: DataTypes.ENUM("unpaid", "paid", "refunded"),
         defaultValue: "unpaid",
       },
 
-      /* Habitación asociada (opcional) */
-      room_id: {
-        type       : DataTypes.INTEGER,
-        allowNull  : true,
-        references : { model: "room", key: "id" },
-        onDelete   : "SET NULL",
-      },
-
-      /* Campo libre para extensiones futuras */
-      meta: DataTypes.JSONB,
+      // JSONB en PG, JSON en MySQL/MariaDB (sin defaultValue)
+      meta: { type: JSON_TYPE },
     },
     {
-      tableName      : "booking_add_on",
-      underscored    : true,
+      tableName: "booking_add_on",
+      underscored: true,
       freezeTableName: true,
+      engine: "InnoDB",
+      indexes: [
+        { unique: true, fields: ["booking_id", "add_on_id"] },
+        { fields: ["room_id"] },
+        { fields: ["add_on_option_id"] },
+      ],
     }
   );
 
-  /* ───────── Asociaciones ───────── */
   BookingAddOn.associate = (models) => {
-    BookingAddOn.belongsTo(models.Booking,      { foreignKey: "booking_id",      as: "booking" });
-    BookingAddOn.belongsTo(models.AddOn,        { foreignKey: "add_on_id",       as: "addOn"   });
-    BookingAddOn.belongsTo(models.AddOnOption,  { foreignKey: "add_on_option_id",as: "option"  });
-    BookingAddOn.belongsTo(models.Room,         { foreignKey: "room_id",         as: "room"    });
+    BookingAddOn.belongsTo(models.Booking, { foreignKey: "booking_id", as: "booking", onDelete: "CASCADE", onUpdate: "CASCADE" });
+    BookingAddOn.belongsTo(models.AddOn, { foreignKey: "add_on_id", as: "addOn", onDelete: "CASCADE", onUpdate: "CASCADE" });
+    BookingAddOn.belongsTo(models.AddOnOption, { foreignKey: "add_on_option_id", as: "option", onDelete: "SET NULL", onUpdate: "CASCADE" });
+    BookingAddOn.belongsTo(models.Room, { foreignKey: "room_id", as: "room", onDelete: "SET NULL", onUpdate: "CASCADE" });
   };
 
   return BookingAddOn;

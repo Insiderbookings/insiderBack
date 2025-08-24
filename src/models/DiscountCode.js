@@ -56,10 +56,7 @@ export default (sequelize) => {
       // Enlaza el código con la booking donde se usó
       booking_id: {
         type: DataTypes.INTEGER,
-        allowNull: true, // puede quedar null hasta que el código se use
-        references: { model: "booking", key: "id" },
-        onDelete: "SET NULL",
-        onUpdate: "CASCADE",
+        references: { model: 'booking', key: 'id' },
       },
 
       /* ───────── Lógica de uso ───────── */
