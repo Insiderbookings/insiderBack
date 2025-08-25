@@ -14,6 +14,7 @@ import staffAddonRoutes from "./staffAddon.routes.js"
 import travelGateRoutes from "./travelgate.routes.js"
 import travelgatepaymentRoutes from "./travelgate-payment.routes.js" 
 import tenantsWebconstructorRoutes from './tenants.webconstructor.routes.js'
+import adminRoutes from './admin.routes.js'
 
 const router = Router()
 
@@ -30,8 +31,8 @@ router.use("/email", emailRoutes)
 router.use("/addons", addonRoutes)
 router.use("/api/staff-addon", staffAddonRoutes)
 router.use("/tgx", travelGateRoutes)
-console.log("[routes] mount /tgx-payment");
 router.use("/tgx-payment", travelgatepaymentRoutes);
 router.use("/tenants", tenantsWebconstructorRoutes)
+router.use("/admin", adminRoutes)
 
 export default router

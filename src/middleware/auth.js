@@ -14,12 +14,13 @@ export const authenticate = (req, res, next) => {
 };
 
 export const authorizeStaff = (req, res, next) => {
-  if (req.user?.type !== "staff") return res.status(403).json({ error: "Forbidden" });
+  if (req.user?.role !== 0) return res.status(403).json({ error: "Forbidden" });
   next();
 };
 
 export const authorizeAdmin = (req, res, next) => {
-  if (req.user?.type !== "staff" || req.user?.roleName !== "manager") {
+  console.log(req.user, "user")
+  if (req.user?.role !== 100) {
     return res.status(403).json({ error: "Admin only" });
   }
   next();

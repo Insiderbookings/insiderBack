@@ -106,7 +106,7 @@ const HOTEL_QUERY_CERT = gql`
   }
 `
 
-// “Full” también para modo normal (podés cambiar por una minimal si querés)
+// “Full” también para modo normal (idéntica a CERT para unificar la forma)
 const HOTEL_QUERY_FULL = gql`
   query ($criteriaHotels: HotelXHotelListInput!, $token: String) {
     hotelX {
@@ -136,8 +136,29 @@ const HOTEL_QUERY_FULL = gql`
                   parent
                 }
               }
+              contact {
+                email
+                telephone
+                fax
+                web
+              }
+              propertyType { propertyCode name }
               descriptions { type texts { language text } }
-              medias { code url type order }
+              medias { code url }
+              rooms {
+                edges {
+                  node {
+                    code
+                    roomData {
+                      code
+                      roomCode
+                      allAmenities {
+                        edges { node { amenityData { code amenityCode } } }
+                      }
+                    }
+                  }
+                }
+              }
               allAmenities {
                 edges { node { amenityData { code amenityCode } } }
               }

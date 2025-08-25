@@ -231,7 +231,8 @@ export const loginUser = async (req, res) => {
     if (!valid) return res.status(401).json({ error: "Invalid credentials" });
 
     /* 3 ▸ Emitir JWT */
-    const token = signToken({ id: user.id, type: "user" });
+    const token = signToken({ id: user.id, type: "user", role: user.role });
+    console.log(user, "user")
     return res.json({ token, user });
   } catch (err) {
     console.error(err);
