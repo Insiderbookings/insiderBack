@@ -30,6 +30,8 @@ export const listHotels = async (req, res, next) => {
     const { access, hotelCodes, countries, destinationCodes, nextToken = "" } = req.query
     if (!access) return res.status(400).json({ error: "access param required" })
 
+      console.log(access, "acces")
+
     // CERT: una llamada, sin filtros ni paginación, maxSize alto, y devolver tal cual
     if (process.env.TGX_CERT_MODE === 'true') {
       const cacheKey = `cert_hotels:${access}`

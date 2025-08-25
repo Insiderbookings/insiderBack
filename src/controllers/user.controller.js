@@ -7,20 +7,24 @@ import { sendMail } from "../helpers/mailer.js"
 export const getCurrentUser = async (req, res) => {
   try {
     const user = await models.User.findByPk(req.user.id, {
-      attributes: ["id", "name", "email", "phone", "isActive", "createdAt"],
+      attributes: [
+        "id",
+        "name",
+        "email",
+        "phone",
+        "role",                    // 👈 importante
+        ["is_active", "isActive"], // opcional alias
+        "avatar_url",
+        "createdAt",
+      ],
     })
-
-    if (!user) {
-      return res.status(404).json({ error: "User not found" })
-    }
-
-    return res.json(user)
+    if (!user) return res.status(404).json({ error: "User not found" })
+    return res.json(user.get({ plain: true }))
   } catch (err) {
     console.error("Error getting current user:", err)
     return res.status(500).json({ error: "Server error" })
   }
 }
-
 /* ───────────── PUT /api/users/me ───────────── */
 export const updateUserProfile = async (req, res) => {
   try {
