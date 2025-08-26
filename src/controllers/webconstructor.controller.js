@@ -14,7 +14,7 @@ function toDTO(cfg) {
         faviconUrl: cfg.favicon_url || '',
         fontFamily: cfg.font_family || 'Inter, sans-serif',
         templateKey: cfg.template_key || 'classic',
-        extra: cfg.extra || {}
+        stars: cfg.stars || 0
     }
 }
 
@@ -75,50 +75,27 @@ export async function wcMe(req, res) {
 /* --- SITE CONFIG --- */
 export async function getSiteConfigPrivate(req, res) {
     try {
-        const cfg = await models.WcSiteConfig.findOne({ where: { tenant_id: req.tenant.id } })
-        return res.json(toDTO(cfg) || toDTO({}))
-    } catch (e) {
-        console.error(e); res.status(500).json({ error: 'Server error' })
-    }
+        const cfg = await models.WcSiteConfig.findOne({ where: { tenantId: req.tenant.id } })
+        res.json(cfg || {}) // ya viene en camelCase
+    } catch (e) { console.error(e); res.status(500).json({ error: 'Server error' }) }
 }
 
 export async function updateSiteConfigPrivate(req, res) {
     try {
-        const { primaryColor, secondaryColor, logoUrl, faviconUrl, fontFamily, templateKey, extra } = req.body || {}
-
-        // validar plantilla si viene
-        if (templateKey) {
-            const tpl = await models.WcTemplate.findOne({ where: { key: templateKey, is_active: true } })
+        const body = req.body || {}
+        // si necesitás validar templateKey:
+        if (body.templateKey) {
+            const tpl = await models.WcTemplate.findOne({ where: { key: body.templateKey, is_active: true } })
             if (!tpl) return res.status(400).json({ error: 'Invalid templateKey' })
         }
 
         const [cfg, created] = await models.WcSiteConfig.findOrCreate({
-            where: { tenant_id: req.tenant.id },
-            defaults: {
-                tenant_id: req.tenant.id,
-                primary_color: primaryColor,
-                secondary_color: secondaryColor,
-                logo_url: logoUrl,
-                favicon_url: faviconUrl,
-                font_family: fontFamily,
-                template_key: templateKey || 'classic',
-                extra: extra || {}
-            }
+            where: { tenantId: req.tenant.id },
+            defaults: { tenantId: req.tenant.id, ...body }
         })
-        if (!created) {
-            cfg.primary_color = primaryColor ?? cfg.primary_color
-            cfg.secondary_color = secondaryColor ?? cfg.secondary_color
-            cfg.logo_url = logoUrl ?? cfg.logo_url
-            cfg.favicon_url = faviconUrl ?? cfg.favicon_url
-            cfg.font_family = fontFamily ?? cfg.font_family
-            cfg.template_key = templateKey ?? cfg.template_key
-            cfg.extra = extra ?? cfg.extra
-            await cfg.save()
-        }
-        return res.json(toDTO(cfg))
-    } catch (e) {
-        console.error(e); res.status(500).json({ error: 'Server error' })
-    }
+        if (!created) await cfg.update(body)
+        res.json(cfg)
+    } catch (e) { console.error(e); res.status(500).json({ error: 'Server error' }) }
 }
 
 export async function getSiteConfigPublic(req, res) {
@@ -292,7 +269,6 @@ export async function getHotelPublic(req, res) {
         await cache.set(cacheKey, response, 120)
         res.json(response)
     } catch (e) {
-        // 🧰 extrae detalle útil si viene de graphql-request
         const detail = e?.response?.errors?.[0]?.message || e.message
         console.error('getHotelPublic error:', detail)
         res.status(500).json({ error: 'Server error' })
