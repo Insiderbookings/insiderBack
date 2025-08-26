@@ -80,9 +80,9 @@ export const updateUserProfile = async (req, res) => {
     }
 
     // Obtener usuario actualizado
-    const updatedUser = await models.User.findByPk(userId, {
-      attributes: ["id", "name", "email", "phone", "isActive", "createdAt"],
-    })
+ const updatedUser = await models.User.findByPk(userId, {
+  attributes: ["id","name","email","phone","role","avatar_url","createdAt",["is_active","isActive"]],
+})
 
     return res.json({
       message: "Profile updated successfully",

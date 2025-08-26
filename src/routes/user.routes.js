@@ -8,12 +8,12 @@ import {
   getInfluencerStats,
   requestPartnerInfo,
 } from "../controllers/user.controller.js"
-import { authenticate } from "../middleware/auth.js"
+import { authenticate, authorizeRoles } from "../middleware/auth.js"
 
 const router = Router()
 
 /** ⚠️ TEMP: ruta pública (sin authenticate) */
-router.get("/me/influencer/stats", getInfluencerStats)
+router.get("/me/influencer/stats",authenticate, authorizeRoles(2), getInfluencerStats)
 
 router.post("/request-info", requestPartnerInfo)
 
