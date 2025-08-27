@@ -5,9 +5,9 @@ import { authenticate } from '../middleware/auth.js'
 import { authorizeWc, authorizeWcPermission } from '../middleware/webconstructorAuth.js'
 import {
     wcLogin, wcMe,
-    getSiteConfigPrivate, updateSiteConfigPrivate, getSiteConfigPublic, getHotelPublic, listTemplates,
-    listAccounts, createAccount, updateAccount, toggleAccountStatus, resetAccountPassword
+    getSiteConfigPrivate, updateSiteConfigPrivate, getSiteConfigPublic, getHotelPublic, listTemplates
 } from '../controllers/webconstructor.controller.js'
+import { uploadImagesToS3Fields } from '../middleware/s3UploadFields.js'
 
 const router = Router()
 
@@ -58,6 +58,7 @@ router.put(
     authenticate,
     authorizeWc,
     authorizeWcPermission('SITE_CONFIG'),
+    uploadImagesToS3Fields({ logo: 'logoUrl', favicon: 'faviconUrl' }),
     updateSiteConfigPrivate
 )
 
@@ -74,55 +75,6 @@ router.get(
     '/webconstructor/hotel',
     resolveTenant,
     getHotelPublic
-)
-
-/* ===========================
- *  ACCOUNTS (ABM del panel)
- *  Permiso requerido: MANAGE_ACCOUNTS
- * =========================== */
-router.get(
-    '/webconstructor/accounts',
-    resolveTenant,
-    authenticate,
-    authorizeWc,
-    authorizeWcPermission('MANAGE_ACCOUNTS'),
-    listAccounts
-)
-
-router.post(
-    '/webconstructor/accounts',
-    resolveTenant,
-    authenticate,
-    authorizeWc,
-    authorizeWcPermission('MANAGE_ACCOUNTS'),
-    createAccount
-)
-
-router.put(
-    '/webconstructor/accounts/:id',
-    resolveTenant,
-    authenticate,
-    authorizeWc,
-    authorizeWcPermission('MANAGE_ACCOUNTS'),
-    updateAccount
-)
-
-router.patch(
-    '/webconstructor/accounts/:id/status',
-    resolveTenant,
-    authenticate,
-    authorizeWc,
-    authorizeWcPermission('MANAGE_ACCOUNTS'),
-    toggleAccountStatus
-)
-
-router.post(
-    '/webconstructor/accounts/:id/reset-password',
-    resolveTenant,
-    authenticate,
-    authorizeWc,
-    authorizeWcPermission('MANAGE_ACCOUNTS'),
-    resetAccountPassword
 )
 
 export default router

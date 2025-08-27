@@ -5,25 +5,19 @@ export default (sequelize) => {
         "WcTenant",
         {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-
-            /* Identidad */
             name: { type: DataTypes.STRING(120), allowNull: false },
-
-            /* Dominios (únicos a nivel global) */
             public_domain: {
                 type: DataTypes.STRING(255),
                 allowNull: false,
-                unique: true, // p.ej. restaurantpepe.com
+                unique: true,
                 validate: { is: /^[a-z0-9.-]+\.[a-z]{2,}$/i },
             },
             panel_domain: {
                 type: DataTypes.STRING(255),
                 allowNull: false,
-                unique: true, // p.ej. panel.restaurantpepe.com
+                unique: true,
                 validate: { is: /^[a-z0-9.-]+\.[a-z]{2,}$/i },
             },
-
-            /* (Opcional) Relación con otras entidades (hotel, etc.) */
             hotel_id: { type: DataTypes.INTEGER, allowNull: true },
             hotel_access: { type: DataTypes.INTEGER, allowNull: true },
         },
