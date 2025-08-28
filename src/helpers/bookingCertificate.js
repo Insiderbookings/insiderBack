@@ -16,8 +16,8 @@ function fmtMoney(amount = 0, currency = "USD") {
 
 function drawLabelValue(doc, { xLabel, xValue, y, label, value }) {
   doc
-    .font("Helvetica-Bold").fontSize(9).fillColor("#111").text(label, xLabel, y)
-    .font("Helvetica").fontSize(10).fillColor("#222").text(value ?? "-", xValue, y)
+    .font("Helvetica-Bold").fontSize(9).fillColor("#475569").text(label, xLabel, y)
+    .font("Helvetica").fontSize(10).fillColor("#0f172a").text(value ?? "-", xValue, y)
 }
 
 function buildPDF(doc, b) {
@@ -41,45 +41,47 @@ function buildPDF(doc, b) {
   const total = totals.total ?? 0
 
   /* Header */
-  doc.rect(36, 36, 540, 60).fill("#fff")
+  doc.rect(36, 36, 540, 80).fill("#0f172a")
   doc
-    .font("Helvetica-Bold").fontSize(22).fillColor("#111")
-    .text("Insider", 36, 44)
+    .font("Helvetica-Bold").fontSize(24).fillColor("#fff")
+    .text("Insider Bookings", 48, 52)
   doc
-    .font("Helvetica-Bold").fontSize(18).fillColor("#f97316")
-    .text("BOOKING CONFIRMATION", 36, 76)
+    .font("Helvetica").fontSize(14).fillColor("#f97316")
+    .text("Booking Confirmation", 48, 82)
 
   /* Box: details */
-  let y = 120
-  doc.lineWidth(0.5).strokeColor("#e5e7eb").roundedRect(36, y - 10, 540, 190, 8).stroke()
+  let y = 130
+  doc
+    .roundedRect(36, y - 10, 540, 190, 8)
+    .fillAndStroke("#f8fafc", "#e5e7eb")
 
-  drawLabelValue(doc, { xLabel: 56, xValue: 180, y, label: "Booking ID", value: bookingCode || id })
-  drawLabelValue(doc, { xLabel: 310, xValue: 420, y, label: "Number of Rooms", value: String(roomsCount ?? 1) })
-
-  y += 18
-  drawLabelValue(doc, { xLabel: 56, xValue: 180, y, label: "Guest Name", value: guestName || "-" })
-  drawLabelValue(doc, { xLabel: 310, xValue: 420, y, label: "Number of Guests", value: `${guests?.adults ?? 2}${(guests?.children ?? 0) ? ` (+${guests.children} children)` : ""}` })
+  drawLabelValue(doc, { xLabel: 56, xValue: 180, y, label: "🔖 Booking ID", value: bookingCode || id })
+  drawLabelValue(doc, { xLabel: 310, xValue: 420, y, label: "🛏️ Rooms", value: String(roomsCount ?? 1) })
 
   y += 18
-  drawLabelValue(doc, { xLabel: 56, xValue: 180, y, label: "Check-In Date", value: fmtDate(checkIn) })
-  drawLabelValue(doc, { xLabel: 310, xValue: 420, y, label: "Check-Out Date", value: fmtDate(checkOut) })
+  drawLabelValue(doc, { xLabel: 56, xValue: 180, y, label: "👤 Guest Name", value: guestName || "-" })
+  drawLabelValue(doc, { xLabel: 310, xValue: 420, y, label: "👥 Guests", value: `${guests?.adults ?? 2}${(guests?.children ?? 0) ? ` (+${guests.children} children)` : ""}` })
 
   y += 18
-  drawLabelValue(doc, { xLabel: 56,  xValue: 180, y, label: "Country of Residence", value: country || hotel.country || "-" })
-  drawLabelValue(doc, { xLabel: 310, xValue: 420, y, label: "Nights", value: String(nights) })
+  drawLabelValue(doc, { xLabel: 56, xValue: 180, y, label: "📅 Check-In", value: fmtDate(checkIn) })
+  drawLabelValue(doc, { xLabel: 310, xValue: 420, y, label: "📅 Check-Out", value: fmtDate(checkOut) })
 
   y += 18
-  drawLabelValue(doc, { xLabel: 56,  xValue: 180, y, label: "Property", value: hotel.name || hotel.hotelName || "-" })
+  drawLabelValue(doc, { xLabel: 56,  xValue: 180, y, label: "🌍 Country", value: country || hotel.country || "-" })
+  drawLabelValue(doc, { xLabel: 310, xValue: 420, y, label: "🌙 Nights", value: String(nights) })
+
+  y += 18
+  drawLabelValue(doc, { xLabel: 56,  xValue: 180, y, label: "🏨 Property", value: hotel.name || hotel.hotelName || "-" })
 
   y += 18
   drawLabelValue(doc, {
     xLabel: 56, xValue: 180, y,
-    label: "Address",
+    label: "📍 Address",
     value: hotel.address || [hotel.city, hotel.country].filter(Boolean).join(", ") || "-"
   })
 
   y += 18
-  drawLabelValue(doc, { xLabel: 56, xValue: 180, y, label: "Property Contact", value: hotel.phone || propertyContact || "-" })
+  drawLabelValue(doc, { xLabel: 56, xValue: 180, y, label: "☎️ Contact", value: hotel.phone || propertyContact || "-" })
 
   /* Cancellation note */
   y += 36
@@ -95,30 +97,32 @@ function buildPDF(doc, b) {
 
   /* Rates & Payment box */
   y += 48
-  doc.roundedRect(36, y, 540, 140, 8).strokeColor("#e5e7eb").stroke()
-  doc.font("Helvetica-Bold").fontSize(12).fillColor("#111").text("RATES AND PAYMENT", 48, y + 10)
+  doc
+    .roundedRect(36, y, 540, 140, 8)
+    .fillAndStroke("#f8fafc", "#e5e7eb")
+  doc.font("Helvetica-Bold").fontSize(12).fillColor("#0f172a").text("RATES AND PAYMENT", 48, y + 12)
 
   const y0 = y + 36
   const colL = 48, colR = 360
 
   doc
-    .font("Helvetica").fontSize(10).fillColor("#111")
+    .font("Helvetica").fontSize(10).fillColor("#0f172a")
     .text(`${nights} night${nights > 1 ? "s" : ""}`, colL, y0)
-  doc.text("Insider Rate", colR, y0, { width: 130, align: "right" })
-  doc.text(fmtMoney(totals.ratePerNight ?? 0, currency), colR + 140, y0, { width: 100, align: "right" })
+  doc.fillColor("#475569").text("Insider Rate", colR, y0, { width: 130, align: "right" })
+  doc.fillColor("#0f172a").text(fmtMoney(totals.ratePerNight ?? 0, currency), colR + 140, y0, { width: 100, align: "right" })
 
   doc
-    .text("Taxes and Fees", colR, y0 + 18, { width: 130, align: "right" })
-  doc.text(fmtMoney(totals.taxes ?? 0, currency), colR + 140, y0 + 18, { width: 100, align: "right" })
+    .fillColor("#475569").text("Taxes and Fees", colR, y0 + 18, { width: 130, align: "right" })
+  doc.fillColor("#0f172a").text(fmtMoney(totals.taxes ?? 0, currency), colR + 140, y0 + 18, { width: 100, align: "right" })
 
   doc.moveTo(48, y0 + 40).lineTo(560, y0 + 40).strokeColor("#e5e7eb").stroke()
 
-  doc.font("Helvetica-Bold").text("Total Cost", colL, y0 + 50)
-  doc.font("Helvetica-Bold").text(fmtMoney(total, currency), colR + 140, y0 + 50, { width: 100, align: "right" })
+  doc.font("Helvetica-Bold").fillColor("#0f172a").text("Total Cost", colL, y0 + 50)
+  doc.font("Helvetica-Bold").fillColor("#0f172a").text(fmtMoney(total, currency), colR + 140, y0 + 50, { width: 100, align: "right" })
 
-  doc.font("Helvetica").fontSize(10).fillColor("#111")
+  doc.font("Helvetica").fontSize(10).fillColor("#475569")
     .text("Payment Method", colL, y0 + 74)
-  doc.text(`${payment.method || "Credit Card"} ${payment.last4 ? `(•••• ${payment.last4})` : ""}`, colR + 140, y0 + 74, { width: 100, align: "right" })
+  doc.fillColor("#0f172a").text(`${payment.method || "Credit Card"} ${payment.last4 ? `(•••• ${payment.last4})` : ""}`, colR + 140, y0 + 74, { width: 100, align: "right" })
 
   /* Footer / signature */
   const yF = y0 + 110

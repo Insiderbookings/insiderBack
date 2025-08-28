@@ -8,6 +8,7 @@ import { sequelize } from "../models/index.js";
 import { random4 } from "../utils/random4.js";
 import transporter from "../services/transporter.js";
 import { OAuth2Client } from "google-auth-library"; // ← para Google Sign-In
+import { getBaseEmailTemplate } from "../emailTemplates/base-template.js";
 
 dotenv.config();
 
@@ -207,9 +208,42 @@ export const registerUser = async (req, res) => {
       email,
       password_hash: hash,
     });
+    // generate verification token valid for 1 day
+    const verifyToken = jwt.sign(
+      { id: user.id, type: "user", action: "verify-email" },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" },
+    );
 
-    const token = signToken({ id: user.id, type: "user", role: user.role });
-    return res.status(201).json({ token, user });
+    const link = `${process.env.API_URL || process.env.CLIENT_URL}/auth/verify-email/${verifyToken}`;
+
+    try {
+      const content = `
+        <p style="color:#4a5568;margin:0 0 16px;font-size:16px;">Hola ${name.split(" ")[0]},</p>
+        <p style="color:#4a5568;margin:0 0 24px;font-size:16px;">Haz clic en el botón para verificar tu cuenta.</p>
+        <table role="presentation" style="margin:16px 0;">
+          <tr>
+            <td align="center">
+              <a href="${link}"
+                 style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;">Verificar correo</a>
+            </td>
+          </tr>
+        </table>
+        <p style="color:#718096;margin:24px 0 0;font-size:14px;">Si no solicitaste esta cuenta, puedes ignorar este correo.</p>
+      `
+
+      const html = getBaseEmailTemplate(content, "Verifica tu correo")
+
+      await transporter.sendMail({
+        to: email,
+        subject: "Verifica tu correo",
+        html,
+      });
+    } catch (mailErr) {
+      console.error(mailErr);
+    }
+
+    return res.status(201).json({ message: "Usuario registrado. Verifique su correo." });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Server error" });
@@ -229,6 +263,10 @@ export const loginUser = async (req, res) => {
     /* 2 ▸ Comparar contraseña (usa la columna correcta password_hash) */
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: "Invalid credentials" });
+
+  /*   if (!user.email_verified) {
+      return res.status(403).json({ error: "Verifique su correo" });
+    } */
 
     /* 3 ▸ Emitir JWT */
     const token = signToken({ id: user.id, type: "user", role: user.role });
@@ -258,6 +296,29 @@ export const validateToken = (req, res) => {
       valid: false,
       error: "Token expired or invalid",
     });
+  }
+};
+
+/* ────────────────────────────────────────────────────────────────
+   VERIFY EMAIL
+   ──────────────────────────────────────────────────────────────── */
+export const verifyEmail = async (req, res) => {
+  const { token } = req.params;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.action !== "verify-email") {
+      return res.status(400).json({ error: "Invalid token" });
+    }
+
+    const user = await models.User.findByPk(decoded.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    await user.update({ email_verified: true });
+
+    return res.json({ message: "Email verified" });
+  } catch (err) {
+    console.error(err);
+    return res.status(400).json({ error: "Token expired or invalid" });
   }
 };
 
@@ -498,7 +559,7 @@ export const googleExchange = async (req, res) => {
     }
 
     // 4) Emitir JWT (mismo formato que login local)
-    const token = signToken({ id: user.id, type: "user" });
+    const token = signToken({ id: user.id, type: "user", role: user.role });
 
     return res.json({
       token,
