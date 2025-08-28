@@ -1,11 +1,12 @@
 import { Router } from 'express'
-import { 
-  book, 
-  cancel, 
-  getCategories, 
-  getDestinations, 
-  listHotels, 
-  quote, 
+import {
+  book,
+  readBooking,
+  cancel,
+  getCategories,
+  getDestinations,
+  listHotels,
+  quote,
   search,
   getRooms,
   getBoards,
@@ -26,6 +27,7 @@ router.get("/metadata", getMetadata)         // metadatos del proveedor
 /* ── Booking flow ──────────────────────────────── */
 router.post("/quote", quote)                 // verifica precio
 router.post("/book", book)                   // confirma reserva
+router.post("/booking-read", readBooking)    // lee reserva
 router.post("/cancel", cancel)               // anula reserva
 
 export default router

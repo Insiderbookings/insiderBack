@@ -10,8 +10,10 @@ export const authenticate = (req, res, next) => {
     const payload = jwt.verify(token, process.env.JWT_SECRET)
     req.user = payload   // ← { sub, kind, role, roles? }
     next()
-  } catch {
-    return res.status(401).json({ error: "Invalid token" })
+  } catch (err) {
+    console.error(err)
+    res.status(401).json({ error: "Invalid token" })
+    return next(err)
   }
 }
 

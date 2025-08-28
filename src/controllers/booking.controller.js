@@ -13,7 +13,16 @@ const diffDays = (from, to) =>
    Recibe una fila de Booking (snake_case en DB) y la
    convierte al formato camelCase que usa el FE.       */
 const mapStay = (row, source) => {
-  const hotel = row.Hotel ?? null
+  // Normalizar a objetos plain
+  let hotel = row.Hotel && typeof row.Hotel.toJSON === "function" ? row.Hotel.toJSON() : row.Hotel ?? null
+  let room  = row.Room  && typeof row.Room.toJSON  === "function" ? row.Room.toJSON()  : row.Room  ?? null
+
+  if (source === "tgx" && row.tgxMeta) {
+    const tgxHotel = row.tgxMeta?.hotel ?? {}
+    const tgxRoom  = row.tgxMeta?.rooms?.[0] ?? {}
+    hotel = { ...hotel, ...tgxHotel }
+    room  = { ...room,  ...tgxRoom  }
+  }
 
   // Aceptar snake_case o camelCase por si viene mezclado
   const checkIn  = row.check_in  ?? row.checkIn  ?? null
@@ -31,7 +40,7 @@ const mapStay = (row, source) => {
     bookingConfirmation : row.bookingConfirmation ?? row.external_ref ?? null,
 
     /* ─────────── hotel ─────────── */
-    hotel_id   : row.hotel_id ?? null,
+    hotel_id   : row.hotel_id ?? hotel?.id ?? null,
     hotel_name : hotel?.name ?? null,
     location   : hotel
       ? `${hotel.city || hotel.location || ""}, ${hotel.country || ""}`.trim().replace(/, $/, "")
@@ -48,12 +57,22 @@ const mapStay = (row, source) => {
     paymentStatus,
 
     /* ─────────── room info ─────────── */
-    room_type   : row.room_type ?? row.Room?.name ?? null,
-    room_number : row.room_number ?? null,
+    room_type   : row.room_type ?? room?.name ?? null,
+    room_number : row.room_number ?? room?.room_number ?? null,
 
     /* ─────────── guests / total ───── */
     guests : (row.adults ?? 0) + (row.children ?? 0),
     total  : Number.parseFloat(row.gross_price ?? row.total ?? 0),
+
+    /* ─────────── guest info ────────── */
+    guestName     : row.guest_name      ?? row.guestName      ?? null,
+    guestLastName : row.guest_last_name ?? row.guestLastName ?? null,
+    guestEmail    : row.guest_email     ?? row.guestEmail     ?? null,
+    guestPhone    : row.guest_phone     ?? row.guestPhone     ?? null,
+
+    /* ─────────── raw hotel/room ────── */
+    hotel,
+    room,
 
     outside: !!row.outside,
     active : row.active ?? true,
@@ -157,11 +176,26 @@ export const getBookingsUnified = async (req, res) => {
       include: [
         {
           model     : models.Hotel,
-          attributes: ["id","name","location","image","city","country","rating"]
+          attributes: [
+            "id",
+            "name",
+            "location",
+            "image",
+            "city",
+            "country",
+            "rating",
+            "address",
+            "phone",
+          ],
         },
         {
           model     : models.Room,
-          attributes: ["name"]
+          attributes: ["id", "name", "room_number", "image", "price", "beds", "capacity"],
+        },
+        {
+          model : models.TGXMeta,
+          as    : "tgxMeta",
+          required: false,
         }
       ],
       order : [["check_in","DESC"]],
@@ -170,14 +204,18 @@ export const getBookingsUnified = async (req, res) => {
     })
 
     // 3. Mapear y unificar
-    const merged = rows
-      .map(r => {
-        const obj = r.toJSON()
-        // tipo: 'outside' si viene de OUTSIDE; caso contrario 'insider'
-        const channel = obj.source === "OUTSIDE" ? "outside" : "insider"
-        return mapStay(obj, channel)
-      })
-      .sort((a, b) => new Date(b.checkIn) - new Date(a.checkIn))
+      const merged = rows
+        .map(r => {
+          const obj = r.toJSON()
+          const channel =
+            obj.source === "TGX"
+              ? "tgx"
+              : obj.source === "OUTSIDE"
+              ? "outside"
+              : "insider"
+          return mapStay(obj, channel)
+        })
+        .sort((a, b) => new Date(b.checkIn) - new Date(a.checkIn))
 
     // 4. Devolver
     return res.json(latest ? merged[0] ?? null : merged)
@@ -342,12 +380,20 @@ export const getBookingById = async (req, res) => {
         ? booking.tgxMeta
         : null
 
+    let hotel = booking.Hotel ? booking.Hotel.get ? booking.Hotel.get({ plain: true }) : booking.Hotel : null
+    let room  = booking.Room  ? booking.Room.get  ? booking.Room.get({ plain: true })  : booking.Room  : null
+
+    if (booking.source === "TGX" && booking.tgxMeta) {
+      hotel = { ...hotel, ...(booking.tgxMeta?.hotel ?? {}) }
+      room  = { ...room,  ...(booking.tgxMeta?.rooms?.[0] ?? {}) }
+    }
+
     return res.json({
       id               : booking.id,
       externalRef      : booking.external_ref,
       user             : booking.User ?? null,
-      hotel            : booking.Hotel,
-      room             : booking.Room,
+      hotel,
+      room,
       checkIn          : booking.check_in,
       checkOut         : booking.check_out,
       nights           : diffDays(booking.check_in, booking.check_out),
@@ -363,7 +409,8 @@ export const getBookingById = async (req, res) => {
       paymentStatus    : String(booking.payment_status).toLowerCase(),
       discountCode     : booking.DiscountCode ?? null,
       meta,  // TGXMeta u OutsideMeta
-      addons
+      addons,
+      source: booking.source
     })
   } catch (err) {
     console.error("getBookingById:", err)

@@ -16,13 +16,9 @@ export function getBaseEmailTemplate(content, title = "Insider Bookings") {
               
               <!-- Header -->
               <tr>
-                <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center;">
-                  <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">
-                    Insider Bookings
-                  </h1>
-                  <p style="color: #e2e8f0; margin: 8px 0 0 0; font-size: 16px; opacity: 0.9;">
-                    Your exclusive booking platform
-                  </p>
+                <td style="background-color:#0f172a;border-bottom:4px solid #f97316;padding:40px 30px;text-align:center;">
+                  <h1 style="color:#ffffff;margin:0;font-size:28px;font-weight:700;letter-spacing:-0.5px;">Insider Bookings</h1>
+                  <p style="color:#e2e8f0;margin:8px 0 0;font-size:16px;opacity:0.9;">Your exclusive booking platform</p>
                 </td>
               </tr>
               

@@ -13,6 +13,7 @@ import {
   /* Users  */
   registerUser,
   loginUser,
+  verifyEmail,
 
   /* Magic-link  */
   setPasswordWithToken,
@@ -99,6 +100,11 @@ router.post(
    VALIDAR TOKEN (solo lectura) — usado antes de mostrar el form
    ════════════════════════════════════════════════════════════════ */
 router.get("/validate-token/:token", validateToken);
+
+/* ════════════════════════════════════════════════════════════════
+   VERIFY EMAIL
+   ════════════════════════════════════════════════════════════════ */
+router.get("/verify-email/:token", verifyEmail);
 
 /* ════════════════════════════════════════════════════════════════
    STAFF: crear/vincular y listar

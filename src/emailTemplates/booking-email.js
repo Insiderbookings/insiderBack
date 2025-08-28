@@ -1,49 +1,50 @@
 import { sendMail } from "../helpers/mailer.js"
 import { bufferCertificatePDF } from "../helpers/bookingCertificate.js"
+import { getBaseEmailTemplate } from "./base-template.js"
 import dayjs from "dayjs"
 
 export async function sendBookingEmail(booking, toEmail) {
   const pdfBuffer = await bufferCertificatePDF(booking)
 
-  const html = `
-  <div style="font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif">
-    <h2 style="margin:0 0 8px">Booking Confirmation</h2>
-    <p style="margin:0 0 12px;color:#444">
-      Hi ${booking.guestName || "Guest"}, your reservation is confirmed.
+  const content = `
+    <h2 style="margin:0 0 12px;color:#0f172a;">Booking confirmation</h2>
+    <p style="margin:0 0 20px;color:#334155;">
+      Dear ${booking.guestName || "Guest"}, thank you for choosing Insider Bookings. Below are the details of your stay.
     </p>
 
-    <table style="border-collapse:collapse;width:100%;max-width:560px">
+    <table style="border-collapse:collapse;width:100%;max-width:560px;font-size:14px;">
       <tr>
-        <td style="padding:6px 0;color:#888">Booking ID</td>
-        <td style="padding:6px 0;text-align:right"><strong>${booking.bookingCode || booking.id}</strong></td>
+        <td style="padding:8px;border:1px solid #e2e8f0;background-color:#f8fafc;">Booking ID</td>
+        <td style="padding:8px;border:1px solid #e2e8f0;text-align:right;">${booking.bookingCode || booking.id}</td>
       </tr>
       <tr>
-        <td style="padding:6px 0;color:#888">Hotel</td>
-        <td style="padding:6px 0;text-align:right">${booking.hotel?.name || "-"}</td>
+        <td style="padding:8px;border:1px solid #e2e8f0;background-color:#f8fafc;">Hotel</td>
+        <td style="padding:8px;border:1px solid #e2e8f0;text-align:right;">${booking.hotel?.name || "-"}</td>
       </tr>
       <tr>
-        <td style="padding:6px 0;color:#888">Dates</td>
-        <td style="padding:6px 0;text-align:right">
+        <td style="padding:8px;border:1px solid #e2e8f0;background-color:#f8fafc;">Dates</td>
+        <td style="padding:8px;border:1px solid #e2e8f0;text-align:right;">
           ${dayjs(booking.checkIn).format("MMM DD, YYYY")} – ${dayjs(booking.checkOut).format("MMM DD, YYYY")}
         </td>
       </tr>
       <tr>
-        <td style="padding:6px 0;color:#888">Guests / Rooms</td>
-        <td style="padding:6px 0;text-align:right">
+        <td style="padding:8px;border:1px solid #e2e8f0;background-color:#f8fafc;">Guests / Rooms</td>
+        <td style="padding:8px;border:1px solid #e2e8f0;text-align:right;">
           ${booking.guests?.adults ?? 2}${booking.guests?.children ? ` +${booking.guests.children}` : ""} / ${booking.roomsCount ?? 1}
         </td>
       </tr>
       <tr>
-        <td style="padding:6px 0;color:#888">Total</td>
-        <td style="padding:6px 0;text-align:right"><strong>${booking.currency} ${Number(booking.totals?.total || 0).toFixed(2)}</strong></td>
+        <td style="padding:8px;border:1px solid #e2e8f0;background-color:#f8fafc;">Total</td>
+        <td style="padding:8px;border:1px solid #e2e8f0;text-align:right;"><strong>${booking.currency} ${Number(booking.totals?.total || 0).toFixed(2)}</strong></td>
       </tr>
     </table>
 
-    <p style="margin:16px 0;color:#555">
-      Attached you'll find your Booking Confirmation PDF. Please present it upon check-in.
+    <p style="margin:24px 0 0;color:#334155;">
+      We look forward to hosting you. Attached you'll find your booking confirmation PDF.
     </p>
-  </div>
   `
+
+  const html = getBaseEmailTemplate(content, "Booking Confirmation")
 
   await sendMail({
     to: toEmail,

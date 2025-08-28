@@ -12,7 +12,7 @@ import { requestWithCapture } from "./tgx.capture.js"
 
 /* ---------- helper: client singleton ---------- */
 let _client
-function tgxClient() {
+export function tgxClient() {
   if (_client) return _client
   const endpoint = process.env.TGX_ENDPOINT || "https://api.travelgate.com"
   _client = new GraphQLClient(endpoint, {
@@ -29,7 +29,7 @@ function tgxClient() {
 }
 
 /* ---------- retry helper (backoff exponencial para errores de red) ---------- */
-async function requestWithRetry(doc, variables, { attempts = 3, baseDelayMs = 700 } = {}) {
+export async function requestWithRetry(doc, variables, { attempts = 3, baseDelayMs = 700 } = {}) {
   let lastErr
   for (let i = 0; i < attempts; i++) {
     try {
