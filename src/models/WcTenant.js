@@ -34,7 +34,18 @@ export default (sequelize) => {
     );
 
     WcTenant.associate = (models) => {
-        WcTenant.hasMany(models.WcAccount, { foreignKey: "tenant_id" });
+        // Many-to-many with accounts via junction table
+        if (models.WcAccountTenant && models.WcAccount) {
+            WcTenant.belongsToMany(models.WcAccount, {
+                through: models.WcAccountTenant,
+                foreignKey: "tenant_id",
+                otherKey: "account_id",
+            });
+        }
+        // Keep 1:N legacy association for backward compatibility (do not use for new code)
+        if (models.WcAccount) {
+            WcTenant.hasMany(models.WcAccount, { foreignKey: "tenant_id", as: "legacyAccounts" });
+        }
         WcTenant.hasOne(models.WcSiteConfig, { foreignKey: "tenant_id" });
     };
 

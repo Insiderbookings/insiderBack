@@ -8,6 +8,7 @@ import express         from "express";
 import morgan          from "morgan";
 import cors            from "cors";
 import bodyParser      from "body-parser";
+import rateLimit       from "express-rate-limit";
 import models, { sequelize } from "./models/index.js";
 import router          from "./routes/index.js";
 import { handleWebhook } from "./controllers/payment.controller.js";
@@ -29,6 +30,30 @@ app.use(morgan("dev"));
 
 /* ---------- Resto de tu API ---------- */
 app.get("/", (req, res) => res.json({ status: "API running" }));
+// Rate limit básico para rutas de pago (omite webhooks)
+// rate limiter import moved to header
+const paymentsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.RATE_LIMIT_MAX || 200),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path && req.path.includes("webhook"),
+});
+app.use("/api/payments", paymentsLimiter);
+app.use("/api/tgx-payment", paymentsLimiter);
+
+// Restricción de origen por lista blanca (si se define CORS_ALLOWED_ORIGINS)
+const __allowed = (process.env.CORS_ALLOWED_ORIGINS || "").split(",").map(s=>s.trim()).filter(Boolean)
+if (__allowed.length > 0) {
+  app.use("/api", (req, res, next) => {
+    const origin = req.headers.origin
+    if (origin && !__allowed.includes(origin)) {
+      return res.status(403).json({ error: "Origin not allowed" })
+    }
+    return next()
+  })
+}
+
 app.use("/api", router);          // incluye /payments/* menos /webhook
 
 
@@ -38,7 +63,8 @@ const PORT = process.env.PORT || 3000;
 (async () => {
   try {
     await sequelize.authenticate();
-    await sequelize.sync({ alter: false });
+    const alter = String(process.env.DB_ALTER_SYNC || "false").toLowerCase()
+    await sequelize.sync({ alter: ["1","true","yes"].includes(alter) });
     app.listen(PORT, () =>
       console.log(`Server listening on port ${PORT}`)
     );

@@ -9,11 +9,13 @@ export default (sequelize) => {
         {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
 
+            // Deprecated: legacy single-tenant link kept nullable for backward compatibility
             tenant_id: {
                 type: DataTypes.INTEGER,
-                allowNull: false,
+                allowNull: true,
                 references: { model: "wc_tenant", key: "id" },
-                onDelete: "CASCADE",
+                onDelete: "SET NULL",
+                comment: "Deprecated. Use many-to-many via wc_account_tenant",
             },
 
             email: {
@@ -47,12 +49,25 @@ export default (sequelize) => {
                     unique: true,
                     fields: ["tenant_id", "email"],
                 },
+                // Optional global email index to speed lookups
+                { name: "wc_account_email_idx", fields: ["email"] },
             ],
         }
     );
 
     WcAccount.associate = (models) => {
-        WcAccount.belongsTo(models.WcTenant, { foreignKey: "tenant_id" });
+        // Many-to-many with tenants via junction table
+        if (models.WcAccountTenant && models.WcTenant) {
+            WcAccount.belongsToMany(models.WcTenant, {
+                through: models.WcAccountTenant,
+                foreignKey: "account_id",
+                otherKey: "tenant_id",
+            });
+        }
+        // Legacy single link (kept to not break old data access paths)
+        if (models.WcTenant) {
+            WcAccount.belongsTo(models.WcTenant, { foreignKey: "tenant_id", as: "legacyTenant" });
+        }
     };
 
     return WcAccount;

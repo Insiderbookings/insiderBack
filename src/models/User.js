@@ -47,6 +47,13 @@ export default (sequelize) => {
         defaultValue: 0,
       },
 
+      // When admin pre-approves a role change and requires user info
+      role_pending_info: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+
       /* ───────── Soporte Social Login ───────── */
       // 'google', 'apple', 'local' (para local puede quedar null)
       auth_provider: {

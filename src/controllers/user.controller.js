@@ -1,9 +1,9 @@
-import bcrypt from "bcrypt"
+﻿import bcrypt from "bcrypt"
 import models from "../models/index.js"
-import { Op } from "sequelize" // ← Agregar esta importación
+import { Op } from "sequelize" // â† Agregar esta importaciÃ³n
 import { sendMail } from "../helpers/mailer.js"
 
-/* ───────────── GET /api/users/me ───────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ GET /api/users/me â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const getCurrentUser = async (req, res) => {
   try {
     const user = await models.User.findByPk(req.user.id, {
@@ -12,7 +12,7 @@ export const getCurrentUser = async (req, res) => {
         "name",
         "email",
         "phone",
-        "role",                    // 👈 importante
+        "role",                    // ðŸ‘ˆ importante
         ["is_active", "isActive"], // opcional alias
         "avatar_url",
         "createdAt",
@@ -25,13 +25,13 @@ export const getCurrentUser = async (req, res) => {
     return res.status(500).json({ error: "Server error" })
   }
 }
-/* ───────────── PUT /api/users/me ───────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ PUT /api/users/me â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const updateUserProfile = async (req, res) => {
   try {
     const { name, email, phone } = req.body
     const userId = req.user.id
 
-    // Validaciones básicas
+    // Validaciones bÃ¡sicas
     if (!name || !email) {
       return res.status(400).json({ error: "Name and email are required" })
     }
@@ -42,11 +42,11 @@ export const updateUserProfile = async (req, res) => {
       return res.status(400).json({ error: "Invalid email format" })
     }
 
-    // Validar que el email no esté en uso por otro usuario
+    // Validar que el email no estÃ© en uso por otro usuario
     const existingUser = await models.User.findOne({
       where: {
         email,
-        id: { [Op.ne]: userId }, // ← Usar Op importado directamente
+        id: { [Op.ne]: userId }, // â† Usar Op importado directamente
       },
     })
 
@@ -54,7 +54,7 @@ export const updateUserProfile = async (req, res) => {
       return res.status(400).json({ error: "Email already in use" })
     }
 
-    // Validar teléfono si se proporciona
+    // Validar telÃ©fono si se proporciona
     if (phone && phone.trim()) {
       const phoneRegex = /^\+?[0-9\s\-()]{10,15}$/
       if (!phoneRegex.test(phone.replace(/\s/g, ""))) {
@@ -94,13 +94,13 @@ export const updateUserProfile = async (req, res) => {
   }
 }
 
-/* ───────────── PUT /api/users/me/password ───────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ PUT /api/users/me/password â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body
     const userId = req.user.id
 
-    // Validaciones básicas
+    // Validaciones bÃ¡sicas
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: "Current password and new password are required" })
     }
@@ -109,29 +109,29 @@ export const changePassword = async (req, res) => {
       return res.status(400).json({ error: "New password must be at least 8 characters long" })
     }
 
-    // Obtener usuario con contraseña
+    // Obtener usuario con contraseÃ±a
     const user = await models.User.findByPk(userId)
     if (!user) {
       return res.status(404).json({ error: "User not found" })
     }
 
-    // Verificar contraseña actual
+    // Verificar contraseÃ±a actual
     const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash)
     if (!isCurrentPasswordValid) {
       return res.status(400).json({ error: "Current password is incorrect" })
     }
 
-    // Verificar que la nueva contraseña sea diferente
+    // Verificar que la nueva contraseÃ±a sea diferente
     const isSamePassword = await bcrypt.compare(newPassword, user.passwordHash)
     if (isSamePassword) {
       return res.status(400).json({ error: "New password must be different from current password" })
     }
 
-    // Hashear nueva contraseña
+    // Hashear nueva contraseÃ±a
     const saltRounds = 12
     const newPasswordHash = await bcrypt.hash(newPassword, saltRounds)
 
-    // Actualizar contraseña
+    // Actualizar contraseÃ±a
     await models.User.update({ passwordHash: newPasswordHash }, { where: { id: userId } })
 
     return res.json({ message: "Password changed successfully" })
@@ -141,13 +141,13 @@ export const changePassword = async (req, res) => {
   }
 }
 
-/* ───────────── DELETE /api/users/me ───────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ DELETE /api/users/me â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const deleteAccount = async (req, res) => {
   try {
     const { password } = req.body
     const userId = req.user.id
 
-    // Validar que se proporcione la contraseña
+    // Validar que se proporcione la contraseÃ±a
     if (!password) {
       return res.status(400).json({ error: "Password is required to delete account" })
     }
@@ -158,7 +158,7 @@ export const deleteAccount = async (req, res) => {
       return res.status(404).json({ error: "User not found" })
     }
 
-    // Verificar contraseña
+    // Verificar contraseÃ±a
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash)
     if (!isPasswordValid) {
       return res.status(400).json({ error: "Incorrect password" })
@@ -169,7 +169,7 @@ export const deleteAccount = async (req, res) => {
       where: {
         user_id: userId,
         status: ["pending", "confirmed"],
-        checkOut: { [Op.gte]: new Date() }, // ← Usar Op importado directamente
+        checkOut: { [Op.gte]: new Date() }, // â† Usar Op importado directamente
       },
     })
 
@@ -183,7 +183,7 @@ export const deleteAccount = async (req, res) => {
     await models.User.update(
       {
         isActive: false,
-        email: `deleted_${Date.now()}_${user.email}`, // Para evitar conflictos de email único
+        email: `deleted_${Date.now()}_${user.email}`, // Para evitar conflictos de email Ãºnico
       },
       { where: { id: userId } },
     )
@@ -197,14 +197,14 @@ export const deleteAccount = async (req, res) => {
 
 export const getInfluencerStats = async (req, res) => {
   try {
-    // En producción, obtén estos datos desde req.user
-    const userId = 5
-    const role = 2 // 2 = influencer
+    // En producciÃ³n, obtÃ©n estos datos desde req.user
+    const userId = Number(req.user?.id)
+    const role = Number(req.user?.role) // 2 = influencer
 
     if (!userId) return res.status(401).json({ error: "Unauthorized" })
     if (role !== 2) return res.status(403).json({ error: "Only influencers can access this endpoint" })
 
-    // 1) Traer códigos del influencer
+    // 1) Traer cÃ³digos del influencer
     const codes = await models.DiscountCode.findAll({
       where: { user_id: userId },
       attributes: ["id", "code", "percentage", "special_discount_price", "times_used", "booking_id", "created_at"],
@@ -220,7 +220,7 @@ export const getInfluencerStats = async (req, res) => {
       })
     }
 
-    // a) bookings enlazadas explícitamente por DiscountCode.booking_id
+    // a) bookings enlazadas explÃ­citamente por DiscountCode.booking_id
     const bookingIdsFromCodes = codes
       .map(c => c.booking_id)
       .filter(id => Number.isInteger(id))
@@ -237,7 +237,7 @@ export const getInfluencerStats = async (req, res) => {
       ],
     }
 
-    // Si por algún motivo no hay or-conditions, devolvemos vacío de forma segura
+    // Si por algÃºn motivo no hay or-conditions, devolvemos vacÃ­o de forma segura
     const bookings = (whereBooking[Op.or]?.length)
       ? await models.Booking.findAll({
           where: whereBooking,
@@ -246,7 +246,7 @@ export const getInfluencerStats = async (req, res) => {
         })
       : []
 
-    // 3) Comisión fija USD$5 “capped”
+    // 3) ComisiÃ³n fija USD$5 â€œcappedâ€
     const FLAT_COMMISSION = 5
     const earningsByCurrency = {}
 
@@ -263,7 +263,7 @@ export const getInfluencerStats = async (req, res) => {
       earningsByCurrency[ccy] = (earningsByCurrency[ccy] || 0) + FLAT_COMMISSION
     }
 
-    // 4) Normalizar últimas reservas para el front
+    // 4) Normalizar Ãºltimas reservas para el front
     const recentBookings = bookings.slice(0, 20).map((b) => ({
       id: b.id,
       hotelName: b.hotel_name ?? b.hotel ?? null, // adapta si tienes esta info en otra tabla
@@ -299,9 +299,10 @@ export const getInfluencerStats = async (req, res) => {
 }
 
 const ROLE_MAP = {
-  INFLUENCER: { code: 2, label: "Influencer" },
-  CORPORATE : { code: 3, label: "Corporate"  },
-  AGENCY    : { code: 4, label: "Agency"     },
+  INFLUENCER    : { code: 2, label: "Influencer" },
+  CORPORATE     : { code: 3, label: "Corporate"  },
+  AGENCY        : { code: 4, label: "Agency"     },
+  STAFF_OPERATOR: { code: 5, label: "Vault Operator" },
 }
 
 const isEmail = (s = "") =>
@@ -319,7 +320,7 @@ export const requestPartnerInfo = async (req, res) => {
       email = "",
     } = req.body || {}
 
-    // Validaciones básicas
+    // Validaciones bÃ¡sicas
     if (!requestedRoleKey || !ROLE_MAP[requestedRoleKey]) {
       return res.status(400).json({ error: "Invalid requestedRoleKey" })
     }
@@ -330,10 +331,10 @@ export const requestPartnerInfo = async (req, res) => {
     const role = ROLE_MAP[requestedRoleKey]
     if (requestedRole && Number(requestedRole) !== role.code) {
       // No es fatal, pero lo normalizamos
-      // (también podrías rechazar con 400)
+      // (tambiÃ©n podrÃ­as rechazar con 400)
     }
 
-    const to = "partners@insiderbookings.com"
+    const to = "ramiro.alet@gmail.com"
     const from = "partners@insiderbookings.com"
 
     const cleanName  = sanitize(name)
@@ -343,7 +344,7 @@ export const requestPartnerInfo = async (req, res) => {
       (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").toString()
     )
 
-    const subject = `Partner Information Request — ${role.label}`
+    const subject = `Partner Information Request â€” ${role.label}`
     const text = [
       `New partner info request`,
       ``,
@@ -374,7 +375,7 @@ export const requestPartnerInfo = async (req, res) => {
         </table>
         <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0" />
         <p style="margin:0 0 4px;color:#6b7280;font-size:12px">
-          IP: ${ip} • UA: ${ua}
+          IP: ${ip} â€¢ UA: ${ua}
         </p>
         <p style="margin:0;color:#6b7280;font-size:12px">Sent at ${new Date().toISOString()}</p>
       </div>
@@ -391,3 +392,58 @@ export const requestPartnerInfo = async (req, res) => {
     return res.status(500).json({ error: "Could not send email" })
   }
 }
+
+// GET /api/users/me/influencer/commissions
+export const getInfluencerCommissions = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id)
+    const role   = Number(req.user?.role)
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+    if (role !== 2) return res.status(403).json({ error: "Only influencers can access this endpoint" })
+
+    const { status = "all" } = req.query
+    const where = { influencer_user_id: userId }
+    if (["hold", "eligible", "paid", "reversed"].includes(String(status))) where.status = status
+
+    const rows = await models.InfluencerCommission.findAll({
+      where,
+      include: [
+        { model: models.Booking, as: "booking" },
+        { model: models.DiscountCode, as: "discountCode", attributes: ["id", "code"] },
+      ],
+      order: [["created_at", "DESC"]],
+      limit: 500,
+    })
+
+    return res.json({ items: rows })
+  } catch (err) {
+    console.error("getInfluencerCommissions:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+// POST /api/users/admin/influencer/payouts/create
+export const adminCreateInfluencerPayoutBatch = async (req, res) => {
+  try {
+    const role = Number(req.user?.role)
+    if (role !== 100) return res.status(403).json({ error: "Forbidden" })
+
+    const { ids = [], payoutBatchId } = req.body || {}
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: "ids array required" })
+    }
+
+    const batchId = payoutBatchId || `IBP-${Date.now().toString(36)}`
+    const { Op } = await import("sequelize")
+    const [count] = await models.InfluencerCommission.update(
+      { status: "paid", paid_at: new Date(), payout_batch_id: batchId },
+      { where: { id: { [Op.in]: ids }, status: { [Op.in]: ["eligible", "hold"] } } }
+    )
+
+    return res.json({ updated: count, batchId })
+  } catch (err) {
+    console.error("adminCreateInfluencerPayoutBatch:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+

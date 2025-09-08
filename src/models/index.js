@@ -14,6 +14,7 @@ import PaymentModel         from "./Payment.js"            // 1-a-1 con Booking
 import TGXMetaModel         from "./TGXMeta.js"
 import OutsideMetaModel     from "./OutsideMeta.js"
 import CommissionModel      from "./Commission.js"
+import InfluencerCommissionModel from "./InfluencerCommission.js"
 
 import AddOnModel           from "./AddOn.js"
 import AddOnOptionModel     from "./AddOnOption.js"
@@ -30,8 +31,11 @@ import TgxHotelModel from "./TGXHotel.js"
 
 import WcTenantFactory from './WcTenant.js';
 import WcAccountFactory from './WcAccount.js';
+import WcAccountTenantFactory from './WcAccountTenant.js';
 import WcSiteConfigFactory from './WcSiteConfig.js';
 import WcTemplateFactory from './WcTemplate.js'
+import UserRoleRequestFactory from './UserRoleRequest.js'
+import WcVCardFactory from './WcVCard.js'
 
 /* ---------- Construir objetos ---------- */
 const models = {
@@ -49,6 +53,7 @@ const models = {
   TGXMeta        : TGXMetaModel(sequelize),        // ← nuevo
   OutsideMeta    : OutsideMetaModel(sequelize),    // ← nuevo
   Commission     : CommissionModel(sequelize),
+  InfluencerCommission: InfluencerCommissionModel(sequelize),
 
   AddOn          : AddOnModel(sequelize),
   AddOnOption    : AddOnOptionModel(sequelize),
@@ -65,8 +70,12 @@ const models = {
 
   WcTenant       : WcTenantFactory(sequelize),
   WcAccount      : WcAccountFactory(sequelize),
+  WcAccountTenant: WcAccountTenantFactory(sequelize),
   WcSiteConfig   : WcSiteConfigFactory(sequelize),
-  WcTemplate     : WcTemplateFactory(sequelize)
+  WcTemplate     : WcTemplateFactory(sequelize),
+
+  UserRoleRequest: UserRoleRequestFactory(sequelize),
+  WcVCard        : WcVCardFactory(sequelize),
 
 }
 
