@@ -3,11 +3,22 @@
 ──────────────────────────────────────────────────────────── */
 
 import { Op } from "sequelize"
+import crypto from "crypto"
+import jwt from "jsonwebtoken"
+import { sendMail } from "../helpers/mailer.js"
 import models from "../models/index.js"
 import { streamCertificatePDF } from "../helpers/bookingCertificate.js"
+import { sendCancellationEmail } from "../emailTemplates/cancel-email.js"
 /* ───────────── Helper – count nights ───────────── */
 const diffDays = (from, to) =>
   Math.ceil((new Date(to) - new Date(from)) / 86_400_000)
+
+// OTP + token helpers (stateless challenge)
+const codeHash = (email, code) =>
+  crypto
+    .createHash("sha256")
+    .update(`${String(email).trim().toLowerCase()}|${String(code)}|${process.env.JWT_SECRET || "secret"}`)
+    .digest("hex")
 
 /* ───────────── Helper – flattener ────────────────
    Recibe una fila de Booking (snake_case en DB) y la
@@ -167,11 +178,15 @@ export const getBookingsUnified = async (req, res) => {
     if (!user) return res.status(404).json({ error: "User not found" })
     const email = user.email
 
-    // 2. Traer bookings por guest_email y (opcional) status
+    // 2. Traer bookings preferentemente por user_id; como transición,
+    //    incluir también huérfanas donde guest_email coincide y user_id es NULL
     const rows = await models.Booking.findAll({
       where: {
-        guest_email: email,
-        ...(status && { status })
+        ...(status && { status }),
+        [Op.or]: [
+          { user_id: userId },
+          { user_id: null, guest_email: email },
+        ],
       },
       include: [
         {
@@ -228,6 +243,183 @@ export const getBookingsUnified = async (req, res) => {
 export const getLatestStayForUser = (req, res) => {
   req.query.latest = "true"
   return getBookingsUnified(req, res)
+}
+
+/* ---------------------------------------------------------------
+   GET  /api/bookings/lookup?email=...&ref=...
+   Público: permite recuperar UNA reserva si coincide el email del
+   huésped y una referencia segura (id/booking_ref/external_ref).
+   Evita listados amplios por email en claro.
+---------------------------------------------------------------- */
+export const lookupBookingPublic = async (req, res) => {
+  try {
+    const { email, ref } = req.query
+    if (!email || !ref)
+      return res.status(400).json({ error: "Missing email or ref" })
+
+    // Construir OR por referencia
+    const isNumeric = /^\d+$/.test(String(ref))
+    const whereRef = {
+      [Op.or]: [
+        ...(isNumeric ? [{ id: Number(ref) }] : []),
+        { booking_ref: ref },
+        { external_ref: ref },
+      ],
+    }
+
+    const row = await models.Booking.findOne({
+      where: { guest_email: email, ...whereRef },
+      include: [
+        { model: models.Hotel, attributes: ["id", "name", "city", "country", "rating", "image"] },
+        { model: models.Room,  attributes: ["id", "name", "room_number", "image"] },
+        { model: models.TGXMeta, as: "tgxMeta", required: false },
+        { model: models.OutsideMeta, as: "outsideMeta", required: false },
+      ],
+    })
+
+    if (!row) return res.status(404).json({ error: "Booking not found" })
+
+    const source = row.source === "OUTSIDE" ? "outside" : row.source === "TGX" ? "tgx" : "insider"
+    const hotelName = row.Hotel?.name ?? null
+    return res.json({ id: row.id, source, hotelName, checkIn: row.check_in, checkOut: row.check_out })
+  } catch (err) {
+    console.error("lookupBookingPublic:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+/* ---------------------------------------------------------------
+   POST /api/bookings/guest/start { email }
+   Envía un código de 6 dígitos y devuelve un challengeToken.
+---------------------------------------------------------------- */
+export const startGuestAccess = async (req, res) => {
+  try {
+    const { email } = req.body || {}
+    if (!email) return res.status(400).json({ error: "Email is required" })
+    const normalized = String(email).trim().toLowerCase()
+
+    const code = (Math.floor(Math.random() * 900000) + 100000).toString()
+    const hash = codeHash(normalized, code)
+
+    const challengeToken = jwt.sign(
+      { kind: "guest_challenge", email: normalized, codeHash: hash },
+      process.env.JWT_SECRET,
+      { expiresIn: "10m" },
+    )
+
+    // send email
+    const brand = process.env.BRAND_NAME || "InsiderBookings"
+    await sendMail({
+      to: normalized,
+      subject: `${brand} verification code`,
+      text: `Your verification code is ${code}. It expires in 10 minutes.`,
+      html: `<p>Your verification code is <b>${code}</b>.<br/>It expires in 10 minutes.</p>`,
+    })
+
+    return res.json({ challengeToken, sent: true })
+  } catch (err) {
+    console.error("startGuestAccess:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+/* ---------------------------------------------------------------
+   POST /api/bookings/guest/verify { challengeToken, code }
+   Devuelve un guest token (Bearer) de corta duración.
+---------------------------------------------------------------- */
+export const verifyGuestAccess = async (req, res) => {
+  try {
+    const { challengeToken, code } = req.body || {}
+    if (!challengeToken || !code) return res.status(400).json({ error: "Missing fields" })
+
+    let payload
+    try {
+      payload = jwt.verify(challengeToken, process.env.JWT_SECRET)
+    } catch (e) {
+      return res.status(401).json({ error: "Invalid or expired challenge" })
+    }
+    if (payload.kind !== "guest_challenge") return res.status(400).json({ error: "Invalid challenge" })
+
+    const normalized = String(payload.email).trim().toLowerCase()
+    const valid = codeHash(normalized, String(code)) === payload.codeHash
+    if (!valid) return res.status(401).json({ error: "Invalid code" })
+
+    const guestToken = jwt.sign(
+      { kind: "guest", email: normalized, scope: ["bookings:read:guest"] },
+      process.env.JWT_SECRET,
+      { expiresIn: "24h" },
+    )
+
+    return res.json({ token: guestToken })
+  } catch (err) {
+    console.error("verifyGuestAccess:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+/* ---------------------------------------------------------------
+   GET /api/bookings/guest (?latest=true)
+   Listado mínimo para invitados con guest token.
+---------------------------------------------------------------- */
+export const listGuestBookings = async (req, res) => {
+  try {
+    const { latest } = req.query
+    const email = req.guest?.email
+    if (!email) return res.status(401).json({ error: "Unauthorized" })
+
+    const rows = await models.Booking.findAll({
+      where: { guest_email: email },
+      order: [["check_in", "DESC"]],
+      limit: latest ? 1 : 50,
+      include: [
+        { model: models.Hotel, attributes: ["id", "name", "city", "country", "rating", "image"] },
+        { model: models.Room,  attributes: ["id", "name", "room_number", "image"] },
+      ],
+    })
+    const result = rows.map(r => ({
+      id: r.id,
+      hotelName: r.Hotel?.name ?? null,
+      checkIn: r.check_in,
+      checkOut: r.check_out,
+      status: String(r.status).toLowerCase(),
+      source: r.source === "OUTSIDE" ? "outside" : r.source === "TGX" ? "tgx" : "insider",
+    }))
+    return res.json(latest ? result[0] ?? null : result)
+  } catch (err) {
+    console.error("listGuestBookings:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+/* ---------------------------------------------------------------
+   POST /api/bookings/link { guestToken }
+   Autenticado: enlaza reservas huérfanas del email del invitado a user_id.
+---------------------------------------------------------------- */
+export const linkGuestBookingsToUser = async (req, res) => {
+  try {
+    const { guestToken } = req.body || {}
+    if (!guestToken) return res.status(400).json({ error: "Missing guestToken" })
+    let payload
+    try { payload = jwt.verify(guestToken, process.env.JWT_SECRET) } catch (e) { return res.status(401).json({ error: "Invalid guest token" }) }
+    if (payload.kind !== "guest") return res.status(400).json({ error: "Invalid token kind" })
+
+    const email = String(payload.email).trim().toLowerCase()
+    const today = new Date().toISOString().slice(0,10)
+    const [count] = await models.Booking.update(
+      { user_id: req.user.id },
+      {
+        where: {
+          user_id: null,
+          guest_email: email,
+          check_out: { [Op.gte]: today }, // solo futuras o en curso
+        }
+      }
+    )
+    return res.json({ linked: count })
+  } catch (err) {
+    console.error("linkGuestBookingsToUser:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -446,6 +638,39 @@ export const cancelBooking = async (req, res) => {
       cancelled_at   : new Date(),
     })
 
+    // Si quedó REFUNDED, revertir comisión influencer asociada (si no fue pagada)
+    if (String(booking.payment_status).toUpperCase() === 'PAID') {
+      try {
+        const ic = await models.InfluencerCommission.findOne({ where: { booking_id: booking.id } })
+        if (ic && ic.status !== 'paid') {
+          await ic.update({ status: 'reversed', reversal_reason: 'cancelled' })
+        }
+      } catch (e) {
+        console.warn('cancelBooking: could not reverse influencer commission:', e?.message || e)
+      }
+    }
+
+    // Enviar email de cancelación (best-effort)
+    try {
+      const bookingForEmail = {
+        id: booking.id,
+        bookingCode: booking.booking_ref || booking.id,
+        guestName: booking.guest_name,
+        guests: { adults: booking.adults, children: booking.children },
+        roomsCount: 1,
+        checkIn: booking.check_in,
+        checkOut: booking.check_out,
+        hotel: { name: booking.Hotel?.name || booking.meta?.snapshot?.hotelName || 'Hotel' },
+        currency: booking.currency || 'USD',
+        totals: { total: Number(booking.gross_price || 0) },
+      }
+      const lang = (booking.meta?.language || process.env.DEFAULT_LANG || 'en')
+      const policy = null
+      await sendCancellationEmail({ booking: bookingForEmail, toEmail: booking.guest_email, lang, policy, refund: {} })
+    } catch (e) {
+      console.warn('cancelBooking: could not send cancellation email:', e?.message || e)
+    }
+
     return res.json({
       message: "Booking cancelled successfully",
       booking: {
@@ -627,3 +852,10 @@ export const downloadBookingCertificate = async (req, res) => {
     return res.status(500).json({ error: "Could not generate certificate" })
   }
 }
+
+/* -----------------------------------------------------------
+   POST /api/bookings/:id/refund
+   Marca la reserva como reembolsada y revierte la comisión influencer asociada.
+   Autorización: owner de la booking, staff o admin.
+----------------------------------------------------------- */
+// requestRefund endpoint was removed — cancellation flow handles refunds.

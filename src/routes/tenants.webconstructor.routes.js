@@ -5,7 +5,7 @@ import { authenticate } from '../middleware/auth.js'
 import { authorizeWc, authorizeWcPermission } from '../middleware/webconstructorAuth.js'
 import {
     wcLogin, wcMe,
-    getSiteConfigPrivate, updateSiteConfigPrivate, getSiteConfigPublic, getHotelPublic, listTemplates
+    getSiteConfigPrivate, updateSiteConfigPrivate, getSiteConfigPublic, getHotelPublic, listTemplates, searchPublic
 } from '../controllers/webconstructor.controller.js'
 import { uploadImagesToS3Fields } from '../middleware/s3UploadFields.js'
 
@@ -75,6 +75,12 @@ router.get(
     '/webconstructor/hotel',
     resolveTenant,
     getHotelPublic
+)
+
+router.get(
+    '/webconstructor/search',
+    resolveTenant,
+    searchPublic
 )
 
 export default router

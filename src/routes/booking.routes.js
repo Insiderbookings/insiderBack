@@ -12,13 +12,27 @@ import {
   getOutsideBookingByConfirmation,
   getOutsideBookingWithAddOns,
   downloadBookingCertificate,
+  lookupBookingPublic,
+  startGuestAccess,
+  verifyGuestAccess,
+  listGuestBookings,
+  linkGuestBookingsToUser,
 } from "../controllers/booking.controller.js"
-import { authenticate, authorizeStaff } from "../middleware/auth.js"
+import { authenticate, authorizeStaff, authenticateGuest } from "../middleware/auth.js"
 
 const router = Router()
 
 /* ---- Create ---- */
 router.post("/", createBooking)
+
+/* ---- Public single-booking lookup (email + ref) ---- */
+router.get("/lookup", lookupBookingPublic)
+
+/* ---- Guest OTP flow ---- */
+router.post("/guest/start", startGuestAccess)
+router.post("/guest/verify", verifyGuestAccess)
+router.get("/guest", authenticateGuest, listGuestBookings)
+router.post("/link", authenticate, linkGuestBookingsToUser)
 
 /* ---- Unified user list & latest ---- */
 router.get("/me",         authenticate, getBookingsUnified)      // full or ?latest=true
@@ -38,6 +52,10 @@ router.put("/:id/cancel",       authenticate, cancelBooking)
 router.get("/confirmation/:confirmation", getOutsideBookingByConfirmation)
 router.get("/outside/id/:id",        getOutsideBookingWithAddOns)
 
-router.get("/bookings/:id/certificate.pdf", downloadBookingCertificate)
+// Descarga del certificado PDF de una reserva
+// Estaba montado erróneamente como "/bookings/:id/certificate.pdf" y, al
+// estar este router bajo "/api/bookings", resultaba en "/api/bookings/bookings/:id/certificate.pdf".
+// Lo correcto es exponerlo como "/api/bookings/:id/certificate.pdf".
+router.get("/:id/certificate.pdf", downloadBookingCertificate)
 
 export default router

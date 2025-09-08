@@ -581,6 +581,62 @@ export const confirmPartnerPayment = async (req, res) => {
             },
           },
         });
+
+        // Crear comisión para influencer si el código pertenece a un usuario (no staff)
+        if (dc.user_id) {
+          try {
+            const rateEnv = Number(process.env.INFLUENCER_COMMISSION_PCT)
+            const ratePct = Number.isFinite(rateEnv) && rateEnv > 0 ? rateEnv : 15
+            // Cap en USD, convertir a moneda de la reserva si hay tasa disponible
+            const capUsdEnv  = Number(process.env.INFLUENCER_COMMISSION_CAP_USD)
+            const capUsd     = Number.isFinite(capUsdEnv) && capUsdEnv > 0 ? capUsdEnv : 5
+            let capAmt = capUsd
+            try {
+              const ratesStr = process.env.FX_USD_RATES || '{}'
+              const rates = JSON.parse(ratesStr)
+              const r = Number(rates[(booking.currency || 'USD').toUpperCase()])
+              if (Number.isFinite(r) && r > 0) capAmt = capUsd * r
+            } catch {}
+            const holdDaysEnv = Number(process.env.INFLUENCER_HOLD_DAYS)
+            const holdDays = Number.isFinite(holdDaysEnv) && holdDaysEnv >= 0 ? holdDaysEnv : 3
+
+            const gross = Number(booking.gross_price || 0)
+            const net   = booking.net_cost != null ? Number(booking.net_cost) : null
+            const markup = net != null ? Math.max(0, gross - Number(net)) : null
+            const base   = markup != null ? markup : gross
+            const baseType = markup != null ? "markup" : "gross"
+
+            const rawCommission = base * (ratePct / 100)
+            const commissionAmount = Math.round((Math.min(rawCommission, capAmt) + Number.EPSILON) * 100) / 100
+            const currency = booking.currency || "USD"
+
+            let holdUntil = null
+            try {
+              const co = booking.check_out ? new Date(booking.check_out) : null
+              if (co && !isNaN(co)) {
+                co.setDate(co.getDate() + holdDays)
+                holdUntil = co
+              }
+            } catch {}
+            const useHold = String(process.env.INFLUENCER_USE_HOLD || '').toLowerCase() === 'true'
+            await models.InfluencerCommission.findOrCreate({
+              where: { booking_id: booking.id },
+              defaults: {
+                influencer_user_id: dc.user_id,
+                booking_id: booking.id,
+                discount_code_id: dc.id,
+                commission_base: baseType,
+                commission_rate_pct: ratePct,
+                commission_amount: commissionAmount,
+                commission_currency: currency,
+                status: useHold && holdUntil ? "hold" : "eligible",
+                hold_until: holdUntil,
+              },
+            })
+          } catch (e) {
+            console.warn("(INF) No se pudo crear InfluencerCommission (PARTNER):", e?.message || e)
+          }
+        }
       } catch (e) {
         console.warn("⚠️ No se pudo finalizar el descuento PARTNER:", e?.message || e);
       }

@@ -243,7 +243,18 @@ export const registerUser = async (req, res) => {
       console.error(mailErr);
     }
 
-    return res.status(201).json({ message: "Usuario registrado. Verifique su correo." });
+    // Emit a token + user to satisfy FE expectations; still send verify email above
+    const token = signToken({ id: user.id, type: "user", role: user.role })
+    const safeUser = {
+      id   : user.id,
+      name : user.name,
+      email: user.email,
+      phone: user.phone,
+      role : user.role ?? 0,
+      avatar_url: user.avatar_url ?? null,
+      is_active : user.is_active ?? true,
+    }
+    return res.status(201).json({ token, user: safeUser })
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Server error" });

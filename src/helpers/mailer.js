@@ -27,7 +27,7 @@ export function createTransport() {
   })
 }
 
-export async function sendMail({ to, subject, text, html, from }) {
+export async function sendMail({ to, subject, text, html, from, attachments }) {
   const transporter = createTransport()
   const info = await transporter.sendMail({
     from: from || process.env.MAIL_FROM || "no-reply@insiderbookings.com",
@@ -35,6 +35,8 @@ export async function sendMail({ to, subject, text, html, from }) {
     subject,
     text,
     html,
+    // Passthrough de adjuntos (Buffer, path o stream)
+    ...(attachments ? { attachments } : {}),
   })
   return info
 }

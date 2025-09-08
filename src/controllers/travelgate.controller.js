@@ -13,6 +13,7 @@ import { fetchRoomsTGX, mapRooms, fetchAllRooms } from "../services/tgx.rooms.se
 import { fetchBoardsTGX, mapBoards, fetchAllBoards } from "../services/tgx.boards.service.js"
 import { fetchMetadataTGX, mapMetadata } from "../services/tgx.metadata.service.js"
 import models from "../models/index.js"
+import { sendCancellationEmail } from "../emailTemplates/cancel-email.js"
 import { getMarkup } from "../utils/markup.js"
 
 function parseOccupancies(raw = "1|0") {
@@ -118,15 +119,15 @@ export const search = async (req, res, next) => {
         userRole: req.user?.role,
         userRoleId: req.user?.role_id,
       }
-      const raw =
-        sources.query ??
-        sources.header ??
-        sources.userRole ??
-        sources.userRoleId
-      const n = Number(raw)
-      // Debug ingreso de rol
-      console.log("[search][markup] role sources:", sources, "→ parsed:", n)
-      return Number.isFinite(n) ? n : 1 // default a guest (1)
+      const jwtRole = sources.userRole ?? sources.userRoleId
+      const nJwt = Number(jwtRole)
+      if (Number.isFinite(nJwt)) {
+        console.log("[search][markup] using authenticated role:", nJwt)
+        return nJwt
+      }
+      // Unauthenticated: ignore hints and force guest (0)
+      console.log("[search][markup] unauthenticated; ignoring hints and using guest (0). Sources:", sources)
+      return 0
     }
 
     const roleNum = getRoleFromReq()
@@ -530,8 +531,27 @@ export const quote = async (req, res, next) => {
       testMode: true,
     }
 
+    // helpers (align with search controller)
+    const moneyRound = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
+    const applyMarkup = (amount, pct) => {
+      const n = Number(amount)
+      if (!Number.isFinite(n)) return null
+      return moneyRound(n * (1 + pct))
+    }
+    // role resolution: prefer authenticated user; otherwise force guest
+    const jwtRole = req.user?.role ?? req.user?.role_id
+    const roleNum = Number.isFinite(Number(jwtRole)) ? Number(jwtRole) : 0
+
     const data = await quoteTGX(rateKey, settings)
-    res.json(data)
+    const net = Number(data?.price?.net)
+    const pct = getMarkup(roleNum, net)
+    const priceUser = applyMarkup(net, pct)
+
+    // headers to help FE debug/alignment
+    res.set("x-markup-role", String(roleNum))
+    res.set("x-markup-pct", String(pct))
+
+    res.json({ ...data, priceUser, markup: { roleNum, pct } })
   } catch (err) {
     next(err)
   }
@@ -641,11 +661,11 @@ export const cancel = async (req, res, next) => {
     }
 
     // 2) Construir input FORMATO 2 para TGX
-    const accessCode = bk.tgxMeta?.access_code || bk.tgxMeta?.access || null;
+    const accessCode = bk.tgxMeta?.access_code || bk.tgxMeta?.access || process.env.TGX_DEFAULT_ACCESS || "2";
     if (!accessCode) {
       return res.status(400).json({ error: "Missing access code for cancellation" });
     }
-    const hotelCode = bk.tgxMeta?.hotel_code || "1";
+    const hotelCode = bk.tgxMeta?.hotel_code || bk.tgxMeta?.hotel?.hotelCode || String(bk.tgxMeta?.reference_hotel || "1");
     const refSupplier = bk.tgxMeta?.reference_supplier;
     const refClient = bk.tgxMeta?.reference_client;
 
@@ -687,12 +707,43 @@ export const cancel = async (req, res, next) => {
       },
     });
 
+    // 4.0-bis) Revertir comisión de influencer si aplica y no fue pagada
+    try {
+      const ic = await models.InfluencerCommission.findOne({ where: { booking_id: bk.id } })
+      if (ic && ic.status !== 'paid') {
+        await ic.update({ status: 'reversed', reversal_reason: 'tgx_cancel' })
+      }
+    } catch (e) {
+      console.warn('(INF) Could not reverse influencer commission on TGX cancel:', e?.message || e)
+    }
+
     // 4.1) Guardar cancelReference si lo tenés en el modelo
     if (bk.tgxMeta && cancellation?.cancelReference && bk.tgxMeta.update) {
       await bk.tgxMeta.update({ cancel_reference: cancellation.cancelReference });
     }
 
-    // 5) Responder
+    // 5) Email de cancelación al huésped (best-effort)
+    try {
+      const bookingForEmail = {
+        id: bk.id,
+        bookingCode: bk.booking_ref || bk.id,
+        guestName: bk.guest_name,
+        guests: { adults: bk.adults, children: bk.children },
+        roomsCount: 1,
+        checkIn: bk.check_in,
+        checkOut: bk.check_out,
+        hotel: { name: bk.tgxMeta?.hotel?.hotelName || bk.meta?.snapshot?.hotelName || 'Hotel' },
+        currency: bk.currency || 'USD',
+        totals: { total: Number(bk.gross_price || 0) },
+      }
+      const lang = (bk.meta?.language || process.env.DEFAULT_LANG || 'en')
+      const policy = bk.tgxMeta?.cancellation_policy || null
+      await sendCancellationEmail({ booking: bookingForEmail, toEmail: bk.guest_email, lang, policy, refund: {} })
+    } catch (mailErr) {
+      console.warn("(mail) Could not send cancellation email:", mailErr?.message || mailErr)
+    }
+
+    // 6) Responder
     return res.json({
       ok: true,
       bookingId: bk.id,

@@ -3,6 +3,7 @@ import dotenv from "dotenv"
 import crypto from "crypto"
 import Stripe from "stripe"
 import { sendBookingEmail } from "../emailTemplates/booking-email.js"
+import sendMagicLink from "../services/sendMagicLink.js"
 import models, { sequelize } from "../models/index.js"
 import { bookTGX, quoteTGX } from "../services/tgx.booking.service.js"
 import { normalizeTGXBookingID } from "../utils/normalizeBookingId.tgx.js"
@@ -32,6 +33,37 @@ const toDateOnly = (s) => {
   const mm = String(d.getUTCMonth() + 1).padStart(2, "0")
   const dd = String(d.getUTCDate()).padStart(2, "0")
   return `${yyyy}-${mm}-${dd}`
+}
+
+/**
+ * Merge vault meta/channel into a base meta object using optional X-Tenant-Domain header.
+ * Non-breaking: if header is missing or tenant not found, it simply returns baseMeta.
+ */
+async function enrichVaultMeta(req, baseMeta = {}) {
+  try {
+    const out = { ...(baseMeta || {}) }
+    const existingVault = (out.vaultMeta && typeof out.vaultMeta === 'object') ? out.vaultMeta : {}
+    const host = String(req.headers['x-tenant-domain'] || req.query?.host || '').trim().toLowerCase()
+
+    if (host) {
+      // Resolve tenant by panel_domain first, then public_domain
+      let t = await models.WcTenant.findOne({ where: { panel_domain: host } })
+      if (!t) t = await models.WcTenant.findOne({ where: { public_domain: host } })
+      if (t) {
+        out.vaultMeta = {
+          ...existingVault,
+          tenantId: t.id,
+          publicDomain: t.public_domain,
+          panelDomain: t.panel_domain,
+        }
+        if (!out.channel) out.channel = 'vaults'
+      }
+    }
+
+    return out
+  } catch (_) {
+    return baseMeta || {}
+  }
 }
 
 async function generateUniqueBookingRef() {
@@ -165,12 +197,15 @@ export const createTravelgatePaymentIntent = async (req, res) => {
   let tx
   try {
     const {
-      amount,
+      amount, // optional: if absent, server computes expected amount
       currency = "EUR",
       guestInfo = {},
       bookingData = {},
       user_id = null,
       discount_code_id = null,
+      // optional: discount object validated by /api/discounts/validate
+      // shape: { active: true, code, percentage?, specialDiscountPrice?, validatedBy? }
+      discount = null,
       source = "TGX",
       captureManual, // opcional desde FE
     } = req.body
@@ -183,12 +218,11 @@ export const createTravelgatePaymentIntent = async (req, res) => {
       req.body.rateKey ||
       null
 
-    if (!amount || !idRaw || !guestInfo) {
+    if (!idRaw || !guestInfo) {
       return badReq("MISSING_PARAMS", {
         message:
-          "amount, searchOptionRefId (or optionRefId, quoteOptionRefId, rateKey), and guestInfo are required",
+          "searchOptionRefId (or optionRefId, quoteOptionRefId, rateKey), and guestInfo are required",
         debug: {
-          hasAmount: Boolean(amount),
           hasAnyOptionId: Boolean(idRaw),
           hasGuestInfo: Boolean(guestInfo),
         },
@@ -221,6 +255,39 @@ export const createTravelgatePaymentIntent = async (req, res) => {
         message: "bookingData.checkIn and bookingData.checkOut are required/valid",
         debug: { checkIn: bookingData.checkIn, checkOut: bookingData.checkOut }
       })
+    }
+
+
+    // Guest email double-entry check (if FE provided emailConfirm)
+    if (
+      guestInfo?.emailConfirm &&
+      String(guestInfo.emailConfirm).trim().toLowerCase() !== String(guestInfo.email || '').trim().toLowerCase()
+    ) {
+      return badReq("EMAIL_MISMATCH", { message: "Emails do not match" })
+    }
+
+    // Resolve or create user by guest email (associate booking to account)
+    let resolvedUserId = user_id || null
+    const normalizedEmail = (guestInfo?.email || '').trim().toLowerCase()
+    if (!resolvedUserId && normalizedEmail) {
+      try {
+        const existing = await models.User.findOne({ where: { email: normalizedEmail } })
+        if (existing) {
+          resolvedUserId = existing.id
+        } else {
+          const displayName = String(guestInfo?.fullName || normalizedEmail).slice(0, 100)
+          const created = await models.User.create({
+            name : displayName,
+            email: normalizedEmail,
+            phone: guestInfo?.phone || null,
+            role : 0,
+          })
+          resolvedUserId = created.id
+          try { await sendMagicLink(created) } catch (e) { console.warn("Failed to send magic link:", e?.message || e) }
+        }
+      } catch (e) {
+        console.warn("User resolve/create failed:", e?.message || e)
+      }
     }
 
     // ── Rol / Markup ────────────────────────────────────────────────────────
@@ -273,8 +340,27 @@ export const createTravelgatePaymentIntent = async (req, res) => {
 
     const rolePct = getMarkup(roleNum, verifiedNet)
     const computedGross   = applyMarkup(verifiedNet, rolePct)
-    const requestedAmount = moneyRound(Number(amount))
-    const delta           = Math.abs(computedGross - requestedAmount)
+    const requestedAmountRaw = amount != null ? Number(amount) : NaN
+    const requestedAmount = Number.isFinite(requestedAmountRaw) && requestedAmountRaw > 0
+      ? moneyRound(requestedAmountRaw)
+      : null
+
+    // If a discount is present, compute expected amount with discount
+    let expectedToCharge = computedGross
+    if (discount && discount.active === true) {
+      const pct = Number(discount.percentage)
+      const sp  = discount.specialDiscountPrice != null ? Number(discount.specialDiscountPrice) : null
+
+      if (Number.isFinite(sp) && sp > 0) {
+        // Special fixed final price (major units)
+        expectedToCharge = moneyRound(sp)
+      } else if (Number.isFinite(pct) && pct > 0 && pct <= 100) {
+        // Percentage discount over public price (computedGross)
+        expectedToCharge = moneyRound(computedGross * (1 - pct / 100))
+      }
+    }
+
+    const delta           = requestedAmount != null ? Math.abs(expectedToCharge - requestedAmount) : 0
 
     // Tabla rápida para la cabeza:
     console.table({
@@ -282,30 +368,35 @@ export const createTravelgatePaymentIntent = async (req, res) => {
       verifiedNet,
       rolePct,
       computedGross,
+      ...(discount ? { discountPct: Number(discount.percentage) || null, specialDiscountPrice: discount.specialDiscountPrice ?? null } : {}),
+      expectedToCharge,
       requestedAmount,
       delta
     })
 
-    if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
-      return badReq("INVALID_REQUESTED_AMOUNT", { message: "Amount must be a positive number", debug: { amount } })
+    // If client sent amount, validate it; otherwise, proceed using expectedToCharge
+    if (requestedAmount != null) {
+      if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+        return badReq("INVALID_REQUESTED_AMOUNT", { message: "Amount must be a positive number", debug: { amount } })
+      }
+      // estrictos pero con d=0.01 para redondeo
+      if (delta > 0.01) {
+        return badReq("AMOUNT_MISMATCH", {
+          message: "Amount mismatch with current price",
+          debug: {
+            expected: expectedToCharge,
+            received: requestedAmount,
+            net: verifiedNet,
+            roleNum,
+            rolePct,
+            discount: discount || null,
+            delta
+          }
+        })
+      }
     }
 
-    // estrictos pero con d=0.01 para redondeo
-    if (delta > 0.01) {
-      return badReq("AMOUNT_MISMATCH", {
-        message: "Amount mismatch with current price",
-        debug: {
-          expected: computedGross,
-          received: requestedAmount,
-          net: verifiedNet,
-          roleNum,
-          rolePct,
-          delta
-        }
-      })
-    }
-
-    const finalAmount  = computedGross
+    const finalAmount  = expectedToCharge
     const finalNetCost = verifiedNet
     dbg("✓ Final amounts:", { finalAmount, finalNetCost, currency3 })
 
@@ -344,7 +435,7 @@ export const createTravelgatePaymentIntent = async (req, res) => {
     const booking = await Booking.create(
       {
         booking_ref,
-        user_id: user_id || null,
+        user_id: resolvedUserId || null,
         hotel_id: booking_hotel_id,
         tgx_hotel_id: booking_tgx_hotel_id,
         room_id: roomIdFK,
@@ -373,7 +464,7 @@ export const createTravelgatePaymentIntent = async (req, res) => {
 
         rate_expires_at: bookingData.rateExpiresAt || null,
 
-        meta: {
+        meta: await enrichVaultMeta(req, {
           specialRequests: guestInfo.specialRequests || "",
           origin: "tgx-payment.create-payment-intent",
           snapshot: {
@@ -385,7 +476,8 @@ export const createTravelgatePaymentIntent = async (req, res) => {
             location: bookingData.location || null,
           },
           ...((bookingData.meta && typeof bookingData.meta === "object") ? bookingData.meta : {}),
-        },
+          ...(discount ? { discount } : {}),
+        }),
       },
       { transaction: tx }
     )
@@ -531,6 +623,24 @@ export const confirmPaymentAndBook = async (req, res) => {
     }
     if (!booking) {
       return res.status(404).json({ error: "Booking not found for provided identifiers" });
+    }
+
+    // Attach booking to existing/auto-created user by email if not linked yet
+    try {
+      if (!booking.user_id && booking.guest_email) {
+        const normalizedEmail = String(booking.guest_email).trim().toLowerCase()
+        let user = await models.User.findOne({ where: { email: normalizedEmail } })
+        if (!user) {
+          const displayName = String(booking.guest_name || normalizedEmail).slice(0, 100)
+          user = await models.User.create({ name: displayName, email: normalizedEmail, phone: booking.guest_phone || null, role: 0 })
+          try { await sendMagicLink(user) } catch (e) { console.warn("Failed to send magic link:", e?.message || e) }
+        }
+        if (user && user.id) {
+          await booking.update({ user_id: user.id })
+        }
+      }
+    } catch (e) {
+      console.warn("Booking user attach failed:", e?.message || e)
     }
 
     // Idempotency
@@ -725,6 +835,64 @@ export const confirmPaymentAndBook = async (req, res) => {
             },
           },
         });
+
+        // Crear comisión para influencer si el código pertenece a un usuario (no staff)
+        if (dc.user_id) {
+          try {
+            const rateEnv = Number(process.env.INFLUENCER_COMMISSION_PCT)
+            const ratePct = Number.isFinite(rateEnv) && rateEnv > 0 ? rateEnv : 15
+            // Cap en USD, convertir a moneda de la reserva si hay tasa disponible
+            const capUsdEnv  = Number(process.env.INFLUENCER_COMMISSION_CAP_USD)
+            const capUsd     = Number.isFinite(capUsdEnv) && capUsdEnv > 0 ? capUsdEnv : 5
+            let capAmt = capUsd
+            try {
+              const ratesStr = process.env.FX_USD_RATES || '{}'
+              const rates = JSON.parse(ratesStr)
+              const r = Number(rates[(booking.currency || 'USD').toUpperCase()])
+              if (Number.isFinite(r) && r > 0) capAmt = capUsd * r
+            } catch {}
+            const holdDaysEnv = Number(process.env.INFLUENCER_HOLD_DAYS)
+            const holdDays = Number.isFinite(holdDaysEnv) && holdDaysEnv >= 0 ? holdDaysEnv : 3
+
+            const gross = Number(booking.gross_price || 0)
+            const net   = booking.net_cost != null ? Number(booking.net_cost) : null
+            const markup = net != null ? Math.max(0, gross - Number(net)) : null
+            const base   = markup != null ? markup : gross
+            const baseType = markup != null ? "markup" : "gross"
+
+            const rawCommission = base * (ratePct / 100)
+            const commissionAmount = moneyRound(Math.min(rawCommission, capAmt))
+            const currency = booking.currency || "EUR"
+
+            // hold_until = check_out + holdDays (solo si INFLUENCER_USE_HOLD=true)
+            let holdUntil = null
+            try {
+              const co = booking.check_out ? new Date(booking.check_out) : null
+              if (co && !isNaN(co)) {
+                co.setDate(co.getDate() + holdDays)
+                holdUntil = co
+              }
+            } catch {}
+            const useHold = String(process.env.INFLUENCER_USE_HOLD || '').toLowerCase() === 'true'
+
+            await models.InfluencerCommission.findOrCreate({
+              where: { booking_id: booking.id },
+              defaults: {
+                influencer_user_id: dc.user_id,
+                booking_id: booking.id,
+                discount_code_id: dc.id,
+                commission_base: baseType,
+                commission_rate_pct: ratePct,
+                commission_amount: commissionAmount,
+                commission_currency: currency,
+                status: useHold && holdUntil ? "hold" : "eligible",
+                hold_until: holdUntil,
+              },
+            })
+          } catch (e) {
+            console.warn("(INF) No se pudo crear InfluencerCommission:", e?.message || e)
+          }
+        }
       } catch (e) {
         console.warn("⚠️ No se pudo finalizar el descuento TGX:", e?.message || e);
       }
@@ -742,31 +910,36 @@ export const confirmPaymentAndBook = async (req, res) => {
         });
 
         const h = fullBooking?.Hotel || null;
+        const metaLoc = fullBooking?.meta?.location || {};
 
         const tgxHotel = h
           ? {
               name   : h.name || h.hotelName,
-              address: [h.address, h.city, h.country].filter(Boolean).join(", "),
-              phone  : h.phone || "-",
+              address: h.address || [h.city, h.country].filter(Boolean).join(", "),
+              city   : h.city || metaLoc.city || undefined,
+              country: h.country || metaLoc.country || undefined,
+              phone  : h.phone || metaLoc.phone || "-",
             }
-          : (tgxBooking?.hotel
-              ? {
-                  name   : tgxBooking.hotel.hotelName || tgxBooking.hotel.hotelCode || "Hotel",
-                  address: [tgxBooking.hotel.city, tgxBooking.hotel.country].filter(Boolean).join(", "),
-                  phone  : "-",
-                }
-              : { name: "Hotel", address: "", phone: "-" });
+          : {
+              name   : (tgxBooking?.hotel?.hotelName) || metaLoc.name || "Hotel",
+              address: metaLoc.address || [metaLoc.city, metaLoc.country].filter(Boolean).join(", ") || "",
+              city   : metaLoc.city || undefined,
+              country: metaLoc.country || undefined,
+              phone  : metaLoc.phone || "-",
+            };
 
         await sendBookingEmail(
           {
             id: booking.id,
-            bookingCode: normalizedRefId || booking.external_ref || booking.id,
+            // Show our internal booking reference (short) instead of long supplier id
+            bookingCode: booking.booking_ref || booking.id,
             guestName: booking.guest_name,
             guests: { adults: booking.adults, children: booking.children },
             roomsCount: booking.rooms || 1,
             checkIn: booking.check_in,
             checkOut: booking.check_out,
             hotel: tgxHotel,
+            country: tgxHotel.country || undefined,
             currency: booking.currency,
             totals: { total: booking.gross_price },
           },
@@ -836,6 +1009,9 @@ export const bookWithCard = async (req, res) => {
     } = req.body
 
     if (!optionRefId) return res.status(400).json({ error: "optionRefId is required" })
+    if (guestInfo?.emailConfirm && String(guestInfo.emailConfirm).trim().toLowerCase() !== String(guestInfo.email || "").trim().toLowerCase()) {
+      return res.status(400).json({ error: "Emails do not match" })
+    }
     if (!paymentCard?.number || !paymentCard?.CVC || !paymentCard?.expire?.month || !paymentCard?.expire?.year) {
       return res.status(400).json({ error: "Incomplete paymentCard data" })
     }
@@ -876,12 +1052,27 @@ export const bookWithCard = async (req, res) => {
       booking_hotel_id = Number(bookingData.hotelId)
     }
 
+    // Resolve or create user by guest email (associate booking to account)
+    let resolvedUserId = user_id || null
+    try {
+      const normalizedEmail = String(guestInfo?.email || "").trim().toLowerCase()
+      if (!resolvedUserId && normalizedEmail) {
+        let user = await models.User.findOne({ where: { email: normalizedEmail } })
+        if (!user) {
+          const displayName = String(guestInfo?.fullName || normalizedEmail).slice(0, 100)
+          user = await models.User.create({ name: displayName, email: normalizedEmail, phone: guestInfo?.phone || null, role: 0 })
+          try { await sendMagicLink(user) } catch (e) { console.warn("Failed to send magic link:", e?.message || e) }
+        }
+        if (user) resolvedUserId = user.id
+      }
+    } catch (e) { console.warn("User resolve/create failed:", e?.message || e) }
+
     // Creamos la fila Booking local (sin Stripe). payment_provider NONE/CARD_ON_FILE
     const booking_ref = await generateUniqueBookingRef()
     const booking = await Booking.create(
       {
         booking_ref,
-        user_id: user_id || null,
+        user_id: resolvedUserId || null,
         hotel_id: booking_hotel_id,
         tgx_hotel_id: booking_tgx_hotel_id,
         room_id: roomIdFK,
@@ -928,6 +1119,11 @@ export const bookWithCard = async (req, res) => {
       },
       { transaction: tx }
     )
+
+    // Enrich meta with vault tenant info if header present (non-breaking)
+    try {
+      await booking.update({ meta: await enrichVaultMeta(req, booking.meta) }, { transaction: tx })
+    } catch (_) {}
 
     const tgxMeta = await TGXMeta.create(
       {

@@ -26,6 +26,9 @@ export default (sequelize) => {
             fontFamily: { type: DataTypes.STRING(120), allowNull: true, field: "font_family" },
             templateKey: { type: DataTypes.STRING(64), allowNull: true, field: "template_key" },
 
+            // Deep customization per template
+            templateSettings: { type: jsonType, allowNull: true, defaultValue: {}, field: "template_settings" },
+
             stars: {
                 type: DataTypes.INTEGER,
                 allowNull: true,
