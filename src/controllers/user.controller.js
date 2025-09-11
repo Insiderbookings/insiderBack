@@ -303,6 +303,7 @@ const ROLE_MAP = {
   CORPORATE     : { code: 3, label: "Corporate"  },
   AGENCY        : { code: 4, label: "Agency"     },
   STAFF_OPERATOR: { code: 5, label: "Vault Operator" },
+  OPERATOR: { code: 5, label: "Vault Operator" },
 }
 
 const isEmail = (s = "") =>
@@ -319,6 +320,7 @@ export const requestPartnerInfo = async (req, res) => {
       name = "",
       email = "",
     } = req.body || {}
+    
 
     // Validaciones bÃ¡sicas
     if (!requestedRoleKey || !ROLE_MAP[requestedRoleKey]) {

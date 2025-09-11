@@ -1,4 +1,4 @@
-// src/controllers/vcc.controller.js
+﻿// src/controllers/vcc.controller.js
 import models from '../models/index.js'
 import { Op } from 'sequelize'
 
@@ -42,7 +42,7 @@ export async function claimNext(req, res) {
     })
     if (existing) return res.status(409).json({ error: 'You already have an active card' })
 
-    // Transacción desde la instancia del modelo (fix principal)
+    // Transacción desde la instancia del modelo
     const sequelize = models.WcVCard.sequelize
     const t = await sequelize.transaction()
     try {
@@ -124,10 +124,21 @@ export async function getActiveForOperator(req, res) {
 
 export async function adminListCards(req, res) {
   try {
-    const { status, tenantId } = req.query
+    const { status, tenantId, approvedBy } = req.query
     const where = {}
-    if (status) where.status = String(status)
+    if (status) {
+      const list = String(status)
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+      if (list.length > 1) where.status = { [Op.in]: list }
+      else where.status = list[0]
+    }
     if (tenantId) where.tenant_id = Number(tenantId)
+    if (approvedBy) {
+      if (approvedBy === 'me') where.approved_by_account_id = req.user?.id || null
+      else if (!Number.isNaN(Number(approvedBy))) where.approved_by_account_id = Number(approvedBy)
+    }
     const items = await models.WcVCard.findAll({
       where,
       order: [['createdAt', 'DESC']],
@@ -137,6 +148,38 @@ export async function adminListCards(req, res) {
     res.json({ items })
   } catch (e) {
     console.error('adminListCards error', e)
+    res.status(500).json({ error: 'Server error' })
+  }
+}
+
+// Operator: history for current account within tenant
+export async function getHistoryForOperator(req, res) {
+  try {
+    const tenantId = req.tenant?.id
+    const accountId = req.user?.accountId
+    if (!tenantId || !accountId) return res.status(403).json({ error: 'Forbidden' })
+    const { status } = req.query
+    const where = {
+      tenant_id: tenantId,
+      [Op.or]: [
+        { claimed_by_account_id: accountId },
+        { delivered_by_account_id: accountId },
+      ],
+    }
+    if (status) {
+      const list = String(status).split(',').map(s => s.trim()).filter(Boolean)
+      if (list.length > 1) where.status = { [Op.in]: list }
+      else where.status = list[0]
+    }
+    const items = await models.WcVCard.findAll({
+      where,
+      order: [['createdAt', 'DESC']],
+      limit: 500,
+      attributes: { exclude: ['card_number','card_cvv'] },
+    })
+    res.json({ items })
+  } catch (e) {
+    console.error('getHistoryForOperator error', e)
     res.status(500).json({ error: 'Server error' })
   }
 }
@@ -157,14 +200,14 @@ export async function adminCreateCards(req, res) {
       let exp_month = Number(it.exp_month ?? it.month)
       let exp_year = Number(it.exp_year ?? it.year)
       if (Number.isNaN(exp_month) || Number.isNaN(exp_year)) {
-        return res.status(400).json({ error: 'exp_month/exp_year inválidos' })
+        return res.status(400).json({ error: 'Invalid exp_month/exp_year' })
       }
       if (exp_year < 100) exp_year = 2000 + exp_year // 28 -> 2028
       if (exp_month < 1 || exp_month > 12) {
-        return res.status(400).json({ error: 'exp_month inválido (1-12)' })
+        return res.status(400).json({ error: 'Invalid exp_month (1-12)' })
       }
       if (exp_year < 2000) {
-        return res.status(400).json({ error: 'exp_year inválido (>= 2000)' })
+        return res.status(400).json({ error: 'Invalid exp_year (>= 2000)' })
       }
 
       const data = {
@@ -197,6 +240,14 @@ export async function adminApprove(req, res) {
     const card = await models.WcVCard.findByPk(id)
     if (!card) return res.status(404).json({ error: 'Not found' })
     if (card.status !== 'delivered') return res.status(409).json({ error: 'Invalid state' })
+    // Enforce payment confirmation before approval
+    if (approve) {
+      const meta = card?.metadata || {}
+      const paid = meta?.payment?.confirmed === true
+      if (!paid) {
+        return res.status(409).json({ error: 'Payment not confirmed yet' })
+      }
+    }
     const patch = approve
       ? { status: 'approved', approved_at: new Date(), approved_by_account_id: req.user?.id || null }
       : { status: 'rejected' }
@@ -239,6 +290,91 @@ export async function revealCard(req, res) {
     })
   } catch (e) {
     console.error('revealCard error', e)
+    res.status(500).json({ error: 'Server error' })
+  }
+}
+
+// Mark payment received for a delivered card (metadata only)
+export async function adminMarkPaid(req, res) {
+  try {
+    const id = Number(req.params.id)
+    const card = await models.WcVCard.findByPk(id)
+    if (!card) return res.status(404).json({ error: 'Not found' })
+    if (!['delivered', 'approved'].includes(card.status)) {
+      return res.status(409).json({ error: 'Invalid state' })
+    }
+
+    const body = req.body || {}
+    const prevMeta = (card.metadata && typeof card.metadata === 'object') ? card.metadata : {}
+    const prevPay = (prevMeta.payment && typeof prevMeta.payment === 'object') ? prevMeta.payment : {}
+
+    // amount: si vino en body, coerciona; si no, usa previo o el amount de la card
+    let amount = body.amount !== undefined ? Number(body.amount) : (prevPay.amount ?? card.amount ?? null)
+    if (body.amount !== undefined && Number.isNaN(amount)) {
+      return res.status(400).json({ error: 'amount must be a number' })
+    }
+
+    // currency normalizada a 3 letras
+    const rawCurrency = body.currency ?? prevPay.currency ?? card.currency ?? null
+    const currency = rawCurrency
+      ? String(rawCurrency).slice(0, 3).toUpperCase()
+      : null
+
+    const payment = {
+      confirmed: true,
+      at: new Date().toISOString(),
+      method: body.method ?? prevPay.method ?? null,
+      reference: body.reference ?? prevPay.reference ?? null,
+      amount: amount,
+      currency: currency,
+      noted_by: req.user?.id ?? null,
+    }
+
+    const metadata = { ...prevMeta, payment }
+
+    await card.update({ metadata })
+    res.json({ ok: true, payment })
+  } catch (e) {
+    console.error('adminMarkPaid error', e)
+    res.status(500).json({ error: 'Server error' })
+  }
+}
+
+
+export async function markPaidByOperator(req, res) {
+  try {
+    assertTenantScope(req)
+    const tenantId = req.tenant.id
+    const accountId = req.user?.accountId
+    const id = Number(req.params.id)
+    if (!accountId) return res.status(403).json({ error: 'Forbidden' })
+    if (!id) return res.status(400).json({ error: 'Invalid id' })
+
+    const card = await models.WcVCard.findByPk(id)
+    if (!card || card.tenant_id !== tenantId) return res.status(404).json({ error: 'Not found' })
+    if (card.status !== 'delivered') return res.status(409).json({ error: 'Invalid state' })
+    // Allow only the operator who delivered or claimed the card
+    if (![card.claimed_by_account_id, card.delivered_by_account_id].includes(accountId)) {
+      return res.status(403).json({ error: 'Not your card' })
+    }
+
+    const body = req.body || {}
+    const metadata = Object.assign({}, card.metadata || {})
+    const now = new Date()
+    metadata.payment = Object.assign({}, metadata.payment || {}, {
+      confirmed: true,
+      at: now.toISOString(),
+      method: body.method || metadata.payment?.method || null,
+      reference: body.reference || metadata.payment?.reference || null,
+      amount: body.amount != null ? Number(body.amount) : metadata.payment?.amount ?? null,
+      currency: body.currency || metadata.payment?.currency || card.currency || null,
+      noted_by: accountId,
+      origin: 'operator',
+    })
+    await card.update({ metadata })
+    res.json({ ok: true, payment: metadata.payment })
+  } catch (e) {
+    console.error('markPaidByOperator error', e)
     res.status(500).json({ error: 'Server error' })
   }
 }
