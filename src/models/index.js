@@ -36,6 +36,7 @@ import WcSiteConfigFactory from './WcSiteConfig.js';
 import WcTemplateFactory from './WcTemplate.js'
 import UserRoleRequestFactory from './UserRoleRequest.js'
 import WcVCardFactory from './WcVCard.js'
+import VaultOperatorNameFactory from './VaultOperatorName.js'
 
 /* ---------- Construir objetos ---------- */
 const models = {
@@ -76,6 +77,7 @@ const models = {
 
   UserRoleRequest: UserRoleRequestFactory(sequelize),
   WcVCard        : WcVCardFactory(sequelize),
+  VaultOperatorName: VaultOperatorNameFactory(sequelize),
 
 }
 

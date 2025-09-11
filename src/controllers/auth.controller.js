@@ -215,28 +215,28 @@ export const registerUser = async (req, res) => {
       { expiresIn: "1d" },
     );
 
-    const link = `${process.env.API_URL || process.env.CLIENT_URL}/auth/verify-email/${verifyToken}`;
+    const link = `${process.env.CLIENT_URL || process.env.API_URL}/auth/verify-email/${verifyToken}`;
 
     try {
       const content = `
-        <p style="color:#4a5568;margin:0 0 16px;font-size:16px;">Hola ${name.split(" ")[0]},</p>
+        <p style="color:#334155;margin:0 0 12px;font-size:16px;">Hi ${name.split(" ")[0]},</p>
         <p style="color:#4a5568;margin:0 0 24px;font-size:16px;">Haz clic en el botón para verificar tu cuenta.</p>
         <table role="presentation" style="margin:16px 0;">
           <tr>
             <td align="center">
               <a href="${link}"
-                 style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;">Verificar correo</a>
+                 style="display:inline-block;background:#ef4444;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;">Verify email</a>
             </td>
           </tr>
         </table>
-        <p style="color:#718096;margin:24px 0 0;font-size:14px;">Si no solicitaste esta cuenta, puedes ignorar este correo.</p>
+        <p style="color:#94a3b8;margin:24px 0 0;font-size:12px;">If you didn’t create this account, you can safely ignore this email.</p>
       `
 
-      const html = getBaseEmailTemplate(content, "Verifica tu correo")
+      const html = getBaseEmailTemplate(content, "Verify your email")
 
       await transporter.sendMail({
         to: email,
-        subject: "Verifica tu correo",
+        subject: "Verify your email",
         html,
       });
     } catch (mailErr) {

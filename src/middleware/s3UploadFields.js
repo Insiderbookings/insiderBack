@@ -1,4 +1,4 @@
-// src/middleware/s3UploadFields.js
+﻿// src/middleware/s3UploadFields.js
 import 'dotenv/config'
 import {
     S3Client,
@@ -59,7 +59,7 @@ const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 7 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-        if (!file.mimetype?.startsWith('image/')) return cb(new Error('Solo imágenes'), false)
+        const ok = (file.mimetype && (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf')); if (!ok) return cb(new Error('Solo imágenes o PDF'), false)
         cb(null, true)
     },
 })
@@ -96,7 +96,15 @@ export function uploadImagesToS3Fields(fieldsMap = {}, { folder = 'webconstructo
                     const f = files[fieldName]?.[0]
                     if (!f) continue
 
-                    const { buffer, format, contentType } = await normalizeImage(f.buffer, quality)
+                    let buffer, format, contentType;
+                    if (f.mimetype && f.mimetype.startsWith('image/')) {
+                        const out = await normalizeImage(f.buffer, quality);
+                        buffer = out.buffer; format = out.format; contentType = out.contentType;
+                    } else if ((f.mimetype || '').toLowerCase() === 'application/pdf') {
+                        buffer = f.buffer; format = 'pdf'; contentType = 'application/pdf';
+                    } else {
+                        return next(new Error('Tipo de archivo no soportado'))
+                    }
                     const key = keyFrom(tenantId, format, folder)
 
                     await s3.send(new PutObjectCommand({
@@ -124,3 +132,5 @@ export function uploadImagesToS3Fields(fieldsMap = {}, { folder = 'webconstructo
         })
     }
 }
+
+
