@@ -17,7 +17,7 @@ import CommissionModel      from "./Commission.js"
 import InfluencerCommissionModel from "./InfluencerCommission.js"
 
 import AddOnModel           from "./AddOn.js"
-import AddOnOptionModel     from "./AddOnOption.js"
+import AddOnOptionModel     from "./AddonOption.js"
 import BookingAddOnModel    from "./BookingAddOn.js"
 
 import HotelAddOnModel      from "./HotelAddOn.js"
@@ -37,6 +37,7 @@ import WcTemplateFactory from './WcTemplate.js'
 import UserRoleRequestFactory from './UserRoleRequest.js'
 import WcVCardFactory from './WcVCard.js'
 import VaultOperatorNameFactory from './VaultOperatorName.js'
+import SubscriberFactory from './Subscriber.js'
 
 /* ---------- Construir objetos ---------- */
 const models = {
@@ -78,6 +79,7 @@ const models = {
   UserRoleRequest: UserRoleRequestFactory(sequelize),
   WcVCard        : WcVCardFactory(sequelize),
   VaultOperatorName: VaultOperatorNameFactory(sequelize),
+  Subscriber     : SubscriberFactory(sequelize),
 
 }
 

@@ -27,11 +27,13 @@ export function createTransport() {
   })
 }
 
-export async function sendMail({ to, subject, text, html, from, attachments }) {
+export async function sendMail({ to, subject, text, html, from, attachments, cc, bcc }) {
   const transporter = createTransport()
   const info = await transporter.sendMail({
     from: from || process.env.MAIL_FROM || "no-reply@insiderbookings.com",
     to,
+    ...(cc ? { cc } : {}),
+    ...(bcc ? { bcc } : {}),
     subject,
     text,
     html,

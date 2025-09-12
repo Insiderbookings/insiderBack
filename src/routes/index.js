@@ -9,6 +9,7 @@ import commissionRoutes from "./commission.routes.js"
 import upsellCodeRoutes from "./upsellCode.routes.js"
 import paymentRoutes from "./payment.routes.js"
 import emailRoutes from "./email.routes.js"
+import subscriberRoutes from "./subscriber.routes.js"
 import addonRoutes from "./addon.routes.js"
 import staffAddonRoutes from "./staffAddon.routes.js"
 import travelGateRoutes from "./travelgate.routes.js"
@@ -29,6 +30,7 @@ router.use("/commissions", commissionRoutes)
 router.use("/upsell-code", upsellCodeRoutes)
 router.use("/payments", paymentRoutes)
 router.use("/email", emailRoutes)
+router.use("/subscribers", subscriberRoutes)
 router.use("/addons", addonRoutes)
 router.use("/api/staff-addon", staffAddonRoutes)
 router.use("/tgx", travelGateRoutes)
