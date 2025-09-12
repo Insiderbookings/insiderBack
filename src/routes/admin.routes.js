@@ -10,6 +10,7 @@ import {
   adminRejectRequest,
   adminListUsers,
 } from "../controllers/roleRequest.controller.js"
+import { adminListSubscribers, adminBroadcastEmail } from "../controllers/subscriber.controller.js"
 
 const router = Router()
 
@@ -35,5 +36,9 @@ router.post("/role-requests/:id/approve-initial", authenticate, authorizeRoles(1
 router.post("/role-requests/:id/approve-kyc", authenticate, authorizeRoles(100), adminApproveKyc)
 router.post("/role-requests/:id/approve-final", authenticate, authorizeRoles(100), adminApproveFinal)
 router.post("/role-requests/:id/reject", authenticate, authorizeRoles(100), adminRejectRequest)
+
+// Subscribers
+router.get("/subscribers", authenticate, authorizeRoles(100), adminListSubscribers)
+router.post("/subscribers/broadcast", authenticate, authorizeRoles(100), adminBroadcastEmail)
 
 export default router
