@@ -162,6 +162,9 @@ export async function submitUserRoleInfo(req, res, next) {
     if (Number(reqRow.role_requested) === 5) {
       const d = merged
       // Presign S3 URLs before using them in the email
+      const idFront = d.govIdFrontUrl ? await presignIfS3Url(d.govIdFrontUrl) : null
+      const idBack  = d.govIdBackUrl  ? await presignIfS3Url(d.govIdBackUrl)  : null
+      const idUrl   = d.govIdUrl      ? await presignIfS3Url(d.govIdUrl)      : null // legacy single
       const llcUrl  = d.llcArticlesUrl ? await presignIfS3Url(d.llcArticlesUrl) : null
       const einUrl  = d.einLetterUrl   ? await presignIfS3Url(d.einLetterUrl)   : null
       const bankUrl = d.bankDocUrl     ? await presignIfS3Url(d.bankDocUrl)     : null
@@ -197,7 +200,8 @@ export async function submitUserRoleInfo(req, res, next) {
                 <tr><td style="padding:4px 8px;color:#6b7280">Personal email</td><td style="padding:4px 8px">${d.personalEmail || '-'}</td></tr>
                 <tr><td style="padding:4px 8px;color:#6b7280">Personal phone</td><td style="padding:4px 8px">${d.personalPhone || '-'}</td></tr>
                 <tr><td style="padding:4px 8px;color:#6b7280">SSN</td><td style="padding:4px 8px">${d.ssn || '-'}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">Government ID</td><td style="padding:4px 8px">${d.govIdUrl ? `<a href="${d.govIdUrl}">View ID</a>` : '-'}</td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Government ID (front)</td><td style="padding:4px 8px">${idFront ? `<a href="${idFront}">View</a>` : (idUrl ? `<a href="${idUrl}">View</a>` : '-')}</td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Government ID (back)</td><td style="padding:4px 8px">${idBack ? `<a href="${idBack}">View</a>` : '-'}</td></tr>
                 <tr><td style="padding:4px 8px;color:#6b7280">Personal address</td><td style="padding:4px 8px">${d.personalAddress || '-'}</td></tr>
               </tbody>
             </table>
@@ -242,24 +246,65 @@ export async function listVaultOperatorNames(_req, res, next) {
 export async function uploadGovId(req, res, next) {
   try {
     const uploaded = res.locals?.uploaded || res.locals?.fields || {}
-    let url =
+    // Gather possible URLs: legacy single, and new front/back
+    let urlSingle =
       uploaded.govIdUrl ||
       req.body?.govIdUrl ||
       req?.file?.location ||
       req?.file?.url ||
       null
 
-    if (!url && Array.isArray(req?.files)) {
+    let urlFront =
+      uploaded.govIdFrontUrl ||
+      req.body?.govIdFrontUrl ||
+      req.files?.["gov_id_front"]?.[0]?.location ||
+      req.files?.["gov_id_front"]?.[0]?.url ||
+      null
+
+    let urlBack =
+      uploaded.govIdBackUrl ||
+      req.body?.govIdBackUrl ||
+      req.files?.["gov_id_back"]?.[0]?.location ||
+      req.files?.["gov_id_back"]?.[0]?.url ||
+      null
+
+    if (!urlSingle && Array.isArray(req?.files)) {
       const f = req.files[0]
-      url = f?.location || f?.url || null
+      urlSingle = f?.location || f?.url || null
     }
-    if (!url && req?.files && typeof req.files === "object") {
+    if (!urlSingle && req?.files && typeof req.files === "object") {
       const f = req.files["gov_id"]?.[0]
-      url = f?.location || f?.url || null
+      urlSingle = f?.location || f?.url || null
     }
 
-    if (!url) return res.status(400).json({ error: "No file uploaded" })
-    return res.json({ url })
+    // If legacy single provided but neither front/back, map to front for compatibility
+    if (!urlFront && !urlBack && urlSingle) urlFront = urlSingle
+
+    if (!urlFront && !urlBack) return res.status(400).json({ error: "No file uploaded" })
+
+    // Best-effort: persist into the user's latest role-request draft
+    try {
+      const userId = req.user?.id
+      if (userId) {
+        const reqRow = await models.UserRoleRequest.findOne({
+          where: { user_id: userId },
+          order: [["created_at", "DESC"]],
+        })
+        if (reqRow) {
+          const prev = reqRow.form_data || {}
+          const merged = { ...prev, phase: prev.phase || "kyc" }
+          if (urlFront) merged.govIdFrontUrl = urlFront
+          if (urlBack)  merged.govIdBackUrl  = urlBack
+          if (!merged.govIdFrontUrl && urlSingle) merged.govIdFrontUrl = urlSingle
+          await reqRow.update({ form_data: merged })
+        }
+      }
+    } catch (e) {
+      // Do not fail the upload if persisting the draft fails
+      console.warn('uploadGovId: persist draft failed:', e?.message || e)
+    }
+
+    return res.json({ govIdFrontUrl: urlFront || undefined, govIdBackUrl: urlBack || undefined, url: urlSingle || undefined })
   } catch (err) { return next(err) }
 }
 
@@ -414,6 +459,10 @@ export async function adminApproveFinal(req, res, next) {
     if (!reqRow) return res.status(404).json({ error: "Request not found" })
     if (reqRow.status !== "submitted") return res.status(409).json({ error: "Request not ready for final approval" })
 
+    // Mark as approved early to avoid duplicate emails on double-click
+    // A second concurrent call will now fail the status check above.
+    await reqRow.update({ status: "approved" })
+
     const user = await models.User.findByPk(reqRow.user_id)
     if (!user) return res.status(404).json({ error: "User not found" })
 
@@ -476,7 +525,6 @@ export async function adminApproveFinal(req, res, next) {
       }
     }
 
-    await reqRow.update({ status: "approved" })
     return res.json({ request: reqRow, user: { id: user.id, role: user.role } })
   } catch (err) { return next(err) }
 }

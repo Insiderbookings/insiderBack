@@ -39,7 +39,12 @@ router.get("/role-requests/vault-operator/names", authenticate, listVaultOperato
 router.post(
   "/role-requests/upload-id",
   authenticate,
-  uploadImagesToS3Fields({ gov_id: "govIdUrl" }, { folder: 'kyc' }),
+  // Accept legacy single file (gov_id) and new front/back fields
+  uploadImagesToS3Fields({
+    gov_id: "govIdUrl",
+    gov_id_front: "govIdFrontUrl",
+    gov_id_back: "govIdBackUrl",
+  }, { folder: 'kyc' }),
   uploadGovId,
 )
 
