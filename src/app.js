@@ -64,6 +64,21 @@ const PORT = process.env.PORT || 3000;
   try {
     await sequelize.authenticate();
     const alter = String(process.env.DB_ALTER_SYNC || "false").toLowerCase()
+ await sequelize.sync({ force: false })
+    app.listen(PORT, () =>
+      console.log(`Server listening on port ${PORT}`)
+    );
+  } catch (err) {
+    console.error("Failed to start server:", err);
+    process.exit(1);
+  }
+})();
+
+/* const PORT = process.env.PORT || 3000;
+(async () => {
+  try {
+    await sequelize.authenticate();
+    const alter = String(process.env.DB_ALTER_SYNC || "false").toLowerCase()
     await sequelize.sync({ alter: ["1","true","yes"].includes(alter) });
     app.listen(PORT, () =>
       console.log(`Server listening on port ${PORT}`)
@@ -73,3 +88,4 @@ const PORT = process.env.PORT || 3000;
     process.exit(1);
   }
 })();
+ */

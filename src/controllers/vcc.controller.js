@@ -1,6 +1,10 @@
 ﻿// src/controllers/vcc.controller.js
 import models from '../models/index.js'
 import { Op } from 'sequelize'
+import Stripe from 'stripe'
+
+const stripeKey = process.env.STRIPE_SECRET_KEY
+const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: '2022-11-15' }) : null
 
 function assertTenantScope(req) {
   if (!req.tenant?.id) {
@@ -375,6 +379,115 @@ export async function markPaidByOperator(req, res) {
     res.json({ ok: true, payment: metadata.payment })
   } catch (e) {
     console.error('markPaidByOperator error', e)
+    res.status(500).json({ error: 'Server error' })
+  }
+}
+
+// Create a Stripe Checkout session so the operator can pay Insider
+export async function createOperatorCheckout(req, res) {
+  try {
+    if (!stripe) return res.status(500).json({ error: 'Stripe not configured' })
+    assertTenantScope(req)
+    const tenantId = req.tenant.id
+    const accountId = req.user?.accountId
+    const id = Number(req.params.id)
+    if (!accountId) return res.status(403).json({ error: 'Forbidden' })
+    if (!id) return res.status(400).json({ error: 'Invalid id' })
+
+    const card = await models.WcVCard.findByPk(id)
+    if (!card || card.tenant_id !== tenantId) return res.status(404).json({ error: 'Not found' })
+    if (card.status !== 'delivered') return res.status(409).json({ error: 'Invalid state' })
+    if (![card.claimed_by_account_id, card.delivered_by_account_id].includes(accountId)) {
+      return res.status(403).json({ error: 'Not your card' })
+    }
+
+    // Amount in cents
+    const currency = (card.currency || 'USD').toLowerCase()
+    const amountNum = Number(card.amount)
+    if (!amountNum || Number.isNaN(amountNum)) return res.status(400).json({ error: 'Card amount missing' })
+    const amountCents = Math.round(amountNum * 100)
+
+    // Determine return URLs
+    const origin = (() => { try { return new URL(req.headers.origin).origin } catch { return process.env.CLIENT_URL || 'http://localhost:5173' } })()
+    const successUrl = `${origin}/card?paid=1&card=${card.id}`
+    const cancelUrl  = `${origin}/card?canceled=1&card=${card.id}`
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency,
+            product_data: { name: `VCC payment #${card.id}` },
+            unit_amount: amountCents,
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata: {
+        vccCardId: String(card.id),
+        vccTenantId: String(tenantId),
+        vccOperatorAccountId: String(accountId),
+        purpose: 'vcc_operator_payment',
+      },
+      payment_intent_data: {
+        metadata: {
+          vccCardId: String(card.id),
+          vccTenantId: String(tenantId),
+          vccOperatorAccountId: String(accountId),
+          purpose: 'vcc_operator_payment',
+        },
+      },
+    })
+
+    return res.json({ url: session.url })
+  } catch (e) {
+    console.error('createOperatorCheckout error', e)
+    res.status(500).json({ error: 'Server error' })
+  }
+}
+
+// Create a PaymentIntent for embedding Payment Element in operator panel
+export async function createOperatorIntent(req, res) {
+  try {
+    if (!stripe) return res.status(500).json({ error: 'Stripe not configured' })
+    assertTenantScope(req)
+    const tenantId = req.tenant.id
+    const accountId = req.user?.accountId
+    const id = Number(req.params.id)
+    if (!accountId) return res.status(403).json({ error: 'Forbidden' })
+    if (!id) return res.status(400).json({ error: 'Invalid id' })
+
+    const card = await models.WcVCard.findByPk(id)
+    if (!card || card.tenant_id !== tenantId) return res.status(404).json({ error: 'Not found' })
+    if (card.status !== 'delivered') return res.status(409).json({ error: 'Invalid state' })
+    if (![card.claimed_by_account_id, card.delivered_by_account_id].includes(accountId)) {
+      return res.status(403).json({ error: 'Not your card' })
+    }
+
+    const currency = (card.currency || 'USD').toLowerCase()
+    const amountNum = Number(card.amount)
+    if (!amountNum || Number.isNaN(amountNum)) return res.status(400).json({ error: 'Card amount missing' })
+    const amountCents = Math.round(amountNum * 100)
+
+    const intent = await stripe.paymentIntents.create({
+      amount: amountCents,
+      currency,
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        vccCardId: String(card.id),
+        vccTenantId: String(tenantId),
+        vccOperatorAccountId: String(accountId),
+        purpose: 'vcc_operator_payment',
+      },
+    })
+
+    return res.json({ clientSecret: intent.client_secret })
+  } catch (e) {
+    console.error('createOperatorIntent error', e)
     res.status(500).json({ error: 'Server error' })
   }
 }

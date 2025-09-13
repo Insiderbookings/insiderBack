@@ -5,6 +5,26 @@ import models from "../models/index.js"
 import { sendMail } from "../helpers/mailer.js"
 import { presignIfS3Url } from '../utils/s3Presign.js'
 
+/* -------------------------- Shared email templates ------------------------- */
+function wrapEmail({ title, body, ctaLabel, ctaHref }) {
+  const btn = ctaLabel && ctaHref ? `
+    <div style="margin-top:16px">
+      <a href="${ctaHref}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:600">${ctaLabel}</a>
+    </div>
+  ` : ""
+  return `
+    <div style=\"font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.6;color:#111\">
+      <div style=\"max-width:640px;margin:0 auto;padding:20px\">
+        <h2 style=\"margin:0 0 12px\">${title}</h2>
+        <div style=\"color:#374151\">${body}</div>
+        ${btn}
+        <hr style=\"border:none;border-top:1px solid #e5e7eb;margin:20px 0\" />
+        <div style=\"font-size:12px;color:#6b7280\">Insider Bookings</div>
+      </div>
+    </div>
+  `
+}
+
 /* ----------------------------- Helpers comunes ---------------------------- */
 function fieldKey(model, ...candidates) {
   return candidates.find((k) => model?.rawAttributes?.[k])
@@ -141,11 +161,16 @@ export async function submitUserRoleInfo(req, res, next) {
     let html
     if (Number(reqRow.role_requested) === 5) {
       const d = merged
+      // Presign S3 URLs before using them in the email
+      const llcUrl  = d.llcArticlesUrl ? await presignIfS3Url(d.llcArticlesUrl) : null
+      const einUrl  = d.einLetterUrl   ? await presignIfS3Url(d.einLetterUrl)   : null
+      const bankUrl = d.bankDocUrl     ? await presignIfS3Url(d.bankDocUrl)     : null
+
       const isBusiness = d.phase === "business" || d.llcArticlesUrl || d.einLetterUrl || d.bankDocUrl
       if (isBusiness) {
         html = `
           <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5">
-            <h2 style="margin:0 0 8px">Vault Operator – Business Information</h2>
+            <h2 style="margin:0 0 8px">Vault Operator - Business Information</h2>
             <p>Role: <strong>Vault operator</strong> (5)</p>
             <h3 style="margin:16px 0 6px">Company Information</h3>
             <table style="border-collapse:collapse">
@@ -153,6 +178,7 @@ export async function submitUserRoleInfo(req, res, next) {
                 <tr><td style="padding:4px 8px;color:#6b7280">Chosen operator name</td><td style="padding:4px 8px">${d.selectedName || '-'}</td></tr>
                 <tr><td style="padding:4px 8px;color:#6b7280">Business address</td><td style="padding:4px 8px">${d.businessAddress || '-'}</td></tr>
                 <tr><td style="padding:4px 8px;color:#6b7280">Business bank</td><td style="padding:4px 8px">${d.businessBank || '-'}</td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Bank routing number</td><td style="padding:4px 8px">${d.businessRoutingNumber || '-'}</td></tr>
                 <tr><td style="padding:4px 8px;color:#6b7280">LLC Articles</td><td style="padding:4px 8px">${llcUrl ? `<a href="${llcUrl}">View</a>` : "-"}</td></tr>
                 <tr><td style="padding:4px 8px;color:#6b7280">EIN Letter</td><td style="padding:4px 8px">${einUrl ? `<a href="${einUrl}">View</a>` : "-"}</td></tr>
                 <tr><td style="padding:4px 8px;color:#6b7280">Bank Document</td><td style="padding:4px 8px">${bankUrl ? `<a href="${bankUrl}">View</a>` : "-"}</td></tr>
@@ -190,10 +216,6 @@ export async function submitUserRoleInfo(req, res, next) {
     }
 
     return res.json({ ok: true, request: reqRow })
-      // Presign S3 URLs for email links
-      const llcUrl  = d.llcArticlesUrl ? await presignIfS3Url(d.llcArticlesUrl) : null
-      const einUrl  = d.einLetterUrl   ? await presignIfS3Url(d.einLetterUrl)   : null
-      const bankUrl = d.bankDocUrl     ? await presignIfS3Url(d.bankDocUrl)     : null
   } catch (err) { return next(err) }
 }
 
@@ -298,6 +320,31 @@ export async function adminApproveInitial(req, res, next) {
     if (!reqRow) return res.status(404).json({ error: "Request not found" })
     await reqRow.update({ status: "needs_info" })
     await models.User.update({ role_pending_info: true }, { where: { id: reqRow.user_id } })
+    
+    // Notify user to start Step 1 (KYC)
+    try {
+      const user = await models.User.findByPk(reqRow.user_id)
+      if (user?.email) {
+        const clientUrl = process.env.CLIENT_URL || "http://localhost:5173"
+        const subject = "Action required: Complete Step 1 (KYC)"
+        const body = `
+          <p>Hi ${user.name || ''},</p>
+          <p>Your request to become a Vault Operator was pre-approved. You can now complete <strong>Step 1 of 2</strong>: Personal Information & KYC.</p>
+          <p>Please upload:</p>
+          <ul>
+            <li>Full name, personal email and phone</li>
+            <li>SSN</li>
+            <li>Government-issued ID</li>
+            <li>Personal address</li>
+          </ul>
+          <p>You can track your progress at any time and preview your uploads before submitting.</p>
+        `
+        const html = wrapEmail({ title: "Vault Operator Onboarding — Step 1", body, ctaLabel: "Open Submit Info", ctaHref: `${clientUrl}/complete-info` })
+        await sendMail({ to: user.email, subject, html, text: `Please complete Step 1 (KYC) at ${clientUrl}/complete-info` })
+      }
+    } catch (e) {
+      console.warn('adminApproveInitial: failed to send user mail:', e?.message || e)
+    }
     return res.json({ request: reqRow })
   } catch (err) { return next(err) }
 }
@@ -330,6 +377,32 @@ export async function adminApproveKyc(req, res, next) {
 
     await reqRow.update({ status: "needs_info", form_data: fd })
     await models.User.update({ role_pending_info: true }, { where: { id: reqRow.user_id } })
+
+    // Notify user Step 1 approved -> proceed to Step 2 (Business)
+    try {
+      const user = await models.User.findByPk(reqRow.user_id)
+      if (user?.email) {
+        const clientUrl = process.env.CLIENT_URL || "http://localhost:5173"
+        const subject = "KYC approved — Continue with Step 2"
+        const body = `
+          <p>Hi ${user.name || ''},</p>
+          <p>Good news! Your <strong>Step 1 (KYC)</strong> was approved. Please proceed with <strong>Step 2 of 2</strong>: Company information.</p>
+          <p>For Step 2, have ready:</p>
+          <ul>
+            <li>Business address</li>
+            <li>Business bank account number</li>
+            <li>Bank routing number</li>
+            <li>LLC Articles (PDF or image)</li>
+            <li>EIN letter (PDF or image)</li>
+          </ul>
+          <p>You can switch between steps at any time and review what you have uploaded.</p>
+        `
+        const html = wrapEmail({ title: "Vault Operator — Step 2 Available", body, ctaLabel: "Continue to Step 2", ctaHref: `${clientUrl}/complete-info` })
+        await sendMail({ to: user.email, subject, html, text: `KYC approved — continue at ${clientUrl}/complete-info` })
+      }
+    } catch (e) {
+      console.warn('adminApproveKyc: failed to send user mail:', e?.message || e)
+    }
     return res.json({ request: reqRow })
   } catch (err) { return next(err) }
 }
@@ -370,36 +443,36 @@ export async function adminApproveFinal(req, res, next) {
       if (rolesKey) payload[rolesKey] = coerceArrayField(Wc, rolesKey, ["operator"])
       if (permsKey) payload[permsKey] = coerceArrayField(Wc, permsKey, ["vault:operate"])
 
+      let plainPasswordForMail = null
+      let wcCreated = false
       try {
         const [rec, created] = await Wc.findOrCreate({ where, defaults: payload })
+        wcCreated = !!created
         if (created && user?.email) {
-          try {
-            await sendMail({
-              to: user.email,
-              subject: "Your WebConstructor operator account",
-              text: `Your operator account has been created.
-Login: ${user.email}
-Password: ${plainPassword}`,
-              html: `
-                <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5">
-                  <h3 style="margin:0 0 8px">Welcome to the operator panel</h3>
-                  <p>Your account has been created for operating virtual cards.</p>
-                  <table style="border-collapse:collapse;margin:12px 0 16px">
-                    <tbody>
-                      <tr><td style="padding:6px 12px;color:#6b7280">Login</td><td style="padding:6px 12px">${user.email}</td></tr>
-                      <tr><td style="padding:6px 12px;color:#6b7280">Temporary password</td><td style="padding:6px 12px"><strong>${plainPassword}</strong></td></tr>
-                    </tbody>
-                  </table>
-                  <p style="color:#6b7280">Please sign in and change your password immediately.</p>
-                </div>
-              `,
-            })
-          } catch (mailErr) {
-            console.warn("Failed to send operator credentials:", mailErr?.message || mailErr)
-          }
+          // Keep credentials for the new unified final-approval email
+          plainPasswordForMail = plainPassword
         }
       } catch (e) {
         return res.status(500).json({ error: e?.message || "Failed to create operator account" })
+      }
+
+      // Send final approval email (consistent style), regardless of account creation
+      try {
+        if (user?.email) {
+          const subject = "Congratulations — Your operator role is approved"
+          const extraCreds = wcCreated && plainPasswordForMail
+            ? `<p>We created your operator account. Your login is <strong>${user.email}</strong> and your temporary password is <strong>${plainPasswordForMail}</strong>. Please change it on first login.</p>`
+            : `<p>Your operator access is now active. If you need credentials or a password reset, please use the panel's <em>Forgot password</em> option.</p>`
+          const body = `
+            <p>Hi ${user.name || ''},</p>
+            <p><strong>Congratulations!</strong> Your Vault Operator role has been approved. You now have access to the operator panel to manage virtual cards.</p>
+            ${extraCreds}
+          `
+          const html = wrapEmail({ title: "Vault Operator — Approved", body })
+          await sendMail({ to: user.email, subject, html, text: "Your operator role is approved." })
+        }
+      } catch (e) {
+        console.warn('adminApproveFinal: failed to send final user mail:', e?.message || e)
       }
     }
 

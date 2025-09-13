@@ -190,10 +190,29 @@ export const handleWebhook = async (req, res) => {
     const bookingId      = Number(pi.metadata?.bookingId)        || 0
     const upsellCodeId   = Number(pi.metadata?.upsellCodeId)     || 0
     const outsideBooking = Number(pi.metadata?.outsideBookingId) || 0
+    const vccCardId      = Number(pi.metadata?.vccCardId)        || 0
 
     if (bookingId)      await markBookingAsPaid     ({ bookingId, paymentId: pi.id })
     if (upsellCodeId)   await markUpsellAsPaid      ({ upsellCodeId,        paymentId: pi.id })
     if (outsideBooking) await markBookingAddOnsAsPaid({ bookingId: outsideBooking })
+    if (vccCardId) {
+      try {
+        const card = await models.WcVCard.findByPk(vccCardId)
+        if (card) {
+          const prevMeta = (card.metadata && typeof card.metadata === 'object') ? card.metadata : {}
+          const payment = Object.assign({}, prevMeta.payment || {}, {
+            confirmed: true,
+            at: new Date().toISOString(),
+            method: 'stripe',
+            reference: pi.id,
+            amount: (pi.amount_received ?? pi.amount) ? Number((pi.amount_received ?? pi.amount)/100) : (prevMeta.payment?.amount ?? card.amount ?? null),
+            currency: (pi.currency || card.currency || 'USD').toUpperCase(),
+            origin: 'operator',
+          })
+          await card.update({ metadata: { ...prevMeta, payment } })
+        }
+      } catch (e) { console.error('VCC mark paid via webhook error:', e) }
+    }
   }
 
   res.json({ received: true })
