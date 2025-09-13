@@ -272,6 +272,13 @@ export const loginUser = async (req, res) => {
     if (!user) return res.status(404).json({ error: "Invalid credentials" });
 
     /* 2 ▸ Comparar contraseña (usa la columna correcta password_hash) */
+    // Guard: if account is Google-linked or has no local password, block local login
+    if (user.auth_provider === "google" || !user.password_hash) {
+      return res.status(409).json({
+        error: "This account was created with Google Sign-In. Please log in with Google.",
+      });
+    }
+
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: "Invalid credentials" });
 
