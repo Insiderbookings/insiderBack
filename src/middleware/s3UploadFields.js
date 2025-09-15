@@ -57,7 +57,7 @@ function publicUrl(key) {
 
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 7 * 1024 * 1024 },
+    limits: { fileSize: 20 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const ok = (file.mimetype && (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf')); if (!ok) return cb(new Error('Solo imágenes o PDF'), false)
         cb(null, true)
@@ -98,8 +98,22 @@ export function uploadImagesToS3Fields(fieldsMap = {}, { folder = 'webconstructo
 
                     let buffer, format, contentType;
                     if (f.mimetype && f.mimetype.startsWith('image/')) {
-                        const out = await normalizeImage(f.buffer, quality);
-                        buffer = out.buffer; format = out.format; contentType = out.contentType;
+                        try {
+                            const out = await normalizeImage(f.buffer, quality);
+                            buffer = out.buffer; format = out.format; contentType = out.contentType;
+                        } catch (e) {
+                            // Fallback to original image if normalization fails (e.g., unsupported HEIC)
+                            buffer = f.buffer
+                            const mime = (f.mimetype || '').toLowerCase()
+                            if (mime === 'image/jpeg' || mime === 'image/jpg') format = 'jpg'
+                            else if (mime === 'image/png') format = 'png'
+                            else if (mime === 'image/webp') format = 'webp'
+                            else if (mime === 'image/gif') format = 'gif'
+                            else if (mime === 'image/heic') format = 'heic'
+                            else if (mime === 'image/heif') format = 'heif'
+                            else format = 'jpg'
+                            contentType = mime || 'image/jpeg'
+                        }
                     } else if ((f.mimetype || '').toLowerCase() === 'application/pdf') {
                         buffer = f.buffer; format = 'pdf'; contentType = 'application/pdf';
                     } else {
