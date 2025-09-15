@@ -64,6 +64,12 @@ const upload = multer({
     },
 })
 
+// Tolerant variant: accept any file and validate later in processing.
+const tolerantUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 },
+})
+
 async function normalizeImage(buf, q = 82) {
     const img = sharp(buf).rotate()
     const meta = await img.metadata()
@@ -81,7 +87,7 @@ function keyFrom(tenantId, ext = 'webp', folder = 'webconstructor') {
 /** fieldsMap: { logo:'logoUrl', favicon:'faviconUrl' } */
 export function uploadImagesToS3Fields(fieldsMap = {}, { folder = 'webconstructor', quality = 82 } = {}) {
     const fields = Object.keys(fieldsMap).map(name => ({ name, maxCount: 1 }))
-    const parse = upload.fields(fields)
+    const parse = tolerantUpload.fields(fields)
 
     return (req, res, next) => {
         parse(req, res, async (err) => {
@@ -95,29 +101,40 @@ export function uploadImagesToS3Fields(fieldsMap = {}, { folder = 'webconstructo
                 for (const [fieldName, destBody] of Object.entries(fieldsMap)) {
                     const f = files[fieldName]?.[0]
                     if (!f) continue
+                    try { console.log(`[s3UploadFields] received field`, fieldName, f?.mimetype, f?.originalname, f?.size) } catch {}
 
                     let buffer, format, contentType;
-                    if (f.mimetype && f.mimetype.startsWith('image/')) {
+                    const mime = (f.mimetype || '').toLowerCase()
+                    const name = (f.originalname || '')
+                    const isPdf = mime === 'application/pdf' || /\.pdf$/i.test(name)
+                    const isImage = (mime.startsWith('image/')) || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(name)
+
+                    if (isImage) {
                         try {
                             const out = await normalizeImage(f.buffer, quality);
                             buffer = out.buffer; format = out.format; contentType = out.contentType;
                         } catch (e) {
                             // Fallback to original image if normalization fails (e.g., unsupported HEIC)
                             buffer = f.buffer
-                            const mime = (f.mimetype || '').toLowerCase()
                             if (mime === 'image/jpeg' || mime === 'image/jpg') format = 'jpg'
                             else if (mime === 'image/png') format = 'png'
                             else if (mime === 'image/webp') format = 'webp'
                             else if (mime === 'image/gif') format = 'gif'
-                            else if (mime === 'image/heic') format = 'heic'
-                            else if (mime === 'image/heif') format = 'heif'
+                            else if (/\.heic$/i.test(name)) format = 'heic'
+                            else if (/\.heif$/i.test(name)) format = 'heif'
                             else format = 'jpg'
                             contentType = mime || 'image/jpeg'
                         }
-                    } else if ((f.mimetype || '').toLowerCase() === 'application/pdf') {
+                    } else if (isPdf) {
                         buffer = f.buffer; format = 'pdf'; contentType = 'application/pdf';
                     } else {
-                        return next(new Error('Tipo de archivo no soportado'))
+                        // As a last resort, try to treat it as an image
+                        try {
+                            const out = await normalizeImage(f.buffer, quality);
+                            buffer = out.buffer; format = out.format; contentType = out.contentType;
+                        } catch (_e) {
+                            return next(new Error('Tipo de archivo no soportado'))
+                        }
                     }
                     const key = keyFrom(tenantId, format, folder)
 
@@ -136,7 +153,9 @@ export function uploadImagesToS3Fields(fieldsMap = {}, { folder = 'webconstructo
                     }))
 
                     if (!req.body) req.body = {}
-                    req.body[destBody] = publicUrl(key)
+                    const url = publicUrl(key)
+                    req.body[destBody] = url
+                    try { console.log(`[s3UploadFields] uploaded`, fieldName, '->', destBody, url) } catch {}
                 }
 
                 return next()

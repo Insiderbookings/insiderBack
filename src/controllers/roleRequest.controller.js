@@ -246,6 +246,7 @@ export async function listVaultOperatorNames(_req, res, next) {
 export async function uploadGovId(req, res, next) {
   try {
     const uploaded = res.locals?.uploaded || res.locals?.fields || {}
+    try { console.log('[uploadGovId] body keys:', Object.keys(req.body||{}), 'files keys:', req.files ? (Array.isArray(req.files)?`array(${req.files.length})` : Object.keys(req.files)) : 'none') } catch {}
     // Gather possible URLs: legacy single, and new front/back
     let urlSingle =
       uploaded.govIdUrl ||
@@ -280,7 +281,10 @@ export async function uploadGovId(req, res, next) {
     // If legacy single provided but neither front/back, map to front for compatibility
     if (!urlFront && !urlBack && urlSingle) urlFront = urlSingle
 
-    if (!urlFront && !urlBack) return res.status(400).json({ error: "No file uploaded" })
+    if (!urlFront && !urlBack) {
+      try { console.warn('[uploadGovId] no URLs derived') } catch {}
+      return res.status(400).json({ error: "No file uploaded" })
+    }
 
     // Best-effort: persist into the user's latest role-request draft
     try {
@@ -304,6 +308,7 @@ export async function uploadGovId(req, res, next) {
       console.warn('uploadGovId: persist draft failed:', e?.message || e)
     }
 
+    try { console.log('[uploadGovId] OK', { urlFront, urlBack, urlSingle }) } catch {}
     return res.json({ govIdFrontUrl: urlFront || undefined, govIdBackUrl: urlBack || undefined, url: urlSingle || undefined })
   } catch (err) { return next(err) }
 }
@@ -315,6 +320,7 @@ export async function uploadGovId(req, res, next) {
 export async function uploadBusinessDocs(req, res, next) {
   try {
     const uploaded = res.locals?.uploaded || res.locals?.fields || {}
+    try { console.log('[uploadBusinessDocs] body keys:', Object.keys(req.body||{}), 'files keys:', req.files ? (Array.isArray(req.files)?`array(${req.files.length})` : Object.keys(req.files)) : 'none') } catch {}
 
     const result = {
       llcArticlesUrl:
@@ -338,6 +344,7 @@ export async function uploadBusinessDocs(req, res, next) {
     }
 
     if (!result.llcArticlesUrl && !result.einLetterUrl && !result.bankDocUrl) {
+      try { console.warn('[uploadBusinessDocs] no URLs derived') } catch {}
       return res.status(400).json({ error: "No files uploaded" })
     }
 
