@@ -405,12 +405,16 @@ export async function createOperatorCheckout(req, res) {
     const currency = (card.currency || 'USD').toLowerCase()
     const amountNum = Number(card.amount)
     if (!amountNum || Number.isNaN(amountNum)) return res.status(400).json({ error: 'Card amount missing' })
-    const amountCents = Math.round(amountNum * 100)
+    // Operator pays net of fees: amount - (2.9% + 0.30)
+    const fee = amountNum * 0.029 + 0.30
+    const netAmount = Math.max(0, amountNum - fee)
+    const amountCents = Math.round(netAmount * 100)
 
     // Determine return URLs
     const origin = (() => { try { return new URL(req.headers.origin).origin } catch { return process.env.CLIENT_URL || 'http://localhost:5173' } })()
-    const successUrl = `${origin}/card?paid=1&card=${card.id}`
-    const cancelUrl  = `${origin}/card?canceled=1&card=${card.id}`
+    const hostParam = String(req.query.host || req.headers['x-tenant-domain'] || '').trim()
+    const successUrl = `${origin}/operator?card=${card.id}&session_id={CHECKOUT_SESSION_ID}` + (hostParam ? `&host=${encodeURIComponent(hostParam)}` : '')
+    const cancelUrl  = `${origin}/operator?canceled=1&card=${card.id}` + (hostParam ? `&host=${encodeURIComponent(hostParam)}` : '')
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -419,7 +423,7 @@ export async function createOperatorCheckout(req, res) {
         {
           price_data: {
             currency,
-            product_data: { name: `VCC payment #${card.id}` },
+            product_data: { name: `Pay to Insider — Card #${card.id}` },
             unit_amount: amountCents,
           },
           quantity: 1,
@@ -471,7 +475,9 @@ export async function createOperatorIntent(req, res) {
     const currency = (card.currency || 'USD').toLowerCase()
     const amountNum = Number(card.amount)
     if (!amountNum || Number.isNaN(amountNum)) return res.status(400).json({ error: 'Card amount missing' })
-    const amountCents = Math.round(amountNum * 100)
+    const fee = amountNum * 0.029 + 0.30
+    const netAmount = Math.max(0, amountNum - fee)
+    const amountCents = Math.round(netAmount * 100)
 
     const intent = await stripe.paymentIntents.create({
       amount: amountCents,
@@ -489,5 +495,80 @@ export async function createOperatorIntent(req, res) {
   } catch (e) {
     console.error('createOperatorIntent error', e)
     res.status(500).json({ error: 'Server error' })
+  }
+}
+
+// Verify a Stripe Checkout session after redirect and auto-approve the card
+export async function verifyOperatorCheckout(req, res) {
+  try {
+    if (!stripe) return res.status(500).json({ error: 'Stripe not configured' })
+    assertTenantScope(req)
+    const tenantId = req.tenant.id
+    const accountId = req.user?.accountId
+    const sessionId = String(req.query.session_id || '').trim()
+    if (!accountId) return res.status(403).json({ error: 'Forbidden' })
+    if (!sessionId) return res.status(400).json({ error: 'Missing session_id' })
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['payment_intent.latest_charge.balance_transaction']
+    })
+    if (!session || session.mode !== 'payment') {
+      return res.status(400).json({ error: 'Invalid session' })
+    }
+    if (session.payment_status !== 'paid') {
+      return res.status(409).json({ error: 'Payment not settled', status: session.payment_status })
+    }
+
+    const meta = session.metadata || {}
+    const cardId = Number(meta.vccCardId)
+    if (!cardId) return res.status(400).json({ error: 'Missing card metadata' })
+
+    const card = await models.WcVCard.findByPk(cardId)
+    if (!card || card.tenant_id !== tenantId) return res.status(404).json({ error: 'Card not found' })
+    if (![card.claimed_by_account_id, card.delivered_by_account_id].includes(accountId)) {
+      return res.status(403).json({ error: 'Not your card' })
+    }
+
+    // Idempotent: if already approved, return ok
+    if (card.status === 'approved') {
+      return res.json({ ok: true, alreadyApproved: true })
+    }
+
+    // Persist payment metadata (confirmed) and auto-approve
+    const prevMeta = (card.metadata && typeof card.metadata === 'object') ? card.metadata : {}
+    const pi = session.payment_intent
+    // Optional: compute Stripe fee if expanded
+    let stripeFeeAmount = null
+    try {
+      const charge = typeof pi === 'object' ? pi.latest_charge : null
+      const bt = charge?.balance_transaction
+      if (bt && typeof bt.fee === 'number') stripeFeeAmount = bt.fee / 100
+    } catch {}
+
+    const payment = {
+      ...(prevMeta.payment || {}),
+      confirmed: true,
+      method: 'stripe_checkout',
+      reference: typeof pi === 'string' ? pi : pi?.id || session.id,
+      amount: (typeof session.amount_total === 'number' ? session.amount_total / 100 : (prevMeta.payment?.amount ?? card.amount ?? null)),
+      currency: (session.currency ? String(session.currency).toUpperCase() : (prevMeta.payment?.currency ?? card.currency ?? null)),
+      stripe_session_id: session.id,
+      stripe_fee_amount: stripeFeeAmount,
+      noted_by: accountId,
+      origin: 'operator',
+    }
+
+    const newMeta = { ...prevMeta, payment }
+    await card.update({
+      metadata: newMeta,
+      status: 'approved',
+      approved_at: new Date(),
+      approved_by_account_id: null,
+    })
+
+    return res.json({ ok: true })
+  } catch (e) {
+    console.error('verifyOperatorCheckout error', e)
+    return res.status(500).json({ error: 'Server error' })
   }
 }

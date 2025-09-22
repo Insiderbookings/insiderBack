@@ -32,6 +32,7 @@ import TgxHotelModel from "./TGXHotel.js"
 import WcTenantFactory from './WcTenant.js';
 import WcAccountFactory from './WcAccount.js';
 import WcAccountTenantFactory from './WcAccountTenant.js';
+import WcUserTenantFactory from './WcUserTenant.js';
 import WcSiteConfigFactory from './WcSiteConfig.js';
 import WcTemplateFactory from './WcTemplate.js'
 import UserRoleRequestFactory from './UserRoleRequest.js'
@@ -73,6 +74,7 @@ const models = {
   WcTenant       : WcTenantFactory(sequelize),
   WcAccount      : WcAccountFactory(sequelize),
   WcAccountTenant: WcAccountTenantFactory(sequelize),
+  WcUserTenant   : WcUserTenantFactory(sequelize),
   WcSiteConfig   : WcSiteConfigFactory(sequelize),
   WcTemplate     : WcTemplateFactory(sequelize),
 

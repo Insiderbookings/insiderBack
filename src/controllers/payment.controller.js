@@ -209,7 +209,13 @@ export const handleWebhook = async (req, res) => {
             currency: (pi.currency || card.currency || 'USD').toUpperCase(),
             origin: 'operator',
           })
-          await card.update({ metadata: { ...prevMeta, payment } })
+          // Auto-approve when payment confirmed and card was delivered
+          const next = { metadata: { ...prevMeta, payment } }
+          if (card.status === 'delivered') {
+            next.status = 'approved'
+            next.approved_at = new Date()
+          }
+          await card.update(next)
         }
       } catch (e) { console.error('VCC mark paid via webhook error:', e) }
     }

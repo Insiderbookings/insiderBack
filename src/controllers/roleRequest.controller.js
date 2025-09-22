@@ -168,6 +168,8 @@ export async function submitUserRoleInfo(req, res, next) {
       const llcUrl  = d.llcArticlesUrl ? await presignIfS3Url(d.llcArticlesUrl) : null
       const einUrl  = d.einLetterUrl   ? await presignIfS3Url(d.einLetterUrl)   : null
       const bankUrl = d.bankDocUrl     ? await presignIfS3Url(d.bankDocUrl)     : null
+      const selfieUrl = d.selfieUrl ? await presignIfS3Url(d.selfieUrl) : null
+      const frontUrl = idFront || idUrl
 
       const isBusiness = d.phase === "business" || d.llcArticlesUrl || d.einLetterUrl || d.bankDocUrl
       if (isBusiness) {
@@ -178,13 +180,21 @@ export async function submitUserRoleInfo(req, res, next) {
             <h3 style="margin:16px 0 6px">Company Information</h3>
             <table style="border-collapse:collapse">
               <tbody>
-                <tr><td style="padding:4px 8px;color:#6b7280">Chosen operator name</td><td style="padding:4px 8px">${d.selectedName || '-'}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">Business address</td><td style="padding:4px 8px">${d.businessAddress || '-'}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">Business bank</td><td style="padding:4px 8px">${d.businessBank || '-'}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">Bank routing number</td><td style="padding:4px 8px">${d.businessRoutingNumber || '-'}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">LLC Articles</td><td style="padding:4px 8px">${llcUrl ? `<a href="${llcUrl}">View</a>` : "-"}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">EIN Letter</td><td style="padding:4px 8px">${einUrl ? `<a href="${einUrl}">View</a>` : "-"}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">Bank Document</td><td style="padding:4px 8px">${bankUrl ? `<a href="${bankUrl}">View</a>` : "-"}</td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Chosen operator name</td><td style="padding:4px 8px">${d.selectedName || '-'} </td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Business address</td><td style="padding:4px 8px">${d.businessAddress || '-'} </td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Business bank</td><td style="padding:4px 8px">${d.businessBank || '-'} </td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Bank routing number</td><td style="padding:4px 8px">${d.businessRoutingNumber || '-'} </td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">LLC Articles</td><td style="padding:4px 8px">${llcUrl ? `<a href="${llcUrl}">View</a>` : '-'}</td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">EIN Letter</td><td style="padding:4px 8px">${einUrl ? `<a href="${einUrl}">View</a>` : '-'}</td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Bank Document</td><td style="padding:4px 8px">${bankUrl ? `<a href="${bankUrl}">View</a>` : '-'}</td></tr>
+              </tbody>
+            </table>
+            <h3 style="margin:16px 0 6px">Identity verification (Step 2)</h3>
+            <table style="border-collapse:collapse">
+              <tbody>
+                <tr><td style="padding:4px 8px;color:#6b7280">Government ID (front)</td><td style="padding:4px 8px">${frontUrl ? `<a href="${frontUrl}">View front</a>` : '-'}</td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Government ID (back)</td><td style="padding:4px 8px">${idBack ? `<a href="${idBack}">View back</a>` : '-'}</td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Selfie</td><td style="padding:4px 8px">${selfieUrl ? `<a href="${selfieUrl}">View selfie</a>` : '-'}</td></tr>
               </tbody>
             </table>
           </div>`
@@ -196,17 +206,18 @@ export async function submitUserRoleInfo(req, res, next) {
             <h3 style="margin:16px 0 6px">Step 1: Personal Information & KYC</h3>
             <table style="border-collapse:collapse">
               <tbody>
-                <tr><td style="padding:4px 8px;color:#6b7280">Full name</td><td style="padding:4px 8px">${d.fullName || '-'}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">Personal email</td><td style="padding:4px 8px">${d.personalEmail || '-'}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">Personal phone</td><td style="padding:4px 8px">${d.personalPhone || '-'}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">SSN</td><td style="padding:4px 8px">${d.ssn || '-'}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">Government ID (front)</td><td style="padding:4px 8px">${idFront ? `<a href="${idFront}">View</a>` : (idUrl ? `<a href="${idUrl}">View</a>` : '-')}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">Government ID (back)</td><td style="padding:4px 8px">${idBack ? `<a href="${idBack}">View</a>` : '-'}</td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">Personal address</td><td style="padding:4px 8px">${d.personalAddress || '-'}</td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Full name</td><td style="padding:4px 8px">${d.fullName || '-'} </td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Personal email</td><td style="padding:4px 8px">${d.personalEmail || '-'} </td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Personal phone</td><td style="padding:4px 8px">${d.personalPhone || '-'} </td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">SSN</td><td style="padding:4px 8px">${d.ssn || '-'} </td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Personal address</td><td style="padding:4px 8px">${d.personalAddress || '-'} </td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Government ID (front)</td><td style="padding:4px 8px">${frontUrl ? `<a href="${frontUrl}">View front</a>` : '-'}</td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Government ID (back)</td><td style="padding:4px 8px">${idBack ? `<a href="${idBack}">View back</a>` : '-'}</td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Selfie</td><td style="padding:4px 8px">${selfieUrl ? `<a href="${selfieUrl}">View selfie</a>` : '-'}</td></tr>
               </tbody>
             </table>
             <h3 style="margin:16px 0 6px">Step 2: Company Name Selection</h3>
-            <p>Chosen name: <strong>${d.selectedName || '-'}</strong></p>
+            <p>Chosen name: <strong>${d.selectedName || '-'} </strong></p>
           </div>`
       }
     } else {
@@ -269,6 +280,14 @@ export async function uploadGovId(req, res, next) {
       req.files?.["gov_id_back"]?.[0]?.url ||
       null
 
+    // Optional selfie field
+    const urlSelfie =
+      uploaded.selfieUrl ||
+      req.body?.selfieUrl ||
+      req.files?.["selfie"]?.[0]?.location ||
+      req.files?.["selfie"]?.[0]?.url ||
+      null
+
     if (!urlSingle && Array.isArray(req?.files)) {
       const f = req.files[0]
       urlSingle = f?.location || f?.url || null
@@ -299,6 +318,7 @@ export async function uploadGovId(req, res, next) {
           const merged = { ...prev, phase: prev.phase || "kyc" }
           if (urlFront) merged.govIdFrontUrl = urlFront
           if (urlBack)  merged.govIdBackUrl  = urlBack
+          if (urlSelfie) merged.selfieUrl = urlSelfie
           if (!merged.govIdFrontUrl && urlSingle) merged.govIdFrontUrl = urlSingle
           await reqRow.update({ form_data: merged })
         }
@@ -308,8 +328,8 @@ export async function uploadGovId(req, res, next) {
       console.warn('uploadGovId: persist draft failed:', e?.message || e)
     }
 
-    try { console.log('[uploadGovId] OK', { urlFront, urlBack, urlSingle }) } catch {}
-    return res.json({ govIdFrontUrl: urlFront || undefined, govIdBackUrl: urlBack || undefined, url: urlSingle || undefined })
+    try { console.log('[uploadGovId] OK', { urlFront, urlBack, urlSelfie, urlSingle }) } catch {}
+    return res.json({ govIdFrontUrl: urlFront || undefined, govIdBackUrl: urlBack || undefined, selfieUrl: urlSelfie || undefined, url: urlSingle || undefined })
   } catch (err) { return next(err) }
 }
 
@@ -476,56 +496,20 @@ export async function adminApproveFinal(req, res, next) {
     // Actualiza rol
     await user.update({ role: reqRow.role_requested, role_pending_info: false })
 
-    // Si es operator (5), crear cuenta en WcAccount + enviar credenciales
+    // Si es operator (5), ya no se crean cuentas WcAccount.
+    // El operador accederá al panel dentro de InsiderWeb usando su misma cuenta.
     if (Number(reqRow.role_requested) === 5) {
-      const Wc = models.WcAccount
-      const dispKey = fieldKey(Wc, "display_name", "displayName")
-      const isActKey = fieldKey(Wc, "is_active", "isActive")
-      const passKey = fieldKey(Wc, "password_hash", "passwordHash")
-      const rolesKey = fieldKey(Wc, "roles")
-      const permsKey = fieldKey(Wc, "permissions")
-
-      const baseName = makeBaseName(user)
-      const rnd = Math.floor(100000 + Math.random() * 900000)
-      const plainPassword = `${baseName}${rnd}`
-      const hash = await bcrypt.hash(plainPassword, 10)
-      const displayName = user.name || user.email.split("@")[0]
-
-      const where = { email: user.email }
-      const payload = { email: user.email }
-      if (dispKey) payload[dispKey] = displayName
-      if (passKey) payload[passKey] = hash
-      if (isActKey) payload[isActKey] = true
-      if (rolesKey) payload[rolesKey] = coerceArrayField(Wc, rolesKey, ["operator"])
-      if (permsKey) payload[permsKey] = coerceArrayField(Wc, permsKey, ["vault:operate"])
-
-      let plainPasswordForMail = null
-      let wcCreated = false
-      try {
-        const [rec, created] = await Wc.findOrCreate({ where, defaults: payload })
-        wcCreated = !!created
-        if (created && user?.email) {
-          // Keep credentials for the new unified final-approval email
-          plainPasswordForMail = plainPassword
-        }
-      } catch (e) {
-        return res.status(500).json({ error: e?.message || "Failed to create operator account" })
-      }
-
-      // Send final approval email (consistent style), regardless of account creation
       try {
         if (user?.email) {
-          const subject = "Congratulations — Your operator role is approved"
-          const extraCreds = wcCreated && plainPasswordForMail
-            ? `<p>We created your operator account. Your login is <strong>${user.email}</strong> and your temporary password is <strong>${plainPasswordForMail}</strong>. Please change it on first login.</p>`
-            : `<p>Your operator access is now active. If you need credentials or a password reset, please use the panel's <em>Forgot password</em> option.</p>`
+          const subject = "Vault Operator - Approved"
+          const clientUrl = process.env.CLIENT_URL || "http://localhost:5173"
           const body = `
             <p>Hi ${user.name || ''},</p>
-            <p><strong>Congratulations!</strong> Your Vault Operator role has been approved. You now have access to the operator panel to manage virtual cards.</p>
-            ${extraCreds}
+            <p><strong>Congratulations!</strong> Your Vault Operator role has been approved.</p>
+            <p>You can now access your Operator Panel directly from Insider Bookings using your existing login (no additional account required).</p>
           `
-          const html = wrapEmail({ title: "Vault Operator — Approved", body })
-          await sendMail({ to: user.email, subject, html, text: "Your operator role is approved." })
+          const html = wrapEmail({ title: "Access your Operator Panel", body, ctaLabel: "Open Operator Panel", ctaHref: `${clientUrl}/operator` })
+          await sendMail({ to: user.email, subject, html, text: `Operator role approved. Go to ${clientUrl}/operator` })
         }
       } catch (e) {
         console.warn('adminApproveFinal: failed to send final user mail:', e?.message || e)
@@ -538,10 +522,30 @@ export async function adminApproveFinal(req, res, next) {
 
 export async function adminListUsers(_req, res, next) {
   try {
-    const users = await models.User.findAll({
-      attributes: ["id", "name", "email", "phone", "role", "role_pending_info", ["is_active", "isActive"], "created_at"],
+    const rows = await models.User.findAll({
+      attributes: [
+        "id",
+        "name",
+        "email",
+        "phone",
+        "role",
+        "role_pending_info",
+        ["is_active", "isActive"],
+        "created_at",
+      ],
+      include: [{
+        model: models.WcTenant,
+        through: { attributes: [] },
+        attributes: ["id", "name"],
+        required: false,
+      }],
       order: [["created_at", "DESC"]],
       limit: 500,
+    })
+    const users = rows.map(r => {
+      const o = typeof r.toJSON === 'function' ? r.toJSON() : r
+      const tenants = Array.isArray(o.WcTenants) ? o.WcTenants.map(t => ({ id: t.id, name: t.name })) : []
+      return { id: o.id, name: o.name, email: o.email, phone: o.phone, role: o.role, role_pending_info: o.role_pending_info, isActive: o.isActive, created_at: o.created_at, tenants }
     })
     return res.json({ users })
   } catch (err) { return next(err) }

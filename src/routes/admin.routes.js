@@ -1,6 +1,6 @@
 ﻿import { Router } from "express"
 import { authenticate, authorizeRoles } from "../middleware/auth.js"
-import { createTenant, listTenants, updateTenant, deleteTenant, listAccounts, linkAccountToTenant, unlinkAccountFromTenant } from "../controllers/admin.controller.js"
+import { createTenant, listTenants, updateTenant, deleteTenant, listAccounts, linkAccountToTenant, unlinkAccountFromTenant, linkUserToTenant, unlinkUserFromTenant } from "../controllers/admin.controller.js"
 import { adminCreateCards, adminApprove, adminListCards , adminMarkPaid} from "../controllers/vcc.controller.js"
 import {
   adminListRoleRequests,
@@ -21,6 +21,9 @@ router.delete("/tenants/:id", authenticate, authorizeRoles(100), deleteTenant)
 router.get("/accounts", authenticate, authorizeRoles(100), listAccounts)
 router.post("/accounts/:accountId/tenants/:tenantId", authenticate, authorizeRoles(100), linkAccountToTenant)
 router.delete("/accounts/:accountId/tenants/:tenantId", authenticate, authorizeRoles(100), unlinkAccountFromTenant)
+// Link Insider User <-> Tenant (for operator access)
+router.post("/users/:userId/tenants/:tenantId", authenticate, authorizeRoles(100), linkUserToTenant)
+router.delete("/users/:userId/tenants/:tenantId", authenticate, authorizeRoles(100), unlinkUserFromTenant)
 
 // VCC admin
 router.get("/vcc/cards", authenticate, authorizeRoles(100), adminListCards)

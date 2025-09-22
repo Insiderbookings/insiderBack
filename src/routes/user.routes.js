@@ -44,6 +44,7 @@ router.post(
     gov_id: "govIdUrl",
     gov_id_front: "govIdFrontUrl",
     gov_id_back: "govIdBackUrl",
+    selfie: "selfieUrl",
   }, { folder: 'kyc' }),
   uploadGovId,
 )
