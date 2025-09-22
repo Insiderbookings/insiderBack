@@ -182,6 +182,29 @@ export const unlinkAccountFromTenant = async (req, res, next) => {
   } catch (err) { return next(err) }
 }
 
+// Map Insider User <-> Tenant (Operator linkage)
+export const linkUserToTenant = async (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId)
+    const tenantId = Number(req.params.tenantId)
+    const user = await models.User.findByPk(userId)
+    const ten = await models.WcTenant.findByPk(tenantId)
+    if (!user || !ten) return res.status(404).json({ error: 'User or Tenant not found' })
+    await models.WcUserTenant.findOrCreate({ where: { user_id: userId, tenant_id: tenantId }, defaults: { user_id: userId, tenant_id: tenantId } })
+    return res.status(201).json({ ok: true })
+  } catch (err) { return next(err) }
+}
+
+export const unlinkUserFromTenant = async (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId)
+    const tenantId = Number(req.params.tenantId)
+    const count = await models.WcUserTenant.destroy({ where: { user_id: userId, tenant_id: tenantId } })
+    if (count === 0) return res.status(404).json({ error: 'Link not found' })
+    return res.json({ ok: true })
+  } catch (err) { return next(err) }
+}
+
 export const deleteTenant = async (req, res, next) => {
   try {
     const { id } = req.params

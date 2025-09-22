@@ -64,7 +64,7 @@ const PORT = process.env.PORT || 3000;
   try {
     await sequelize.authenticate();
     const alter = String(process.env.DB_ALTER_SYNC || "false").toLowerCase()
- await sequelize.sync({ force: false })
+    await sequelize.sync({ alter: ["1","true","yes"].includes(alter) })
     app.listen(PORT, () =>
       console.log(`Server listening on port ${PORT}`)
     );
