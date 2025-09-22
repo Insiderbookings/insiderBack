@@ -300,7 +300,7 @@ export async function uploadGovId(req, res, next) {
     // If legacy single provided but neither front/back, map to front for compatibility
     if (!urlFront && !urlBack && urlSingle) urlFront = urlSingle
 
-    if (!urlFront && !urlBack) {
+    if (!urlFront && !urlBack && !urlSelfie) {
       try { console.warn('[uploadGovId] no URLs derived') } catch {}
       return res.status(400).json({ error: "No file uploaded" })
     }
