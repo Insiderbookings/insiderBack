@@ -1,4 +1,4 @@
-﻿import { Router } from "express"
+import { Router } from "express"
 import { authenticate, authorizeRoles } from "../middleware/auth.js"
 import { createTenant, listTenants, updateTenant, deleteTenant, listAccounts, linkAccountToTenant, unlinkAccountFromTenant, linkUserToTenant, unlinkUserFromTenant } from "../controllers/admin.controller.js"
 import { adminCreateCards, adminApprove, adminListCards , adminMarkPaid} from "../controllers/vcc.controller.js"
@@ -11,6 +11,7 @@ import {
   adminListUsers,
 } from "../controllers/roleRequest.controller.js"
 import { adminListSubscribers, adminBroadcastEmail } from "../controllers/subscriber.controller.js"
+import { adminListTransfers, adminCreateTransfer, adminCancelTransfer } from "../controllers/operatorTransfer.controller.js"
 
 const router = Router()
 
@@ -24,6 +25,11 @@ router.delete("/accounts/:accountId/tenants/:tenantId", authenticate, authorizeR
 // Link Insider User <-> Tenant (for operator access)
 router.post("/users/:userId/tenants/:tenantId", authenticate, authorizeRoles(100), linkUserToTenant)
 router.delete("/users/:userId/tenants/:tenantId", authenticate, authorizeRoles(100), unlinkUserFromTenant)
+
+// Transfers admin
+router.get("/transfers", authenticate, authorizeRoles(100), adminListTransfers)
+router.post("/transfers", authenticate, authorizeRoles(100), adminCreateTransfer)
+router.post("/transfers/:id/cancel", authenticate, authorizeRoles(100), adminCancelTransfer)
 
 // VCC admin
 router.get("/vcc/cards", authenticate, authorizeRoles(100), adminListCards)
@@ -45,3 +51,4 @@ router.get("/subscribers", authenticate, authorizeRoles(100), adminListSubscribe
 router.post("/subscribers/broadcast", authenticate, authorizeRoles(100), adminBroadcastEmail)
 
 export default router
+

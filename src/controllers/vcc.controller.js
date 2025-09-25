@@ -345,44 +345,131 @@ export async function adminMarkPaid(req, res) {
 }
 
 
+// controllers/vccards.js
 export async function markPaidByOperator(req, res) {
-  try {
-    assertTenantScope(req)
-    const tenantId = req.tenant.id
-    const accountId = req.user?.accountId
-    const id = Number(req.params.id)
-    if (!accountId) return res.status(403).json({ error: 'Forbidden' })
-    if (!id) return res.status(400).json({ error: 'Invalid id' })
+  // Toma la instancia de Sequelize desde el modelo (evita models.sequelize undefined)
+  const sequelize = models?.WcVCard?.sequelize;
+  if (!sequelize) {
+    console.error("Sequelize instance not available from WcVCard");
+    return res.status(500).json({ error: "Server config error" });
+  }
 
-    const card = await models.WcVCard.findByPk(id)
-    if (!card || card.tenant_id !== tenantId) return res.status(404).json({ error: 'Not found' })
-    if (card.status !== 'delivered') return res.status(409).json({ error: 'Invalid state' })
-    // Allow only the operator who delivered or claimed the card
-    if (![card.claimed_by_account_id, card.delivered_by_account_id].includes(accountId)) {
-      return res.status(403).json({ error: 'Not your card' })
+  const t = await sequelize.transaction();
+  try {
+    assertTenantScope(req);
+    const tenantId = req.tenant.id;
+    const accountId = req.user?.accountId;
+    const id = Number(req.params.id);
+
+    if (!accountId) {
+      await t.rollback();
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    if (!id) {
+      await t.rollback();
+      return res.status(400).json({ error: "Invalid id" });
     }
 
-    const body = req.body || {}
-    const metadata = Object.assign({}, card.metadata || {})
-    const now = new Date()
-    metadata.payment = Object.assign({}, metadata.payment || {}, {
+    // Lock para evitar condiciones de carrera
+    const card = await models.WcVCard.findByPk(id, {
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
+
+    if (!card || card.tenant_id !== tenantId) {
+      await t.rollback();
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    // Sólo permitir si es el operador asignado/entregó
+    if (
+      ![card.claimed_by_account_id, card.delivered_by_account_id].includes(accountId)
+    ) {
+      await t.rollback();
+      return res.status(403).json({ error: "Not your card" });
+    }
+
+    // Estados válidos (idempotente si ya estaba delivered)
+    if (!["claimed", "delivered"].includes(card.status)) {
+      await t.rollback();
+      return res.status(409).json({ error: "Invalid state" });
+    }
+
+    const body = req.body || {};
+    const now = new Date();
+
+    // Normaliza amount/currency
+    const amount =
+      body.amount != null
+        ? Number(body.amount)
+        : card.amount != null
+        ? Number(card.amount)
+        : null;
+
+    const currency =
+      (body.currency || card.currency || "").slice(0, 3).toUpperCase() || null;
+
+    // Comisión (2.9% + 0.30) y neto
+    let fee_total = null;
+    let payout_net = null;
+    if (Number.isFinite(amount)) {
+      const fee_percent = 0.029;
+      const fee_fixed = 0.30;
+      fee_total = +(amount * fee_percent + fee_fixed).toFixed(2);
+      payout_net = +(Math.max(0, amount - fee_total)).toFixed(2);
+    }
+
+    // Merge metadata.payment
+    const metadata = { ...(card.metadata || {}) };
+    metadata.payment = {
+      ...(metadata.payment || {}),
       confirmed: true,
       at: now.toISOString(),
       method: body.method || metadata.payment?.method || null,
       reference: body.reference || metadata.payment?.reference || null,
-      amount: body.amount != null ? Number(body.amount) : metadata.payment?.amount ?? null,
-      currency: body.currency || metadata.payment?.currency || card.currency || null,
+      amount: Number.isFinite(amount) ? amount : metadata.payment?.amount ?? null,
+      currency: currency || metadata.payment?.currency || null,
       noted_by: accountId,
-      origin: 'operator',
-    })
-    await card.update({ metadata })
-    res.json({ ok: true, payment: metadata.payment })
+      origin: "operator",
+      fee: Number.isFinite(fee_total) ? fee_total : metadata.payment?.fee ?? null,
+      fee_percent: 0.029,
+      fee_fixed: 0.30,
+      payout_net: Number.isFinite(payout_net) ? payout_net : metadata.payment?.payout_net ?? null,
+    };
+
+    // Si estaba "claimed", pásala a delivered (idempotente si ya lo estaba)
+    const willSetDelivered = card.status === "claimed";
+
+    await card.update(
+      {
+        metadata,
+        status: willSetDelivered ? "delivered" : card.status,
+        delivered_at: willSetDelivered ? now : card.delivered_at ?? now,
+        delivered_by_account_id: willSetDelivered
+          ? accountId
+          : card.delivered_by_account_id ?? accountId,
+        amount: Number.isFinite(amount) ? amount : card.amount,
+        currency: currency || card.currency,
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    return res.json({
+      ok: true,
+      id: card.id,
+      status: card.status,
+      delivered_at: card.delivered_at,
+      delivered_by_account_id: card.delivered_by_account_id,
+      payment: metadata.payment,
+    });
   } catch (e) {
-    console.error('markPaidByOperator error', e)
-    res.status(500).json({ error: 'Server error' })
+    try { await t.rollback(); } catch {}
+    console.error("markPaidByOperator error", e);
+    return res.status(500).json({ error: "Server error" });
   }
 }
-
 // Create a Stripe Checkout session so the operator can pay Insider
 export async function createOperatorCheckout(req, res) {
   try {

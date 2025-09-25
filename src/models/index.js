@@ -37,6 +37,7 @@ import WcSiteConfigFactory from './WcSiteConfig.js';
 import WcTemplateFactory from './WcTemplate.js'
 import UserRoleRequestFactory from './UserRoleRequest.js'
 import WcVCardFactory from './WcVCard.js'
+import WcOperatorTransferFactory from './WcOperatorTransfer.js'
 import VaultOperatorNameFactory from './VaultOperatorName.js'
 import SubscriberFactory from './Subscriber.js'
 
@@ -79,6 +80,7 @@ const models = {
   WcTemplate     : WcTemplateFactory(sequelize),
 
   UserRoleRequest: UserRoleRequestFactory(sequelize),
+  WcOperatorTransfer: WcOperatorTransferFactory(sequelize),
   WcVCard        : WcVCardFactory(sequelize),
   VaultOperatorName: VaultOperatorNameFactory(sequelize),
   Subscriber     : SubscriberFactory(sequelize),
@@ -92,3 +94,6 @@ Object.values(models)
 
 export { sequelize }
 export default models
+
+
+

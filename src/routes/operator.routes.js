@@ -17,6 +17,16 @@ import {
 import { listMyTenants } from '../controllers/operator.controller.js'
 import { getSiteConfigPublic, getHotelPublic, getSiteConfigPrivate, updateSiteConfigPrivate, listTemplates } from '../controllers/webconstructor.controller.js'
 import { uploadImagesToS3Fields } from '../middleware/s3UploadFields.js'
+import {
+  listOperatorTransfers,
+  createOperatorTransfer,
+  getOperatorTransferStats,
+  claimOperatorTransfer,
+  getActiveOperatorTransfer,
+  createOperatorTransferIntent,
+  completeOperatorTransfer,
+  getOperatorTransferHistory
+} from '../controllers/operatorTransfer.controller.js'
 
 // Operator-facing VCC routes, using Insider auth + role (no WcAccount)
 // Tenant is resolved via X-Tenant-Domain header or ?host=domain (same as WC panel)
@@ -34,7 +44,21 @@ router.post('/vcc/:id/create-checkout', resolveTenant, authenticate, authorizeOp
 router.post('/vcc/:id/create-intent', resolveTenant, authenticate, authorizeOperator, createOperatorIntent)
 router.get('/vcc/checkout/verify', resolveTenant, authenticate, authorizeOperator, verifyOperatorCheckout)
 
-export default router
+router.get('/transfers/stats', resolveTenant, authenticate, authorizeOperator, getOperatorTransferStats)
+router.post('/transfers/claim', resolveTenant, authenticate, authorizeOperator, claimOperatorTransfer)
+router.get('/transfers/active', resolveTenant, authenticate, authorizeOperator, getActiveOperatorTransfer)
+router.post('/transfers/:id/create-intent', resolveTenant, authenticate, authorizeOperator, createOperatorTransferIntent)
+router.post('/transfers/:id/complete', resolveTenant, authenticate, authorizeOperator, completeOperatorTransfer)
+router.get('/transfers', resolveTenant, authenticate, authorizeOperator, listOperatorTransfers)
+router.post('/transfers', resolveTenant, authenticate, authorizeOperator, createOperatorTransfer)
+router.get(
+  '/transfers/history',
+  resolveTenant,
+  authenticate,
+  authorizeOperator,
+  getOperatorTransferHistory
+)
+
 router.get('/tenants', authenticate, authorizeOperator, listMyTenants)
 
 // Read-only site info for operator panel
@@ -44,3 +68,6 @@ router.get('/hotel', resolveTenant, authenticate, authorizeOperator, getHotelPub
 router.get('/site-config/private', resolveTenant, authenticate, authorizeOperator, getSiteConfigPrivate)
 router.put('/site-config', resolveTenant, authenticate, authorizeOperator, uploadImagesToS3Fields({ logo: 'logoUrl', favicon: 'faviconUrl' }), updateSiteConfigPrivate)
 router.get('/templates', resolveTenant, authenticate, authorizeOperator, listTemplates)
+
+export default router
+
