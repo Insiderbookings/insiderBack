@@ -1,6 +1,7 @@
 import models from "../models/index.js";
 import { Op } from "sequelize";
 import Stripe from "stripe";
+import { notifyOperatorsNewTransfer } from "../helpers/operatorNotifications.js";
 
 const stripeKey = process.env.STRIPE_SECRET_KEY;
 const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: "2022-11-15" }) : null;
@@ -267,6 +268,14 @@ export async function createOperatorTransferIntent(req, res) {
     if (transfer.status !== TRANSFER_STATUS.CLAIMED) return res.status(409).json({ error: "Invalid state" });
     if (transfer.assigned_account_id !== accountId) return res.status(403).json({ error: "Not your transfer" });
 
+    const body = req.body || {};
+    const providedCode = String(body.bookingCode || body.booking_code || "").trim();
+    const expectedCode = transfer.booking_code ? String(transfer.booking_code).trim() : "";
+    if (expectedCode) {
+      if (!providedCode) return res.status(400).json({ error: "bookingCode is required" });
+      if (providedCode !== expectedCode) return res.status(409).json({ error: "Invalid booking code" });
+    }
+
     const amountNum = Number(transfer.amount);
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       return res.status(400).json({ error: "Invalid amount" });
@@ -275,25 +284,211 @@ export async function createOperatorTransferIntent(req, res) {
     const currency = String(transfer.currency || "USD").toLowerCase();
     const amountCents = Math.round(amountNum * 100);
 
-    const intent = await stripe.paymentIntents.create({
-      amount: amountCents,
-      currency,
-      automatic_payment_methods: { enabled: true },
+    const rawReturnUrl = typeof body.returnUrl === "string" ? body.returnUrl.trim() : "";
+    const panelBase = process.env.OPERATOR_PANEL_URL || process.env.CLIENT_URL || "https://app.insiderbookings.com/operator";
+    const hostHeader = req.headers["x-tenant-domain"] || req.query.host || null;
+
+    const ensureReturnUrl = (base) => {
+      if (base) return base;
+      try {
+        const fallback = new URL(panelBase);
+        fallback.searchParams.set("transfer", String(transfer.id));
+        if (hostHeader) fallback.searchParams.set("host", hostHeader);
+        return fallback.toString();
+      } catch (err) {
+        console.warn("operator checkout: failed to build fallback return URL", err?.message || err);
+        return panelBase;
+      }
+    };
+
+    const baseReturnUrl = ensureReturnUrl(rawReturnUrl);
+
+    const buildUrl = (fn) => {
+      try {
+        const url = new URL(baseReturnUrl);
+        fn(url.searchParams);
+        const str = url.toString();
+        return str.replace(/%7B/g, '{').replace(/%7D/g, '}');
+      } catch {
+        const base = baseReturnUrl.replace(/%7B/g, '{').replace(/%7D/g, '}');
+        return fn(null, base);
+      }
+    };
+
+    const successUrl = buildUrl((params, fallback) => {
+      if (params) {
+        params.delete('session_id');
+        params.set('session_id', '{CHECKOUT_SESSION_ID}');
+      } else {
+        const sep = fallback.includes('?') ? '&' : '?';
+        return `${fallback}${sep}session_id={CHECKOUT_SESSION_ID}`;
+      }
+    });
+
+    const cancelUrl = buildUrl((params, fallback) => {
+      if (params) {
+        params.delete('session_id');
+        params.set('transfer_checkout', 'cancelled');
+      } else {
+        const sep = fallback.includes('?') ? '&' : '?';
+        return `${fallback}${sep}transfer_checkout=cancelled`;
+      }
+    });
+
+    const productData = {
+      name: transfer.booking_code ? `Transfer ${transfer.booking_code}` : `Transfer #${transfer.id}`
+    };
+    if (transfer.guest_name) {
+      productData.description = `Guest: ${transfer.guest_name}`;
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency,
+            unit_amount: amountCents,
+            product_data: productData,
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      client_reference_id: `transfer:${transfer.id}`,
       metadata: {
         transferId: String(transfer.id),
         tenantId: String(tenantId),
         operatorAccountId: String(accountId),
-        purpose: "operator_transfer",
+      },
+      payment_intent_data: {
+        metadata: {
+          transferId: String(transfer.id),
+          tenantId: String(tenantId),
+          operatorAccountId: String(accountId),
+          purpose: "operator_transfer",
+        },
       },
     });
 
+    if (!session?.url) {
+      return res.status(500).json({ error: "Checkout URL not available" });
+    }
+
     const baseMeta = transfer.metadata && typeof transfer.metadata === "object" ? transfer.metadata : {};
-    const nextMeta = { ...baseMeta, latestPaymentIntentId: intent.id };
+    const nextMeta = {
+      ...baseMeta,
+      latestCheckoutSessionId: session.id,
+      latestCheckoutSessionCreatedAt: new Date().toISOString(),
+    };
     await transfer.update({ metadata: nextMeta }, { silent: true });
 
-    return res.json({ clientSecret: intent.client_secret, paymentIntentId: intent.id });
+    return res.json({ url: session.url, sessionId: session.id });
   } catch (e) {
     console.error("createOperatorTransferIntent error", e);
+    return res.status(e.status || 500).json({ error: e.message || "Server error" });
+  }
+}
+
+
+export async function verifyOperatorTransferCheckout(req, res) {
+  try {
+    requireStripe();
+    assertTenantScope(req);
+    const tenantId = req.tenant.id;
+    const accountId = req.user?.accountId;
+    const id = Number(req.params.id);
+    const sessionId = String(req.query.session_id || "").trim();
+    if (!accountId) return res.status(403).json({ error: "Forbidden" });
+    if (!id) return res.status(400).json({ error: "Invalid id" });
+    if (!sessionId) return res.status(400).json({ error: "session_id is required" });
+
+    const transfer = await models.WcOperatorTransfer.findByPk(id);
+    if (!transfer || transfer.tenant_id !== tenantId) return res.status(404).json({ error: "Not found" });
+    if (transfer.status !== TRANSFER_STATUS.CLAIMED) return res.status(409).json({ error: "Invalid state" });
+    if (transfer.assigned_account_id !== accountId) return res.status(403).json({ error: "Not your transfer" });
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ["payment_intent"] });
+    if (!session) return res.status(404).json({ error: "Checkout session not found" });
+
+    if (session.metadata?.transferId && Number(session.metadata.transferId) !== transfer.id) {
+      return res.status(409).json({ error: "Session mismatch" });
+    }
+
+    if (session.payment_status !== "paid") {
+      return res.status(409).json({ error: "Payment not completed" });
+    }
+
+    const paymentIntent = session.payment_intent;
+    const paymentIntentId = typeof paymentIntent === "string" ? paymentIntent : paymentIntent?.id;
+    if (!paymentIntentId) {
+      return res.status(409).json({ error: "Payment intent not available" });
+    }
+
+    const baseMeta = transfer.metadata && typeof transfer.metadata === "object" ? transfer.metadata : {};
+    const amountNum = Number(transfer.amount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      return res.status(400).json({ error: "Transfer amount is invalid" });
+    }
+
+    const pi = typeof paymentIntent === "string" ? await stripe.paymentIntents.retrieve(paymentIntentId) : paymentIntent;
+    if (!pi || pi.status !== "succeeded") {
+      return res.status(409).json({ error: "Payment not settled" });
+    }
+
+    const amountFromPi = Number(pi.amount_received ?? pi.amount) / 100;
+    if (Number.isFinite(amountFromPi) && Math.round(amountFromPi * 100) !== Math.round(amountNum * 100)) {
+      return res.status(409).json({ error: "Payment amount mismatch" });
+    }
+
+    const currency = (transfer.currency || session.currency || "USD").slice(0, 3).toUpperCase();
+    const bookingCode = transfer.booking_code ? String(transfer.booking_code).trim() : "";
+    const guestName = transfer.guest_name ? String(transfer.guest_name).trim() : "";
+    const paidAt = pi.created ? new Date(pi.created * 1000) : new Date();
+
+    const paymentMeta = {
+      ...(baseMeta.payment || {}),
+      confirmed: true,
+      method: pi.payment_method_types?.[0] || "stripe_checkout",
+      paymentIntentId: pi.id,
+      amount: amountNum,
+      currency,
+      completedBy: accountId,
+      completedAt: new Date().toISOString(),
+      checkoutSessionId: session.id,
+    };
+
+    const nextMeta = {
+      ...baseMeta,
+      payment: paymentMeta,
+      latestCheckoutSessionId: session.id,
+      latestCheckoutSessionVerifiedAt: new Date().toISOString(),
+    };
+
+    await transfer.update({
+      status: TRANSFER_STATUS.COMPLETED,
+      operator_account_id: accountId,
+      amount: amountNum,
+      currency,
+      booking_code: bookingCode || transfer.booking_code,
+      guest_name: guestName || transfer.guest_name,
+      reference: transfer.reference || pi.id,
+      notes: transfer.notes,
+      paid_at: paidAt,
+      completed_at: new Date(),
+      metadata: nextMeta,
+    });
+
+    if (transfer.assigned_account_id === accountId) {
+      // keep assignment but status completed; nothing else to do
+    }
+
+    await transfer.reload({ paranoid: false });
+    return res.json({ ok: true, paymentIntentId: pi.id, transfer: sanitizeTransfer(transfer) });
+  } catch (e) {
+    console.error("verifyOperatorTransferCheckout error", e);
     return res.status(e.status || 500).json({ error: e.message || "Server error" });
   }
 }
@@ -313,20 +508,39 @@ export async function completeOperatorTransfer(req, res) {
     if (transfer.assigned_account_id !== accountId) return res.status(403).json({ error: "Not your transfer" });
 
     const body = req.body || {};
-    const amountNum = Number(body.amount);
-    if (!Number.isFinite(amountNum) || amountNum <= 0) {
-      return res.status(400).json({ error: "amount must be a positive number" });
+    const expectedCode = transfer.booking_code ? String(transfer.booking_code).trim() : "";
+    const bookingCodeInput = String(body.bookingCode || body.booking_code || "").trim();
+
+    if (expectedCode) {
+      if (!bookingCodeInput) return res.status(400).json({ error: "bookingCode is required" });
+      if (bookingCodeInput !== expectedCode) return res.status(409).json({ error: "Invalid booking code" });
     }
 
-    const currency = (body.currency ? String(body.currency) : transfer.currency || "USD").slice(0, 3).toUpperCase();
-    const bookingCode = String(body.bookingCode || body.booking_code || "").trim();
-    const guestName = String(body.guestName || body.guest_name || "").trim();
+    const bookingCode = expectedCode || bookingCodeInput;
+    if (!bookingCode) return res.status(400).json({ error: "bookingCode is required" });
+
+    const amountNum = Number(transfer.amount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      return res.status(400).json({ error: "Transfer amount is invalid" });
+    }
+
+    if (body.amount !== undefined) {
+      const requestedAmount = Number(body.amount);
+      if (Number.isFinite(requestedAmount) && Math.round(requestedAmount * 100) !== Math.round(amountNum * 100)) {
+        return res.status(409).json({ error: "Amount mismatch" });
+      }
+    }
+
+    const currencySource = transfer.currency || (body.currency ? String(body.currency) : "USD");
+    const currency = currencySource.slice(0, 3).toUpperCase();
+    const storedGuestName = transfer.guest_name ? String(transfer.guest_name).trim() : "";
+    const guestNameInput = String(body.guestName || body.guest_name || "").trim();
+    const guestName = storedGuestName || guestNameInput;
     const reference = String(body.reference || "").trim();
     const notes = body.notes != null ? String(body.notes).trim() : null;
     const paidAtRaw = body.paidAt || body.paid_at;
     const paymentIntentId = body.paymentIntentId ? String(body.paymentIntentId).trim() : null;
 
-    if (!bookingCode) return res.status(400).json({ error: "bookingCode is required" });
     if (!guestName) return res.status(400).json({ error: "guestName is required" });
 
     let paymentIntent = null;
@@ -517,7 +731,14 @@ export async function adminCreateTransfer(req, res) {
       metadata: baseMeta,
     });
 
-    return res.status(201).json({ item: sanitizeTransfer(created) });
+    const item = sanitizeTransfer(created);
+    try {
+      await notifyOperatorsNewTransfer({ tenantId, transfer: item });
+    } catch (notifyErr) {
+      console.warn(`adminCreateTransfer: failed to notify operators for tenant ${tenantId}: ${notifyErr?.message || notifyErr}`);
+    }
+
+    return res.status(201).json({ item });
   } catch (e) {
     console.error("adminCreateTransfer error", e);
     return res.status(e.status || 500).json({ error: e.message || "Server error" });

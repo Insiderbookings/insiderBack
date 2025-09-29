@@ -28,7 +28,11 @@ export function createTransport() {
 }
 
 export async function sendMail({ to, subject, text, html, from, attachments, cc, bcc }) {
+  const debug = asBool(process.env.MAIL_DEBUG)
   const transporter = createTransport()
+  if (debug) {
+    console.info(`[mail] sending to ${Array.isArray(to) ? to.join(', ') : to || '(no recipient)'}`)
+  }
   const info = await transporter.sendMail({
     from: from || process.env.MAIL_FROM || "no-reply@insiderbookings.com",
     to,
@@ -40,5 +44,8 @@ export async function sendMail({ to, subject, text, html, from, attachments, cc,
     // Passthrough de adjuntos (Buffer, path o stream)
     ...(attachments ? { attachments } : {}),
   })
+  if (debug) {
+    console.info('[mail] response', { accepted: info.accepted, rejected: info.rejected, response: info.response })
+  }
   return info
 }

@@ -1,6 +1,7 @@
 ﻿// src/controllers/vcc.controller.js
 import models from '../models/index.js'
 import { Op } from 'sequelize'
+import { notifyOperatorsNewCards } from '../helpers/operatorNotifications.js'
 import Stripe from 'stripe'
 
 const stripeKey = process.env.STRIPE_SECRET_KEY
@@ -196,6 +197,7 @@ export async function adminCreateCards(req, res) {
     if (items.length === 0) return res.status(400).json({ error: 'No items' })
 
     const created = []
+    const createdByTenant = new Map()
     for (const it of items) {
       const tenantId = Number(it.tenantId || it.tenant_id)
       if (!tenantId) return res.status(400).json({ error: 'tenantId required' })
@@ -229,7 +231,29 @@ export async function adminCreateCards(req, res) {
 
       const rec = await models.WcVCard.create(data)
       created.push(rec)
+
+      const bucket = createdByTenant.get(tenantId) || []
+      bucket.push({
+        amount: rec.amount ?? null,
+        currency: rec.currency ?? null,
+        exp_month: rec.exp_month ?? null,
+        exp_year: rec.exp_year ?? null,
+      })
+      createdByTenant.set(tenantId, bucket)
     }
+
+    const notifyPromises = []
+    for (const [tenantKey, cards] of createdByTenant.entries()) {
+      notifyPromises.push(
+        notifyOperatorsNewCards({ tenantId: tenantKey, cards }).catch((err) => {
+          console.warn(`adminCreateCards: failed to notify operators for tenant ${tenantKey}: ${err?.message || err}`)
+        })
+      )
+    }
+    if (notifyPromises.length) {
+      await Promise.allSettled(notifyPromises)
+    }
+
     res.status(201).json({ count: created.length, items: created })
   } catch (e) {
     console.error('adminCreateCards error', e)
