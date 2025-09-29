@@ -24,6 +24,7 @@ import {
   claimOperatorTransfer,
   getActiveOperatorTransfer,
   createOperatorTransferIntent,
+  verifyOperatorTransferCheckout,
   completeOperatorTransfer,
   getOperatorTransferHistory
 } from '../controllers/operatorTransfer.controller.js'
@@ -48,6 +49,7 @@ router.get('/transfers/stats', resolveTenant, authenticate, authorizeOperator, g
 router.post('/transfers/claim', resolveTenant, authenticate, authorizeOperator, claimOperatorTransfer)
 router.get('/transfers/active', resolveTenant, authenticate, authorizeOperator, getActiveOperatorTransfer)
 router.post('/transfers/:id/create-intent', resolveTenant, authenticate, authorizeOperator, createOperatorTransferIntent)
+router.get('/transfers/:id/checkout/verify', resolveTenant, authenticate, authorizeOperator, verifyOperatorTransferCheckout)
 router.post('/transfers/:id/complete', resolveTenant, authenticate, authorizeOperator, completeOperatorTransfer)
 router.get('/transfers', resolveTenant, authenticate, authorizeOperator, listOperatorTransfers)
 router.post('/transfers', resolveTenant, authenticate, authorizeOperator, createOperatorTransfer)
