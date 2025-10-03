@@ -40,6 +40,8 @@ import WcVCardFactory from './WcVCard.js'
 import WcOperatorTransferFactory from './WcOperatorTransfer.js'
 import VaultOperatorNameFactory from './VaultOperatorName.js'
 import SubscriberFactory from './Subscriber.js'
+import ContractFactory from './Contract.js'
+import UserContractFactory from './UserContract.js'
 
 /* ---------- Construir objetos ---------- */
 const models = {
@@ -84,6 +86,8 @@ const models = {
   WcVCard        : WcVCardFactory(sequelize),
   VaultOperatorName: VaultOperatorNameFactory(sequelize),
   Subscriber     : SubscriberFactory(sequelize),
+  Contract      : ContractFactory(sequelize),
+  UserContract  : UserContractFactory(sequelize),
 
 }
 

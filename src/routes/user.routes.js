@@ -20,6 +20,7 @@ import {
   uploadBusinessDocs,
 } from "../controllers/roleRequest.controller.js"
 import { uploadImagesToS3Fields } from "../middleware/s3UploadFields.js"
+import { getUserContracts, getUserContractsSummary, acceptContract } from "../controllers/contract.controller.js"
 
 const router = Router()
 
@@ -58,6 +59,11 @@ router.post(
 
 // All below require authenticate
 router.use(authenticate)
+
+// Contracts
+router.get("/contracts", getUserContracts)
+router.get("/contracts/summary", getUserContractsSummary)
+router.post("/contracts/:id/accept", acceptContract)
 
 // User profile
 router.get("/me", getCurrentUser)

@@ -18,7 +18,7 @@ export default (sequelize) => {
       room_id: { type: DataTypes.INTEGER, allowNull: true, references: { model: 'room', key: 'id' } },
       discount_code_id: { type: DataTypes.INTEGER, allowNull: true, references: { model: 'discount_code', key: 'id' } },
 
-      source: { type: DataTypes.ENUM('TGX', 'PARTNER', 'OUTSIDE'), allowNull: false },
+      source: { type: DataTypes.ENUM('TGX', 'PARTNER', 'OUTSIDE', 'VAULT'), allowNull: false },
 
       external_ref: { type: DataTypes.STRING(120) },
 

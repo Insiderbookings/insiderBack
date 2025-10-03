@@ -95,6 +95,7 @@ export default (sequelize) => {
   User.associate = (models) => {
     User.hasMany(models.Message, { foreignKey: "user_id", as: "messages" });
     User.hasMany(models.Booking, { foreignKey: "user_id" });
+    User.hasMany(models.UserContract, { foreignKey: "user_id", as: "contractAcceptances", onDelete: "CASCADE" });
   };
 
   return User;
