@@ -7,6 +7,8 @@ import Stripe  from "stripe"
 import dotenv  from "dotenv"
 import models, { sequelize } from "../models/index.js";
 import { sendBookingEmail } from "../emailTemplates/booking-email.js";
+import { sendMail } from "../helpers/mailer.js";
+import { resolveVaultBranding } from "../helpers/vaultBranding.js";
 
 dotenv.config()
 
@@ -318,13 +320,19 @@ export const createPartnerPaymentIntent = async (req, res) => {
       discount_code_id = null,
       net_cost = null,
       captureManual,      // opcional: forzar auth+capture manual
-      source = "PARTNER", // forzado a PARTNER
+      source = "PARTNER",
     } = req.body;
 
-    console.log(req.body, "body")
+    const normalizedSource = String(source || "PARTNER").trim().toUpperCase();
+    const isVault = normalizedSource === "VAULT";
 
     if (!amount || !guestInfo?.fullName || !guestInfo?.email) {
       return res.status(400).json({ error: "amount, guestInfo.fullName y guestInfo.email son obligatorios" });
+    }
+
+    const amountNumber = Number(amount);
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      return res.status(400).json({ error: "amount debe ser numérico y mayor a 0" });
     }
 
     const checkInDO  = toDateOnly(bookingData.checkIn);
@@ -334,25 +342,98 @@ export const createPartnerPaymentIntent = async (req, res) => {
     }
 
     const hotelIdRaw = bookingData.localHotelId ?? bookingData.hotelId;
-    const roomIdRaw  = bookingData.roomId;
+    const roomIdRaw  = bookingData.roomId ?? bookingData.localRoomId;
 
-    if (!isNum(hotelIdRaw) || !isNum(roomIdRaw)) {
+    if (!isVault && (!isNum(hotelIdRaw) || !isNum(roomIdRaw))) {
       return res.status(400).json({ error: "hotelId y roomId numéricos son obligatorios para PARTNER" });
     }
-    const hotel_id = Number(hotelIdRaw);
-    const room_id  = Number(roomIdRaw);
+    const hotel_id = isNum(hotelIdRaw) ? Number(hotelIdRaw) : null;
+    const room_id  = isNum(roomIdRaw) ? Number(roomIdRaw) : null;
 
-    // (Opcional) validar que la room pertenece al hotel
-    const room = await models.Room.findOne({ where: { id: room_id, hotel_id } });
-    if (!room) {
-      return res.status(400).json({ error: "Room no encontrada o no pertenece al hotel indicado" });
+    if (!isVault && room_id != null) {
+      const room = await models.Room.findOne({ where: { id: room_id, hotel_id } });
+      if (!room) {
+        return res.status(400).json({ error: "Room no encontrada o no pertenece al hotel indicado" });
+      }
     }
+
+    const diffMillis = new Date(`${checkOutDO}T00:00:00Z`).getTime() - new Date(`${checkInDO}T00:00:00Z`).getTime();
+    const computedNights = Number.isFinite(diffMillis) ? Math.max(1, Math.round(diffMillis / 86_400_000)) : 1;
+    const nightsValue = Number.isFinite(Number(bookingData.nights)) && Number(bookingData.nights) > 0
+      ? Number(bookingData.nights)
+      : computedNights;
+
+    const adultsRaw = Number(bookingData.adults ?? guestInfo.adults);
+    const adultsCount = Number.isFinite(adultsRaw) && adultsRaw > 0 ? adultsRaw : 1;
+    const childrenRaw = Number(bookingData.children);
+    const childrenCount = Number.isFinite(childrenRaw) && childrenRaw >= 0 ? childrenRaw : 0;
 
     const currency3 = String(currency || "USD").slice(0, 3).toUpperCase();
 
     tx = await sequelize.transaction();
 
     const booking_ref = await generateUniqueBookingRef();
+
+    const metaBase = (bookingData.meta && typeof bookingData.meta === "object") ? { ...bookingData.meta } : {};
+    const existingSnapshot = (metaBase.snapshot && typeof metaBase.snapshot === "object") ? metaBase.snapshot : {};
+    const metaVaultBase = (metaBase.vault && typeof metaBase.vault === "object") ? metaBase.vault : {};
+
+    const metaSnapshot = {
+      checkIn: bookingData.checkIn,
+      checkOut: bookingData.checkOut,
+      source: normalizedSource,
+      hotelId: hotel_id,
+      roomId: room_id,
+      roomName: bookingData.roomName || bookingData.roomType || metaVaultBase.roomName || null,
+    };
+
+    const tenantDomain = String(req.headers["x-tenant-domain"] || req.headers["x-tenant"] || "").trim();
+
+    const meta = {
+      ...metaBase,
+      channel: metaBase.channel || (isVault ? "vaults" : metaBase.channel),
+      specialRequests: guestInfo.specialRequests || metaBase.specialRequests || "",
+      origin: isVault ? "vault.create-payment-intent" : "partner-payment.create-payment-intent",
+      snapshot: {
+        ...existingSnapshot,
+        ...metaSnapshot,
+      },
+      ...(req.body.discount ? { discount: req.body.discount } : {}),
+    };
+    if (Object.prototype.hasOwnProperty.call(meta, "vault")) delete meta.vault;
+
+    if (isVault) {
+      const nightlyRaw = Number(bookingData.nightlyRate ?? metaVaultBase.nightlyRate);
+      const nightlyRate = Number.isFinite(nightlyRaw) && nightlyRaw > 0
+        ? nightlyRaw
+        : Math.round((amountNumber / nightsValue) * 100) / 100;
+
+      meta.vault = {
+        hotelName: bookingData.hotelName || bookingData.propertyName || metaVaultBase.hotelName || null,
+        hotelAddress: bookingData.hotelAddress || bookingData.location || metaVaultBase.hotelAddress || null,
+        roomName: bookingData.roomName || bookingData.roomType || metaVaultBase.roomName || null,
+        roomDescription: bookingData.roomDescription || metaVaultBase.roomDescription || null,
+        roomImage: bookingData.roomImage || metaVaultBase.roomImage || null,
+        ratePlan: bookingData.ratePlan || metaVaultBase.ratePlan || null,
+        nights: nightsValue,
+        nightlyRate,
+        currency: currency3,
+        totalAmount: amountNumber,
+        guests: {
+          adults: adultsCount,
+          children: childrenCount,
+        },
+        roomsCount: Number.isFinite(Number(bookingData.rooms))
+          ? Number(bookingData.rooms)
+          : (Number.isFinite(Number(metaVaultBase.roomsCount)) ? Number(metaVaultBase.roomsCount) : 1),
+        tenantDomain: tenantDomain || metaVaultBase.tenantDomain || null,
+        contact: {
+          email: guestInfo.email,
+          phone: guestInfo.phone || null,
+          fullName: guestInfo.fullName,
+        },
+      };
+    }
 
     const booking = await models.Booking.create({
       booking_ref,
@@ -362,13 +443,13 @@ export const createPartnerPaymentIntent = async (req, res) => {
       room_id,
       discount_code_id,
 
-      source,
-      external_ref: null, // partners: si el PMS genera algo, lo podrás setear en confirm
+      source: normalizedSource,
+      external_ref: isVault ? booking_ref : null,
 
       check_in:  checkInDO,
       check_out: checkOutDO,
-      adults:    Number(bookingData.adults || 1),
-      children:  Number(bookingData.children || 0),
+      adults:    adultsCount,
+      children:  childrenCount,
 
       guest_name:  String(guestInfo.fullName || "").slice(0, 120),
       guest_email: String(guestInfo.email || "").slice(0, 150),
@@ -376,7 +457,7 @@ export const createPartnerPaymentIntent = async (req, res) => {
 
       status:          "PENDING",
       payment_status:  "UNPAID",
-      gross_price:     Number(amount),
+      gross_price:     amountNumber,
       net_cost:        net_cost != null ? Number(net_cost) : null,
       currency:        currency3,
 
@@ -385,20 +466,7 @@ export const createPartnerPaymentIntent = async (req, res) => {
 
       rate_expires_at: bookingData.rateExpiresAt || null,
 
-      meta: {
-        specialRequests: guestInfo.specialRequests || "",
-        origin: "partner-payment.create-payment-intent",
-        snapshot: {
-          checkIn: bookingData.checkIn,
-          checkOut: bookingData.checkOut,
-          source,
-          hotelId: hotel_id,
-          roomId: room_id,
-        },
-        // si mandas discount en req.body.discount, lo guardamos
-        ...(bookingData.meta && typeof bookingData.meta === "object" ? bookingData.meta : {}),
-        ...(req.body.discount ? { discount: req.body.discount } : {}),
-      },
+      meta,
     }, { transaction: tx });
 
     const wantManualCapture =
@@ -406,22 +474,27 @@ export const createPartnerPaymentIntent = async (req, res) => {
       String(process.env.STRIPE_CAPTURE_MANUAL || "").toLowerCase() === "true";
 
     const metadata = {
-      type: "partner_booking",
+      type: isVault ? "vault_booking" : "partner_booking",
+      source: normalizedSource,
       bookingRef: booking_ref,
       booking_id: String(booking.id),
-      hotelId: String(hotel_id),
-      roomId: String(room_id),
       guestName: trim500(guestInfo.fullName),
       guestEmail: trim500(guestInfo.email),
       checkIn: trim500(checkInDO),
       checkOut: trim500(checkOutDO),
     };
+    if (hotel_id) metadata.hotelId = String(hotel_id);
+    if (room_id) metadata.roomId = String(room_id);
+
+    const description = isVault
+      ? `Vault booking ${booking_ref} ${checkInDO}→${checkOutDO}`
+      : `Partner booking H${hotel_id ?? "NA"} R${room_id ?? "NA"} ${checkInDO}→${checkOutDO}`;
 
     const paymentIntentPayload = {
-      amount: Math.round(Number(amount) * 100),
+      amount: Math.round(amountNumber * 100),
       currency: currency3.toLowerCase(),
       automatic_payment_methods: { enabled: true },
-      description: `Partner booking H${hotel_id} R${room_id} ${checkInDO}→${checkOutDO}`,
+      description,
       metadata,
     };
     if (wantManualCapture) paymentIntentPayload.capture_method = "manual";
@@ -441,23 +514,18 @@ export const createPartnerPaymentIntent = async (req, res) => {
       bookingRef: booking_ref,
       bookingId: booking.id,
       currency: currency3,
-      amount: Number(amount),
+      amount: amountNumber,
       status: "PENDING_PAYMENT",
       captureManual: wantManualCapture,
     });
   } catch (err) {
-    if (tx) { try { await tx.rollback(); } catch (_) {} }
-    console.error("❌ partner create-payment-intent error:", err);
+    if (tx) {
+      try { await tx.rollback(); } catch (_) {}
+    }
+    console.error("createPaymentIntent error:", err);
     return res.status(500).json({ error: err.message });
   }
 };
-
-/* ╔══════════════════════════════════════════════════════════════════════╗
-   ║  PARTNER: CONFIRMAR PAGO Y CONFIRMAR BOOKING LOCAL                   ║
-   ╚══════════════════════════════════════════════════════════════════════╝ */
-// ────────────────────────────────────────────────────────────────
-// PARTNER
-// ────────────────────────────────────────────────────────────────
 export const confirmPartnerPayment = async (req, res) => {
   try {
     const { paymentIntentId, bookingRef, captureManual, discount } = req.body;
@@ -678,28 +746,107 @@ export const confirmPartnerPayment = async (req, res) => {
         ],
       });
       const h = fullBooking?.Hotel || {};
+      const bookingMeta = fullBooking?.meta && typeof fullBooking.meta === "object" ? fullBooking.meta : {};
+      const vaultMeta = bookingMeta.vault && typeof bookingMeta.vault === "object" ? bookingMeta.vault : {};
+      const guestsInfo = vaultMeta.guests && typeof vaultMeta.guests === "object" ? vaultMeta.guests : {};
+
+      const hotelName = h?.name || h?.hotelName || vaultMeta.hotelName || (bookingMeta.snapshot && typeof bookingMeta.snapshot === "object" ? bookingMeta.snapshot.hotelName : null);
+      const hotelAddress = [h?.address, h?.city, h?.country].filter(Boolean).join(", ") || vaultMeta.hotelAddress || null;
+      const roomsCount = booking.rooms || (Number.isFinite(Number(vaultMeta.roomsCount)) ? Number(vaultMeta.roomsCount) : 1);
+
+      const bookingEmailPayload = {
+        id: booking.id,
+        bookingCode: booking.external_ref || booking.id,
+        guestName: booking.guest_name,
+        guests: {
+          adults: booking.adults ?? (Number.isFinite(Number(guestsInfo.adults)) ? Number(guestsInfo.adults) : 1),
+          children: booking.children ?? (Number.isFinite(Number(guestsInfo.children)) ? Number(guestsInfo.children) : 0),
+        },
+        roomsCount,
+        checkIn: booking.check_in,
+        checkOut: booking.check_out,
+        hotel: {
+          name: hotelName,
+          address: hotelAddress,
+          phone: h?.phone || (vaultMeta.contact && vaultMeta.contact.phone) || null,
+          country: h?.country || null,
+          city: h?.city || null,
+        },
+        currency: booking.currency,
+        totals: { total: booking.gross_price },
+      };
+
+      let vaultEmailBranding = null;
+      if (booking.source === "VAULT") {
+        try {
+          vaultEmailBranding = await resolveVaultBranding({
+            tenantDomain: vaultMeta.tenantDomain || vaultMeta.publicDomain || null,
+            fallbackName: hotelName,
+          });
+          if (vaultEmailBranding) {
+            const footerIntro = vaultEmailBranding.footerIntroText || (hotelName ? `We look forward to welcoming you to ${hotelName}.` : null);
+            const headerTitle = vaultEmailBranding.headerTitle || hotelName || vaultEmailBranding.brandName;
+            vaultEmailBranding = {
+              ...vaultEmailBranding,
+              footerIntroText: footerIntro || vaultEmailBranding.footerIntroText,
+              headerTitle,
+            };
+          }
+        } catch (brandingErr) {
+          console.warn("(VAULT) Branding lookup failed:", brandingErr?.message || brandingErr);
+        }
+      }
 
       await sendBookingEmail(
-        {
-          id: booking.id,
-          bookingCode: booking.external_ref || booking.id,
-          guestName: booking.guest_name,
-          guests: { adults: booking.adults, children: booking.children },
-          roomsCount: booking.rooms || 1,
-          checkIn: booking.check_in,
-          checkOut: booking.check_out,
-          hotel: {
-            name: h?.name || h?.hotelName,
-            address: [h?.address, h?.city, h?.country].filter(Boolean).join(", "),
-            phone: h?.phone,
-            country: h?.country,
-            city: h?.city,
-          },
-          currency: booking.currency,
-          totals: { total: booking.gross_price },
-        },
-        booking.guest_email
+        bookingEmailPayload,
+        booking.guest_email,
+        vaultEmailBranding ? { branding: vaultEmailBranding } : undefined
       );
+
+      if (booking.source === "VAULT") {
+        try {
+          const notifyTo = process.env.VAULT_BOOKINGS_NOTIFY || "insiderbookings@insiderbookings.com";
+          if (notifyTo) {
+            const guestPhone = (vaultMeta.contact && vaultMeta.contact.phone) || booking.guest_phone || null;
+            const contactLine = [booking.guest_email, guestPhone].filter(Boolean).join(" · ");
+            const ms = (() => {
+              try {
+                return new Date(booking.check_out).getTime() - new Date(booking.check_in).getTime();
+              } catch (_) {
+                return NaN;
+              }
+            })();
+            const computedNights = Number.isFinite(ms) ? Math.max(1, Math.round(ms / 86_400_000)) : null;
+            const nightsValue = Number.isFinite(Number(vaultMeta.nights)) ? Number(vaultMeta.nights) : computedNights;
+            const nightsFragment = nightsValue ? ` (${nightsValue} noche${nightsValue === 1 ? "" : "s"})` : "";
+            const amountTotal = Number(booking.gross_price ?? vaultMeta.totalAmount ?? 0);
+            const amountDisplay = Number.isFinite(amountTotal) ? amountTotal.toFixed(2) : "0.00";
+            const tenantDomain = vaultMeta.tenantDomain || null;
+            const safe = (value) => (value == null || value === "" ? "-" : String(value));
+            const subject = `[Vault] Nueva reserva ${booking.external_ref || booking.id}`;
+            const html = `
+              <h2 style="margin:0 0 12px;color:#0f172a;">Nueva reserva Vault confirmada</h2>
+              <p style="margin:0 0 16px;color:#334155;">Se confirmó una nueva reserva originada en Vault.</p>
+              <table style="border-collapse:collapse;width:100%;max-width:560px;font-size:14px;">
+                <tbody>
+                  <tr><td style="padding:8px;border:1px solid #e2e8f0;background:#f8fafc;">Booking</td><td style="padding:8px;border:1px solid #e2e8f0;">${safe(booking.external_ref || booking.id)}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #e2e8f0;background:#f8fafc;">Huésped</td><td style="padding:8px;border:1px solid #e2e8f0;">${safe(booking.guest_name)}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #e2e8f0;background:#f8fafc;">Contacto</td><td style="padding:8px;border:1px solid #e2e8f0;">${safe(contactLine)}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #e2e8f0;background:#f8fafc;">Fechas</td><td style="padding:8px;border:1px solid #e2e8f0;">${safe(booking.check_in)} → ${safe(booking.check_out)}${nightsFragment}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #e2e8f0;background:#f8fafc;">Habitación</td><td style="padding:8px;border:1px solid #e2e8f0;">${safe(vaultMeta.roomName)}${vaultMeta.ratePlan ? ` · ${safe(vaultMeta.ratePlan)}` : ""}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #e2e8f0;background:#f8fafc;">Hotel</td><td style="padding:8px;border:1px solid #e2e8f0;">${safe(hotelName)}${hotelAddress ? `<br>${safe(hotelAddress)}` : ""}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #e2e8f0;background:#f8fafc;">Importe</td><td style="padding:8px;border:1px solid #e2e8f0;">${booking.currency} ${amountDisplay}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #e2e8f0;background:#f8fafc;">Stripe Intent</td><td style="padding:8px;border:1px solid #e2e8f0;">${safe(booking.payment_intent_id)}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #e2e8f0;background:#f8fafc;">Tenant</td><td style="padding:8px;border:1px solid #e2e8f0;">${safe(tenantDomain)}</td></tr>
+                </tbody>
+              </table>
+            `;
+            await sendMail({ to: notifyTo, subject, html });
+          }
+        } catch (notifyErr) {
+          console.warn("⚠️ No se pudo notificar la reserva Vault:", notifyErr?.message || notifyErr);
+        }
+      }
     } catch (mailErr) {
       console.warn("⚠️ No se pudo enviar el mail de confirmación (partner):", mailErr?.message || mailErr);
     }

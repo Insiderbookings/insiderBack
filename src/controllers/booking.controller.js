@@ -227,6 +227,8 @@ export const getBookingsUnified = async (req, res) => {
               ? "tgx"
               : obj.source === "OUTSIDE"
               ? "outside"
+              : obj.source === "VAULT"
+              ? "vault"
               : "insider"
           return mapStay(obj, channel)
         })
@@ -279,7 +281,7 @@ export const lookupBookingPublic = async (req, res) => {
 
     if (!row) return res.status(404).json({ error: "Booking not found" })
 
-    const source = row.source === "OUTSIDE" ? "outside" : row.source === "TGX" ? "tgx" : "insider"
+    const source = row.source === "OUTSIDE" ? "outside" : row.source === "TGX" ? "tgx" : row.source === "VAULT" ? "vault" : "insider"
     const hotelName = row.Hotel?.name ?? null
     return res.json({ id: row.id, source, hotelName, checkIn: row.check_in, checkOut: row.check_out })
   } catch (err) {
@@ -859,3 +861,5 @@ export const downloadBookingCertificate = async (req, res) => {
    Autorización: owner de la booking, staff o admin.
 ----------------------------------------------------------- */
 // requestRefund endpoint was removed — cancellation flow handles refunds.
+
+

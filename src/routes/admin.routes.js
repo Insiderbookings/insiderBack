@@ -12,6 +12,7 @@ import {
 } from "../controllers/roleRequest.controller.js"
 import { adminListSubscribers, adminBroadcastEmail } from "../controllers/subscriber.controller.js"
 import { adminListTransfers, adminCreateTransfer, adminCancelTransfer } from "../controllers/operatorTransfer.controller.js"
+import { adminListContracts, adminCreateContract, adminUpdateContract, adminDeleteContract } from "../controllers/contract.controller.js"
 
 const router = Router()
 
@@ -49,6 +50,12 @@ router.post("/role-requests/:id/reject", authenticate, authorizeRoles(100), admi
 // Subscribers
 router.get("/subscribers", authenticate, authorizeRoles(100), adminListSubscribers)
 router.post("/subscribers/broadcast", authenticate, authorizeRoles(100), adminBroadcastEmail)
+
+// Contracts
+router.get("/contracts", authenticate, authorizeRoles(100), adminListContracts)
+router.post("/contracts", authenticate, authorizeRoles(100), adminCreateContract)
+router.put("/contracts/:id", authenticate, authorizeRoles(100), adminUpdateContract)
+router.delete("/contracts/:id", authenticate, authorizeRoles(100), adminDeleteContract)
 
 export default router
 
