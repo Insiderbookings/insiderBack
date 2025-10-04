@@ -6,6 +6,7 @@ const DEFAULT_BRAND = {
   fromName: "Insider Bookings",
 }
 
+// Cache keyed by domain + config timestamp so updates invalidate properly
 const cache = new Map()
 
 const sanitizeEmail = (value) => {
@@ -57,14 +58,11 @@ const domainVariants = (domain) => {
 }
 
 export async function resolveVaultBranding({ tenantDomain, fallbackName, fallbackEmail, overrides = {} } = {}) {
-  const key = (tenantDomain || "").trim().toLowerCase()
-  if (cache.has(key)) {
-    return { ...DEFAULT_BRAND, ...cache.get(key), ...(overrides || {}) }
-  }
+  const domainKey = (tenantDomain || "").trim().toLowerCase()
 
   let tenant = null
-  if (key) {
-    const variants = domainVariants(key)
+  if (domainKey) {
+    const variants = domainVariants(domainKey)
     if (variants.length) {
       tenant = await models.WcTenant.findOne({
         where: {
@@ -82,6 +80,17 @@ export async function resolveVaultBranding({ tenantDomain, fallbackName, fallbac
   const settings = siteConfig && typeof siteConfig.templateSettings === "object" ? siteConfig.templateSettings : {}
   const mailer = settings && typeof settings.mailer === "object" ? settings.mailer : {}
 
+  const updatedStamp =
+    siteConfig?.updatedAt?.getTime?.() ||
+    settings?.updatedAt?.getTime?.() ||
+    tenant?.updatedAt?.getTime?.() ||
+    null
+  const cacheKey = domainKey ? `${domainKey}::${updatedStamp ?? ""}` : ""
+
+  if (cacheKey && cache.has(cacheKey)) {
+    return { ...DEFAULT_BRAND, ...cache.get(cacheKey), ...(overrides || {}) }
+  }
+
   const brandName = firstNonEmpty(mailer.brandName, settings.brandName, tenant?.name, fallbackName, DEFAULT_BRAND.brandName)
   const fromEmailRaw = sanitizeEmail(firstNonEmpty(mailer.fromEmail, settings.fromEmail, fallbackEmail))
   const replyTo = sanitizeEmail(firstNonEmpty(mailer.replyTo, settings.replyTo, overrides.replyTo))
@@ -91,6 +100,25 @@ export async function resolveVaultBranding({ tenantDomain, fallbackName, fallbac
   const backgroundColor = firstNonEmpty(mailer.backgroundColor, settings.backgroundColor, overrides.backgroundColor)
   const bodyBackground = firstNonEmpty(mailer.bodyBackground, settings.bodyBackground, overrides.bodyBackground)
   const textColor = firstNonEmpty(mailer.textColor, overrides.textColor)
+
+  const smtpRaw = mailer.smtp && typeof mailer.smtp === "object" ? mailer.smtp : null
+  let smtpConfig
+  if (smtpRaw) {
+    const host = firstNonEmpty(smtpRaw.host)
+    const user = firstNonEmpty(smtpRaw.user, smtpRaw.username)
+    const pass = firstNonEmpty(smtpRaw.pass, smtpRaw.password)
+    const portValue = smtpRaw.port != null ? Number(smtpRaw.port) : undefined
+    const secureValue = smtpRaw.secure != null ? Boolean(smtpRaw.secure) : smtpRaw.tls != null ? Boolean(smtpRaw.tls) : undefined
+    const poolValue = smtpRaw.pool != null ? Boolean(smtpRaw.pool) : undefined
+
+    if (host || user || pass || Number.isFinite(portValue) || secureValue !== undefined || poolValue !== undefined) {
+      smtpConfig = { host, user, pass }
+      if (Number.isFinite(portValue)) smtpConfig.port = portValue
+      if (secureValue !== undefined) smtpConfig.secure = secureValue
+      if (poolValue !== undefined) smtpConfig.pool = poolValue
+    }
+  }
+
   const headerAlign = firstNonEmpty(mailer.headerAlign, overrides.headerAlign)
   const headerTitle = firstNonEmpty(mailer.headerTitle, overrides.headerTitle)
   const headerSubtitle = firstNonEmpty(mailer.headerSubtitle, settings.headerSubtitle, overrides.headerSubtitle)
@@ -141,14 +169,17 @@ export async function resolveVaultBranding({ tenantDomain, fallbackName, fallbac
     paymentLabel,
     socialLinks: Array.isArray(mailer.socialLinks) ? mailer.socialLinks : undefined,
     attachCertificate: mailer.attachCertificate,
+    smtp: smtpConfig,
     cc: normalizeList(mailer.cc || overrides.cc),
     bcc: normalizeList(mailer.bcc || overrides.bcc),
   }
 
-  if (!fromEmailRaw && process.env.MAIL_FROM) {
+  if (!branding.fromEmail && process.env.MAIL_FROM) {
     branding.fromEmail = process.env.MAIL_FROM
   }
 
-  if (key) cache.set(key, branding)
+  if (cacheKey) cache.set(cacheKey, branding)
+
   return { ...DEFAULT_BRAND, ...branding, ...(overrides || {}) }
 }
+
