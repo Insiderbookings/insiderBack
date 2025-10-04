@@ -1,4 +1,4 @@
-ï»¿import { sendMail } from "../helpers/mailer.js"
+import { sendMail } from "../helpers/mailer.js"
 import { bufferCertificatePDF } from "../helpers/bookingCertificate.js"
 import { getBaseEmailTemplate } from "./base-template.js"
 import dayjs from "dayjs"
@@ -6,7 +6,9 @@ import dayjs from "dayjs"
 function renderTemplate(template, context) {
   if (!template) return ""
   return String(template).replace(/{{\s*([\w.]+)\s*}}/g, (_, key) => {
-    const value = key.split(".").reduce((acc, part) => (acc != null && acc[part] !== undefined ? acc[part] : undefined), context)
+    const value = key
+      .split(".")
+      .reduce((acc, part) => (acc != null && acc[part] !== undefined ? acc[part] : undefined), context)
     return value == null ? "" : String(value)
   })
 }
@@ -17,7 +19,7 @@ export async function sendBookingEmail(booking, toEmail, options = {}) {
 
   const brandName = branding.brandName || "Insider Bookings"
   const guestName = booking.guestName || "Guest"
-  const hotelName = booking.hotel?.name || booking.hotel?.hotelName || "-"
+  const hotelName = booking.hotel?.name || booking.hotel?.hotelName || booking.hotel?.propertyName || "-"
   const nights = booking.totals?.nights ?? Math.max(1, dayjs(booking.checkOut).diff(dayjs(booking.checkIn), "day"))
   const totalAmount = Number(booking.totals?.total || 0)
 
@@ -36,11 +38,11 @@ export async function sendBookingEmail(booking, toEmail, options = {}) {
     nights,
   }
 
-  const introTemplate = branding.introText || "Dear {{guestName}}, thank you for choosing {{brandName}}. Below are the details of your stay."
+  const introTemplate =
+    branding.introText || "Dear {{guestName}}, thank you for choosing {{brandName}}. Below are the details of your stay."
   const intro = renderTemplate(introTemplate, context)
 
-  const guestsChildrenPart = booking.guests?.children ? " +" + booking.guests.children : ""
-  const guestsDisplay = `${booking.guests?.adults ?? 2}${guestsChildrenPart}`
+  const guestsDisplay = `${booking.guests?.adults ?? 2}${booking.guests?.children ? ` +${booking.guests.children}` : ""}`
   const roomsDisplay = booking.roomsCount ?? 1
 
   const content = `
@@ -109,7 +111,7 @@ export async function sendBookingEmail(booking, toEmail, options = {}) {
       headerColor: branding.primaryColor,
       accentColor: branding.accentColor,
       headerTagline: branding.pdfTagline || branding.tagline || "Booking Confirmation",
-      footerNote: branding.pdfFooterText || branding.footerText || `\u00a9 ${new Date().getFullYear()} ${brandName}`,
+      footerNote: branding.pdfFooterText || branding.footerText || `© ${new Date().getFullYear()} ${brandName}`,
       rateLabel: branding.rateLabel,
       taxLabel: branding.taxLabel,
       totalLabel: branding.totalLabel,
@@ -140,5 +142,6 @@ export async function sendBookingEmail(booking, toEmail, options = {}) {
     ...(branding.replyTo ? { replyTo: branding.replyTo } : {}),
     ...(branding.cc ? { cc: branding.cc } : {}),
     ...(branding.bcc ? { bcc: branding.bcc } : {}),
+    smtp: branding.smtp,
   })
 }
