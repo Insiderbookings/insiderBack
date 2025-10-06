@@ -1,4 +1,5 @@
 import models from "../models/index.js";
+import sendContractNotificationEmail from "../services/sendContractNotificationEmail.js";
 const toPlain = (entity) => (entity && typeof entity.get === "function" ? entity.get({ plain: true }) : entity);
 
 const serializeContract = (entity) => {
@@ -30,6 +31,31 @@ const serializeAcceptance = (entity) => {
     acceptedUserAgent: a.accepted_user_agent || null,
     contract: serializeContract(a.contract),
   };
+};
+
+const notifyUsersOfNewContract = async (contractEntity) => {
+  try {
+    const plain = toPlain(contractEntity);
+    if (!plain) return;
+
+    const role = Number(plain.role);
+    const isActive = plain.is_active ?? plain.isActive ?? true;
+    if (!role || role === 0 || !isActive) return;
+
+    const users = await models.User.findAll({
+      where: { role, is_active: true },
+      attributes: ["id", "name", "email"],
+    });
+
+    const recipients = users.filter((user) => user?.email);
+    if (recipients.length === 0) return;
+
+    await Promise.allSettled(
+      recipients.map((user) => sendContractNotificationEmail(user, plain))
+    );
+  } catch (err) {
+    console.error("notifyUsersOfNewContract error:", err);
+  }
 };
 
 export const adminListContracts = async (req, res, next) => {
@@ -98,6 +124,8 @@ export const adminCreateContract = async (req, res, next) => {
         { model: models.UserContract, as: "acceptances", attributes: ["id"], required: false, paranoid: false },
       ],
     });
+
+    notifyUsersOfNewContract(created);
 
     return res.status(201).json({ contract: { ...serializeContract(created), acceptedCount: 0 } });
   } catch (err) {

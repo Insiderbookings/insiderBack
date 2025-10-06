@@ -13,6 +13,7 @@ import {
   /* Users  */
   registerUser,
   loginUser,
+  requestPasswordReset,
   verifyEmail,
 
   /* Magic-link  */
@@ -59,6 +60,12 @@ router.post(
 );
 
 router.post("/user/login", loginUser);
+
+router.post(
+  "/user/forgot-password",
+  [ body("email").isEmail() ],
+  requestPasswordReset,
+);
 
 /* ════════════════════════════════════════════════════════════════
    SOCIAL LOGIN — Google (GIS popup + Authorization Code con PKCE)
