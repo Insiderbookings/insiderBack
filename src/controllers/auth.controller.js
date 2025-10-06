@@ -4,9 +4,11 @@ import jwt from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import models from "../models/index.js";
 import dotenv from "dotenv";
+import { Op } from "sequelize";
 import { sequelize } from "../models/index.js";
 import { random4 } from "../utils/random4.js";
 import transporter from "../services/transporter.js";
+import sendPasswordResetEmail from "../services/sendPasswordResetEmail.js";
 import { OAuth2Client } from "google-auth-library"; // ← para Google Sign-In
 import { getBaseEmailTemplate } from "../emailTemplates/base-template.js";
 
@@ -295,19 +297,59 @@ export const loginUser = async (req, res) => {
   }
 };
 
+export const requestPasswordReset = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ error: errors.array()[0].msg });
+  }
+
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+
+  const genericResponse = { message: "If the email exists, we sent reset instructions." };
+
+  try {
+    const user = await models.User.findOne({
+      where: { email: { [Op.iLike]: email } },
+    });
+
+    if (!user || !user.password_hash) {
+      return res.json(genericResponse);
+    }
+
+    if (user.auth_provider && user.auth_provider !== "local") {
+      return res.json(genericResponse);
+    }
+
+    await sendPasswordResetEmail(user);
+
+    return res.json(genericResponse);
+  } catch (err) {
+    console.error("requestPasswordReset error:", err);
+    return res.status(500).json({ error: "Unable to process password reset" });
+  }
+};
+
 /* ────────────────────────────────────────────────────────────────
    TOKEN: Validar token (lectura)
    ──────────────────────────────────────────────────────────────── */
-export const validateToken = (req, res) => {
+export const validateToken = async (req, res) => {
   const { token } = req.params;
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    /* opcional: limitar solo a ciertos tipos de token
-       if (decoded.action !== "set-password") …           */
+    const action = decoded?.action ?? null;
+    let name = null;
 
-    return res.json({ valid: true, payload: decoded });
+    if (decoded?.type === "user" && ["set-password", "reset-password"].includes(action)) {
+      const user = await models.User.findByPk(decoded.id, { attributes: ["name"] });
+      name = user?.name || null;
+    }
+
+    return res.json({ valid: true, payload: decoded, name, action });
   } catch (err) {
     console.log(err);
     return res.status(400).json({
@@ -355,7 +397,7 @@ export const setPasswordWithToken = async (req, res) => {
     /* 1. verificar firma y expiración ------------- */
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    if (decoded.type !== "user" || decoded.action !== "set-password")
+    if (decoded.type !== "user" || !["set-password", "reset-password"].includes(decoded.action))
       return res.status(400).json({ error: "Invalid token" });
 
     /* 2. encontrar usuario ----------------------- */
