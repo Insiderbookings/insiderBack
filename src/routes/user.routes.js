@@ -9,6 +9,7 @@ import {
   requestPartnerInfo,
   getInfluencerCommissions,
   adminCreateInfluencerPayoutBatch,
+  becomeHost,
 } from "../controllers/user.controller.js"
 import { authenticate, authorizeRoles } from "../middleware/auth.js"
 import {
@@ -70,5 +71,6 @@ router.get("/me", getCurrentUser)
 router.put("/me", updateUserProfile)
 router.put("/me/password", changePassword)
 router.delete("/me", deleteAccount)
+router.post("/me/become-host", becomeHost)
 
 export default router

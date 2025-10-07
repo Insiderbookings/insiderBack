@@ -1,5 +1,5 @@
 ﻿import bcrypt from "bcrypt"
-import models from "../models/index.js"
+import models, { sequelize } from "../models/index.js"
 import { Op } from "sequelize" // â† Agregar esta importaciÃ³n
 import { sendMail } from "../helpers/mailer.js"
 
@@ -17,6 +17,7 @@ export const getCurrentUser = async (req, res) => {
         "avatar_url",
         "createdAt",
       ],
+      include: [{ model: models.HostProfile, as: "hostProfile" }],
     })
     if (!user) return res.status(404).json({ error: "User not found" })
     return res.json(user.get({ plain: true }))
@@ -192,6 +193,77 @@ export const deleteAccount = async (req, res) => {
   } catch (err) {
     console.error("Error deleting account:", err)
     return res.status(500).json({ error: "Server error" })
+  }
+}
+
+export const becomeHost = async (req, res) => {
+  const userId = req.user.id
+  const {
+    biography,
+    languages,
+    phoneNumber,
+    supportEmail,
+    timezone,
+    metadata,
+  } = req.body || {}
+
+  try {
+    const result = await sequelize.transaction(async (t) => {
+      const user = await models.User.findByPk(userId, { transaction: t, lock: t.LOCK.UPDATE })
+      if (!user) throw new Error("User not found")
+
+      if (user.role !== 6) {
+        await user.update({ role: 6 }, { transaction: t })
+      }
+
+      const normalizedLanguages = Array.isArray(languages)
+        ? languages
+        : languages
+        ? [languages]
+        : undefined
+
+      const [profile, created] = await models.HostProfile.findOrCreate({
+        where: { user_id: userId },
+        defaults: {
+          user_id: userId,
+          biography: biography ?? null,
+          languages: normalizedLanguages ?? [],
+          phone_number: phoneNumber ?? null,
+          support_email: supportEmail ?? null,
+          timezone: timezone ?? null,
+          metadata: metadata ?? null,
+        },
+        transaction: t,
+      })
+
+      const profileUpdates = {}
+      if (biography !== undefined) profileUpdates.biography = biography
+      if (normalizedLanguages !== undefined) profileUpdates.languages = normalizedLanguages
+      if (phoneNumber !== undefined) profileUpdates.phone_number = phoneNumber
+      if (supportEmail !== undefined) profileUpdates.support_email = supportEmail
+      if (timezone !== undefined) profileUpdates.timezone = timezone
+      if (metadata !== undefined) profileUpdates.metadata = metadata
+
+      if (!created && Object.keys(profileUpdates).length) {
+        await profile.update(profileUpdates, { transaction: t })
+      }
+
+      return user.reload({
+        include: [{ model: models.HostProfile, as: "hostProfile" }],
+        transaction: t,
+      })
+    })
+
+    return res.json({
+      message: "Host profile ready",
+      user: result,
+    })
+  } catch (err) {
+    console.error("Error creating host profile:", err)
+    if (err.message === "User not found") {
+      return res.status(404).json({ error: "User not found" })
+    }
+    return res.status(500).json({ error: "Unable to create host profile" })
   }
 }
 

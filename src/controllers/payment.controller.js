@@ -444,10 +444,13 @@ export const createPartnerPaymentIntent = async (req, res) => {
       discount_code_id,
 
       source: normalizedSource,
+      inventory_type: isVault ? "MANUAL_HOTEL" : "LOCAL_HOTEL",
+      inventory_id: hotel_id ? `hotel:${hotel_id}` : null,
       external_ref: isVault ? booking_ref : null,
 
       check_in:  checkInDO,
       check_out: checkOutDO,
+      nights:    nightsValue,
       adults:    adultsCount,
       children:  childrenCount,
 
@@ -460,6 +463,7 @@ export const createPartnerPaymentIntent = async (req, res) => {
       gross_price:     amountNumber,
       net_cost:        net_cost != null ? Number(net_cost) : null,
       currency:        currency3,
+      privacy_level:   bookingData.privacyLevel || "ENTIRE_PLACE",
 
       payment_provider:  "STRIPE",
       payment_intent_id: null,
@@ -467,6 +471,27 @@ export const createPartnerPaymentIntent = async (req, res) => {
       rate_expires_at: bookingData.rateExpiresAt || null,
 
       meta,
+      inventory_snapshot: {
+        hotelId: hotel_id,
+        roomId: room_id,
+        hotelName: bookingData.hotelName || null,
+        roomName: bookingData.roomName || bookingData.roomType || null,
+        location: bookingData.location || null,
+      },
+      guest_snapshot: {
+        name: guestInfo.fullName,
+        email: guestInfo.email,
+        phone: guestInfo.phone || null,
+        adults: adultsCount,
+        children: childrenCount,
+      },
+      pricing_snapshot: {
+        baseAmount: amountNumber,
+        netCost: net_cost != null ? Number(net_cost) : null,
+        currency: currency3,
+        nights: nightsValue,
+        rooms: Number.isFinite(Number(bookingData.rooms)) && Number(bookingData.rooms) > 0 ? Number(bookingData.rooms) : 1,
+      },
     }, { transaction: tx });
 
     const wantManualCapture =
@@ -894,3 +919,8 @@ export const handlePartnerWebhook = async (req, res) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 };
+
+
+
+
+

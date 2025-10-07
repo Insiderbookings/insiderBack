@@ -95,8 +95,51 @@ export default (sequelize) => {
   User.associate = (models) => {
     User.hasMany(models.Message, { foreignKey: "user_id", as: "messages" });
     User.hasMany(models.Booking, { foreignKey: "user_id" });
-    User.hasMany(models.UserContract, { foreignKey: "user_id", as: "contractAcceptances", onDelete: "CASCADE" });
+    User.hasMany(models.UserContract, {
+      foreignKey: "user_id",
+      as: "contractAcceptances",
+      onDelete: "CASCADE",
+    });
+    if (models.HostProfile) {
+      User.hasOne(models.HostProfile, {
+        foreignKey: "user_id",
+        as: "hostProfile",
+        onDelete: "CASCADE",
+      });
+    }
   };
+
+  const ensureHostProfile = async (user, transaction) => {
+    const HOST_ROLE = 6;
+    if (user.role !== HOST_ROLE) return;
+    const HostProfile = sequelize.models.HostProfile;
+    if (!HostProfile) return;
+
+    const profile = await HostProfile.findOne({
+      where: { user_id: user.id },
+      transaction,
+    });
+    if (!profile) {
+      await HostProfile.create(
+        {
+          user_id: user.id,
+          kyc_status: "PENDING",
+          payout_status: "INCOMPLETE",
+        },
+        { transaction },
+      );
+    }
+  };
+
+  User.addHook("afterCreate", async (user, options) => {
+    await ensureHostProfile(user, options?.transaction);
+  });
+
+  User.addHook("afterUpdate", async (user, options) => {
+    if (user.changed("role")) {
+      await ensureHostProfile(user, options?.transaction);
+    }
+  });
 
   return User;
 };
