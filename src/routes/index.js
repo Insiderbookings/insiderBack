@@ -1,6 +1,6 @@
 import { Router } from "express"
 import authRoutes from "./auth.routes.js"
-import userRoutes from "./user.routes.js" // ← NUEVO
+import userRoutes from "./user.routes.js" // ??? NUEVO
 import hotelRoutes from "./hotel.routes.js"
 import roomRoutes from "./room.routes.js"
 import discountRoutes from "./discount.routes.js"
@@ -18,6 +18,7 @@ import tenantsWebconstructorRoutes from './tenants.webconstructor.routes.js'
 import vccRoutes from './vcc.routes.js'
 import operatorRoutes from './operator.routes.js'
 import adminRoutes from './admin.routes.js'
+import homeRoutes from './home.routes.js'
 
 const router = Router()
 
@@ -40,5 +41,6 @@ router.use("/tenants", tenantsWebconstructorRoutes)
 router.use("/tenants", vccRoutes)
 router.use("/operator", operatorRoutes)
 router.use("/admin", adminRoutes)
+router.use("/homes", homeRoutes)
 
 export default router

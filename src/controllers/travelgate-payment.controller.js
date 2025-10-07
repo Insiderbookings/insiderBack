@@ -486,7 +486,7 @@ export const createTravelgatePaymentIntent = async (req, res) => {
 
     await TGXMeta.create(
       {
-        booking_id: booking.id,
+        stay_id: booking.id,
         option_id: String(quoteOptionRefId),
         access: bookingData.access ? String(bookingData.access) : null,
         access_code: bookingData.access || null,
@@ -505,7 +505,7 @@ export const createTravelgatePaymentIntent = async (req, res) => {
       },
       { transaction: tx }
     )
-    dbg("✓ TGXMeta created for booking", { booking_id: booking.id })
+    dbg("✓ TGXMeta created for booking", { stay_id: booking.id })
 
     const metadata = {
       type: "travelgate_booking",
@@ -551,7 +551,7 @@ export const createTravelgatePaymentIntent = async (req, res) => {
       { payment_intent_id: paymentIntent.id, payment_provider: "STRIPE" },
       { transaction: tx }
     )
-    dbg("✓ Booking updated with PI:", { booking_id: booking.id, payment_intent_id: paymentIntent.id })
+    dbg("✓ Booking updated with PI:", { stay_id: booking.id, payment_intent_id: paymentIntent.id })
 
     await tx.commit()
     dbg("✓ Transaction committed")
@@ -799,7 +799,7 @@ export const confirmPaymentAndBook = async (req, res) => {
             user_id : !isStaffCode
               ? (Number.isFinite(Number(vb.user_id))  ? Number(vb.user_id)  : null)
               : null,
-            booking_id: booking.id,
+            stay_id: booking.id,
             starts_at: null,
             ends_at: null,
             max_uses: null,
@@ -876,10 +876,10 @@ export const confirmPaymentAndBook = async (req, res) => {
             const useHold = String(process.env.INFLUENCER_USE_HOLD || '').toLowerCase() === 'true'
 
             await models.InfluencerCommission.findOrCreate({
-              where: { booking_id: booking.id },
+              where: { stay_id: booking.id },
               defaults: {
                 influencer_user_id: dc.user_id,
-                booking_id: booking.id,
+                stay_id: booking.id,
                 discount_code_id: dc.id,
                 commission_base: baseType,
                 commission_rate_pct: ratePct,
@@ -1127,7 +1127,7 @@ export const bookWithCard = async (req, res) => {
 
     const tgxMeta = await TGXMeta.create(
       {
-        booking_id: booking.id,
+        stay_id: booking.id,
         option_id: String(optionRefId),
         access: bookingData.access ? String(bookingData.access) : null,
         access_code: bookingData.access || null,
@@ -1287,3 +1287,6 @@ export const handleTravelgateWebhook = async (req, res) => {
 
   return res.json({ received: true })
 }
+
+
+

@@ -1,22 +1,20 @@
 // src/models/TGXMeta.js
-import { DataTypes } from 'sequelize';
+import { DataTypes } from "sequelize";
 
 export default (sequelize) => {
-  const isMySQLFamily = ['mysql', 'mariadb'].includes(sequelize.getDialect());
+  const isMySQLFamily = ["mysql", "mariadb"].includes(sequelize.getDialect());
   const JSON_TYPE = isMySQLFamily ? DataTypes.JSON : DataTypes.JSONB;
 
   const TGXMeta = sequelize.define(
-    'TGXMeta',
+    "TGXMeta",
     {
       id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      stay_id: { type: DataTypes.INTEGER, allowNull: true },
+      booking_id: { type: DataTypes.INTEGER, allowNull: true },
 
-      // Dejo el tipo pero SIN references; la FK la agrega la asociación
-      booking_id: { type: DataTypes.INTEGER, allowNull: false },
-
-      /* ——— TravelgateX ——— */
       option_id: DataTypes.TEXT,
 
-      access: DataTypes.STRING,   // VARCHAR(255)
+      access: DataTypes.STRING,
       room_code: DataTypes.STRING,
       board_code: DataTypes.STRING,
       token: DataTypes.STRING,
@@ -38,7 +36,6 @@ export default (sequelize) => {
       price_net: DataTypes.DECIMAL(10, 2),
       price_gross: DataTypes.DECIMAL(10, 2),
 
-      // JSONB en PG, JSON en MySQL/MariaDB (sin defaultValue)
       cancellation_policy: { type: JSON_TYPE },
       hotel: { type: JSON_TYPE },
       rooms: { type: JSON_TYPE },
@@ -46,26 +43,32 @@ export default (sequelize) => {
       meta: { type: JSON_TYPE },
     },
     {
-      tableName: 'tgx_meta',
+      tableName: "tgx_meta",
       underscored: true,
       freezeTableName: true,
-      engine: 'InnoDB',
+      engine: "InnoDB",
       indexes: [
-        { fields: ['booking_id'] },
-        { fields: ['access'] },
-        { fields: ['option_id'] },
-        { fields: ['reference_booking_id'] },
-        { fields: ['access_code'] },
-        { fields: ['hotel_code'] },
+        { fields: ["stay_id"] },
+        { fields: ["booking_id"] },
+        { fields: ["access"] },
+        { fields: ["option_id"] },
+        { fields: ["reference_booking_id"] },
+        { fields: ["access_code"] },
+        { fields: ["hotel_code"] },
       ],
     }
   );
 
+  TGXMeta.addHook("beforeSave", (instance) => {
+    if (instance.stay_id == null && instance.booking_id != null) instance.stay_id = instance.booking_id;
+    if (instance.booking_id == null && instance.stay_id != null) instance.booking_id = instance.stay_id;
+  });
+
   TGXMeta.associate = (models) => {
-    TGXMeta.belongsTo(models.Booking, {
-      foreignKey: 'booking_id',
-      onDelete: 'CASCADE',
-      onUpdate: 'CASCADE',
+    TGXMeta.belongsTo(models.Stay, {
+      foreignKey: "stay_id",
+      onDelete: "CASCADE",
+      onUpdate: "CASCADE",
       constraints: true,
     });
   };
