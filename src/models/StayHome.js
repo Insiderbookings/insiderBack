@@ -34,6 +34,9 @@ export default (sequelize) => {
 
   StayHome.associate = (models) => {
     StayHome.belongsTo(models.Stay, { foreignKey: "stay_id" });
+    if (models.Home) {
+      StayHome.belongsTo(models.Home, { foreignKey: "home_id", as: "home" });
+    }
   };
 
   return StayHome;

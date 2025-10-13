@@ -46,6 +46,9 @@ export default (sequelize) => {
         if (models.WcAccount) {
             WcTenant.hasMany(models.WcAccount, { foreignKey: "tenant_id", as: "legacyAccounts" });
         }
+        if (models.WcTenantPlatform) {
+            WcTenant.hasMany(models.WcTenantPlatform, { foreignKey: "tenant_id", as: "platformStatuses" });
+        }
         WcTenant.hasOne(models.WcSiteConfig, { foreignKey: "tenant_id" });
     };
 
