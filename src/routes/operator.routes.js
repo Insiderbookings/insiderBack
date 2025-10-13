@@ -28,6 +28,7 @@ import {
   completeOperatorTransfer,
   getOperatorTransferHistory
 } from '../controllers/operatorTransfer.controller.js'
+import { operatorGetTenantPlatforms } from '../controllers/platform.controller.js'
 
 // Operator-facing VCC routes, using Insider auth + role (no WcAccount)
 // Tenant is resolved via X-Tenant-Domain header or ?host=domain (same as WC panel)
@@ -60,6 +61,8 @@ router.get(
   authorizeOperator,
   getOperatorTransferHistory
 )
+
+router.get('/platforms', resolveTenant, authenticate, authorizeOperator, operatorGetTenantPlatforms)
 
 router.get('/tenants', authenticate, authorizeOperator, listMyTenants)
 

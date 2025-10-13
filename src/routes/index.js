@@ -19,6 +19,7 @@ import vccRoutes from './vcc.routes.js'
 import operatorRoutes from './operator.routes.js'
 import adminRoutes from './admin.routes.js'
 import homeRoutes from './home.routes.js'
+import hostRoutes from "./host.routes.js"
 
 const router = Router()
 
@@ -42,5 +43,6 @@ router.use("/tenants", vccRoutes)
 router.use("/operator", operatorRoutes)
 router.use("/admin", adminRoutes)
 router.use("/homes", homeRoutes)
+router.use("/hosts", hostRoutes)
 
 export default router

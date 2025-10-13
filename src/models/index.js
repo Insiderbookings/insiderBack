@@ -53,6 +53,8 @@ import WcAccountTenantFactory from "./WcAccountTenant.js";
 import WcUserTenantFactory from "./WcUserTenant.js";
 import WcSiteConfigFactory from "./WcSiteConfig.js";
 import WcTemplateFactory from "./WcTemplate.js";
+import PlatformFactory from "./Platform.js";
+import WcTenantPlatformFactory from "./WcTenantPlatform.js";
 import UserRoleRequestFactory from "./UserRoleRequest.js";
 import WcVCardFactory from "./WcVCard.js";
 import WcOperatorTransferFactory from "./WcOperatorTransfer.js";
@@ -119,6 +121,8 @@ const models = {
   WcUserTenant: WcUserTenantFactory(sequelize),
   WcSiteConfig: WcSiteConfigFactory(sequelize),
   WcTemplate: WcTemplateFactory(sequelize),
+  Platform: PlatformFactory(sequelize),
+  WcTenantPlatform: WcTenantPlatformFactory(sequelize),
 
   UserRoleRequest: UserRoleRequestFactory(sequelize),
   WcOperatorTransfer: WcOperatorTransferFactory(sequelize),
