@@ -6,11 +6,15 @@ import { notifyOperatorsNewTransfer } from "../helpers/operatorNotifications.js"
 const stripeKey = process.env.STRIPE_SECRET_KEY;
 const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: "2022-11-15" }) : null;
 
+const TRANSFER_TIMEOUT_HOURS = 12;
+const TRANSFER_TIMEOUT_MS = TRANSFER_TIMEOUT_HOURS * 60 * 60 * 1000;
+
 const TRANSFER_STATUS = {
   PENDING: "pending",
   CLAIMED: "claimed",
   COMPLETED: "completed",
   CANCELLED: "cancelled",
+  EXPIRED: "expired",
 };
 
 function assertTenantScope(req) {
@@ -21,9 +25,117 @@ function assertTenantScope(req) {
   }
 }
 
+function computeExpiresAt(createdAt) {
+  if (!createdAt) return null;
+  const base = new Date(createdAt);
+  if (Number.isNaN(base.getTime())) return null;
+  return new Date(base.getTime() + TRANSFER_TIMEOUT_MS);
+}
+
+function isTransferExpired(transfer, now = Date.now()) {
+  if (!transfer) return false;
+  const createdAt = transfer.createdAt || transfer.created_at;
+  if (!createdAt) return false;
+  const expiresAt = computeExpiresAt(createdAt);
+  if (!expiresAt) return false;
+  return expiresAt.getTime() <= now;
+}
+
+function cloneMetadata(meta) {
+  if (meta && typeof meta === "object" && !Array.isArray(meta)) return { ...meta };
+  return {};
+}
+
+async function markTransferExpired(transfer, { transaction } = {}) {
+  if (!transfer) return null;
+  if (transfer.status === TRANSFER_STATUS.EXPIRED) return transfer;
+
+  const nowIso = new Date().toISOString();
+  const meta = cloneMetadata(transfer.metadata);
+  meta.timeoutExpiredAt = nowIso;
+  meta.timeoutHours = TRANSFER_TIMEOUT_HOURS;
+  if (transfer.assigned_account_id) meta.timeoutAssignedAccountId = transfer.assigned_account_id;
+  meta.timeoutReason = "transfer_timeout";
+
+  await transfer.update(
+    {
+      status: TRANSFER_STATUS.EXPIRED,
+      metadata: meta,
+    },
+    { transaction },
+  );
+
+  return transfer;
+}
+
+async function enforceTransferTimeout(tenantId, { transaction } = {}) {
+  if (!tenantId) return null;
+
+  const cutoff = new Date(Date.now() - TRANSFER_TIMEOUT_MS);
+  const where = {
+    tenant_id: tenantId,
+    status: { [Op.in]: [TRANSFER_STATUS.PENDING, TRANSFER_STATUS.CLAIMED] },
+    createdAt: { [Op.lt]: cutoff },
+  };
+
+  const queryOptions = {
+    where,
+    order: [["createdAt", "ASC"]],
+  };
+
+  if (transaction) {
+    queryOptions.transaction = transaction;
+    queryOptions.lock = transaction.LOCK.UPDATE;
+  }
+
+  const overdueTransfers = await models.WcOperatorTransfer.findAll(queryOptions);
+  if (!overdueTransfers.length) {
+    return models.WcTenant.findByPk(tenantId, transaction ? { transaction } : undefined);
+  }
+
+  const expiredIds = [];
+  for (const transfer of overdueTransfers) {
+    await markTransferExpired(transfer, { transaction });
+    expiredIds.push(transfer.id);
+  }
+
+  const tenantQuery = {
+    transaction,
+  };
+  if (transaction) tenantQuery.lock = transaction.LOCK.UPDATE;
+
+  const tenant = await models.WcTenant.findByPk(tenantId, tenantQuery);
+  if (!tenant) return null;
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const meta = cloneMetadata(tenant.pause_metadata);
+  const existingIds = Array.isArray(meta.expiredTransferIds) ? meta.expiredTransferIds : [];
+  const mergedIds = Array.from(new Set([...existingIds, ...expiredIds]));
+
+  await tenant.update(
+    {
+      is_paused: true,
+      paused_at: tenant.paused_at || now,
+      paused_reason: "transfer_timeout",
+      pause_metadata: {
+        ...meta,
+        expiredTransferIds: mergedIds,
+        lastTimeoutCheck: nowIso,
+        timeoutHours: TRANSFER_TIMEOUT_HOURS,
+      },
+    },
+    { transaction },
+  );
+
+  await tenant.reload({ transaction });
+  return tenant;
+}
+
 function sanitizeTransfer(model) {
   if (!model) return null;
   const json = typeof model.toJSON === "function" ? model.toJSON() : model;
+  const expiresAt = computeExpiresAt(json.createdAt || json.created_at);
   return {
     id: json.id,
     tenant_id: json.tenant_id,
@@ -40,6 +152,8 @@ function sanitizeTransfer(model) {
     claimed_at: json.claimed_at,
     completed_at: json.completed_at,
     metadata: json.metadata || {},
+    expiresAt: expiresAt ? expiresAt.toISOString() : null,
+    timeoutHours: TRANSFER_TIMEOUT_HOURS,
     createdAt: json.createdAt,
     updatedAt: json.updatedAt,
     deletedAt: json.deletedAt,
@@ -89,7 +203,7 @@ export async function getOperatorTransferHistory(req, res) {
       // attributes: { ... }
     })
 
-    return res.json({ items })
+    return res.json({ items: items.map(sanitizeTransfer) })
   } catch (e) {
     console.error('getOperatorTransferHistory error', e)
     return res.status(e.status || 500).json({ error: e.message || 'Server error' })
@@ -102,6 +216,8 @@ export async function listOperatorTransfers(req, res) {
     const tenantId = req.tenant.id;
     const accountId = req.user?.accountId;
     if (!accountId) return res.status(403).json({ error: "Forbidden" });
+
+    await enforceTransferTimeout(tenantId);
 
     const limitRaw = Number(req.query.limit);
     const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(200, Math.floor(limitRaw)) : 50;
@@ -133,6 +249,8 @@ export async function getOperatorTransferStats(req, res) {
     const accountId = req.user?.accountId;
     if (!accountId) return res.status(403).json({ error: "Forbidden" });
 
+    const tenant = await enforceTransferTimeout(tenantId);
+
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -161,6 +279,10 @@ export async function getOperatorTransferStats(req, res) {
       assigned,
       completedToday,
       totalCompleted,
+      tenantPaused: tenant?.is_paused ?? false,
+      tenantPauseReason: tenant?.paused_reason ?? null,
+      tenantPausedAt: tenant?.paused_at ?? null,
+      tenantPauseMetadata: tenant?.pause_metadata ?? null,
     });
   } catch (e) {
     console.error("getOperatorTransferStats error", e);
@@ -175,10 +297,34 @@ export async function claimOperatorTransfer(req, res) {
     const accountId = req.user?.accountId;
     if (!accountId) return res.status(403).json({ error: "Forbidden" });
 
+    const tenant = await enforceTransferTimeout(tenantId);
+    if (tenant?.is_paused) {
+      return res.status(423).json({
+        error: "Tenant is paused due to an overdue transfer",
+        pauseReason: tenant.paused_reason,
+        pauseMetadata: tenant.pause_metadata,
+        pausedAt: tenant.paused_at,
+      });
+    }
+
     const sequelize = models.WcOperatorTransfer.sequelize;
     const trx = await sequelize.transaction();
     try {
-      const existing = await models.WcOperatorTransfer.findOne({
+      const tenantRow = await models.WcTenant.findByPk(tenantId, {
+        transaction: trx,
+        lock: trx.LOCK.UPDATE,
+      });
+      if (tenantRow?.is_paused) {
+        await trx.rollback();
+        return res.status(423).json({
+          error: "Tenant is paused due to an overdue transfer",
+          pauseReason: tenantRow.paused_reason,
+          pauseMetadata: tenantRow.pause_metadata,
+          pausedAt: tenantRow.paused_at,
+        });
+      }
+
+      let existing = await models.WcOperatorTransfer.findOne({
         where: {
           tenant_id: tenantId,
           status: TRANSFER_STATUS.CLAIMED,
@@ -189,18 +335,33 @@ export async function claimOperatorTransfer(req, res) {
         lock: trx.LOCK.UPDATE,
       });
 
+      if (existing && isTransferExpired(existing)) {
+        await markTransferExpired(existing, { transaction: trx });
+        existing = null;
+      }
+
       if (existing) {
         await trx.commit();
+        await existing.reload();
         return res.json({ item: sanitizeTransfer(existing), alreadyAssigned: true });
       }
 
-      const next = await models.WcOperatorTransfer.findOne({
-        where: { tenant_id: tenantId, status: TRANSFER_STATUS.PENDING },
-        order: [["createdAt", "ASC"]],
-        transaction: trx,
-        lock: trx.LOCK.UPDATE,
-        skipLocked: true,
-      });
+      let next;
+      while (true) {
+        next = await models.WcOperatorTransfer.findOne({
+          where: { tenant_id: tenantId, status: TRANSFER_STATUS.PENDING },
+          order: [["createdAt", "ASC"]],
+          transaction: trx,
+          lock: trx.LOCK.UPDATE,
+          skipLocked: true,
+        });
+
+        if (!next) break;
+        if (!isTransferExpired(next)) break;
+
+        await markTransferExpired(next, { transaction: trx });
+        next = null;
+      }
 
       if (!next) {
         await trx.rollback();
@@ -211,12 +372,14 @@ export async function claimOperatorTransfer(req, res) {
         {
           status: TRANSFER_STATUS.CLAIMED,
           assigned_account_id: accountId,
+          operator_account_id: accountId,
           claimed_at: new Date(),
         },
-        { transaction: trx }
+        { transaction: trx },
       );
 
       await trx.commit();
+      await next.reload();
       return res.json({ item: sanitizeTransfer(next) });
     } catch (err) {
       await trx.rollback();
@@ -235,6 +398,16 @@ export async function getActiveOperatorTransfer(req, res) {
     const accountId = req.user?.accountId;
     if (!accountId) return res.status(403).json({ error: "Forbidden" });
 
+    const tenant = await enforceTransferTimeout(tenantId);
+    if (tenant?.is_paused) {
+      return res.status(423).json({
+        error: "Tenant is paused due to an overdue transfer",
+        pauseReason: tenant.paused_reason,
+        pauseMetadata: tenant.pause_metadata,
+        pausedAt: tenant.paused_at,
+      });
+    }
+
     const active = await models.WcOperatorTransfer.findOne({
       where: {
         tenant_id: tenantId,
@@ -245,6 +418,12 @@ export async function getActiveOperatorTransfer(req, res) {
     });
 
     if (!active) return res.status(404).json({ error: "No active transfer" });
+
+    if (isTransferExpired(active)) {
+      await markTransferExpired(active);
+      await enforceTransferTimeout(tenantId);
+      return res.status(410).json({ error: "This transfer expired after 12 hours without being completed" });
+    }
 
     return res.json({ item: sanitizeTransfer(active) });
   } catch (e) {
@@ -265,8 +444,27 @@ export async function createOperatorTransferIntent(req, res) {
 
     const transfer = await models.WcOperatorTransfer.findByPk(id);
     if (!transfer || transfer.tenant_id !== tenantId) return res.status(404).json({ error: "Not found" });
+
+    const tenant = await enforceTransferTimeout(tenantId);
+    if (tenant?.is_paused) {
+      return res.status(423).json({
+        error: "Tenant is paused due to an overdue transfer",
+        pauseReason: tenant.paused_reason,
+        pauseMetadata: tenant.pause_metadata,
+        pausedAt: tenant.paused_at,
+      });
+    }
+
+    await transfer.reload();
+
     if (transfer.status !== TRANSFER_STATUS.CLAIMED) return res.status(409).json({ error: "Invalid state" });
     if (transfer.assigned_account_id !== accountId) return res.status(403).json({ error: "Not your transfer" });
+
+    if (isTransferExpired(transfer)) {
+      await markTransferExpired(transfer);
+      await enforceTransferTimeout(tenantId);
+      return res.status(410).json({ error: "This transfer expired after 12 hours without being completed" });
+    }
 
     const body = req.body || {};
     const providedCode = String(body.bookingCode || body.booking_code || "").trim();
@@ -405,8 +603,27 @@ export async function verifyOperatorTransferCheckout(req, res) {
     if (!id) return res.status(400).json({ error: "Invalid id" });
     if (!sessionId) return res.status(400).json({ error: "session_id is required" });
 
+    const tenant = await enforceTransferTimeout(tenantId);
     const transfer = await models.WcOperatorTransfer.findByPk(id);
     if (!transfer || transfer.tenant_id !== tenantId) return res.status(404).json({ error: "Not found" });
+
+    if (tenant?.is_paused) {
+      return res.status(423).json({
+        error: "Tenant is paused due to an overdue transfer",
+        pauseReason: tenant.paused_reason,
+        pauseMetadata: tenant.pause_metadata,
+        pausedAt: tenant.paused_at,
+      });
+    }
+
+    if (transfer.status === TRANSFER_STATUS.EXPIRED || isTransferExpired(transfer)) {
+      if (transfer.status !== TRANSFER_STATUS.EXPIRED) {
+        await markTransferExpired(transfer);
+        await enforceTransferTimeout(tenantId);
+      }
+      return res.status(410).json({ error: "This transfer expired after 12 hours without being completed" });
+    }
+
     if (transfer.status !== TRANSFER_STATUS.CLAIMED) return res.status(409).json({ error: "Invalid state" });
     if (transfer.assigned_account_id !== accountId) return res.status(403).json({ error: "Not your transfer" });
 
@@ -502,8 +719,29 @@ export async function completeOperatorTransfer(req, res) {
     if (!accountId) return res.status(403).json({ error: "Forbidden" });
     if (!id) return res.status(400).json({ error: "Invalid id" });
 
-    const transfer = await models.WcOperatorTransfer.findByPk(id);
+    let transfer = await models.WcOperatorTransfer.findByPk(id);
     if (!transfer || transfer.tenant_id !== tenantId) return res.status(404).json({ error: "Not found" });
+
+    const tenant = await enforceTransferTimeout(tenantId);
+    await transfer.reload();
+
+    if (tenant?.is_paused) {
+      return res.status(423).json({
+        error: "Tenant is paused due to an overdue transfer",
+        pauseReason: tenant.paused_reason,
+        pauseMetadata: tenant.pause_metadata,
+        pausedAt: tenant.paused_at,
+      });
+    }
+
+    if (transfer.status === TRANSFER_STATUS.EXPIRED || isTransferExpired(transfer)) {
+      if (transfer.status !== TRANSFER_STATUS.EXPIRED) {
+        await markTransferExpired(transfer);
+        await enforceTransferTimeout(tenantId);
+      }
+      return res.status(410).json({ error: "This transfer expired after 12 hours without being completed" });
+    }
+
     if (transfer.status !== TRANSFER_STATUS.CLAIMED) return res.status(409).json({ error: "Transfer not claimed" });
     if (transfer.assigned_account_id !== accountId) return res.status(403).json({ error: "Not your transfer" });
 
@@ -614,6 +852,16 @@ export async function createOperatorTransfer(req, res) {
     const accountId = req.user?.accountId;
     if (!accountId) return res.status(403).json({ error: "Forbidden" });
 
+    const tenant = await enforceTransferTimeout(tenantId);
+    if (tenant?.is_paused) {
+      return res.status(423).json({
+        error: "Tenant is paused due to an overdue transfer",
+        pauseReason: tenant.paused_reason,
+        pauseMetadata: tenant.pause_metadata,
+        pausedAt: tenant.paused_at,
+      });
+    }
+
     const body = req.body || {};
     const amount = Number(body.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -676,6 +924,10 @@ export async function adminListTransfers(req, res) {
       where.status = status;
     }
 
+    if (tenantId) {
+      await enforceTransferTimeout(tenantId);
+    }
+
     const items = await models.WcOperatorTransfer.findAll({
       where,
       order: [
@@ -700,6 +952,17 @@ export async function adminCreateTransfer(req, res) {
 
     const tenant = await models.WcTenant.findByPk(tenantId);
     if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+
+    const enforcedTenant = await enforceTransferTimeout(tenantId);
+    const tenantStatus = enforcedTenant || (await tenant.reload());
+    if (tenantStatus?.is_paused) {
+      return res.status(423).json({
+        error: "Tenant is paused due to an overdue transfer. Unpause the tenant before sending a new transfer.",
+        pauseReason: tenantStatus.paused_reason,
+        pauseMetadata: tenantStatus.pause_metadata,
+        pausedAt: tenantStatus.paused_at,
+      });
+    }
 
     const amount = Number(body.amount);
     if (!Number.isFinite(amount) || amount <= 0) {

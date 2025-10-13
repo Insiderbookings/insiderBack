@@ -40,6 +40,7 @@ export async function getTenantPlatformSnapshot(tenantId) {
       status: link?.status || PLATFORM_STATUS[0],
       username: link?.username || "",
       password: link?.password || "",
+      faceVerificationUrl: link?.face_verification_url || "",
       updatedAt: link?.updated_at || link?.created_at || p.updated_at || null,
       createdAt: link?.created_at || p.created_at || null,
     };

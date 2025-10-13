@@ -1,6 +1,6 @@
 import { Router } from "express"
 import { authenticate, authorizeRoles } from "../middleware/auth.js"
-import { createTenant, listTenants, updateTenant, deleteTenant, listAccounts, linkAccountToTenant, unlinkAccountFromTenant, linkUserToTenant, unlinkUserFromTenant } from "../controllers/admin.controller.js"
+import { createTenant, listTenants, updateTenant, deleteTenant, listAccounts, linkAccountToTenant, unlinkAccountFromTenant, linkUserToTenant, unlinkUserFromTenant, unpauseTenant } from "../controllers/admin.controller.js"
 import { adminCreateCards, adminApprove, adminListCards , adminMarkPaid} from "../controllers/vcc.controller.js"
 import { adminListPlatforms, adminGetTenantPlatforms, adminUpsertTenantPlatform } from "../controllers/platform.controller.js"
 import {
@@ -21,6 +21,7 @@ router.get("/tenants", authenticate, authorizeRoles(100), listTenants)
 router.post("/tenants", authenticate, authorizeRoles(100), createTenant)
 router.put("/tenants/:id", authenticate, authorizeRoles(100), updateTenant)
 router.delete("/tenants/:id", authenticate, authorizeRoles(100), deleteTenant)
+router.post("/tenants/:id/unpause", authenticate, authorizeRoles(100), unpauseTenant)
 router.get("/platforms", authenticate, authorizeRoles(100), adminListPlatforms)
 router.get("/tenants/:id/platforms", authenticate, authorizeRoles(100), adminGetTenantPlatforms)
 router.put("/tenants/:tenantId/platforms/:platformId", authenticate, authorizeRoles(100), adminUpsertTenantPlatform)
