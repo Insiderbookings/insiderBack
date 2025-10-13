@@ -14,6 +14,10 @@ export const listTenants = async (req, res, next) => {
         "panel_domain",
         "hotel_id",
         "hotel_access",
+        "is_paused",
+        "paused_at",
+        "paused_reason",
+        "pause_metadata",
         "created_at",
         "updated_at",
         "deleted_at",
@@ -203,6 +207,48 @@ export const unlinkUserFromTenant = async (req, res, next) => {
     if (count === 0) return res.status(404).json({ error: 'Link not found' })
     return res.json({ ok: true })
   } catch (err) { return next(err) }
+}
+
+export const unpauseTenant = async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const tenant = await models.WcTenant.findByPk(id)
+    if (!tenant) return res.status(404).json({ error: "Tenant not found" })
+
+    if (!tenant.is_paused) {
+      return res.json({
+        tenant: {
+          id: tenant.id,
+          is_paused: false,
+          paused_at: tenant.paused_at,
+          paused_reason: tenant.paused_reason,
+          pause_metadata: tenant.pause_metadata,
+        },
+        message: "Tenant is not paused",
+      })
+    }
+
+    await tenant.update({
+      is_paused: false,
+      paused_at: null,
+      paused_reason: null,
+      pause_metadata: null,
+    })
+
+    await tenant.reload()
+
+    return res.json({
+      tenant: {
+        id: tenant.id,
+        is_paused: tenant.is_paused,
+        paused_at: tenant.paused_at,
+        paused_reason: tenant.paused_reason,
+        pause_metadata: tenant.pause_metadata,
+      },
+    })
+  } catch (err) {
+    return next(err)
+  }
 }
 
 export const deleteTenant = async (req, res, next) => {

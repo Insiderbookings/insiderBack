@@ -3,6 +3,11 @@ import { sendMail } from "./mailer.js";
 import { getBaseEmailTemplate } from "../emailTemplates/base-template.js";
 
 const PANEL_FALLBACK_URL = "https://app.insiderbookings.com/operator";
+const TRANSFER_TIMEOUT_HOURS = 12;
+const DATE_TIME_FORMATTER =
+  typeof Intl !== "undefined" && Intl.DateTimeFormat
+    ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" })
+    : null;
 
 function resolveOperatorPanelUrl() {
   const envUrl = process.env.OPERATOR_PANEL_URL || process.env.CLIENT_URL;
@@ -29,6 +34,40 @@ function composeDetailList(pairs) {
   const html = `<ul style="margin:16px 0;padding-left:22px;">${itemsHtml}</ul>`;
   const text = valid.map((pair) => `${pair.label}: ${pair.value}`);
   return { html, text };
+}
+
+function formatDateTime(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+  if (DATE_TIME_FORMATTER) {
+    try {
+      return DATE_TIME_FORMATTER.format(date);
+    } catch {
+      /* ignore formatter failure */
+    }
+  }
+  return date.toISOString();
+}
+
+function resolveTransferDeadline(transfer) {
+  if (!transfer) return null;
+  const raw =
+    transfer.expiresAt ||
+    transfer.expires_at ||
+    transfer.metadata?.expiresAt ||
+    transfer.timeoutDeadline;
+  if (raw) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const createdRaw = transfer.createdAt || transfer.created_at;
+  if (createdRaw) {
+    const created = new Date(createdRaw);
+    if (!Number.isNaN(created.getTime())) {
+      return new Date(created.getTime() + TRANSFER_TIMEOUT_HOURS * 60 * 60 * 1000);
+    }
+  }
+  return null;
 }
 
 function formatExpiration(expMonth, expYear) {
@@ -97,28 +136,39 @@ function buildTransferEmail({ user, transfer, panelUrl }) {
   const amountValue = transfer?.amount != null
     ? `${transfer.amount}${transfer?.currency ? ` ${transfer.currency}` : ""}`
     : "Not specified";
+  const deadlineDate = resolveTransferDeadline(transfer);
+  const deadlineLabel = deadlineDate ? formatDateTime(deadlineDate) : null;
   const details = composeDetailList([
     { label: "Amount", value: amountValue },
     { label: "Booking code", value: transfer?.booking_code ? String(transfer.booking_code) : null },
     { label: "Guest", value: transfer?.guest_name ? String(transfer.guest_name) : null },
+    deadlineLabel ? { label: "Complete before", value: deadlineLabel } : null,
   ]);
 
   const content = `
     <p style="margin:0 0 16px 0;color:#0f172a;font-size:16px;">Hi ${name},</p>
     <p style="margin:0 0 16px 0;color:#475569;font-size:15px;">A new transfer is waiting for you in the Insider Bookings operator panel.</p>
     ${details.html}
+    ${
+      deadlineLabel
+        ? `<p style="margin:0 0 16px 0;color:#b91c1c;font-size:14px;"><strong>Reminder:</strong> complete the transfer within ${TRANSFER_TIMEOUT_HOURS} hours. Deadline: ${deadlineLabel}.</p>`
+        : ""
+    }
     <p style="margin:0 0 24px 0;color:#475569;font-size:15px;">Sign in to review the information and continue the process.</p>
     <p style="margin:0;"><a href="${panelUrl}" style="display:inline-block;background-color:#0f172a;color:#ffffff;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:600;font-size:15px;">Open Operator Panel</a></p>
   `;
   const html = getBaseEmailTemplate(content, "New operator transfer");
-  const text = [
+  const textLines = [
     `Hi ${name},`,
     "",
     "A new transfer is waiting for you in the Insider Bookings operator panel.",
     ...details.text,
-    "",
-    `Open the operator panel: ${panelUrl}`,
-  ].join("\n");
+  ];
+  if (deadlineLabel) {
+    textLines.push("", `Reminder: complete the transfer within ${TRANSFER_TIMEOUT_HOURS} hours (deadline: ${deadlineLabel}).`);
+  }
+  textLines.push("", `Open the operator panel: ${panelUrl}`);
+  const text = textLines.join("\n");
   return {
     subject: "You have a new transfer",
     html,

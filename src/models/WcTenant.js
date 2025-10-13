@@ -1,6 +1,8 @@
 import { DataTypes } from "sequelize";
 
 export default (sequelize) => {
+    const jsonType = sequelize.getDialect() === "mysql" ? DataTypes.JSON : DataTypes.JSONB;
+
     const WcTenant = sequelize.define(
         "WcTenant",
         {
@@ -20,6 +22,10 @@ export default (sequelize) => {
             },
             hotel_id: { type: DataTypes.INTEGER, allowNull: true },
             hotel_access: { type: DataTypes.INTEGER, allowNull: true },
+            is_paused: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+            paused_at: { type: DataTypes.DATE, allowNull: true },
+            paused_reason: { type: DataTypes.STRING(120), allowNull: true },
+            pause_metadata: { type: jsonType, allowNull: true, defaultValue: null },
         },
         {
             tableName: "wc_tenant",
@@ -29,6 +35,7 @@ export default (sequelize) => {
             indexes: [
                 { unique: true, fields: ["public_domain"] },
                 { unique: true, fields: ["panel_domain"] },
+                { fields: ["is_paused"] },
             ],
         }
     );

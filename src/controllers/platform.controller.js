@@ -64,10 +64,11 @@ export const adminUpsertTenantPlatform = async (req, res, next) => {
     const platform = await models.Platform.findByPk(platformId);
     if (!platform) return res.status(404).json({ error: "Plataforma no encontrada" });
 
-    const { status, username, password } = req.body || {};
+    const { status, username, password, faceVerificationUrl } = req.body || {};
     const trimmedStatus = typeof status === "string" ? status.trim() : status;
     const trimmedUsername = typeof username === "string" ? username.trim() : username;
     const trimmedPassword = typeof password === "string" ? password.trim() : password;
+    const trimmedFaceUrl = typeof faceVerificationUrl === "string" ? faceVerificationUrl.trim() : faceVerificationUrl;
 
     const updates = {};
     if (trimmedStatus !== undefined) {
@@ -87,9 +88,16 @@ export const adminUpsertTenantPlatform = async (req, res, next) => {
       if (trimmedPassword !== undefined) {
         updates.password = typeof trimmedPassword === "string" ? trimmedPassword : "";
       }
+      if (trimmedFaceUrl !== undefined) {
+        updates.face_verification_url =
+          typeof trimmedFaceUrl === "string" && trimmedFaceUrl
+            ? trimmedFaceUrl
+            : "";
+      }
     } else {
       updates.username = null;
       updates.password = null;
+      updates.face_verification_url = null;
     }
 
     const defaults = {
@@ -101,6 +109,9 @@ export const adminUpsertTenantPlatform = async (req, res, next) => {
         : null,
       password: platform.requiresFaceVerification
         ? (updates.password !== undefined ? updates.password : "")
+        : null,
+      face_verification_url: platform.requiresFaceVerification
+        ? (updates.face_verification_url !== undefined ? updates.face_verification_url || null : null)
         : null,
     };
 
@@ -114,9 +125,11 @@ export const adminUpsertTenantPlatform = async (req, res, next) => {
       if (updates.status !== undefined) updatePayload.status = updates.status;
       if (updates.username !== undefined) updatePayload.username = updates.username;
       if (updates.password !== undefined) updatePayload.password = updates.password;
+      if (updates.face_verification_url !== undefined) updatePayload.face_verification_url = updates.face_verification_url || null;
       if (!platform.requiresFaceVerification) {
         updatePayload.username = null;
         updatePayload.password = null;
+        updatePayload.face_verification_url = null;
       }
       if (Object.keys(updatePayload).length > 0) {
         await link.update(updatePayload);
@@ -147,6 +160,7 @@ export const operatorGetTenantPlatforms = async (req, res, next) => {
       status: entry.status,
       username: entry.requiresFaceVerification ? entry.username : "",
       password: entry.requiresFaceVerification ? entry.password : "",
+      faceVerificationUrl: entry.requiresFaceVerification ? entry.faceVerificationUrl || "" : "",
       updatedAt: entry.updatedAt,
       description: entry.description || "",
     }));

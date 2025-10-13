@@ -36,6 +36,31 @@ export default (sequelize) => {
         type: DataTypes.STRING(255),
         allowNull: true,
       },
+      face_verification_url: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        validate: {
+          len: [0, 255],
+          isUrlOrEmpty(value) {
+            if (!value) return
+            const str = String(value).trim()
+            if (!str) return
+            try {
+              new URL(str)
+            } catch (err) {
+              throw new Error("face_verification_url must be a valid URL")
+            }
+          },
+        },
+        set(val) {
+          if (val == null) {
+            this.setDataValue("face_verification_url", null)
+            return
+          }
+          const str = String(val).trim()
+          this.setDataValue("face_verification_url", str || null)
+        },
+      },
     },
     {
       tableName: "wc_tenant_platform",
