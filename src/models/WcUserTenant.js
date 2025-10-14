@@ -14,6 +14,7 @@ export default (sequelize) => {
       tableName: "wc_user_tenant",
       freezeTableName: true,
       underscored: true,
+      paranoid: false,
       indexes: [
         { unique: true, fields: ["user_id", "tenant_id"] },
       ],
@@ -37,4 +38,3 @@ export default (sequelize) => {
 
   return WcUserTenant;
 }
-

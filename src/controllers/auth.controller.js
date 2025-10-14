@@ -222,7 +222,7 @@ export const registerUser = async (req, res) => {
     try {
       const content = `
         <p style="color:#334155;margin:0 0 12px;font-size:16px;">Hi ${name.split(" ")[0]},</p>
-        <p style="color:#4a5568;margin:0 0 24px;font-size:16px;">Haz clic en el botón para verificar tu cuenta.</p>
+        <p style="color:#4a5568;margin:0 0 24px;font-size:16px;">Click the button below to verify your account.</p>
         <table role="presentation" style="margin:16px 0;">
           <tr>
             <td align="center">
@@ -231,7 +231,7 @@ export const registerUser = async (req, res) => {
             </td>
           </tr>
         </table>
-        <p style="color:#94a3b8;margin:24px 0 0;font-size:12px;">If you didn’t create this account, you can safely ignore this email.</p>
+        <p style="color:#94a3b8;margin:24px 0 0;font-size:12px;">If you didn't create this account, you can safely ignore this email.</p>
       `
 
       const html = getBaseEmailTemplate(content, "Verify your email")
