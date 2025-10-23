@@ -4,6 +4,7 @@ import dotenvExpand     from "dotenv-expand";
 const myEnv = dotenv.config();
 dotenvExpand.expand(myEnv);
 
+import http            from "http";
 import express         from "express";
 import morgan          from "morgan";
 import cors            from "cors";
@@ -14,8 +15,10 @@ import router          from "./routes/index.js";
 import { handleWebhook } from "./controllers/payment.controller.js";
 import { setGlobalDispatcher, Agent } from "undici";
 import { ensureDefaultPlatforms } from "./services/platform.service.js";
+import { initSocketServer } from "./websocket/index.js";
 
 const app = express();
+const server = http.createServer(app);
 
 /* ---------- Stripe webhook RAW antes de json() ---------- */
 app.post(
@@ -67,7 +70,8 @@ const PORT = process.env.PORT || 3000;
     const alter = String(process.env.DB_ALTER_SYNC || "false").toLowerCase()
     await sequelize.sync({ alter: ["1","true","yes"].includes(alter) })
     await ensureDefaultPlatforms();
-    app.listen(PORT, () =>
+    initSocketServer(server);
+    server.listen(PORT, () =>
       console.log(`Server listening on port ${PORT}`)
     );
   } catch (err) {
