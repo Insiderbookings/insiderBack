@@ -63,6 +63,11 @@ import SubscriberFactory from "./Subscriber.js";
 import ContractFactory from "./Contract.js";
 import UserContractFactory from "./UserContract.js";
 
+import ChatThreadModel from "./ChatThread.js";
+import ChatParticipantModel from "./ChatParticipant.js";
+import ChatMessageModel from "./ChatMessage.js";
+import ChatAutoPromptModel from "./ChatAutoPrompt.js";
+
 /* ---------- Construir objetos ---------- */
 const Stay = StayModel(sequelize);
 
@@ -97,6 +102,10 @@ const models = {
   HotelStaffAddOn: HotelStaffAddOnModel(sequelize),
 
   Message: MessageModel(sequelize),
+  ChatThread: ChatThreadModel(sequelize),
+  ChatParticipant: ChatParticipantModel(sequelize),
+  ChatMessage: ChatMessageModel(sequelize),
+  ChatAutoPrompt: ChatAutoPromptModel(sequelize),
   UpsellCode: UpsellCodeModel(sequelize),
   TgxHotel: TgxHotelModel(sequelize),
 
