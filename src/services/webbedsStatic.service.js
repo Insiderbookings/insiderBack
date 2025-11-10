@@ -169,18 +169,20 @@ const buildStaticHotelsPayload = ({
     filters.noPrice = "true"
   }
 
+  const effectiveConditions = ensureArray(filterConditions).slice()
   if (lastUpdatedRange?.from) {
     const from = formatTimestampForFilters(lastUpdatedRange.from)
     const to = formatTimestampForFilters(lastUpdatedRange.to) ?? formatTimestampForFilters(dayjs())
     if (from) {
-      filters.lastUpdated = {
-        "@from": from,
-        "@to": to,
-      }
+      effectiveConditions.push({
+        fieldName: "lastUpdated",
+        fieldTest: "between",
+        fieldValues: [from, to].filter(Boolean),
+      })
     }
   }
 
-  const normalizedConditions = ensureArray(filterConditions)
+  const normalizedConditions = effectiveConditions
     .map((condition) => {
       const fieldName = condition?.fieldName
       const fieldTest = condition?.fieldTest
