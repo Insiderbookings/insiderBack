@@ -13,6 +13,7 @@ import {
 } from "../controllers/roleRequest.controller.js"
 import { adminListSubscribers, adminBroadcastEmail } from "../controllers/subscriber.controller.js"
 import { adminListTransfers, adminCreateTransfer, adminCancelTransfer } from "../controllers/operatorTransfer.controller.js"
+import { syncWebbedsCountriesController, syncWebbedsCitiesController, syncWebbedsHotelsController } from "../controllers/webbedsStatic.controller.js"
 import { adminListContracts, adminCreateContract, adminUpdateContract, adminDeleteContract } from "../controllers/contract.controller.js"
 
 const router = Router()
@@ -43,6 +44,9 @@ router.post("/vcc/cards", authenticate, authorizeRoles(100), adminCreateCards)
 router.post("/vcc/cards/:id/approve", authenticate, authorizeRoles(100), adminApprove)
 router.post("/vcc/cards/:id/reject", authenticate, authorizeRoles(100), (req, res, next) => { req.query.action = 'reject'; next() }, adminApprove)
 router.post("/vcc/cards/:id/mark-paid", authenticate, authorizeRoles(100), adminMarkPaid)
+router.post("/webbeds/countries/sync", syncWebbedsCountriesController)
+router.post("/webbeds/cities/sync", syncWebbedsCitiesController)
+router.post("/webbeds/hotels/sync", syncWebbedsHotelsController)
 
 // Users and role requests
 router.get("/users", authenticate, authorizeRoles(100), adminListUsers)

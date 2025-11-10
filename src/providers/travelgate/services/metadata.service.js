@@ -1,4 +1,4 @@
-/**
+﻿/**
  * src/services/tgx/metadata.service.js
  * Wrapper para la operación Metadata de Hotel‑X
  * – Compatible con las credenciales demo (jun‑2025).
@@ -148,3 +148,4 @@ export function mapMetadata(metadataResponse) {
     },
   }))
 }
+

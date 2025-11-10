@@ -10,9 +10,12 @@ import {
   createPartnerPaymentIntent,
   confirmPartnerPayment,
   handlePartnerWebhook,
+  createHomePaymentIntent,
 } from "../controllers/payment.controller.js";
+import { createHomePaymentIntentAppTest } from "../controllers/paymentAppTest.controller.js";
 
 import express from "express";
+import { authenticate } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -20,6 +23,8 @@ const router = Router();
 router.post("/stripe/create-session",   createCheckoutSession);
 router.post("/apple-pay/process",       processApplePay);
 router.post("/booking-addons/create-session", createOutsideAddOnsSession);
+router.post("/homes/create-payment-intent", authenticate, createHomePaymentIntent);
+router.post("/homes/test/create-payment-intent", authenticate, createHomePaymentIntentAppTest);
 
 /* Add-Ons */
 router.post("/upsell/create-session",   createAddOnSession);

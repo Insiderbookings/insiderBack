@@ -2,8 +2,8 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcrypt'
 import models from '../models/index.js'
 import cache from '../services/cache.js'
-import { fetchHotels } from "../services/tgx.hotelList.service.js"
-import { searchTGX, mapSearchOptions } from "../services/tgx.search.service.js"
+import { fetchHotels } from "../providers/travelgate/services/hotelList.service.js"
+import { searchTGX, mapSearchOptions } from "../providers/travelgate/services/search.service.js"
 import { getMarkup } from "../utils/markup.js"
 
 /* --- helpers internos --- */

@@ -107,6 +107,20 @@ export default (sequelize) => {
         onDelete: "CASCADE",
       });
     }
+    if (models.HostBadge) {
+      User.hasMany(models.HostBadge, {
+        foreignKey: "user_id",
+        as: "badges",
+        onDelete: "CASCADE",
+      });
+    }
+    if (models.HomeFavorite) {
+      User.hasMany(models.HomeFavorite, {
+        foreignKey: "user_id",
+        as: "homeFavorites",
+        onDelete: "CASCADE",
+      });
+    }
   };
 
   const ensureHostProfile = async (user, transaction) => {

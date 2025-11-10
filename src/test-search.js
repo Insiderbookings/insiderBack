@@ -1,5 +1,5 @@
 // Script para probar la búsqueda directamente
-import { searchTGX, mapSearchOptions } from "./services/tgx/search.service.js"
+import { searchTGX, mapSearchOptions } from "./providers/travelgate/services/search.service.js"
 
 async function testSearch() {
   try {

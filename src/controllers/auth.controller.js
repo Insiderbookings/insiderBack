@@ -290,6 +290,9 @@ export const loginUser = async (req, res) => {
 
     /* 3 ▸ Emitir JWT */
     const token = signToken({ id: user.id, type: "user", role: user.role });
+    if (process.env.NODE_ENV != "production") {
+      console.log("[loginUser] issued token:", token);
+    }
     return res.json({ token, user });
   } catch (err) {
     console.error(err);

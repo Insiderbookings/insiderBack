@@ -1,4 +1,4 @@
-// src/services/tgx.capture.js
+﻿// src/services/tgx.capture.js
 import fs from "fs"
 import path from "path"
 import { print } from "graphql" // para serializar AST gql a string
@@ -90,3 +90,4 @@ export async function requestWithCapture(op, vars, doRequest, { doc, onlyRS = fa
     throw err
   }
 }
+

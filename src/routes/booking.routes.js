@@ -1,6 +1,7 @@
 import { Router } from "express"
 import {
   createBooking,
+  createHomeBooking,
   /* unified handlers */
   getBookingsUnified,
   getLatestStayForUser,
@@ -17,13 +18,16 @@ import {
   verifyGuestAccess,
   listGuestBookings,
   linkGuestBookingsToUser,
+  getHomeBookingsForUser,
 } from "../controllers/booking.controller.js"
 import { authenticate, authorizeStaff, authenticateGuest } from "../middleware/auth.js"
 
 const router = Router()
 
 /* ---- Create ---- */
-router.post("/", createBooking)
+router.post("/", authenticate, createBooking)
+router.post("/homes", authenticate, createHomeBooking)
+router.get("/homes/me", authenticate, getHomeBookingsForUser)
 
 /* ---- Public single-booking lookup (email + ref) ---- */
 router.get("/lookup", lookupBookingPublic)

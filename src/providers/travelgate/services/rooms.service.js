@@ -1,4 +1,4 @@
-/**
+﻿/**
  * src/services/tgx/rooms.service.js
  * Wrapper para la operación Rooms de Hotel‑X
  * – Compatible con las credenciales demo (jun‑2025).
@@ -168,3 +168,4 @@ export async function fetchAllRooms(criteria, maxResults = 1000) {
     token: token, // Token para continuar si es necesario
   }
 }
+

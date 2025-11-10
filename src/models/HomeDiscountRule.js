@@ -1,7 +1,7 @@
 // src/models/HomeDiscountRule.js
 import { DataTypes } from "sequelize";
 
-const RULE_TYPES = ["EARLY_BIRD", "LAST_MINUTE", "LONG_STAY", "CUSTOM"];
+export const HOME_DISCOUNT_RULE_TYPES = ["EARLY_BIRD", "LAST_MINUTE", "LONG_STAY", "CUSTOM"];
 
 export default (sequelize) => {
   const HomeDiscountRule = sequelize.define(
@@ -15,7 +15,7 @@ export default (sequelize) => {
         onDelete: "CASCADE",
       },
       rule_type: {
-        type: DataTypes.ENUM(...RULE_TYPES),
+        type: DataTypes.ENUM(...HOME_DISCOUNT_RULE_TYPES),
         allowNull: false,
       },
       percentage: { type: DataTypes.DECIMAL(5, 2), allowNull: false },

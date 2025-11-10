@@ -1,4 +1,4 @@
-/*********************************************************************************************
+﻿/*********************************************************************************************
  * src/services/tgx.booking.service.js
  * TravelgateX — Quote · Book · Cancel services
  * - Client singleton con GraphQLRequest
@@ -8,7 +8,7 @@
  *********************************************************************************************/
 
 import { GraphQLClient, gql } from "graphql-request"
-import { requestWithCapture } from "./tgx.capture.js"
+import { requestWithCapture } from "./capture.js"
 
 /* ---------- helper: client singleton ---------- */
 let _client
