@@ -9,6 +9,10 @@ import HotelModel from "./Hotel.js";
 import HotelImageModel from "./HotelImage.js";
 import RoomModel from "./Room.js";
 import DiscountCodeModel from "./DiscountCode.js";
+import HotelAliasModel from "./HotelAlias.js";
+import BadgeModel from "./Badge.js";
+import HomeBadgeModel from "./HomeBadge.js";
+import HostBadgeModel from "./HostBadge.js";
 import StayModel from "./Stay.js";
 import StayHotelModel from "./StayHotel.js";
 import StayHomeModel from "./StayHome.js";
@@ -46,6 +50,23 @@ import HomeTagModel from "./HomeTag.js";
 import HomeTagLinkModel from "./HomeTagLink.js";
 import HomeFeatureModel from "./HomeFeature.js";
 import HostProfileModel from "./HostProfile.js";
+import HomeFavoriteModel from "./HomeFavorite.js";
+import HomeFavoriteListModel from "./HomeFavoriteList.js";
+import HomeRecentViewModel from "./HomeRecentView.js";
+import WebbedsCountryModel from "./WebbedsCountry.js";
+import WebbedsCityModel from "./WebbedsCity.js";
+import WebbedsHotelModel from "./WebbedsHotel.js";
+import WebbedsHotelImageModel from "./WebbedsHotelImage.js";
+import WebbedsHotelAmenityModel from "./WebbedsHotelAmenity.js";
+import WebbedsHotelGeoLocationModel from "./WebbedsHotelGeoLocation.js";
+import WebbedsHotelRoomTypeModel from "./WebbedsHotelRoomType.js";
+import WebbedsSyncLogModel from "./WebbedsSyncLog.js";
+import WebbedsCurrencyModel from "./WebbedsCurrency.js";
+import WebbedsAmenityCatalogModel from "./WebbedsAmenityCatalog.js";
+import WebbedsRoomAmenityCatalogModel from "./WebbedsRoomAmenityCatalog.js";
+import WebbedsHotelChainModel from "./WebbedsHotelChain.js";
+import WebbedsHotelClassificationModel from "./WebbedsHotelClassification.js";
+import WebbedsRateBasisModel from "./WebbedsRateBasis.js";
 
 import WcTenantFactory from "./WcTenant.js";
 import WcAccountFactory from "./WcAccount.js";
@@ -78,6 +99,10 @@ const models = {
 
   Hotel: HotelModel(sequelize),
   HotelImage: HotelImageModel(sequelize),
+  HotelAlias: HotelAliasModel(sequelize),
+  Badge: BadgeModel(sequelize),
+  HomeBadge: HomeBadgeModel(sequelize),
+  HostBadge: HostBadgeModel(sequelize),
   Room: RoomModel(sequelize),
 
   DiscountCode: DiscountCodeModel(sequelize),
@@ -122,7 +147,24 @@ const models = {
   HomeTag: HomeTagModel(sequelize),
   HomeTagLink: HomeTagLinkModel(sequelize),
   HomeFeature: HomeFeatureModel(sequelize),
+  HomeFavorite: HomeFavoriteModel(sequelize),
+  HomeFavoriteList: HomeFavoriteListModel(sequelize),
+  HomeRecentView: HomeRecentViewModel(sequelize),
   HostProfile: HostProfileModel(sequelize),
+  WebbedsCountry: WebbedsCountryModel(sequelize),
+  WebbedsCity: WebbedsCityModel(sequelize),
+  WebbedsHotel: WebbedsHotelModel(sequelize),
+  WebbedsHotelImage: WebbedsHotelImageModel(sequelize),
+  WebbedsHotelAmenity: WebbedsHotelAmenityModel(sequelize),
+  WebbedsHotelGeoLocation: WebbedsHotelGeoLocationModel(sequelize),
+  WebbedsHotelRoomType: WebbedsHotelRoomTypeModel(sequelize),
+  WebbedsSyncLog: WebbedsSyncLogModel(sequelize),
+  WebbedsCurrency: WebbedsCurrencyModel(sequelize),
+  WebbedsAmenityCatalog: WebbedsAmenityCatalogModel(sequelize),
+  WebbedsRoomAmenityCatalog: WebbedsRoomAmenityCatalogModel(sequelize),
+  WebbedsHotelChain: WebbedsHotelChainModel(sequelize),
+  WebbedsHotelClassification: WebbedsHotelClassificationModel(sequelize),
+  WebbedsRateBasis: WebbedsRateBasisModel(sequelize),
 
   WcTenant: WcTenantFactory(sequelize),
   WcAccount: WcAccountFactory(sequelize),

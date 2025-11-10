@@ -1,4 +1,4 @@
-// src/services/tgx.client.js
+﻿// src/services/tgx.client.js
 import { GraphQLClient } from 'graphql-request'
 import { setGlobalDispatcher, Agent } from 'undici'
 
@@ -25,3 +25,4 @@ export function makeTgxClient(extraHeaders = {}) {
 
   return new GraphQLClient(endpoint, { headers: baseHeaders })
 }
+

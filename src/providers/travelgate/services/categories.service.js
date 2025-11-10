@@ -1,4 +1,4 @@
-/*********************************************************************************************
+﻿/*********************************************************************************************
  * src/services/tgx/categories.service.js
  * Wrapper para la operación Categories de Hotel‑X
  * – Compatible con las credenciales demo (jun‑2025).
@@ -118,3 +118,4 @@ export async function fetchAllCategories(criteria, maxResults = 1000) {
     count: collected.length,
   }
 }
+

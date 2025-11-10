@@ -1,12 +1,12 @@
-/*********************************************************************************************
+﻿/*********************************************************************************************
  * src/services/tgx.bookingRead.service.js
  * TravelgateX — Booking Read service
  * Reutiliza el cliente y la lógica de retry/capture de tgx.booking.service.js
  *********************************************************************************************/
 
 import { gql } from "graphql-request"
-import { requestWithCapture } from "./tgx.capture.js"
-import { requestWithRetry } from "./tgx.booking.service.js"
+import { requestWithCapture } from "./capture.js"
+import { requestWithRetry } from "./booking.service.js"
 
 /** ✅ Query correcta: usa HotelCriteriaBookingInput y variable criteriaBookingRead */
 const BOOKING_READ_Q = gql`
@@ -174,3 +174,4 @@ export async function readBookingTGX(criteria, settings) {
     throw err
   }
 }
+

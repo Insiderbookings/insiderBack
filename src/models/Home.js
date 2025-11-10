@@ -1,7 +1,7 @@
 // src/models/Home.js
 import { DataTypes } from "sequelize";
 
-const PROPERTY_TYPES = [
+export const HOME_PROPERTY_TYPES = [
   "HOUSE",
   "APARTMENT",
   "BARN",
@@ -13,7 +13,7 @@ const PROPERTY_TYPES = [
   "OTHER",
 ];
 
-const SPACE_TYPES = ["ENTIRE_PLACE", "PRIVATE_ROOM", "SHARED_ROOM"];
+export const HOME_SPACE_TYPES = ["ENTIRE_PLACE", "PRIVATE_ROOM", "SHARED_ROOM"];
 
 export default (sequelize) => {
   const Home = sequelize.define(
@@ -33,12 +33,12 @@ export default (sequelize) => {
       title: { type: DataTypes.STRING(120) },
       description: { type: DataTypes.TEXT },
       property_type: {
-        type: DataTypes.ENUM(...PROPERTY_TYPES),
+        type: DataTypes.ENUM(...HOME_PROPERTY_TYPES),
         allowNull: false,
         defaultValue: "HOUSE",
       },
       space_type: {
-        type: DataTypes.ENUM(...SPACE_TYPES),
+        type: DataTypes.ENUM(...HOME_SPACE_TYPES),
         allowNull: false,
         defaultValue: "ENTIRE_PLACE",
       },
@@ -74,6 +74,15 @@ export default (sequelize) => {
     Home.hasMany(models.HomeCalendar, { foreignKey: "home_id", as: "calendar" });
     Home.hasMany(models.HomeDiscountRule, { foreignKey: "home_id", as: "discounts" });
     Home.hasMany(models.HomeFeature, { foreignKey: "home_id", as: "features" });
+    if (models.HomeBadge) {
+      Home.hasMany(models.HomeBadge, { foreignKey: "home_id", as: "badges" });
+    }
+    if (models.HomeFavorite) {
+      Home.hasMany(models.HomeFavorite, { foreignKey: "home_id", as: "favorites" });
+    }
+    if (models.HomeRecentView) {
+      Home.hasMany(models.HomeRecentView, { foreignKey: "home_id", as: "recentViews" });
+    }
   };
 
   return Home;

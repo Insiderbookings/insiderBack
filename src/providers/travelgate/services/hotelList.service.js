@@ -1,7 +1,7 @@
-// tgx.hotelList.service.js
+﻿// tgx.hotelList.service.js
 import 'dotenv/config'
 import { GraphQLClient, gql } from 'graphql-request'
-import { requestWithCapture } from './tgx.capture.js'
+import { requestWithCapture } from './capture.js'
 import { setGlobalDispatcher, Agent } from 'undici'
 
 /* ────────────────────────────────────────────────
@@ -201,3 +201,4 @@ export async function fetchHotels(criteria = {}, token = '') {
   const data = await client.request(HOTEL_QUERY_FULL, variables)
   return data.hotelX.hotels
 }
+

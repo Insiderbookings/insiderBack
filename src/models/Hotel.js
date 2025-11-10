@@ -48,6 +48,13 @@ export default (sequelize) => {
     Hotel.hasMany(models.Room, { foreignKey: "hotel_id" });
     Hotel.hasMany(models.Booking, { foreignKey: "hotel_id" });
     Hotel.hasMany(models.DiscountCode, { foreignKey: "hotel_id" });
+    if (models.HotelAlias) {
+      Hotel.hasMany(models.HotelAlias, {
+        as: "aliases",
+        foreignKey: "hotel_id",
+        onDelete: "CASCADE",
+      });
+    }
 
     Hotel.belongsToMany(models.Staff, {
       through: models.HotelStaff, // o 'hotel_staff' si usás string

@@ -5,7 +5,7 @@ import Stripe from "stripe"
 import { sendBookingEmail } from "../emailTemplates/booking-email.js"
 import sendMagicLink from "../services/sendMagicLink.js"
 import models, { sequelize } from "../models/index.js"
-import { bookTGX, quoteTGX } from "../services/tgx.booking.service.js"
+import { bookTGX, quoteTGX } from "../providers/travelgate/services/booking.service.js"
 import { normalizeTGXBookingID } from "../utils/normalizeBookingId.tgx.js"
 import { getMarkup } from "../utils/markup.js"
 

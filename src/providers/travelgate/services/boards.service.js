@@ -1,4 +1,4 @@
-/**
+﻿/**
  * src/services/tgx/boards.service.js
  * Wrapper para la operación Boards de Hotel‑X
  * – Compatible con las credenciales demo (jun‑2025).
@@ -126,3 +126,4 @@ export async function fetchAllBoards(criteria, maxResults = 1000) {
     token: null, // Boards no usa token
   }
 }
+

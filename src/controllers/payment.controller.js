@@ -13,12 +13,11 @@ import { resolveVaultBranding } from "../helpers/vaultBranding.js";
 dotenv.config()
 
 /* ─────────── Validación de credenciales ─────────── */
-if (!process.env.STRIPE_SECRET_KEY)     throw new Error("🛑 Falta STRIPE_SECRET_KEY en .env")
-if (!process.env.STRIPE_WEBHOOK_SECRET) throw new Error("🛑 Falta STRIPE_WEBHOOK_SECRET en .env")
+if (!process.env.STRIPE_SECRET_KEY)     throw new Error("\U0001f6d1 Falta STRIPE_SECRET_KEY en .env");
+if (!process.env.STRIPE_WEBHOOK_SECRET) throw new Error("\U0001f6d1 Falta STRIPE_WEBHOOK_SECRET en .env");
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" })
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" });
 
-/* ─────────── Utilidad URL segura ─────────── */
 const safeURL   = (maybe, fallback) => { try { return new URL(maybe).toString() } catch { return fallback } }
 const YOUR_DOMAIN = safeURL(process.env.CLIENT_URL, "http://localhost:5173")
 
@@ -148,14 +147,61 @@ export const handleWebhook = async (req, res) => {
   }
 
   /* ─── Helpers ─── */
-  const markBookingAsPaid = async ({ bookingId, paymentId }) => {
+  const touchBookingPayment = async (bookingId, updater) => {
+    if (!bookingId) return null;
     try {
-      await models.Booking.update(
-        { status: "CONFIRMED", payment_status: "PAID", payment_id: paymentId },
-        { where: { id: bookingId } }
-      )
-    } catch (e) { console.error("DB error (Booking):", e) }
-  }
+      const booking = await models.Booking.findByPk(bookingId);
+      if (!booking) return null;
+      const patch =
+        typeof updater === "function" ? updater(booking) : { ...updater };
+      if (!patch || Object.keys(patch).length === 0) return booking;
+      await booking.update(patch);
+      return booking;
+    } catch (e) {
+      console.error("DB error (Booking touch):", e);
+      return null;
+    }
+  };
+
+  const markBookingAsPaid = async ({ bookingId, paymentId }) => {
+    await touchBookingPayment(bookingId, (booking) => {
+      const next = {
+        payment_status: "PAID",
+        payment_intent_id: paymentId ?? booking.payment_intent_id,
+      };
+      if (!booking.payment_provider || booking.payment_provider === "NONE") {
+        next.payment_provider = "STRIPE";
+      }
+      if (
+        booking.status !== "CONFIRMED" &&
+        booking.inventory_type !== "HOME"
+      ) {
+        next.status = "CONFIRMED";
+      }
+      return next;
+    });
+  };
+
+  const markBookingPending = async ({ bookingId, paymentId }) => {
+    await touchBookingPayment(bookingId, (booking) => {
+      if (booking.payment_status === "PAID") return null;
+      const next = {
+        payment_status: "PENDING",
+        payment_intent_id: paymentId ?? booking.payment_intent_id,
+      };
+      if (!booking.payment_provider || booking.payment_provider === "NONE") {
+        next.payment_provider = "STRIPE";
+      }
+      return next;
+    });
+  };
+
+  const markBookingPaymentFailed = async ({ bookingId }) => {
+    await touchBookingPayment(bookingId, (booking) => {
+      if (booking.payment_status === "PAID") return null;
+      return { payment_status: "UNPAID" };
+    });
+  };
 
   const markUpsellAsPaid = async ({ upsellCodeId, paymentId }) => {
     try {
@@ -178,7 +224,7 @@ export const handleWebhook = async (req, res) => {
   /* ─── Procesar eventos ─── */
   if (event.type === "checkout.session.completed") {
     const s              = event.data.object
-    const bookingId      = Number(s.metadata?.bookingId)        || 0
+    const bookingId      = Number(s.metadata?.bookingId || s.metadata?.booking_id) || 0
     const upsellCodeId   = Number(s.metadata?.upsellCodeId)     || 0
     const outsideBooking = Number(s.metadata?.outsideBookingId) || 0
 
@@ -189,7 +235,7 @@ export const handleWebhook = async (req, res) => {
 
   if (event.type === "payment_intent.succeeded") {
     const pi             = event.data.object
-    const bookingId      = Number(pi.metadata?.bookingId)        || 0
+    const bookingId      = Number(pi.metadata?.bookingId || pi.metadata?.booking_id) || 0
     const upsellCodeId   = Number(pi.metadata?.upsellCodeId)     || 0
     const outsideBooking = Number(pi.metadata?.outsideBookingId) || 0
     const vccCardId      = Number(pi.metadata?.vccCardId)        || 0
@@ -221,6 +267,24 @@ export const handleWebhook = async (req, res) => {
         }
       } catch (e) { console.error('VCC mark paid via webhook error:', e) }
     }
+  }
+
+  if (event.type === "payment_intent.amount_capturable_updated") {
+    const pi        = event.data.object;
+    const bookingId = Number(pi.metadata?.bookingId || pi.metadata?.booking_id) || 0;
+    if (bookingId) await markBookingPending({ bookingId, paymentId: pi.id });
+  }
+
+  if (event.type === "payment_intent.canceled") {
+    const pi        = event.data.object;
+    const bookingId = Number(pi.metadata?.bookingId || pi.metadata?.booking_id) || 0;
+    if (bookingId) await markBookingPaymentFailed({ bookingId });
+  }
+
+  if (event.type === "payment_intent.payment_failed") {
+    const pi        = event.data.object;
+    const bookingId = Number(pi.metadata?.bookingId || pi.metadata?.booking_id) || 0;
+    if (bookingId) await markBookingPaymentFailed({ bookingId });
   }
 
   res.json({ received: true })
@@ -920,7 +984,235 @@ export const handlePartnerWebhook = async (req, res) => {
   }
 };
 
+/* ============================================================================
+   3. HOME BOOKINGS - PAYMENT INTENT
+============================================================================ */
+export const createHomePaymentIntent = async (req, res) => {
+  try {
+    const { bookingId, captureMode } = req.body || {};
+    const userId = Number(req.user?.id ?? 0);
 
+    if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const booking = await models.Booking.findOne({
+      where: { id: bookingId },
+      include: [{ model: models.StayHome, as: "homeStay" }],
+    });
+
+    if (!booking || String(booking.inventory_type).toUpperCase() !== "HOME") {
+      return res.status(404).json({ error: "Home booking not found" });
+    }
+
+    if (booking.user_id && booking.user_id !== userId) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    if (String(booking.status).toUpperCase() === "CANCELLED") {
+      return res.status(400).json({ error: "Booking is cancelled" });
+    }
+
+    if (String(booking.payment_status).toUpperCase() === "PAID") {
+      return res.status(400).json({ error: "Booking is already paid" });
+    }
+
+    const amountNumber = Number(booking.gross_price ?? 0);
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      return res.status(400).json({ error: "Invalid booking amount" });
+    }
+
+    const currencyCode = String(booking.currency || "USD").trim().toUpperCase();
+    const stripeCurrency = currencyCode.toLowerCase();
+    const amountCents = Math.round(amountNumber * 100);
+
+    const pricingSnapshot =
+      booking.pricing_snapshot && typeof booking.pricing_snapshot === "object"
+        ? booking.pricing_snapshot
+        : {};
+    const securityDepositRaw =
+      booking.homeStay?.security_deposit ?? pricingSnapshot.securityDeposit ?? 0;
+    const securityDeposit =
+      Number.parseFloat(Number(securityDepositRaw ?? 0).toFixed(2)) || 0;
+    const depositCents = securityDeposit > 0 ? Math.round(securityDeposit * 100) : 0;
+
+    const captureMethod =
+      captureMode === "manual"
+        ? "manual"
+        : depositCents > 0
+        ? "manual"
+        : "automatic";
+
+    const metadata = {
+      type: "home_booking",
+      bookingId: String(booking.id),
+      booking_id: String(booking.id),
+      bookingRef: booking.booking_ref || "",
+      userId: booking.user_id ? String(booking.user_id) : "",
+      homeId:
+        booking.homeStay?.home_id != null ? String(booking.homeStay.home_id) : "",
+      checkIn: booking.check_in || "",
+      checkOut: booking.check_out || "",
+      guestName: trim500(booking.guest_name || ""),
+      guestEmail: trim500(booking.guest_email || ""),
+      securityDeposit: depositCents ? securityDeposit.toFixed(2) : "0.00",
+      captureMethod,
+    };
+    if (!metadata.userId) delete metadata.userId;
+    if (!metadata.homeId) delete metadata.homeId;
+
+    let paymentIntent = null;
+    let reusedIntent = false;
+
+    if (booking.payment_intent_id) {
+      try {
+        paymentIntent = await stripe.paymentIntents.retrieve(booking.payment_intent_id);
+      } catch (retrieveErr) {
+        console.warn(
+          "createHomePaymentIntent: unable to retrieve existing intent:",
+          retrieveErr?.message || retrieveErr
+        );
+      }
+    }
+
+    if (paymentIntent) {
+      if (paymentIntent.status === "succeeded") {
+        await booking.update({
+          payment_provider: "STRIPE",
+          payment_status: "PAID",
+          payment_intent_id: paymentIntent.id,
+        });
+        return res.json({
+          paymentIntentId: paymentIntent.id,
+          clientSecret: paymentIntent.client_secret,
+          amount: amountNumber,
+          amountCents,
+          currency: currencyCode,
+          depositAmount: securityDeposit,
+          captureMethod: paymentIntent.capture_method,
+          status: paymentIntent.status,
+          paymentStatus: "PAID",
+          reused: true,
+        });
+      }
+
+      if (paymentIntent.status === "canceled") {
+        paymentIntent = null;
+      } else {
+        const amountMismatch = paymentIntent.amount !== amountCents;
+        const currencyMismatch = paymentIntent.currency !== stripeCurrency;
+        const captureMismatch = paymentIntent.capture_method !== captureMethod;
+
+        if (currencyMismatch || captureMismatch) {
+          try {
+            await stripe.paymentIntents.cancel(paymentIntent.id);
+          } catch (cancelErr) {
+            console.warn(
+              "createHomePaymentIntent: unable to cancel mismatched intent:",
+              cancelErr?.message || cancelErr
+            );
+          }
+          paymentIntent = null;
+        } else if (amountMismatch) {
+          try {
+            paymentIntent = await stripe.paymentIntents.update(paymentIntent.id, {
+              amount: amountCents,
+              metadata,
+            });
+            reusedIntent = true;
+          } catch (updateErr) {
+            console.warn(
+              "createHomePaymentIntent: unable to update intent amount:",
+              updateErr?.message || updateErr
+            );
+            try {
+              await stripe.paymentIntents.cancel(paymentIntent.id);
+            } catch (cancelErr) {
+              console.warn(
+                "createHomePaymentIntent: cancel after failed update:",
+                cancelErr?.message || cancelErr
+              );
+            }
+            paymentIntent = null;
+          }
+        } else {
+          try {
+            paymentIntent = await stripe.paymentIntents.update(paymentIntent.id, {
+              metadata,
+            });
+            reusedIntent = true;
+          } catch (metaErr) {
+            console.warn(
+              "createHomePaymentIntent: unable to refresh intent metadata:",
+              metaErr?.message || metaErr
+            );
+          }
+        }
+      }
+    }
+
+    if (!paymentIntent) {
+      paymentIntent = await stripe.paymentIntents.create({
+        amount: amountCents,
+        currency: stripeCurrency,
+        capture_method: captureMethod,
+        automatic_payment_methods: { enabled: true },
+        metadata,
+        description: `Home booking ${booking.booking_ref || booking.id}`,
+        receipt_email: booking.guest_email || undefined,
+      });
+    }
+
+    const nextStripeStatus = paymentIntent.status;
+    let nextPaymentStatus = booking.payment_status;
+    if (nextStripeStatus === "succeeded") {
+      nextPaymentStatus = "PAID";
+    } else if (nextStripeStatus === "requires_payment_method") {
+      nextPaymentStatus = "UNPAID";
+    } else if (booking.payment_status !== "PAID") {
+      nextPaymentStatus = "PENDING";
+    }
+
+    const nextMeta =
+      booking.meta && typeof booking.meta === "object" ? { ...booking.meta } : {};
+    nextMeta.payment = {
+      ...(typeof nextMeta.payment === "object" ? nextMeta.payment : {}),
+      provider: "stripe",
+      strategy: captureMethod,
+      amount: Number(amountNumber.toFixed(2)),
+      currency: currencyCode,
+      securityDeposit,
+      intentId: paymentIntent.id,
+      intentStatus: paymentIntent.status,
+      lastUpdatedAt: new Date().toISOString(),
+    };
+
+    const updates = {
+      payment_provider: "STRIPE",
+      payment_intent_id: paymentIntent.id,
+      meta: nextMeta,
+    };
+    if (booking.payment_status !== nextPaymentStatus) {
+      updates.payment_status = nextPaymentStatus;
+    }
+    await booking.update(updates);
+
+    return res.json({
+      paymentIntentId: paymentIntent.id,
+      clientSecret: paymentIntent.client_secret,
+      amount: amountNumber,
+      amountCents,
+      currency: currencyCode,
+      depositAmount: securityDeposit,
+      captureMethod: paymentIntent.capture_method,
+      status: paymentIntent.status,
+      paymentStatus: booking.payment_status,
+      reused: reusedIntent,
+    });
+  } catch (error) {
+    console.error("createHomePaymentIntent error:", error);
+    return res.status(500).json({ error: "Unable to create home payment intent" });
+  }
+};
 
 
 

@@ -1,11 +1,11 @@
-/*********************************************************************************************
+﻿/*********************************************************************************************
  * src/services/tgx/search.service.js
  * Search de Hotel-X con soporte de filtros y capturas (certificación).
  *********************************************************************************************/
 
 import { GraphQLClient } from "graphql-request"
 import gql from "graphql-tag"
-import { requestWithCapture } from "./tgx.capture.js"
+import { requestWithCapture } from "./capture.js"
 
 const DEBUG = process.env.DEBUG_TGX === "true"
 const CERT_MODE = process.env.TGX_CERT_MODE === "true"
@@ -219,3 +219,4 @@ export function mapSearchOptions(search) {
       })) ?? [],
   }))
 }
+
