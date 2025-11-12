@@ -7,6 +7,7 @@ import { getWebbedsConfig } from "./config.js"
 import { buildSearchHotelsPayload, mapSearchHotelsResponse } from "./searchHotels.js"
 
 const MAX_HOTEL_IDS_PER_REQUEST = 50
+const DEFAULT_HOTEL_ID_CONCURRENCY = 4
 
 const parseCsvList = (value) => {
   if (!value) return []
@@ -38,6 +39,26 @@ const chunkArray = (items, size = MAX_HOTEL_IDS_PER_REQUEST) => {
     chunks.push(items.slice(index, index + size))
   }
   return chunks
+}
+
+const resolveHotelIdConcurrency = () => {
+  const parsed = Number(process.env.WEBBEDS_HOTELID_MAX_CONCURRENCY)
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed
+  }
+  return DEFAULT_HOTEL_ID_CONCURRENCY
+}
+
+const runBatchesWithLimit = async (batches, limit, iterator) => {
+  if (!Array.isArray(batches) || batches.length === 0) return []
+  const safeLimit = Math.max(1, Number(limit) || 1)
+  const results = []
+  for (let index = 0; index < batches.length; index += safeLimit) {
+    const slice = batches.slice(index, index + safeLimit)
+    const sliceResults = await Promise.all(slice.map((batch) => iterator(batch)))
+    results.push(...sliceResults)
+  }
+  return results
 }
 
 const fetchHotelIdsByCity = async (cityCode) => {
@@ -251,24 +272,23 @@ export class WebbedsProvider extends HotelProvider {
     }
 
     const batches = chunkArray(hotelIds)
+    const concurrency = resolveHotelIdConcurrency()
     console.log(
-      `[webbeds] hotelId mode: executing ${batches.length} request(s) for ${hotelIds.length} hotels`,
+      `[webbeds] hotelId mode: executing ${batches.length} request(s) for ${hotelIds.length} hotels (concurrency=${concurrency})`,
     )
 
-    const batchResults = await Promise.all(
-      batches.map(async (batch) => {
-        const { payload, requestAttributes } = buildSearchHotelsPayload({
-          ...payloadOptions,
-          advancedConditions: buildHotelIdConditions(batch),
-        })
-        return this.sendSearchRequest({
-          req,
-          payload,
-          requestAttributes,
-          credentials,
-        })
-      }),
-    )
+    const batchResults = await runBatchesWithLimit(batches, concurrency, async (batch) => {
+      const { payload, requestAttributes } = buildSearchHotelsPayload({
+        ...payloadOptions,
+        advancedConditions: buildHotelIdConditions(batch),
+      })
+      return this.sendSearchRequest({
+        req,
+        payload,
+        requestAttributes,
+        credentials,
+      })
+    })
 
     const flattened = batchResults.flat()
     const enriched = await this.enrichWithHotelDetails(flattened)
