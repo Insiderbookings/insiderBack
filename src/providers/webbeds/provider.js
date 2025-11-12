@@ -1,8 +1,58 @@
 import { createHash } from "crypto"
+import { Op } from "sequelize"
+import models from "../../models/index.js"
 import { HotelProvider } from "../hotelProvider.js"
 import { createWebbedsClient, buildEnvelope } from "./client.js"
 import { getWebbedsConfig } from "./config.js"
 import { buildSearchHotelsPayload, mapSearchHotelsResponse } from "./searchHotels.js"
+
+const MAX_HOTEL_IDS_PER_REQUEST = 50
+
+const parseCsvList = (value) => {
+  if (!value) return []
+  return Array.from(
+    new Set(
+      String(value)
+        .split(",")
+        .map((token) => token.trim())
+        .filter(Boolean),
+    ),
+  )
+}
+
+const buildHotelIdConditions = (ids) =>
+  ids?.length
+    ? [
+        {
+          fieldName: "hotelId",
+          fieldTest: "in",
+          fieldValues: ids,
+        },
+      ]
+    : undefined
+
+const chunkArray = (items, size = MAX_HOTEL_IDS_PER_REQUEST) => {
+  if (!Array.isArray(items) || items.length === 0) return []
+  const chunks = []
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size))
+  }
+  return chunks
+}
+
+const fetchHotelIdsByCity = async (cityCode) => {
+  if (!cityCode || !models?.WebbedsHotel) return []
+  const rows = await models.WebbedsHotel.findAll({
+    attributes: ["hotel_id"],
+    where: { city_code: cityCode },
+    order: [
+      ["priority", "DESC"],
+      ["hotel_id", "ASC"],
+    ],
+    raw: true,
+  })
+  return rows.map((row) => String(row.hotel_id))
+}
 
 const sharedClient = (() => {
   try {
@@ -29,6 +79,14 @@ export class WebbedsProvider extends HotelProvider {
 
   async search(req, res, next) {
     try {
+      const ensureNumericCode = (value, fallback) => {
+        if (value === undefined || value === null || value === "") {
+          return fallback
+        }
+        const strValue = String(value).trim()
+        return /^\d+$/.test(strValue) ? strValue : fallback
+      }
+
       const {
         checkIn,
         checkOut,
@@ -36,15 +94,34 @@ export class WebbedsProvider extends HotelProvider {
         currency,
         cityCode,
         countryCode,
-        nationality = req?.user?.country || "ES",
-        residence = req?.user?.country || "ES",
-       rateBasis = "-1",
+        rateBasis = "-1",
       } = req.query
 
-      const {
-        payload,
-        requestAttributes,
-      } = buildSearchHotelsPayload({
+      const nationality = ensureNumericCode(
+        req.query.passengerNationality ??
+          req.query.nationality ??
+          req?.user?.countryCode ??
+          req?.user?.country,
+        "604",
+      )
+
+      const residence = ensureNumericCode(
+        req.query.passengerCountryOfResidence ??
+          req.query.residence ??
+          req?.user?.countryCode ??
+        req?.user?.country,
+        "604",
+      )
+
+      const includeFieldsList = parseCsvList(req.query.fields)
+      const includeRoomFieldsList = parseCsvList(req.query.roomFields)
+      const includeFields = includeFieldsList.length ? includeFieldsList : undefined
+      const includeRoomFields = includeRoomFieldsList.length ? includeRoomFieldsList : undefined
+      const includeNoPrice = req.query.noPrice === "true"
+      const debug = req.query.debug ?? undefined
+      const providedHotelIds = parseCsvList(req.query.hotelIds)
+      const credentials = this.getCredentials()
+      const payloadOptions = {
         checkIn,
         checkOut,
         currency,
@@ -54,65 +131,43 @@ export class WebbedsProvider extends HotelProvider {
         rateBasis,
         cityCode,
         countryCode,
-        includeRooms: req.query.getRooms === "true",
-        advancedConditions: req.query.hotelIds
-          ? [
-              {
-                fieldName: "hotelId",
-                fieldTest: "in",
-                fieldValues: String(req.query.hotelIds)
-                  .split(",")
-                  .map((value) => value.trim())
-                  .filter(Boolean),
-              },
-            ]
-          : undefined,
-        includeFields: req.query.fields
-          ? String(req.query.fields)
-              .split(",")
-              .map((value) => value.trim())
-              .filter(Boolean)
-          : undefined,
-        includeRoomFields: req.query.roomFields
-          ? String(req.query.roomFields)
-              .split(",")
-              .map((value) => value.trim())
-              .filter(Boolean)
-          : undefined,
-        includeNoPrice: req.query.noPrice === "true",
-        debug: req.query.debug ?? undefined,
-      })
+        includeFields,
+        includeRoomFields,
+        includeNoPrice,
+        debug,
+      }
 
-      const config = getWebbedsConfig()
-      const passwordHash =
-        config.passwordMd5 ||
-        (config.password
-          ? createHash("md5").update(config.password).digest("hex")
-          : null)
+      const searchMode = String(
+        req.query.mode ?? req.query.searchMode ?? "city",
+      ).toLowerCase()
 
-      const requestXml = buildEnvelope({
-        username: config.username,
-        passwordMd5: passwordHash,
-        companyCode: config.companyCode,
-        command: "searchhotels",
-        product: "hotel",
+      if (searchMode === "hotelids") {
+        return this.searchByHotelIdBatches({
+          req,
+          res,
+          payloadOptions,
+          providedHotelIds,
+          credentials,
+          cityCode,
+        })
+      }
+
+      const {
         payload,
         requestAttributes,
+      } = buildSearchHotelsPayload({
+        ...payloadOptions,
+        advancedConditions: buildHotelIdConditions(providedHotelIds),
       })
 
-      console.log("[webbeds] --- request build start ---")
-      console.log("[webbeds] payload:", JSON.stringify(payload, null, 2))
-      console.log("[webbeds] request attributes:", requestAttributes)
-      console.log("[webbeds] request XML:", requestXml)
-      console.log("[webbeds] --- request build end ---")
-
-      const { result } = await this.client.send("searchhotels", payload, {
-        requestId: this.getRequestId(req),
+      const options = await this.sendSearchRequest({
+        req,
+        payload,
         requestAttributes,
+        credentials,
       })
-
-      const options = mapSearchHotelsResponse(result)
-      return res.json(options)
+      const enriched = await this.enrichWithHotelDetails(options)
+      return res.json(this.groupOptionsByHotel(enriched))
     } catch (error) {
       if (error.name === "WebbedsError") {
         console.error("[webbeds] search error", {
@@ -128,5 +183,333 @@ export class WebbedsProvider extends HotelProvider {
       }
       return next(error)
     }
+  }
+
+  getCredentials() {
+    const config = getWebbedsConfig()
+    const passwordHash =
+      config.passwordMd5 ||
+      (config.password
+        ? createHash("md5").update(config.password).digest("hex")
+        : null)
+
+    return {
+      username: config.username,
+      companyCode: config.companyCode,
+      passwordHash,
+    }
+  }
+
+  async sendSearchRequest({ req, payload, requestAttributes, credentials }) {
+    const requestXml = buildEnvelope({
+      username: credentials.username,
+      passwordMd5: credentials.passwordHash,
+      companyCode: credentials.companyCode,
+      command: "searchhotels",
+      product: "hotel",
+      payload,
+      requestAttributes,
+    })
+
+    console.log("[webbeds] --- request build start ---")
+    console.log("[webbeds] payload:", JSON.stringify(payload, null, 2))
+    console.log("[webbeds] request attributes:", requestAttributes)
+    console.log("[webbeds] request XML:", requestXml)
+    console.log("[webbeds] --- request build end ---")
+
+    const { result } = await this.client.send("searchhotels", payload, {
+      requestId: this.getRequestId(req),
+      requestAttributes,
+    })
+
+    return mapSearchHotelsResponse(result)
+  }
+
+  async searchByHotelIdBatches({
+    req,
+    res,
+    payloadOptions,
+    providedHotelIds,
+    credentials,
+    cityCode,
+  }) {
+    let hotelIds = providedHotelIds
+    if (!hotelIds.length) {
+      if (!cityCode) {
+        throw new Error(
+          "WebBeds hotelId mode requires a cityCode or the hotelIds parameter",
+        )
+      }
+      hotelIds = await fetchHotelIdsByCity(cityCode)
+    }
+
+    if (!hotelIds.length) {
+      console.warn(
+        `[webbeds] hotelId mode: no hotels found for city ${cityCode ?? "n/a"}`,
+      )
+      return res.json([])
+    }
+
+    const batches = chunkArray(hotelIds)
+    console.log(
+      `[webbeds] hotelId mode: executing ${batches.length} request(s) for ${hotelIds.length} hotels`,
+    )
+
+    const batchResults = await Promise.all(
+      batches.map(async (batch) => {
+        const { payload, requestAttributes } = buildSearchHotelsPayload({
+          ...payloadOptions,
+          advancedConditions: buildHotelIdConditions(batch),
+        })
+        return this.sendSearchRequest({
+          req,
+          payload,
+          requestAttributes,
+          credentials,
+        })
+      }),
+    )
+
+    const flattened = batchResults.flat()
+    const enriched = await this.enrichWithHotelDetails(flattened)
+    return res.json(this.groupOptionsByHotel(enriched))
+  }
+
+  async enrichWithHotelDetails(options = []) {
+    if (!Array.isArray(options) || !options.length || !models?.WebbedsHotel) {
+      return options
+    }
+
+    const hotelCodes = Array.from(
+      new Set(
+        options
+          .map((option) => (option?.hotelCode != null ? String(option.hotelCode) : null))
+          .filter(Boolean),
+      ),
+    )
+
+    if (!hotelCodes.length) {
+      return options
+    }
+
+    let records = []
+    try {
+      records = await models.WebbedsHotel.findAll({
+        where: {
+          hotel_id: {
+            [Op.in]: hotelCodes,
+          },
+        },
+        attributes: [
+          "hotel_id",
+          "name",
+          "city_name",
+          "city_code",
+          "country_name",
+          "country_code",
+          "address",
+          "zip_code",
+          "location1",
+          "location2",
+          "location3",
+          "lat",
+          "lng",
+          "rating",
+          "hotel_phone",
+          "hotel_check_in",
+          "hotel_check_out",
+          "min_age",
+          "built_year",
+          "renovation_year",
+          "amenities",
+          "leisure",
+          "business",
+          "descriptions",
+          "images",
+          "chain",
+          "priority",
+          "preferred",
+          "exclusive",
+          "fire_safety",
+          "full_address",
+          "geo_locations",
+          "region_name",
+          "region_code",
+        ],
+        raw: true,
+      })
+    } catch (error) {
+      console.warn("[webbeds] failed to fetch hotel metadata:", error.message)
+      return options
+    }
+
+    if (!records.length) {
+      return options
+    }
+
+    const hotelMap = new Map(records.map((record) => [String(record.hotel_id), record]))
+
+    const normalizeJson = (value, fallback = []) => {
+      if (Array.isArray(value)) return value
+      if (value && typeof value === "object") return value
+      return fallback
+    }
+
+    return options.map((option) => {
+      const details = hotelMap.get(String(option.hotelCode))
+      if (!details) return option
+
+      const enrichedDetails = {
+        hotelCode: String(details.hotel_id),
+        hotelName: details.name ?? option.hotelDetails?.hotelName ?? option.hotelName ?? null,
+        city: details.city_name ?? option.hotelDetails?.city ?? null,
+        cityCode: details.city_code ? String(details.city_code) : option.hotelDetails?.cityCode ?? null,
+        country: details.country_name ?? option.hotelDetails?.country ?? null,
+        countryCode:
+          details.country_code != null ? String(details.country_code) : option.hotelDetails?.countryCode ?? null,
+        address: details.address ?? option.hotelDetails?.address ?? null,
+        zipCode: details.zip_code ?? option.hotelDetails?.zipCode ?? null,
+        locations: [
+          details.location1,
+          details.location2,
+          details.location3,
+          ...(option.hotelDetails?.locations ?? []),
+        ].filter(Boolean),
+        geoPoint:
+          details.lat != null && details.lng != null
+            ? { lat: Number(details.lat), lng: Number(details.lng) }
+            : option.hotelDetails?.geoPoint ?? null,
+        geoLocations: normalizeJson(details.geo_locations, option.hotelDetails?.geoLocations ?? []),
+        rating: details.rating ?? option.hotelDetails?.rating ?? null,
+        phone: details.hotel_phone ?? option.hotelDetails?.phone ?? null,
+        checkIn: details.hotel_check_in ?? option.hotelDetails?.checkIn ?? null,
+        checkOut: details.hotel_check_out ?? option.hotelDetails?.checkOut ?? null,
+        minAge: details.min_age ?? option.hotelDetails?.minAge ?? null,
+        builtYear: details.built_year ?? option.hotelDetails?.builtYear ?? null,
+        renovationYear: details.renovation_year ?? option.hotelDetails?.renovationYear ?? null,
+        amenities: normalizeJson(details.amenities, option.hotelDetails?.amenities ?? []),
+        leisure: normalizeJson(details.leisure, option.hotelDetails?.leisure ?? []),
+        business: normalizeJson(details.business, option.hotelDetails?.business ?? []),
+        descriptions: normalizeJson(details.descriptions, option.hotelDetails?.descriptions ?? []),
+        images: normalizeJson(details.images, option.hotelDetails?.images ?? []),
+        chain: details.chain ?? option.hotelDetails?.chain ?? null,
+        priority: details.priority ?? option.hotelDetails?.priority ?? null,
+        preferred:
+          details.preferred != null
+            ? Boolean(details.preferred)
+            : option.hotelDetails?.preferred ?? false,
+        exclusive:
+          details.exclusive != null
+            ? Boolean(details.exclusive)
+            : option.hotelDetails?.exclusive ?? false,
+        fireSafety:
+          details.fire_safety != null
+            ? Boolean(details.fire_safety)
+            : option.hotelDetails?.fireSafety ?? false,
+        region: {
+          name: details.region_name ?? option.hotelDetails?.region?.name ?? null,
+          code: details.region_code ?? option.hotelDetails?.region?.code ?? null,
+        },
+        fullAddress: details.full_address ?? option.hotelDetails?.fullAddress ?? null,
+      }
+
+      return {
+        ...option,
+        hotelName: option.hotelName ?? details.name ?? option.hotelDetails?.hotelName ?? null,
+        hotelDetails: {
+          ...option.hotelDetails,
+          ...enrichedDetails,
+        },
+      }
+    })
+  }
+
+  groupOptionsByHotel(options = []) {
+    if (!Array.isArray(options) || !options.length) {
+      return []
+    }
+
+    const grouped = new Map()
+    let unknownIndex = 0
+
+    const pushOption = (entry, option) => {
+      if (!entry._optionKeys) {
+        entry._optionKeys = new Set()
+      }
+
+      const normalizedRateKey =
+        option.rateKey != null ? String(option.rateKey).trim() : null
+
+      const optionKey =
+        normalizedRateKey ||
+        JSON.stringify({
+          board: option.board ?? null,
+          paymentType: option.paymentType ?? null,
+          status: option.status ?? null,
+          price: option.price ?? null,
+          currency: option.currency ?? null,
+          refundable: option.refundable ?? null,
+          rooms: (option.rooms || []).map((room) => ({
+            code: room?.code ?? null,
+            description: room?.description ?? null,
+            rateBasisId: room?.rateBasisId ?? null,
+          })),
+        })
+
+      if (entry._optionKeys.has(optionKey)) {
+        return
+      }
+      entry._optionKeys.add(optionKey)
+
+      entry.options.push({
+        rateKey: normalizedRateKey,
+        board: option.board,
+        paymentType: option.paymentType,
+        status: option.status,
+        price: option.price,
+        currency: option.currency,
+        refundable: option.refundable,
+        rooms: option.rooms,
+        cancelPolicy: option.cancelPolicy,
+        surcharges: option.surcharges,
+        metadata: option.metadata,
+      })
+    }
+
+    options.forEach((option) => {
+      if (!option) return
+      const hotelCodeRaw = option.hotelCode ?? option.hotelDetails?.hotelCode
+      const mapKey =
+        hotelCodeRaw != null
+          ? String(hotelCodeRaw)
+          : option.rateKey
+            ? `unknown:${option.rateKey}`
+            : `unknown:auto:${unknownIndex++}`
+
+      const hotelCode = hotelCodeRaw != null ? String(hotelCodeRaw) : null
+      const existing = grouped.get(mapKey)
+
+      if (!existing) {
+        const entry = {
+          hotelCode,
+          hotelName: option.hotelName ?? option.hotelDetails?.hotelName ?? null,
+          hotelDetails: option.hotelDetails ?? null,
+          options: [],
+        }
+        pushOption(entry, option)
+        grouped.set(mapKey, entry)
+        return
+      }
+
+      if (!existing.hotelDetails && option.hotelDetails) {
+        existing.hotelDetails = option.hotelDetails
+      }
+      if (!existing.hotelName && (option.hotelName || option.hotelDetails?.hotelName)) {
+        existing.hotelName = option.hotelName ?? option.hotelDetails?.hotelName ?? existing.hotelName
+      }
+      pushOption(existing, option)
+    })
+
+    return Array.from(grouped.values()).map(({ _optionKeys, ...rest }) => rest)
   }
 }
