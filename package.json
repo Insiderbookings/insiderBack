@@ -5,7 +5,8 @@
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
-    "dev": "nodemon src/app.js"
+    "dev": "nodemon src/app.js",
+    "test": "node --test tests/providers/webbeds/searchHotels.test.js tests/providers/webbeds/provider.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.876.0",

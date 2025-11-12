@@ -7,7 +7,7 @@ const toUnixSeconds = (value) => {
 }
 const MAX_ADULTS = 10
 const DEFAULT_RATE_BASIS = "1"
-const DEFAULT_CURRENCY = "USD"
+const DEFAULT_CURRENCY = "520"
 const DEFAULT_CHILD_AGE = 8
 
 const normalizeBoolean = (value) => {
@@ -157,7 +157,6 @@ export const buildSearchHotelsPayload = ({
   includeRoomFields = [],
   includeNoPrice = false,
   debug,
-  includeRooms = false,
 } = {}) => {
   const fromDate = formatDate(checkIn)
   const toDate = formatDate(checkOut)
@@ -190,10 +189,6 @@ export const buildSearchHotelsPayload = ({
 
   const returnNode = {
     filters,
-  }
-
-  if (includeRooms) {
-    returnNode.getRooms = "true"
   }
 
   const fieldsNode = {}

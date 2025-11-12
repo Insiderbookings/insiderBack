@@ -303,6 +303,16 @@ export const createWebbedsClient = ({
       console.log("[webbeds] raw response preview:", responseXml.slice(0, 2000))
       const { result, metadata } = parseResponse(responseXml)
 
+      try {
+        const parsedPreview = JSON.stringify(result, null, 2)
+        console.log(
+          "[webbeds] parsed response preview:",
+          parsedPreview.length > 2000 ? `${parsedPreview.slice(0, 2000)}...` : parsedPreview,
+        )
+      } catch (serializationError) {
+        console.warn("[webbeds] failed to serialize parsed response:", serializationError)
+      }
+
       const totalDuration = Date.now() - startedAt
       logger.info("[webbeds] request completed", {
         command,
