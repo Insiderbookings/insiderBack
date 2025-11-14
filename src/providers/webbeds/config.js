@@ -3,6 +3,15 @@ const toNumberOr = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+const toBooleanOr = (value, fallback) => {
+  if (value === undefined || value === null || value === "") return fallback
+  if (typeof value === "boolean") return value
+  const normalized = String(value).trim().toLowerCase()
+  if (["1", "true", "yes", "on"].includes(normalized)) return true
+  if (["0", "false", "no", "off"].includes(normalized)) return false
+  return fallback
+}
+
 export const getWebbedsConfig = (overrides = {}) => {
   const {
     WEBBEDS_USERNAME,
@@ -12,6 +21,7 @@ export const getWebbedsConfig = (overrides = {}) => {
     WEBBEDS_HOST,
     WEBBEDS_TIMEOUT_MS,
     WEBBEDS_RETRIES,
+    WEBBEDS_COMPRESS_REQUESTS,
   } = process.env
 
   const config = {
@@ -22,6 +32,9 @@ export const getWebbedsConfig = (overrides = {}) => {
     host: overrides.host ?? WEBBEDS_HOST ?? "https://xmldev.dotwconnect.com",
     timeoutMs: overrides.timeoutMs ?? toNumberOr(WEBBEDS_TIMEOUT_MS, 30000),
     retries: overrides.retries ?? toNumberOr(WEBBEDS_RETRIES, 2),
+    preferCompressedRequests:
+      overrides.preferCompressedRequests ??
+      toBooleanOr(WEBBEDS_COMPRESS_REQUESTS, true),
   }
 
   if (!config.username) throw new Error("Missing WebBeds username (WEBBEDS_USERNAME)")

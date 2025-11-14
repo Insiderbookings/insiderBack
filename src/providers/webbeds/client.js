@@ -47,6 +47,27 @@ const parser = new XMLParser({
   parseTagValue: false,
 })
 
+const maskSensitiveXml = (xml) => {
+  if (!xml) return xml
+  return xml.replace(/(<password>)(.*?)(<\/password>)/i, "$1***redacted***$3")
+}
+
+const summarizeHeaders = (headers = {}) => {
+  const important = ["Content-Encoding", "Accept-Encoding", "Content-Length"]
+  return important.reduce((acc, key) => {
+    if (headers[key]) acc[key] = headers[key]
+    return acc
+  }, {})
+}
+
+const formatAttemptLabel = (attempt, useCompression) =>
+  `Attempt ${attempt}${useCompression ? " (gzip)" : " (plain)"}`
+
+const buildPreview = (text, limit = 800) => {
+  if (!text) return text
+  return text.length > limit ? `${text.slice(0, limit)}...` : text
+}
+
 const ensureMd5Password = ({ passwordMd5, passwordPlain }) => {
   if (passwordMd5) return passwordMd5
   if (!passwordPlain) {
@@ -209,6 +230,7 @@ export const createWebbedsClient = ({
     requestId,
     timeout,
     useCompression,
+    logContext,
   }) => {
     const envelopeXml = buildEnvelope({
       username,
@@ -220,26 +242,28 @@ export const createWebbedsClient = ({
       requestAttributes,
     })
 
+    if (logContext && !logContext.requestLogged) {
+      logger.info("[webbeds] request snapshot", {
+        command,
+        payload,
+        requestXml: maskSensitiveXml(envelopeXml),
+      })
+      logContext.requestLogged = true
+    }
+
     const requestBody = useCompression
       ? await gzip(envelopeXml)
       : Buffer.from(envelopeXml, "utf8")
 
     const xmlBytes = Buffer.byteLength(envelopeXml, "utf8")
     const gzBytes = requestBody.length
-    const magicA = requestBody[0]
-    const magicB = requestBody[1]
-
-    logger.info("[webbeds] payload stats", {
-      xmlBytes,
-      gzBytes,
-      magic: [magicA, magicB],
-      compressRequests: useCompression,
-    })
 
     const startedAt = Date.now()
 
     return requestWithRetry(async (attempt) => {
       const attemptStart = Date.now()
+      const attemptNumber = attempt + 1
+      const attemptLabel = formatAttemptLabel(attemptNumber, useCompression)
 
       const requestConfig = {
         method: "POST",
@@ -264,11 +288,10 @@ export const createWebbedsClient = ({
         validateStatus: () => true,
       }
 
-      console.log("[webbeds] HTTP request config:", {
-        url: requestConfig.url,
-        headers: requestConfig.headers,
-        timeout: requestConfig.timeout,
-        proxy: requestConfig.proxy,
+      logger.info(`[webbeds] ${attemptLabel} start`, {
+        xmlBytes,
+        bodyBytes: gzBytes,
+        headers: summarizeHeaders(requestConfig.headers),
       })
 
       const response = await axiosInstance.request(requestConfig)
@@ -276,15 +299,18 @@ export const createWebbedsClient = ({
       const attemptDuration = Date.now() - attemptStart
       const { status, statusText, headers } = response
       const isSuccessStatus = status >= 200 && status < 300
-
-      console.log("[webbeds] raw response headers:", headers)
-      console.log("[webbeds] raw response length:", response.data?.byteLength ?? response.data?.length)
+      const headerTid = headers["x-dotw-tid"]
 
       if (!isSuccessStatus) {
         const rawPreview = Buffer.isBuffer(response.data)
           ? response.data.toString("utf8").slice(0, 2000)
           : String(response.data ?? "").slice(0, 2000)
-        console.error("[webbeds] HTTP error response preview:", rawPreview)
+        logger.error(`[webbeds] ${attemptLabel} HTTP error`, {
+          status,
+          statusText,
+          tID: headerTid,
+          responsePreview: rawPreview,
+        })
         throw new WebbedsError(`WebBeds HTTP error (${status}) ${statusText}`, {
           command,
           httpStatus: status,
@@ -296,28 +322,48 @@ export const createWebbedsClient = ({
       let responseBuffer = Buffer.from(response.data)
       const encoding = headers["content-encoding"]
       if (encoding && encoding.toLowerCase().includes("gzip")) {
+        logger.info(`[webbeds] ${attemptLabel} response compressed`, {
+          contentEncoding: encoding,
+          compressedBytes: responseBuffer.length,
+        })
         responseBuffer = await gunzip(responseBuffer)
+        logger.info(`[webbeds] ${attemptLabel} response decompressed`, {
+          decompressedBytes: responseBuffer.length,
+        })
       }
 
       const responseXml = responseBuffer.toString("utf8")
-      console.log("[webbeds] raw response preview:", responseXml.slice(0, 2000))
-      const { result, metadata } = parseResponse(responseXml)
-
+      let parsedPayload
       try {
-        const parsedPreview = JSON.stringify(result, null, 2)
-        console.log(
-          "[webbeds] parsed response preview:",
-          parsedPreview.length > 2000 ? `${parsedPreview.slice(0, 2000)}...` : parsedPreview,
-        )
-      } catch (serializationError) {
-        console.warn("[webbeds] failed to serialize parsed response:", serializationError)
+        parsedPayload = parseResponse(responseXml)
+      } catch (error) {
+        logger.warn(`[webbeds] ${attemptLabel} result (failed)`, {
+          tID: headerTid,
+          httpStatus: status,
+          details: error.details || error.message,
+          code: error.code,
+          responsePreview: buildPreview(responseXml),
+        })
+        throw error
       }
 
+      const { result, metadata } = parsedPayload
+
       const totalDuration = Date.now() - startedAt
+      const hotelsNode = result?.hotels?.hotel
+      const hotelCount = Array.isArray(hotelsNode) ? hotelsNode.length : hotelsNode ? 1 : 0
+      logger.info(`[webbeds] ${attemptLabel} result`, {
+        tID: metadata.transactionId ?? headerTid,
+        httpStatus: status,
+        elapsedTime: metadata.elapsedTime,
+        hotels: hotelCount,
+        responsePreview: buildPreview(responseXml),
+      })
+
       logger.info("[webbeds] request completed", {
         command,
         requestId,
-        attempt: attempt + 1,
+        attempt: attemptNumber,
         httpStatus: status,
         tID: metadata.transactionId,
         elapsedTime: metadata.elapsedTime,
@@ -351,6 +397,8 @@ export const createWebbedsClient = ({
       throw new Error("WebBeds command is required")
     }
 
+    const logContext = { requestLogged: false }
+
     try {
       return await attemptSend({
         command,
@@ -359,23 +407,15 @@ export const createWebbedsClient = ({
         requestId,
         timeout,
         useCompression: preferCompressedRequests,
+        logContext,
       })
     } catch (error) {
       if (isTransportParseError(error)) {
-        const fallbackCompression = !preferCompressedRequests
-        logger.warn("[webbeds] transport parse error, retrying with alternate encoding", {
-          triedCompressed: preferCompressedRequests,
-          retryCompressed: fallbackCompression,
+        logger.warn("[webbeds] transport parse error", {
+          attemptedCompression: preferCompressedRequests,
           message: error.message,
           details: error.details,
-        })
-        return attemptSend({
-          command,
-          payload,
-          requestAttributes,
-          requestId,
-          timeout,
-          useCompression: fallbackCompression,
+          hint: "Toggle WEBBEDS_COMPRESS_REQUESTS to retry without gzip.",
         })
       }
       throw error

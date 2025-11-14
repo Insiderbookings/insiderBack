@@ -9,6 +9,7 @@ import { sendMail } from "../helpers/mailer.js"
 import models, { sequelize } from "../models/index.js"
 import { streamCertificatePDF } from "../helpers/bookingCertificate.js"
 import { sendCancellationEmail } from "../emailTemplates/cancel-email.js"
+import { PROMPT_TRIGGERS, triggerBookingAutoPrompts } from "../services/chat.service.js"
 /* ───────────── Helper – count nights ───────────── */
 const diffDays = (from, to) =>
   Math.ceil((new Date(to) - new Date(from)) / 86_400_000)
@@ -781,6 +782,19 @@ export const createHomeBooking = async (req, res) => {
     })
 
     const bookingView = mapStay(fresh.toJSON(), "home")
+
+    const coverImageUrl = pickCoverImage(home.media ?? [])
+    triggerBookingAutoPrompts({
+      trigger: PROMPT_TRIGGERS.BOOKING_CREATED,
+      guestUserId: userId,
+      hostUserId: home.host_id,
+      homeId: home.id,
+      reserveId: bookingView.id,
+      checkIn,
+      checkOut,
+      homeSnapshotName: home.title,
+      homeSnapshotImage: coverImageUrl,
+    }).catch((err) => console.error("booking auto prompt dispatch error:", err))
 
     return res.status(201).json({
       booking: bookingView,

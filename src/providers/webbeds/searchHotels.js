@@ -251,6 +251,25 @@ const parsePropertyFees = (rateBasis) => {
   }))
 }
 
+const resolveMinStayValue = (...candidates) => {
+  for (const candidate of candidates) {
+    const value = toNumber(candidate)
+    if (value != null) {
+      return value
+    }
+  }
+  return null
+}
+
+const resolveMinStayDate = (...candidates) => {
+  for (const candidate of candidates) {
+    if (candidate != null && candidate !== "") {
+      return String(candidate)
+    }
+  }
+  return null
+}
+
 const extractPrice = (rateBasis) => {
   if (rateBasis?.totalInRequestedCurrency) {
     const value = rateBasis.totalInRequestedCurrency
@@ -438,6 +457,18 @@ export const mapSearchHotelsResponse = (result) => {
           const rateType = rateBasis?.rateType ?? {}
           const nonRefundable = normalizeBoolean(rateType?.["@_nonrefundable"])
           const price = extractPrice(rateBasis)
+          const minStay = resolveMinStayValue(
+            rateBasis?.minStay,
+            rateType?.["@_minstay"],
+            roomType?.minStay,
+            room?.minStay,
+            hotel?.minStay,
+          )
+          const dateApplyMinStay = resolveMinStayDate(
+            rateBasis?.dateApplyMinStay,
+            rateBasis?.applyMinStay,
+            roomType?.dateApplyMinStay,
+          )
 
           const currency = rateType?.["@_currencyid"] ?? fallbackCurrency
 
@@ -459,6 +490,8 @@ export const mapSearchHotelsResponse = (result) => {
                 price,
                 currency,
                 rateBasisId,
+                minStay,
+                dateApplyMinStay,
               },
             ],
             cancelPolicy: {
@@ -472,6 +505,8 @@ export const mapSearchHotelsResponse = (result) => {
               totalTaxes: toNumber(rateBasis?.totalTaxes),
               totalFees: toNumber(rateBasis?.totalFee),
               propertyFeesCount: rateBasis?.propertyFees?.["@_count"] ?? null,
+              minStay,
+              dateApplyMinStay,
             },
             hotelDetails,
           }
