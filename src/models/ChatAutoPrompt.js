@@ -1,7 +1,14 @@
 import { DataTypes } from "sequelize";
 
 const SCOPES = ["GLOBAL", "HOME"];
-const TRIGGERS = ["INITIAL", "MANUAL"];
+const TRIGGERS = [
+  "INITIAL",
+  "MANUAL",
+  "BOOKING_CREATED",
+  "BOOKING_CONFIRMED",
+  "BOOKING_PAID",
+  "BOOKING_CANCELLED",
+];
 
 export default (sequelize) => {
   const ChatAutoPrompt = sequelize.define(

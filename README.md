@@ -14,7 +14,7 @@ Cree un archivo `.env` en la raíz del proyecto y defina las siguientes variable
 - `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_DIALECT`, `DB_TIMEZONE`
 - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
 - `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY` (y sus variantes de prueba si aplica)
-- Cualquier otra variable requerida por las integraciones utilizadas (ver código fuente para más detalles). Para WebBeds defina `WEBBEDS_USERNAME`, `WEBBEDS_PASSWORD_MD5` (o `WEBBEDS_PASSWORD` para generar el hash), `WEBBEDS_COMPANY_ID`, `WEBBEDS_HOST`, `WEBBEDS_TIMEOUT_MS`, `WEBBEDS_RETRIES` y opcionalmente `WEBBEDS_HOTELID_MAX_CONCURRENCY` como referencia en `src/providers/webbeds/config.js`.
+- Cualquier otra variable requerida por las integraciones utilizadas (ver código fuente para más detalles). Para WebBeds defina `WEBBEDS_USERNAME`, `WEBBEDS_PASSWORD_MD5` (o `WEBBEDS_PASSWORD` para generar el hash), `WEBBEDS_COMPANY_ID`, `WEBBEDS_HOST`, `WEBBEDS_TIMEOUT_MS`, `WEBBEDS_RETRIES`, `WEBBEDS_COMPRESS_REQUESTS` (true/false) y opcionalmente `WEBBEDS_HOTELID_MAX_CONCURRENCY` como referencia en `src/providers/webbeds/config.js`.
 
 Valores recomendados para pruebas con WebBeds:
 
@@ -23,6 +23,7 @@ WEBBEDS_HOST=https://xmldev.dotwconnect.com
 WEBBEDS_STATIC_CURRENCY=520
 WEBBEDS_NOTIN_MAX=20000
 WEBBEDS_HOTELID_MAX_CONCURRENCY=4
+WEBBEDS_COMPRESS_REQUESTS=true
 ```
 
 ## Poblar catálogos y datos de WebBeds

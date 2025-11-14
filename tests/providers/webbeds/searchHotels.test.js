@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { buildSearchHotelsPayload } from "../../../src/providers/webbeds/searchHotels.js"
+import { buildSearchHotelsPayload, mapSearchHotelsResponse } from "../../../src/providers/webbeds/searchHotels.js"
 
 test("buildSearchHotelsPayload requires checkIn and checkOut dates", () => {
   assert.throws(
@@ -66,4 +66,44 @@ test("buildSearchHotelsPayload falls back to country filters when no city provid
 
   assert.equal(payload.return.filters.country, "178")
   assert.ok(!payload.return.filters.city)
+})
+
+test("mapSearchHotelsResponse propagates minStay metadata when provided", () => {
+  const result = {
+    currencyShort: "520",
+    hotels: {
+      hotel: [
+        {
+          "@_hotelid": "123",
+          hotelName: "Demo Hotel",
+          rooms: {
+            room: {
+              roomType: {
+                "@_roomtypecode": "ABC",
+                name: "Room ABC",
+                rateBases: {
+                  rateBasis: {
+                    "@_id": "999",
+                    total: "100.50",
+                    minStay: "3",
+                    dateApplyMinStay: "2025-11-10",
+                    rateType: {
+                      "@_currencyid": "520",
+                    },
+                    cancellationRules: { rule: [] },
+                  },
+                },
+              },
+            },
+          },
+        },
+      ],
+    },
+  }
+
+  const [option] = mapSearchHotelsResponse(result)
+  assert.equal(option.metadata.minStay, 3)
+  assert.equal(option.metadata.dateApplyMinStay, "2025-11-10")
+  assert.equal(option.rooms[0].minStay, 3)
+  assert.equal(option.rooms[0].dateApplyMinStay, "2025-11-10")
 })

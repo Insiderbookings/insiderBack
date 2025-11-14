@@ -13,6 +13,24 @@ const {
 
 const CHAT_ROOM = (chatId) => `chat:${chatId}`;
 
+export const PROMPT_TRIGGERS = {
+  INITIAL: "INITIAL",
+  BOOKING_CREATED: "BOOKING_CREATED",
+  BOOKING_CONFIRMED: "BOOKING_CONFIRMED",
+  BOOKING_PAID: "BOOKING_PAID",
+  BOOKING_CANCELLED: "BOOKING_CANCELLED",
+};
+
+const BOOKING_TRIGGER_SET = new Set([
+  PROMPT_TRIGGERS.BOOKING_CREATED,
+  PROMPT_TRIGGERS.BOOKING_CONFIRMED,
+  PROMPT_TRIGGERS.BOOKING_PAID,
+  PROMPT_TRIGGERS.BOOKING_CANCELLED,
+]);
+
+const isValidTrigger = (trigger) =>
+  trigger === PROMPT_TRIGGERS.INITIAL || BOOKING_TRIGGER_SET.has(trigger);
+
 const mapUserSummary = (user) =>
   user
     ? {
@@ -199,67 +217,16 @@ export const createThread = async ({
   });
 };
 
-const getOrderedPromptsForThread = async ({ thread, transaction }) => {
-  const scopeFilter = [{ scope: "GLOBAL" }];
-  if (thread.home_id != null) {
-    scopeFilter.push({ scope: "HOME", home_id: thread.home_id });
-  }
-
-  return ChatAutoPrompt.findAll({
-    where: {
-      host_user_id: thread.host_user_id,
-      is_active: true,
-      trigger: "INITIAL",
-      [Op.or]: scopeFilter,
-    },
-    // Sequence strictly by sort_order, then id
-    order: [["sort_order", "ASC"], ["id", "ASC"]],
-    transaction,
-  });
-};
-
-const enqueueInitialPrompt = async ({ thread, transaction }) => {
-  const prompts = await getOrderedPromptsForThread({ thread, transaction });
-  if (!prompts.length) return;
-
-  const prompt = prompts[0];
-
-  const message = await ChatMessage.create(
-    {
-      chat_id: thread.id,
-      sender_id: thread.host_user_id,
-      sender_role: "HOST",
-      type: "PROMPT",
-      body: prompt.prompt_text,
-      metadata: { autoPromptId: prompt.id, scope: prompt.scope },
-      delivered_at: new Date(),
-    },
-    { transaction }
-  );
-
-  await ChatParticipant.update(
-    { last_read_at: message.createdAt },
-    {
-      where: { chat_id: thread.id, user_id: thread.host_user_id },
-      limit: 1,
-      transaction,
-    }
-  );
-
-  await ChatThread.update(
-    { last_message_at: message.createdAt },
-    { where: { id: thread.id }, transaction }
-  );
-
-  thread.setDataValue("last_message_at", message.createdAt);
-};
-
-const enqueueAutoPrompts = async ({ thread, transaction }) => {
-  const prompts = await getOrderedPromptsForThread({ thread, transaction });
-
-  if (!prompts.length) return;
+const sendPromptMessages = async ({
+  thread,
+  prompts,
+  trigger = PROMPT_TRIGGERS.INITIAL,
+  transaction = null,
+}) => {
+  if (!prompts?.length) return [];
 
   let lastCreatedAt = null;
+  const createdMessages = [];
 
   for (const prompt of prompts) {
     const message = await ChatMessage.create(
@@ -269,12 +236,13 @@ const enqueueAutoPrompts = async ({ thread, transaction }) => {
         sender_role: "HOST",
         type: "PROMPT",
         body: prompt.prompt_text,
-        metadata: { autoPromptId: prompt.id, scope: prompt.scope },
+        metadata: { autoPromptId: prompt.id, scope: prompt.scope, trigger },
         delivered_at: new Date(),
       },
       { transaction }
     );
     lastCreatedAt = message.createdAt;
+    createdMessages.push(message);
   }
 
   await ChatParticipant.update(
@@ -299,6 +267,76 @@ const enqueueAutoPrompts = async ({ thread, transaction }) => {
     );
     thread.setDataValue("last_message_at", lastCreatedAt);
   }
+
+  return createdMessages;
+};
+
+const getOrderedPromptsForThread = async ({
+  thread,
+  trigger = PROMPT_TRIGGERS.INITIAL,
+  transaction,
+}) => {
+  const scopeFilter = [{ scope: "GLOBAL" }];
+  if (thread.home_id != null) {
+    scopeFilter.push({ scope: "HOME", home_id: thread.home_id });
+  }
+
+  const triggerFilter =
+    trigger === PROMPT_TRIGGERS.INITIAL
+      ? {
+          [Op.or]: [
+            { trigger: PROMPT_TRIGGERS.INITIAL },
+            { trigger: null },
+          ],
+        }
+      : { trigger };
+
+  return ChatAutoPrompt.findAll({
+    where: {
+      host_user_id: thread.host_user_id,
+      is_active: true,
+      ...triggerFilter,
+      [Op.or]: scopeFilter,
+    },
+    // Sequence strictly by sort_order, then id
+    order: [["sort_order", "ASC"], ["id", "ASC"]],
+    transaction,
+  });
+};
+
+const enqueueInitialPrompt = async ({ thread, transaction }) => {
+  const prompts = await getOrderedPromptsForThread({
+    thread,
+    transaction,
+    trigger: PROMPT_TRIGGERS.INITIAL,
+  });
+  if (!prompts.length) return;
+
+  const prompt = prompts[0];
+
+  await sendPromptMessages({
+    thread,
+    prompts: [prompt],
+    trigger: PROMPT_TRIGGERS.INITIAL,
+    transaction,
+  });
+};
+
+const enqueueAutoPrompts = async ({ thread, transaction }) => {
+  const prompts = await getOrderedPromptsForThread({
+    thread,
+    transaction,
+    trigger: PROMPT_TRIGGERS.INITIAL,
+  });
+
+  if (!prompts.length) return;
+
+  await sendPromptMessages({
+    thread,
+    prompts,
+    trigger: PROMPT_TRIGGERS.INITIAL,
+    transaction,
+  });
 };
 
 const fetchParticipant = async ({ chatId, userId, transaction }) => {
@@ -456,34 +494,24 @@ const enqueueNextPromptIfNeeded = async ({ thread }) => {
   // Fallback dedupe by body text in case metadata is missing
   const sentBodies = new Set(sentPromptMessages.map((m) => m.body).filter(Boolean));
 
-  const prompts = await getOrderedPromptsForThread({ thread });
+  const prompts = await getOrderedPromptsForThread({
+    thread,
+    trigger: PROMPT_TRIGGERS.INITIAL,
+  });
   const next = prompts.find(
     (p) => !sentPromptIds.has(Number(p.id)) && !sentBodies.has(p.prompt_text)
   );
   if (!next) return;
 
-  const message = await ChatMessage.create({
-    chat_id: thread.id,
-    sender_id: thread.host_user_id,
-    sender_role: "HOST",
-    type: "PROMPT",
-    body: next.prompt_text,
-    metadata: { autoPromptId: next.id, scope: next.scope },
-    delivered_at: new Date(),
+  const [message] = await sendPromptMessages({
+    thread,
+    prompts: [next],
+    trigger: PROMPT_TRIGGERS.INITIAL,
   });
-
-  await ChatParticipant.update(
-    { last_read_at: message.createdAt },
-    { where: { chat_id: thread.id, user_id: thread.host_user_id }, limit: 1 }
-  );
-
-  await ChatThread.update(
-    { last_message_at: message.createdAt },
-    { where: { id: thread.id } }
-  );
-
-  emitToRoom(CHAT_ROOM(thread.id), "chat:message", mapMessage(message));
-  await emitUnreadCounters(await ChatThread.findByPk(thread.id));
+  if (message) {
+    emitToRoom(CHAT_ROOM(thread.id), "chat:message", mapMessage(message));
+    await emitUnreadCounters(await ChatThread.findByPk(thread.id));
+  }
 };
 
 const emitUnreadCounters = async (thread) => {
@@ -688,6 +716,75 @@ export const listMessagesForUser = async ({
   return messages.reverse().map(mapMessage);
 };
 
+export const triggerBookingAutoPrompts = async ({
+  trigger,
+  guestUserId,
+  hostUserId,
+  homeId = null,
+  reserveId = null,
+  checkIn = null,
+  checkOut = null,
+  homeSnapshotName = null,
+  homeSnapshotImage = null,
+}) => {
+  if (!BOOKING_TRIGGER_SET.has(trigger)) return;
+  if (!guestUserId || !hostUserId) return;
+
+  const thread = await createThread({
+    guestUserId,
+    hostUserId,
+    homeId,
+    reserveId,
+    checkIn,
+    checkOut,
+    homeSnapshotName,
+    homeSnapshotImage,
+  });
+
+  const prompts = await getOrderedPromptsForThread({ thread, trigger });
+  if (!prompts.length) return;
+
+  const sentPromptMessages = await ChatMessage.findAll({
+    where: { chat_id: thread.id, type: "PROMPT" },
+    order: [["id", "ASC"]],
+  });
+  const sentPromptIds = new Set(
+    sentPromptMessages
+      .map((m) => {
+        const meta = m.metadata || {};
+        const metaTrigger = meta.trigger || PROMPT_TRIGGERS.INITIAL;
+        if (metaTrigger !== trigger) return null;
+        const raw = meta.autoPromptId ?? meta.auto_prompt_id ?? null;
+        const num = raw != null ? Number(raw) : null;
+        return Number.isFinite(num) ? num : null;
+      })
+      .filter((v) => v != null)
+  );
+  const sentBodies = new Set(
+    sentPromptMessages
+      .filter((m) => (m.metadata?.trigger || PROMPT_TRIGGERS.INITIAL) === trigger)
+      .map((m) => m.body)
+      .filter(Boolean)
+  );
+
+  const pendingPrompts = prompts.filter(
+    (p) => !sentPromptIds.has(Number(p.id)) && !sentBodies.has(p.prompt_text)
+  );
+  if (!pendingPrompts.length) return;
+
+  const messages = await sendPromptMessages({
+    thread,
+    prompts: pendingPrompts,
+    trigger,
+  });
+
+  const latestThread = await ChatThread.findByPk(thread.id);
+  await emitUnreadCounters(latestThread);
+  messages.forEach((message) => {
+    emitToRoom(CHAT_ROOM(thread.id), "chat:message", mapMessage(message));
+  });
+};
+
 export const listAutoPrompts = async ({ hostUserId }) => {
   const prompts = await ChatAutoPrompt.findAll({
     where: { host_user_id: hostUserId },
@@ -718,7 +815,7 @@ export const upsertAutoPrompt = async ({
   promptId,
   scope,
   homeId = null,
-  trigger = "INITIAL",
+  trigger = PROMPT_TRIGGERS.INITIAL,
   promptText,
   sortOrder = 0,
   isActive = true,
@@ -735,6 +832,8 @@ export const upsertAutoPrompt = async ({
     throw new Error("homeId is required for HOME scope");
   }
 
+  const resolvedTrigger = isValidTrigger(trigger) ? trigger : PROMPT_TRIGGERS.INITIAL;
+
   let prompt = null;
 
   if (promptId) {
@@ -747,7 +846,7 @@ export const upsertAutoPrompt = async ({
     await prompt.update({
       scope,
       home_id: scope === "HOME" ? homeId : null,
-      trigger,
+      trigger: resolvedTrigger,
       prompt_text: promptText,
       sort_order: sortOrder,
       is_active: isActive,
@@ -757,7 +856,7 @@ export const upsertAutoPrompt = async ({
       host_user_id: hostUserId,
       scope,
       home_id: scope === "HOME" ? homeId : null,
-      trigger,
+      trigger: resolvedTrigger,
       prompt_text: promptText,
       sort_order: sortOrder,
       is_active: isActive,
