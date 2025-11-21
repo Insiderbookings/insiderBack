@@ -18,6 +18,7 @@ import express from "express";
 import { authenticate } from "../middleware/auth.js";
 
 const router = Router();
+console.log("[payments] registering /api/payments routes (includes /stripe/webhook)");
 
 /* Bookings */
 router.post("/stripe/create-session",   createCheckoutSession);

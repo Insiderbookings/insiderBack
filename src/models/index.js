@@ -50,6 +50,7 @@ import HomeTagModel from "./HomeTag.js";
 import HomeTagLinkModel from "./HomeTagLink.js";
 import HomeFeatureModel from "./HomeFeature.js";
 import HostProfileModel from "./HostProfile.js";
+import GuestProfileModel from "./GuestProfile.js";
 import HomeFavoriteModel from "./HomeFavorite.js";
 import HomeFavoriteListModel from "./HomeFavoriteList.js";
 import HomeRecentViewModel from "./HomeRecentView.js";
@@ -88,6 +89,7 @@ import ChatThreadModel from "./ChatThread.js";
 import ChatParticipantModel from "./ChatParticipant.js";
 import ChatMessageModel from "./ChatMessage.js";
 import ChatAutoPromptModel from "./ChatAutoPrompt.js";
+import ReviewModel from "./Review.js";
 
 /* ---------- Construir objetos ---------- */
 const Stay = StayModel(sequelize);
@@ -151,6 +153,7 @@ const models = {
   HomeFavoriteList: HomeFavoriteListModel(sequelize),
   HomeRecentView: HomeRecentViewModel(sequelize),
   HostProfile: HostProfileModel(sequelize),
+  GuestProfile: GuestProfileModel(sequelize),
   WebbedsCountry: WebbedsCountryModel(sequelize),
   WebbedsCity: WebbedsCityModel(sequelize),
   WebbedsHotel: WebbedsHotelModel(sequelize),
@@ -182,6 +185,7 @@ const models = {
   Subscriber: SubscriberFactory(sequelize),
   Contract: ContractFactory(sequelize),
   UserContract: UserContractFactory(sequelize),
+  Review: ReviewModel(sequelize),
 };
 
 /* ---------- Ejecutar asociaciones ---------- */
