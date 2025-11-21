@@ -35,6 +35,8 @@ export const mapHomeToCard = (home) => {
   const photos = Array.isArray(home.media)
     ? home.media.map((item) => item?.url).filter(Boolean)
     : [];
+  const latitude = Number(address.latitude ?? address.lat);
+  const longitude = Number(address.longitude ?? address.lng);
 
   const locationParts = [
     address.address_line1,
@@ -92,5 +94,9 @@ export const mapHomeToCard = (home) => {
     reviewCount: null,
     hostId: hostUser?.id ?? home.host_id ?? null,
     host: hostUser,
+    latitude: Number.isFinite(latitude) ? latitude : null,
+    longitude: Number.isFinite(longitude) ? longitude : null,
+    locationLat: Number.isFinite(latitude) ? latitude : null,
+    locationLng: Number.isFinite(longitude) ? longitude : null,
   };
 };

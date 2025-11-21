@@ -145,17 +145,31 @@ export const handleWebhook = async (req, res) => {
     console.error("⚠️  Webhook signature failed:", err.message)
     return res.status(400).send(`Webhook Error: ${err.message}`)
   }
+  console.log("[payments] handleWebhook:event", {
+    id: event.id,
+    type: event.type,
+  });
 
   /* ─── Helpers ─── */
   const touchBookingPayment = async (bookingId, updater) => {
-    if (!bookingId) return null;
+    if (!bookingId) {
+      console.warn("[payments] touchBookingPayment:missing-bookingId");
+      return null;
+    }
     try {
       const booking = await models.Booking.findByPk(bookingId);
-      if (!booking) return null;
+      if (!booking) {
+        console.warn("[payments] touchBookingPayment:not-found", { bookingId });
+        return null;
+      }
       const patch =
         typeof updater === "function" ? updater(booking) : { ...updater };
       if (!patch || Object.keys(patch).length === 0) return booking;
       await booking.update(patch);
+      console.log("[payments] touchBookingPayment:update", {
+        bookingId,
+        fields: Object.keys(patch),
+      });
       return booking;
     } catch (e) {
       console.error("DB error (Booking touch):", e);
@@ -164,7 +178,8 @@ export const handleWebhook = async (req, res) => {
   };
 
   const markBookingAsPaid = async ({ bookingId, paymentId }) => {
-    await touchBookingPayment(bookingId, (booking) => {
+    console.log("[payments] markBookingAsPaid:start", { bookingId, paymentId });
+    const booking = await touchBookingPayment(bookingId, (booking) => {
       const next = {
         payment_status: "PAID",
         payment_intent_id: paymentId ?? booking.payment_intent_id,
@@ -180,10 +195,18 @@ export const handleWebhook = async (req, res) => {
       }
       return next;
     });
+    if (booking) {
+      console.log("[payments] markBookingAsPaid:done", {
+        bookingId,
+        status: booking.status,
+        paymentStatus: booking.payment_status,
+      });
+    }
   };
 
   const markBookingPending = async ({ bookingId, paymentId }) => {
-    await touchBookingPayment(bookingId, (booking) => {
+    console.log("[payments] markBookingPending:start", { bookingId, paymentId });
+    const booking = await touchBookingPayment(bookingId, (booking) => {
       if (booking.payment_status === "PAID") return null;
       const next = {
         payment_status: "PENDING",
@@ -194,30 +217,47 @@ export const handleWebhook = async (req, res) => {
       }
       return next;
     });
+    if (booking) {
+      console.log("[payments] markBookingPending:done", {
+        bookingId,
+        paymentStatus: booking.payment_status,
+      });
+    }
   };
 
   const markBookingPaymentFailed = async ({ bookingId }) => {
-    await touchBookingPayment(bookingId, (booking) => {
+    console.log("[payments] markBookingPaymentFailed:start", { bookingId });
+    const booking = await touchBookingPayment(bookingId, (booking) => {
       if (booking.payment_status === "PAID") return null;
       return { payment_status: "UNPAID" };
     });
+    if (booking) {
+      console.log("[payments] markBookingPaymentFailed:done", {
+        bookingId,
+        paymentStatus: booking.payment_status,
+      });
+    }
   };
 
   const markUpsellAsPaid = async ({ upsellCodeId, paymentId }) => {
     try {
+      console.log("[payments] markUpsellAsPaid:start", { upsellCodeId, paymentId });
       await models.UpsellCode.update(
         { status: "USED", payment_id: paymentId },
         { where: { id: upsellCodeId } }
       )
+      console.log("[payments] markUpsellAsPaid:done", { upsellCodeId });
     } catch (e) { console.error("DB error (UpsellCode):", e) }
   }
 
   const markBookingAddOnsAsPaid = async ({ bookingId }) => {
     try {
+      console.log("[payments] markBookingAddOnsAsPaid:start", { bookingId });
       await models.BookingAddOn.update(
         { payment_status: "PAID" },
         { where: { booking_id: bookingId } }
       )
+      console.log("[payments] markBookingAddOnsAsPaid:done", { bookingId });
     } catch (e) { console.error("DB error (BookingAddOn):", e) }
   }
 
@@ -227,6 +267,12 @@ export const handleWebhook = async (req, res) => {
     const bookingId      = Number(s.metadata?.bookingId || s.metadata?.booking_id) || 0
     const upsellCodeId   = Number(s.metadata?.upsellCodeId)     || 0
     const outsideBooking = Number(s.metadata?.outsideBookingId) || 0
+    console.log("[payments] webhook checkout.session.completed", {
+      sessionId: s.id,
+      bookingId,
+      upsellCodeId,
+      outsideBooking,
+    });
 
     if (bookingId)      await markBookingAsPaid     ({ bookingId, paymentId: s.payment_intent || s.id })
     if (upsellCodeId)   await markUpsellAsPaid      ({ upsellCodeId,        paymentId: s.payment_intent || s.id })
@@ -239,6 +285,15 @@ export const handleWebhook = async (req, res) => {
     const upsellCodeId   = Number(pi.metadata?.upsellCodeId)     || 0
     const outsideBooking = Number(pi.metadata?.outsideBookingId) || 0
     const vccCardId      = Number(pi.metadata?.vccCardId)        || 0
+    console.log("[payments] webhook payment_intent.succeeded", {
+      intentId: pi.id,
+      bookingId,
+      upsellCodeId,
+      outsideBooking,
+      vccCardId,
+      amount: pi.amount_received ?? pi.amount,
+      currency: pi.currency,
+    });
 
     if (bookingId)      await markBookingAsPaid     ({ bookingId, paymentId: pi.id })
     if (upsellCodeId)   await markUpsellAsPaid      ({ upsellCodeId,        paymentId: pi.id })
@@ -272,18 +327,31 @@ export const handleWebhook = async (req, res) => {
   if (event.type === "payment_intent.amount_capturable_updated") {
     const pi        = event.data.object;
     const bookingId = Number(pi.metadata?.bookingId || pi.metadata?.booking_id) || 0;
+    console.log("[payments] webhook amount_capturable_updated", {
+      intentId: pi.id,
+      bookingId,
+      amount: pi.amount,
+    });
     if (bookingId) await markBookingPending({ bookingId, paymentId: pi.id });
   }
 
   if (event.type === "payment_intent.canceled") {
     const pi        = event.data.object;
     const bookingId = Number(pi.metadata?.bookingId || pi.metadata?.booking_id) || 0;
+    console.log("[payments] webhook payment_intent.canceled", {
+      intentId: pi.id,
+      bookingId,
+    });
     if (bookingId) await markBookingPaymentFailed({ bookingId });
   }
 
   if (event.type === "payment_intent.payment_failed") {
     const pi        = event.data.object;
     const bookingId = Number(pi.metadata?.bookingId || pi.metadata?.booking_id) || 0;
+    console.log("[payments] webhook payment_intent.payment_failed", {
+      intentId: pi.id,
+      bookingId,
+    });
     if (bookingId) await markBookingPaymentFailed({ bookingId });
   }
 
@@ -991,6 +1059,11 @@ export const createHomePaymentIntent = async (req, res) => {
   try {
     const { bookingId, captureMode } = req.body || {};
     const userId = Number(req.user?.id ?? 0);
+    console.log("[payments] createHomePaymentIntent:start", {
+      bookingId,
+      userId,
+      captureMode,
+    });
 
     if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -1001,8 +1074,21 @@ export const createHomePaymentIntent = async (req, res) => {
     });
 
     if (!booking || String(booking.inventory_type).toUpperCase() !== "HOME") {
+      console.warn("[payments] createHomePaymentIntent:not-found-or-invalid", {
+        bookingId,
+        found: Boolean(booking),
+        inventoryType: booking?.inventory_type,
+      });
       return res.status(404).json({ error: "Home booking not found" });
     }
+
+    console.log("[payments] createHomePaymentIntent:booking", {
+      bookingId: booking.id,
+      status: booking.status,
+      paymentStatus: booking.payment_status,
+      grossPrice: booking.gross_price,
+      currency: booking.currency,
+    });
 
     if (booking.user_id && booking.user_id !== userId) {
       return res.status(403).json({ error: "Forbidden" });
@@ -1196,7 +1282,7 @@ export const createHomePaymentIntent = async (req, res) => {
     }
     await booking.update(updates);
 
-    return res.json({
+    const responsePayload = {
       paymentIntentId: paymentIntent.id,
       clientSecret: paymentIntent.client_secret,
       amount: amountNumber,
@@ -1205,9 +1291,17 @@ export const createHomePaymentIntent = async (req, res) => {
       depositAmount: securityDeposit,
       captureMethod: paymentIntent.capture_method,
       status: paymentIntent.status,
-      paymentStatus: booking.payment_status,
+      paymentStatus: updates.payment_status ?? booking.payment_status,
+      reused: reusedIntent,
+    };
+    console.log("[payments] createHomePaymentIntent:response", {
+      bookingId: booking.id,
+      intentId: paymentIntent.id,
+      stripeStatus: paymentIntent.status,
+      paymentStatus: responsePayload.paymentStatus,
       reused: reusedIntent,
     });
+    return res.json(responsePayload);
   } catch (error) {
     console.error("createHomePaymentIntent error:", error);
     return res.status(500).json({ error: "Unable to create home payment intent" });

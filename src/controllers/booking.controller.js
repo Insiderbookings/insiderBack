@@ -335,7 +335,10 @@ export const createBooking = async (req, res) => {
     if (checkOutDate <= checkInDate)
       return res.status(400).json({ error: "Check-out must be after check-in" })
 
-    const nights = diffDays(checkIn, checkOut)
+    const normalizedCheckIn = checkInDate.toISOString().slice(0, 10)
+    const normalizedCheckOut = checkOutDate.toISOString().slice(0, 10)
+
+    const nights = diffDays(normalizedCheckIn, normalizedCheckOut)
     if (nights <= 0)
       return res.status(400).json({ error: "Stay must be at least one night" })
 
@@ -412,8 +415,8 @@ export const createBooking = async (req, res) => {
           room_id: roomIdValue,
           discount_code_id: discountRecord ? discountRecord.id : null,
           source,
-          check_in: checkIn,
-          check_out: checkOut,
+          check_in: normalizedCheckIn,
+          check_out: normalizedCheckOut,
           nights,
           adults: adultsCount,
           children: childrenCount,
@@ -546,7 +549,10 @@ export const createHomeBooking = async (req, res) => {
     checkInDate.setHours(0, 0, 0, 0)
     checkOutDate.setHours(0, 0, 0, 0)
 
-    const nights = diffDays(checkIn, checkOut)
+    const normalizedCheckIn = checkInDate.toISOString().slice(0, 10)
+    const normalizedCheckOut = checkOutDate.toISOString().slice(0, 10)
+
+    const nights = diffDays(normalizedCheckIn, normalizedCheckOut)
     if (nights <= 0)
       return res.status(400).json({ error: "Stay must be at least one night" })
 
@@ -611,7 +617,7 @@ export const createHomeBooking = async (req, res) => {
     const calendarEntries = await models.HomeCalendar.findAll({
       where: {
         home_id: homeIdValue,
-        date: { [Op.gte]: checkIn, [Op.lt]: checkOut },
+        date: { [Op.gte]: normalizedCheckIn, [Op.lt]: normalizedCheckOut },
       },
     })
     const blockedEntry = calendarEntries.find(
@@ -621,14 +627,14 @@ export const createHomeBooking = async (req, res) => {
       return res.status(409).json({ error: "Selected dates are not available" })
 
     const existingCalendarMap = new Map(calendarEntries.map((entry) => [entry.date, entry]))
-    const stayDates = enumerateStayDates(checkIn, checkOut)
+    const stayDates = enumerateStayDates(normalizedCheckIn, normalizedCheckOut)
 
     const overlappingStay = await models.Stay.findOne({
       where: {
         inventory_type: "HOME",
         status: { [Op.in]: ["PENDING", "CONFIRMED"] },
-        check_in: { [Op.lt]: checkOut },
-        check_out: { [Op.gt]: checkIn },
+        check_in: { [Op.lt]: normalizedCheckOut },
+        check_out: { [Op.gt]: normalizedCheckIn },
       },
       include: [
         { model: models.StayHome, as: "homeStay", required: true, where: { home_id: homeIdValue } },
@@ -687,8 +693,8 @@ export const createHomeBooking = async (req, res) => {
           source: "HOME",
           inventory_type: "HOME",
           inventory_id: String(homeIdValue),
-          check_in: checkIn,
-          check_out: checkOut,
+          check_in: normalizedCheckIn,
+          check_out: normalizedCheckOut,
           nights,
           adults: adultsCount,
           children: childrenCount,
@@ -790,8 +796,8 @@ export const createHomeBooking = async (req, res) => {
       hostUserId: home.host_id,
       homeId: home.id,
       reserveId: bookingView.id,
-      checkIn,
-      checkOut,
+      checkIn: normalizedCheckIn,
+      checkOut: normalizedCheckOut,
       homeSnapshotName: home.title,
       homeSnapshotImage: coverImageUrl,
     }).catch((err) => console.error("booking auto prompt dispatch error:", err))

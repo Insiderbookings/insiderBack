@@ -13,6 +13,7 @@ import {
   getHomeCatalogs,
   publishHome,
   getPublicHome,
+  getPublicHomeAvailability,
   respondUploadedMedia,
   getHomeById,
   listHostHomes,
@@ -28,6 +29,7 @@ router.get("/explore", listExploreHomes);
 router.get("/recommendations", getHomeRecommendations);
 
 router.get("/public/:id", getPublicHome);
+router.get("/public/:id/availability", getPublicHomeAvailability);
 router.use(authenticate);
 
 router.get("/catalogs", getHomeCatalogs);

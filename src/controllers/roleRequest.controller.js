@@ -49,6 +49,7 @@ const ROLE_LABELS = {
   3: "Corporate",
   4: "Agency",
   5: "Vault operator",
+  6: "Host",
 }
 
 const PARTNERS_MAILBOX = process.env.PARTNERS_EMAIL || "ramiro.alet@gmail.com"
@@ -65,7 +66,7 @@ export async function createUserRoleRequest(req, res, next) {
     const roleNum = Number(role)
 
     if (!userId) return res.status(401).json({ error: "Unauthorized" })
-    if (![1, 2, 3, 4, 5].includes(roleNum)) return res.status(400).json({ error: "Invalid role" })
+    if (![1, 2, 3, 4, 5, 6].includes(roleNum)) return res.status(400).json({ error: "Invalid role" })
 
     const user = await models.User.findByPk(userId, { attributes: ["id", "name", "email", "role"] })
     if (!user) return res.status(404).json({ error: "User not found" })

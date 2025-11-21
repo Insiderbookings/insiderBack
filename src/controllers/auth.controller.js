@@ -549,8 +549,12 @@ export const listByHotel = async (req, res, next) => {
    ──────────────────────────────────────────────────────────────── */
 export const googleExchange = async (req, res) => {
   try {
-    const { code } = req.body;
+    const { code, redirectUri: clientRedirectUri } = req.body;
     if (!code) return res.status(400).json({ error: "Missing code" });
+    // Allow mobile / Expo to send their own redirect_uri; keep postmessage as default (web popup)
+    const redirectUri = typeof clientRedirectUri === "string" && clientRedirectUri.length
+      ? clientRedirectUri
+      : "postmessage";
 
     // 1) Intercambio code → tokens (incluye id_token)
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -560,7 +564,7 @@ export const googleExchange = async (req, res) => {
         code,
         client_id: GOOGLE_CLIENT_ID,
         client_secret: GOOGLE_CLIENT_SECRET,
-        redirect_uri: "postmessage", // GIS popup usa 'postmessage'
+        redirect_uri: redirectUri, // 'postmessage' para web popup; la app puede pasar su URI
         grant_type: "authorization_code",
       }),
     });

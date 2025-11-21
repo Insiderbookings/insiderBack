@@ -18,6 +18,33 @@ const asNumber = (value, fallback = null) => {
   return Number.isFinite(num) ? num : fallback;
 };
 
+const defaultArrivalGuide = () => ({
+  checkInInstructions: "",
+  accessCode: "",
+  wifi: "",
+  parking: "",
+  addressNotes: "",
+  contactPhone: "",
+  contactEmail: "",
+  notes: "",
+});
+
+const parseArrivalGuide = (houseManual) => {
+  if (!houseManual) return defaultArrivalGuide();
+  if (typeof houseManual === "object") {
+    return { ...defaultArrivalGuide(), ...houseManual };
+  }
+  try {
+    const parsed = JSON.parse(houseManual);
+    if (parsed && typeof parsed === "object") {
+      return { ...defaultArrivalGuide(), ...parsed };
+    }
+  } catch (_) {
+    // treat as plain text
+  }
+  return { ...defaultArrivalGuide(), checkInInstructions: String(houseManual || "") };
+};
+
 const normalizeMediaMetadata = (value) => {
   if (!value || typeof value !== "object") return null;
 
@@ -219,6 +246,7 @@ const parseCoordinate = (value) => {
 
 export const getHomeRecommendations = async (req, res) => {
   try {
+    console.log("[getHomeRecommendations] query", req.query);
     const rawCity = typeof req.query?.city === "string" ? req.query.city.trim() : "";
     const rawCountry =
       typeof req.query?.country === "string" ? req.query.country.trim() : "";
@@ -229,6 +257,7 @@ export const getHomeRecommendations = async (req, res) => {
     let region = null;
 
     if (!city && !country && lat == null && lng == null) {
+      console.log("[getHomeRecommendations] no geo in query, resolved from req", resolveGeoFromRequest(req));
       const geo = resolveGeoFromRequest(req);
       if (geo) {
         city = geo.city || city;
@@ -257,18 +286,21 @@ export const getHomeRecommendations = async (req, res) => {
         model: models.HomeAddress,
         as: "address",
         attributes: ["address_line1", "city", "state", "country", "latitude", "longitude"],
-        required: Boolean(city || country || (lat != null && lng != null)),
+        // If we have lat/lng, bound by a small box and sort by distance; otherwise use city/country text
+        required: Boolean((lat != null && lng != null) || city || country),
         where:
-          city || country || (lat != null && lng != null)
+          lat != null && lng != null
+            ? {
+                latitude: { [Op.not]: null },
+                longitude: { [Op.not]: null },
+                // simple bounding box to avoid returning far-away homes
+                latitude: { [Op.between]: [lat - 1, lat + 1] },
+                longitude: { [Op.between]: [lng - 1, lng + 1] },
+              }
+            : city || country
             ? {
                 ...(city ? { city: { [Op.iLike]: city } } : {}),
                 ...(country ? { country: { [Op.iLike]: country } } : {}),
-                ...(lat != null && lng != null
-                  ? {
-                      latitude: { [Op.not]: null },
-                      longitude: { [Op.not]: null },
-                    }
-                  : {}),
               }
             : undefined,
       },
@@ -311,6 +343,7 @@ export const getHomeRecommendations = async (req, res) => {
             `ABS(COALESCE("address"."latitude", 0) - ${lat}) + ABS(COALESCE("address"."longitude", 0) - ${lng})`
           )
         : null;
+    console.log("[getHomeRecommendations] resolved filters", { city, country, lat, lng, region, limit });
 
     const nearbyPromise = models.Home.findAll({
       where: {
@@ -350,11 +383,32 @@ export const getHomeRecommendations = async (req, res) => {
       trendingPromise,
       bestValuePromise,
     ]);
+    console.log("[getHomeRecommendations] result sizes", {
+      nearby: nearbyRaw?.length,
+      trending: trendingRaw?.length,
+      bestValue: bestValueRaw?.length,
+      distance: Boolean(distanceLiteral),
+    });
+
+    const dedupeById = (arr = []) => {
+      const seen = new Set();
+      const result = [];
+      for (const card of arr) {
+        const id = card?.id;
+        if (id == null) continue;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        result.push(card);
+      }
+      return result;
+    };
 
     const mapCards = (items) =>
-      (items ?? [])
-        .map(mapHomeToExploreCard)
-        .filter((card) => card && card.coverImage);
+      dedupeById(
+        (items ?? [])
+          .map(mapHomeToExploreCard)
+          .filter((card) => card)
+      );
 
     const sections = [];
     const nearbyCards = mapCards(nearbyRaw);
@@ -387,11 +441,27 @@ export const getHomeRecommendations = async (req, res) => {
       });
     }
 
+    // Remove duplicates across sections: keep first occurrence
+    const seenIds = new Set();
+    const dedupedSections = [];
+    for (const section of sections) {
+      const uniqItems = [];
+      for (const card of section.items || []) {
+        if (!card?.id) continue;
+        if (seenIds.has(card.id)) continue;
+        seenIds.add(card.id);
+        uniqItems.push(card);
+      }
+      if (uniqItems.length) {
+        dedupedSections.push({ ...section, items: uniqItems });
+      }
+    }
+
     // Fallback: if we still have no sections, reuse explore builder to avoid empty feed
-    if (!sections.length) {
+    if (!dedupedSections.length) {
       const fallbackCards = mapCards(trendingRaw);
       buildExploreSections(fallbackCards).forEach((section) => {
-        sections.push(section);
+        dedupedSections.push(section);
       });
     }
 
@@ -403,7 +473,7 @@ export const getHomeRecommendations = async (req, res) => {
         latitude: lat ?? null,
         longitude: lng ?? null,
       },
-      sections,
+      sections: dedupedSections,
     });
   } catch (err) {
     console.error("[getHomeRecommendations]", err);
@@ -1057,6 +1127,88 @@ export const getHomeById = async (req, res) => {
   }
 };
 
+export const getPublicHomeAvailability = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const homeId = Number(id);
+    if (!homeId) return res.status(400).json({ error: "Invalid home ID" });
+
+    const { startDate, endDate } = clampDateRange({
+      start: req.query?.start,
+      end: req.query?.end,
+    });
+
+    const home = await models.Home.findOne({
+      where: { id: homeId, status: "PUBLISHED", is_visible: true },
+      attributes: ["id"],
+    });
+    if (!home) return res.status(404).json({ error: "Home not found" });
+
+    const [calendarEntries, stays] = await Promise.all([
+      models.HomeCalendar.findAll({
+        where: {
+          home_id: homeId,
+          date: { [Op.between]: [formatDate(startDate), formatDate(endDate)] },
+          status: { [Op.ne]: "AVAILABLE" },
+        },
+      }),
+      models.Stay.findAll({
+        where: {
+          inventory_type: "HOME",
+          status: { [Op.in]: ["PENDING", "CONFIRMED"] },
+          check_in: { [Op.lt]: formatDate(new Date(endDate.getTime() + 86400000)) },
+          check_out: { [Op.gt]: formatDate(startDate) },
+        },
+        include: [
+          {
+            model: models.StayHome,
+            as: "homeStay",
+            required: true,
+            where: { home_id: homeId },
+          },
+        ],
+      }),
+    ]);
+
+    const unavailable = new Set();
+    for (const entry of calendarEntries) {
+      if (entry?.date) unavailable.add(entry.date);
+    }
+    for (const stay of stays) {
+      const checkIn = parseDateOnly(stay.check_in);
+      const checkOut = parseDateOnly(stay.check_out);
+      if (!checkIn || !checkOut) continue;
+      const loopEnd = new Date(checkOut.getTime());
+      loopEnd.setUTCDate(loopEnd.getUTCDate() - 1);
+      for (const day of iterateDates(checkIn, loopEnd)) {
+        if (day < startDate || day > endDate) continue;
+        const iso = formatDate(day);
+        if (iso) unavailable.add(iso);
+      }
+    }
+
+    const days = iterateDates(startDate, endDate).map((date) => {
+      const iso = formatDate(date);
+      return {
+        date: iso,
+        status: unavailable.has(iso) ? "UNAVAILABLE" : "AVAILABLE",
+      };
+    });
+
+    return res.json({
+      range: {
+        start: formatDate(startDate),
+        end: formatDate(endDate),
+      },
+      unavailable: Array.from(unavailable).sort(),
+      days,
+    });
+  } catch (err) {
+    console.error("getPublicHomeAvailability error:", err);
+    return res.status(500).json({ error: "Unable to load availability" });
+  }
+};
+
 export const listHostHomes = async (req, res) => {
   try {
     const hostId = req.user?.id;
@@ -1095,6 +1247,21 @@ const parseDateOnly = (value) => {
   const [year, month, day] = parts;
   if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
   return new Date(Date.UTC(year, month - 1, day));
+};
+
+const clampDateRange = ({ start, end, fallbackDays = 180 }) => {
+  const now = new Date();
+  const startDate = parseDateOnly(start) || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const fallbackEnd = new Date(startDate.getTime());
+  fallbackEnd.setUTCDate(fallbackEnd.getUTCDate() + fallbackDays);
+  const endDate = parseDateOnly(end) || fallbackEnd;
+  if (endDate <= startDate) {
+    endDate.setUTCDate(startDate.getUTCDate() + Math.max(1, fallbackDays));
+  }
+  const maxEnd = new Date(startDate.getTime());
+  maxEnd.setUTCDate(maxEnd.getUTCDate() + 370);
+  if (endDate > maxEnd) return { startDate, endDate: maxEnd };
+  return { startDate, endDate };
 };
 
 const iterateDates = (start, end) => {
@@ -1308,6 +1475,59 @@ export const getHostCalendarDetail = async (req, res) => {
   } catch (error) {
     console.error('getHostCalendarDetail error:', error);
     return res.status(500).json({ error: 'Unable to load calendar detail' });
+  }
+};
+
+export const getArrivalGuide = async (req, res) => {
+  try {
+    const hostId = req.user?.id;
+    const { homeId } = req.params;
+    const home = await models.Home.findOne({
+      where: { id: homeId, host_id: hostId },
+      include: [{ model: models.HomePolicies, as: "policies" }],
+    });
+    if (!home) return res.status(404).json({ error: "Home not found" });
+
+    const guide = parseArrivalGuide(home.policies?.house_manual);
+    return res.json({ guide });
+  } catch (err) {
+    console.error("getArrivalGuide error:", err);
+    return res.status(500).json({ error: "Unable to load arrival guide" });
+  }
+};
+
+export const updateArrivalGuide = async (req, res) => {
+  try {
+    const hostId = req.user?.id;
+    const { homeId } = req.params;
+    const home = await models.Home.findOne({
+      where: { id: homeId, host_id: hostId },
+      include: [{ model: models.HomePolicies, as: "policies" }],
+    });
+    if (!home) return res.status(404).json({ error: "Home not found" });
+
+    const payload = {
+      checkInInstructions: req.body?.checkInInstructions || "",
+      accessCode: req.body?.accessCode || "",
+      wifi: req.body?.wifi || "",
+      parking: req.body?.parking || "",
+      addressNotes: req.body?.addressNotes || "",
+      contactPhone: req.body?.contactPhone || "",
+      contactEmail: req.body?.contactEmail || "",
+      notes: req.body?.notes || "",
+    };
+
+    if (home.policies) {
+      await home.policies.update({ house_manual: JSON.stringify(payload) });
+    } else {
+      await models.HomePolicies.create({ home_id: home.id, house_manual: JSON.stringify(payload) });
+    }
+    await home.update({ draft_step: Math.max(home.draft_step, 13) });
+
+    return res.json({ guide: payload });
+  } catch (err) {
+    console.error("updateArrivalGuide error:", err);
+    return res.status(500).json({ error: "Unable to save arrival guide" });
   }
 };
 

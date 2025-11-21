@@ -27,6 +27,10 @@ app.post(
   bodyParser.raw({ type: "application/json" }),
   handleWebhook
 );
+app.use(
+  "/api/payments/stripe/webhook",
+  bodyParser.raw({ type: "application/json" })
+);
 
 /* ---------- Middlewares globales ---------- */
 app.use(cors());

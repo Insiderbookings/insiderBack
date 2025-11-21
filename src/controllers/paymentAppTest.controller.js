@@ -1,9 +1,9 @@
 import Stripe from "stripe";
 import models from "../models/index.js";
 
-const STRIPE_SECRET_KEY_TEST = process.env.STRIPE_SECRET_KEY_TEST;
+const STRIPE_SECRET_KEY_TEST = process.env.STRIPE_SECRET_KEY_TEST || process.env.STRIPE_SECRET_KEY;
 if (!STRIPE_SECRET_KEY_TEST) {
-  throw new Error("⚠️ Falta STRIPE_SECRET_KEY_TEST en .env para la ruta de pruebas.");
+  throw new Error("⚠️ Falta STRIPE_SECRET_KEY_TEST (o STRIPE_SECRET_KEY) en .env para la ruta de pruebas.");
 }
 
 const stripeTestClient = new Stripe(STRIPE_SECRET_KEY_TEST, { apiVersion: "2022-11-15" });
@@ -14,6 +14,11 @@ export const createHomePaymentIntentAppTest = async (req, res) => {
   try {
     const { bookingId, captureMode } = req.body || {};
     const userId = Number(req.user?.id ?? 0);
+    console.log("[payments:test] createHomePaymentIntent:start", {
+      bookingId,
+      userId,
+      captureMode,
+    });
 
     if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -24,8 +29,21 @@ export const createHomePaymentIntentAppTest = async (req, res) => {
     });
 
     if (!booking || String(booking.inventory_type).toUpperCase() !== "HOME") {
+      console.warn("[payments:test] createHomePaymentIntent:not-found-or-invalid", {
+        bookingId,
+        found: Boolean(booking),
+        inventoryType: booking?.inventory_type,
+      });
       return res.status(404).json({ error: "Home booking not found" });
     }
+
+    console.log("[payments:test] createHomePaymentIntent:booking", {
+      bookingId: booking.id,
+      status: booking.status,
+      paymentStatus: booking.payment_status,
+      grossPrice: booking.gross_price,
+      currency: booking.currency,
+    });
 
     if (booking.user_id && booking.user_id !== userId) {
       return res.status(403).json({ error: "Forbidden" });
@@ -104,7 +122,7 @@ export const createHomePaymentIntentAppTest = async (req, res) => {
           payment_status: "PAID",
           payment_intent_id: paymentIntent.id,
         });
-        return res.json({
+        const responsePayload = {
           paymentIntentId: paymentIntent.id,
           clientSecret: paymentIntent.client_secret,
           amount: amountNumber,
@@ -115,7 +133,15 @@ export const createHomePaymentIntentAppTest = async (req, res) => {
           status: paymentIntent.status,
           paymentStatus: "PAID",
           reused: true,
+        };
+        console.log("[payments:test] createHomePaymentIntent:response", {
+          bookingId: booking.id,
+          intentId: paymentIntent.id,
+          stripeStatus: paymentIntent.status,
+          paymentStatus: responsePayload.paymentStatus,
+          reused: true,
         });
+        return res.json(responsePayload);
       }
 
       if (paymentIntent.status === "canceled") {
@@ -220,7 +246,7 @@ export const createHomePaymentIntentAppTest = async (req, res) => {
     }
     await booking.update(updates);
 
-    return res.json({
+    const responsePayload = {
       paymentIntentId: paymentIntent.id,
       clientSecret: paymentIntent.client_secret,
       amount: amountNumber,
@@ -229,9 +255,17 @@ export const createHomePaymentIntentAppTest = async (req, res) => {
       depositAmount: securityDeposit,
       captureMethod: paymentIntent.capture_method,
       status: paymentIntent.status,
-      paymentStatus: booking.payment_status,
+      paymentStatus: updates.payment_status ?? booking.payment_status,
+      reused: reusedIntent,
+    };
+    console.log("[payments:test] createHomePaymentIntent:response", {
+      bookingId: booking.id,
+      intentId: paymentIntent.id,
+      stripeStatus: paymentIntent.status,
+      paymentStatus: responsePayload.paymentStatus,
       reused: reusedIntent,
     });
+    return res.json(responsePayload);
   } catch (error) {
     console.error("createHomePaymentIntentAppTest error:", error);
     return res.status(500).json({ error: "Unable to create home payment intent (test)" });
