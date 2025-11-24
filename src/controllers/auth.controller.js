@@ -17,6 +17,45 @@ dotenv.config();
 const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
+const USER_SAFE_ATTRIBUTES = ["id", "name", "email", "phone", "role", "avatar_url", "is_active"];
+const USER_INCLUDES = [
+  { model: models.HostProfile, as: "hostProfile" },
+  { model: models.GuestProfile, as: "guestProfile" },
+];
+
+const presentUser = (user) => {
+  if (!user) return null;
+  const plain = typeof user.get === "function" ? user.get({ plain: true }) : user;
+  return {
+    id: plain.id,
+    name: plain.name,
+    email: plain.email,
+    phone: plain.phone,
+    role: plain.role ?? 0,
+    avatar_url: plain.avatar_url ?? null,
+    is_active: plain.is_active ?? true,
+    hostProfile: plain.hostProfile || null,
+    guestProfile: plain.guestProfile || null,
+  };
+};
+
+const loadSafeUser = async (id) => {
+  if (!id) return null;
+  const user = await models.User.findByPk(id, {
+    attributes: USER_SAFE_ATTRIBUTES,
+    include: USER_INCLUDES,
+  });
+  return presentUser(user);
+};
+
+const ensureGuestProfile = async (userId) => {
+  if (!userId || !models.GuestProfile) return null;
+  const [profile] = await models.GuestProfile.findOrCreate({
+    where: { user_id: userId },
+  });
+  return profile;
+};
+
 export const signToken = (payload) =>
   jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
 
@@ -246,16 +285,9 @@ export const registerUser = async (req, res) => {
     }
 
     // Emit a token + user to satisfy FE expectations; still send verify email above
+    await ensureGuestProfile(user.id)
     const token = signToken({ id: user.id, type: "user", role: user.role })
-    const safeUser = {
-      id   : user.id,
-      name : user.name,
-      email: user.email,
-      phone: user.phone,
-      role : user.role ?? 0,
-      avatar_url: user.avatar_url ?? null,
-      is_active : user.is_active ?? true,
-    }
+    const safeUser = await loadSafeUser(user.id)
     return res.status(201).json({ token, user: safeUser })
   } catch (err) {
     console.error(err);
@@ -289,11 +321,13 @@ export const loginUser = async (req, res) => {
     } */
 
     /* 3 ▸ Emitir JWT */
+    await ensureGuestProfile(user.id);
     const token = signToken({ id: user.id, type: "user", role: user.role });
     if (process.env.NODE_ENV != "production") {
       console.log("[loginUser] issued token:", token);
     }
-    return res.json({ token, user });
+    const safeUser = await loadSafeUser(user.id);
+    return res.json({ token, user: safeUser });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Server error" });

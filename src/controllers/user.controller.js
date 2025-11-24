@@ -17,7 +17,10 @@ export const getCurrentUser = async (req, res) => {
         "avatar_url",
         "createdAt",
       ],
-      include: [{ model: models.HostProfile, as: "hostProfile" }],
+      include: [
+        { model: models.HostProfile, as: "hostProfile" },
+        { model: models.GuestProfile, as: "guestProfile" },
+      ],
     })
     if (!user) return res.status(404).json({ error: "User not found" })
     return res.json(user.get({ plain: true }))

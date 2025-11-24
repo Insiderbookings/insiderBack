@@ -44,8 +44,6 @@ export default (sequelize) => {
       booked_at: { type: DataTypes.DATE },
       cancelled_at: { type: DataTypes.DATE },
       rate_expires_at: { type: DataTypes.DATE },
-      booking_latitude: { type: DataTypes.DECIMAL(10, 7), allowNull: true, validate: { min: -90, max: 90 } },
-      booking_longitude: { type: DataTypes.DECIMAL(11, 7), allowNull: true, validate: { min: -180, max: 180 } },
 
       // 👇 JSONB en Postgres, JSON en MySQL/MariaDB
       meta: { type: JSON_TYPE },
@@ -63,8 +61,6 @@ export default (sequelize) => {
         { fields: ['status'] },
         { fields: ['payment_status'] },
         { fields: ['source', 'external_ref'] },
-        { fields: ['booking_latitude'] },
-        { fields: ['booking_longitude'] },
       ],
     }
   )
@@ -85,9 +81,6 @@ export default (sequelize) => {
 
     if (models.Commission) {
       Booking.hasOne(models.Commission, { foreignKey: 'booking_id' })
-    }
-    if (models.StayHome) {
-      Booking.hasOne(models.StayHome, { foreignKey: 'stay_id', as: 'homeStay' })
     }
   }
 

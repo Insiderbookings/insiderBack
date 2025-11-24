@@ -107,6 +107,13 @@ export default (sequelize) => {
         onDelete: "CASCADE",
       });
     }
+    if (models.GuestProfile) {
+      User.hasOne(models.GuestProfile, {
+        foreignKey: "user_id",
+        as: "guestProfile",
+        onDelete: "CASCADE",
+      });
+    }
     if (models.HostBadge) {
       User.hasMany(models.HostBadge, {
         foreignKey: "user_id",
