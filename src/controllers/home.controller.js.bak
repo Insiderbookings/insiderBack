@@ -244,10 +244,6 @@ const parseCoordinate = (value) => {
   return num;
 };
 
-const TRAVELER_COORDINATE_DELTA = 0.75;
-const TRAVELER_USER_LIMIT = 200;
-const TRAVELER_STATUS_SCOPE = ["CONFIRMED", "COMPLETED"];
-
 export const getHomeRecommendations = async (req, res) => {
   try {
     const rawCity = typeof req.query?.city === "string" ? req.query.city.trim() : "";
@@ -303,8 +299,8 @@ export const getHomeRecommendations = async (req, res) => {
               }
             : city || country
             ? {
-                ...(city ? { city: { [iLikeOp]: city } } : {}),
-                ...(country ? { country: { [iLikeOp]: country } } : {}),
+                ...(city ? { city: { [Op.iLike]: city } } : {}),
+                ...(country ? { country: { [Op.iLike]: country } } : {}),
               }
             : undefined,
       },
@@ -342,7 +338,6 @@ export const getHomeRecommendations = async (req, res) => {
     ];
 
     const dialect = typeof sequelize.getDialect === "function" ? sequelize.getDialect() : "mysql";
-    const iLikeOp = dialect === "mysql" ? Op.like : Op.iLike;
     const quote = (name) => (dialect === "mysql" ? `\`${name}\`` : `"${name}"`);
     const columnRef = (alias, column) => `${quote(alias)}.${quote(column)}`;
 
@@ -450,243 +445,6 @@ export const getHomeRecommendations = async (req, res) => {
 
     const sliderLimit = Math.min(7, Math.max(1, limit || 7));
 
-    const normalizeDestinationRow = (row) => {
-      if (!row) return null;
-      const parts = [row?.city, row?.state, row?.country]
-        .map((value) => (value == null ? null : String(value).trim()))
-        .filter(Boolean);
-      const label = parts[0] || null;
-      if (!label) return null;
-      return {
-        ...row,
-        __label: label,
-        __key: label.toLowerCase(),
-      };
-    };
-
-    const buildSectionForDestination = async (destinationRow, { sectionId, prefix }) => {
-      if (!destinationRow) return null;
-
-      const destinationWhere =
-        destinationRow.city != null
-          ? { city: { [iLikeOp]: destinationRow.city } }
-          : destinationRow.state != null
-          ? { state: { [iLikeOp]: destinationRow.state } }
-          : destinationRow.country != null
-          ? { country: { [iLikeOp]: destinationRow.country } }
-          : null;
-
-      if (!destinationWhere) return null;
-
-      const [addressInclude, ...restIncludes] = includeBase;
-      if (!addressInclude) return null;
-      const destinationIncludes = [
-          {
-            ...addressInclude,
-            required: true,
-            where: destinationWhere,
-          },
-          ...restIncludes,
-        ];
-
-      const rawHomes = await models.Home.findAll({
-        where: baseWhere,
-        include: destinationIncludes,
-        order: [
-          ["updated_at", "DESC"],
-          ["id", "DESC"],
-        ],
-        limit,
-      });
-
-      const cards = mapCards(rawHomes).slice(0, sliderLimit);
-      if (!cards.length) return null;
-
-      return {
-        key: destinationRow.__key,
-        section: {
-          id: sectionId,
-          title: destinationRow.__label ? `${prefix} ${destinationRow.__label}` : prefix,
-          items: cards,
-        },
-      };
-    };
-
-    const buildTravelerSection = async ({
-      excludeKeys = new Set(),
-      locationLabel: locationLabelArg = null,
-      sectionId = "homes-slider-travelers",
-    } = {}) => {
-      if (lat == null || lng == null) return null;
-
-      const bookingWhere = {
-        booking_latitude: { [Op.between]: [lat - TRAVELER_COORDINATE_DELTA, lat + TRAVELER_COORDINATE_DELTA] },
-        booking_longitude: { [Op.between]: [lng - TRAVELER_COORDINATE_DELTA, lng + TRAVELER_COORDINATE_DELTA] },
-        user_id: { [Op.ne]: null },
-        inventory_type: "HOME",
-        status: { [Op.in]: TRAVELER_STATUS_SCOPE },
-      };
-
-      const travelerRows = await models.Booking.findAll({
-        attributes: [[sequelize.fn("DISTINCT", sequelize.col("user_id")), "user_id"]],
-        where: bookingWhere,
-        raw: true,
-      });
-
-      const travelerUserIds = Array.from(
-        new Set(
-          travelerRows
-            .map((row) => Number(row.user_id))
-            .filter((value) => Number.isFinite(value))
-        )
-      ).slice(0, TRAVELER_USER_LIMIT);
-
-      if (!travelerUserIds.length) return null;
-
-      const destinationRows = await models.Booking.findAll({
-        attributes: [
-          [sequelize.col("homeStay->home->address.city"), "city"],
-          [sequelize.col("homeStay->home->address.state"), "state"],
-          [sequelize.col("homeStay->home->address.country"), "country"],
-          [sequelize.fn("COUNT", sequelize.col("Stay.id")), "count"],
-        ],
-        where: {
-          user_id: { [Op.in]: travelerUserIds },
-          inventory_type: "HOME",
-          status: { [Op.in]: TRAVELER_STATUS_SCOPE },
-        },
-        include: [
-          {
-            model: models.StayHome,
-            as: "homeStay",
-            attributes: [],
-            required: true,
-            include: [
-              {
-                model: models.Home,
-                as: "home",
-                attributes: [],
-                required: true,
-                include: [
-                  {
-                    model: models.HomeAddress,
-                    as: "address",
-                    attributes: [],
-                    required: true,
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-        group: [
-          sequelize.col("homeStay->home->address.city"),
-          sequelize.col("homeStay->home->address.state"),
-          sequelize.col("homeStay->home->address.country"),
-        ],
-        order: [[sequelize.literal("count"), "DESC"]],
-        limit: 5,
-        raw: true,
-        subQuery: false,
-      });
-
-      if (!destinationRows.length) return null;
-
-      const normalizedRows = destinationRows
-        .map((row) => normalizeDestinationRow(row))
-        .filter(Boolean);
-
-      let destinationRow = null;
-      for (const row of normalizedRows) {
-        if (excludeKeys.has(row.__key)) continue;
-        destinationRow = row;
-        break;
-      }
-
-      if (!destinationRow) return null;
-
-      const prefix = locationLabelArg
-        ? `${locationLabelArg} travelers also visit`
-        : "Locals also visit";
-
-      return buildSectionForDestination(destinationRow, {
-        sectionId,
-        prefix,
-      });
-    };
-
-    const buildTopBookingSection = async ({
-      excludeKeys = new Set(),
-      sectionId = "homes-slider-top-booked",
-      prefix = "Most booked in",
-    } = {}) => {
-      const destinationRows = await models.Booking.findAll({
-        attributes: [
-          [sequelize.col("homeStay->home->address.city"), "city"],
-          [sequelize.col("homeStay->home->address.state"), "state"],
-          [sequelize.col("homeStay->home->address.country"), "country"],
-          [sequelize.fn("COUNT", sequelize.col("Stay.id")), "count"],
-        ],
-        where: {
-          inventory_type: "HOME",
-          status: { [Op.in]: TRAVELER_STATUS_SCOPE },
-        },
-        include: [
-          {
-            model: models.StayHome,
-            as: "homeStay",
-            attributes: [],
-            required: true,
-            include: [
-              {
-                model: models.Home,
-                as: "home",
-                attributes: [],
-                required: true,
-                include: [
-                  {
-                    model: models.HomeAddress,
-                    as: "address",
-                    attributes: [],
-                    required: true,
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-        group: [
-          sequelize.col("homeStay->home->address.city"),
-          sequelize.col("homeStay->home->address.state"),
-          sequelize.col("homeStay->home->address.country"),
-        ],
-        order: [[sequelize.literal("count"), "DESC"]],
-        limit: 8,
-        raw: true,
-        subQuery: false,
-      });
-
-      if (!destinationRows.length) return null;
-
-      const normalizedRows = destinationRows
-        .map((row) => normalizeDestinationRow(row))
-        .filter(Boolean);
-
-      let destinationRow = null;
-      for (const row of normalizedRows) {
-        if (excludeKeys.has(row.__key)) continue;
-        destinationRow = row;
-        break;
-      }
-
-      if (!destinationRow) return null;
-
-      return buildSectionForDestination(destinationRow, {
-        sectionId,
-        prefix,
-      });
-    };
-
     const groupsNearby = buildCityGroups(nearbyCards);
     const groupsTrending = buildCityGroups(trendingCards);
     const groupsBestValue = buildCityGroups(bestValueCards);
@@ -721,30 +479,25 @@ export const getHomeRecommendations = async (req, res) => {
     };
 
     const sliderSections = [];
-    const usedCityKeys = new Set();
 
     if (primaryGroup) {
-      const primarySection = buildSectionFromGroup(
-        primaryGroup,
-        (label) => (label ? `Popular in ${label}` : "Homes near you"),
-        "primary"
+      sliderSections.push(
+        buildSectionFromGroup(
+          primaryGroup,
+          (label) => (label ? `Popular in ${label}` : "Homes near you"),
+          "primary"
+        )
       );
-      sliderSections.push(primarySection);
-      if (primaryGroup?.key) {
-        usedCityKeys.add(primaryGroup.key);
-      }
     }
 
     if (secondaryGroup) {
-      const secondarySection = buildSectionFromGroup(
-        secondaryGroup,
-        (label) => (label ? `Also in ${label}` : "More homes nearby"),
-        "secondary"
+      sliderSections.push(
+        buildSectionFromGroup(
+          secondaryGroup,
+          (label) => (label ? `Also in ${label}` : "More homes nearby"),
+          "secondary"
+        )
       );
-      sliderSections.push(secondarySection);
-      if (secondaryGroup?.key) {
-        usedCityKeys.add(secondaryGroup.key);
-      }
     }
 
     if (!secondaryGroup && primaryGroup?.label) {
@@ -775,15 +528,13 @@ export const getHomeRecommendations = async (req, res) => {
         buildCityGroups(mapCards(fallbackRaw)).find((group) => group && group.cards.length && group.key !== primaryKey) || null;
 
       if (fallbackGroup) {
-        const fallbackSection = buildSectionFromGroup(
-          fallbackGroup,
-          (label) => (label ? `Also in ${label}` : "More homes nearby"),
-          "secondary-fallback"
+        sliderSections.push(
+          buildSectionFromGroup(
+            fallbackGroup,
+            (label) => (label ? `Also in ${label}` : "More homes nearby"),
+            "secondary-fallback"
+          )
         );
-        sliderSections.push(fallbackSection);
-        if (fallbackGroup?.key) {
-          usedCityKeys.add(fallbackGroup.key);
-        }
       }
     }
 
@@ -803,57 +554,6 @@ export const getHomeRecommendations = async (req, res) => {
       primaryGroup?.label ||
       nearbyCards[0]?.city ||
       null;
-
-    const travelerSectionResult = await buildTravelerSection({
-      excludeKeys: usedCityKeys,
-      locationLabel,
-    });
-
-    if (travelerSectionResult?.section) {
-      sliderSections.push(travelerSectionResult.section);
-      if (travelerSectionResult.key) {
-        usedCityKeys.add(travelerSectionResult.key);
-      }
-    }
-
-    const travelerSectionResultSecondary = await buildTravelerSection({
-      excludeKeys: usedCityKeys,
-      locationLabel,
-      sectionId: "homes-slider-travelers-secondary",
-    });
-
-    if (travelerSectionResultSecondary?.section) {
-      sliderSections.push(travelerSectionResultSecondary.section);
-      if (travelerSectionResultSecondary.key) {
-        usedCityKeys.add(travelerSectionResultSecondary.key);
-      }
-    }
-
-    const topBookingSectionPrimary = await buildTopBookingSection({
-      excludeKeys: usedCityKeys,
-      sectionId: "homes-slider-top-booked-primary",
-      prefix: "Most booked in",
-    });
-
-    if (topBookingSectionPrimary?.section) {
-      sliderSections.push(topBookingSectionPrimary.section);
-      if (topBookingSectionPrimary.key) {
-        usedCityKeys.add(topBookingSectionPrimary.key);
-      }
-    }
-
-    const topBookingSectionSecondary = await buildTopBookingSection({
-      excludeKeys: usedCityKeys,
-      sectionId: "homes-slider-top-booked-secondary",
-      prefix: "Also popular in",
-    });
-
-    if (topBookingSectionSecondary?.section) {
-      sliderSections.push(topBookingSectionSecondary.section);
-      if (topBookingSectionSecondary.key) {
-        usedCityKeys.add(topBookingSectionSecondary.key);
-      }
-    }
 
     return res.json({
       location: {

@@ -84,6 +84,17 @@ export default (sequelize) => {
       outside: { type: DataTypes.BOOLEAN, defaultValue: false },
       active: { type: DataTypes.BOOLEAN, defaultValue: true },
 
+      booking_latitude: {
+        type: DataTypes.DECIMAL(10, 7),
+        allowNull: true,
+        validate: { min: -90, max: 90 },
+      },
+      booking_longitude: {
+        type: DataTypes.DECIMAL(11, 7),
+        allowNull: true,
+        validate: { min: -180, max: 180 },
+      },
+
       privacy_level: {
         type: DataTypes.ENUM(...PRIVACY_ENUM),
         allowNull: true,

@@ -17,6 +17,7 @@ import { setGlobalDispatcher, Agent } from "undici";
 import { ensureDefaultPlatforms } from "./services/platform.service.js";
 import ensureHomeFavoriteIndexes from "./utils/ensureHomeFavoriteIndexes.js";
 import { initSocketServer } from "./websocket/index.js";
+import diagnoseForeignKeyError from "./utils/diagnoseForeignKeyError.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -81,6 +82,9 @@ const PORT = process.env.PORT || 3000;
       console.log(`Server listening on port ${PORT}`)
     );
   } catch (err) {
+    if (err.name === "SequelizeForeignKeyConstraintError") {
+      await diagnoseForeignKeyError(err, sequelize);
+    }
     console.error("Failed to start server:", err);
     process.exit(1);
   }

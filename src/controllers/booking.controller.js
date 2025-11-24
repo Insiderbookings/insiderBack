@@ -52,6 +52,22 @@ const toPlain = (value) => {
   return value
 }
 
+const toFiniteNumber = (value) => {
+  if (value == null || value === "") return null
+  const num = Number(value)
+  return Number.isFinite(num) ? num : null
+}
+
+const normalizeCoordinate = (value, min, max) => {
+  const num = toFiniteNumber(value)
+  if (num == null) return null
+  if (num < min || num > max) return null
+  return num
+}
+
+const normalizeLatitude = (value) => normalizeCoordinate(value, -90, 90)
+const normalizeLongitude = (value) => normalizeCoordinate(value, -180, 180)
+
 const pickCoverImage = (media) => {
   if (!Array.isArray(media) || !media.length) return null
   const normalized = media.map(toPlain)
@@ -193,6 +209,8 @@ const mapStay = (row, source) => {
     guestLastName: row.guest_last_name ?? row.guestLastName ?? null,
     guestEmail: row.guest_email ?? row.guestEmail ?? null,
     guestPhone: row.guest_phone ?? row.guestPhone ?? null,
+    bookingLatitude: row.booking_latitude ?? row.bookingLatitude ?? null,
+    bookingLongitude: row.booking_longitude ?? row.bookingLongitude ?? null,
 
     hotel: isHomeStay ? null : mergedHotel,
     room: isHomeStay ? null : mergedRoom,
@@ -519,6 +537,7 @@ export const createBooking = async (req, res) => {
 
 export const createHomeBooking = async (req, res) => {
   try {
+    const body = req.body || {}
     const userId = Number(req.user?.id ?? 0)
     if (!userId) return res.status(401).json({ error: "Unauthorized" })
 
@@ -532,8 +551,11 @@ export const createHomeBooking = async (req, res) => {
       guestName,
       guestEmail,
       guestPhone,
+      bookingLatitude: bodyBookingLatitude,
+      bookingLongitude: bodyBookingLongitude,
+      bookingLocation: bodyBookingLocation,
       meta: metaPayload = {},
-    } = req.body || {}
+    } = body
 
     const homeIdValue = Number(homeId ?? 0) || null
     if (!homeIdValue || !checkIn || !checkOut)
@@ -684,6 +706,40 @@ export const createHomeBooking = async (req, res) => {
       .trim()
       .toUpperCase()
 
+    const locationFromBody =
+      bodyBookingLocation && typeof bodyBookingLocation === "object" ? bodyBookingLocation : null
+    let locationFromMeta = null
+    if (metaPayload && typeof metaPayload === "object") {
+      if (metaPayload.deviceLocation && typeof metaPayload.deviceLocation === "object") {
+        locationFromMeta = metaPayload.deviceLocation
+      } else if (metaPayload.location && typeof metaPayload.location === "object") {
+        locationFromMeta = metaPayload.location
+      }
+    }
+    const bookingLatitudeValue = normalizeLatitude(
+      bodyBookingLatitude ??
+        locationFromBody?.latitude ??
+        locationFromBody?.lat ??
+        body?.lat ??
+        body?.latitude ??
+        locationFromMeta?.latitude ??
+        locationFromMeta?.lat ??
+        null
+    )
+    const bookingLongitudeValue = normalizeLongitude(
+      bodyBookingLongitude ??
+        locationFromBody?.longitude ??
+        locationFromBody?.lng ??
+        locationFromBody?.lon ??
+        body?.lng ??
+        body?.lon ??
+        body?.longitude ??
+        locationFromMeta?.longitude ??
+        locationFromMeta?.lng ??
+        locationFromMeta?.lon ??
+        null
+    )
+
     const stay = await sequelize.transaction(async (tx) => {
       const created = await models.Booking.create(
         {
@@ -709,6 +765,8 @@ export const createHomeBooking = async (req, res) => {
           status: "PENDING",
           outside: false,
           active: true,
+           booking_latitude: bookingLatitudeValue,
+           booking_longitude: bookingLongitudeValue,
           booked_at: new Date(),
           pricing_snapshot: {
             nightlyBreakdown,
