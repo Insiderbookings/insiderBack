@@ -200,15 +200,23 @@ async function main() {
     const homeBookingsPayload = [];
     const originBA = { lat: -34.61, lng: -58.42 };
     const originMiami = { lat: 25.76, lng: -80.19 };
+    const now = new Date();
+    const addDays = (base, days) => {
+      const copy = new Date(base.getTime());
+      copy.setUTCDate(copy.getUTCDate() + days);
+      return copy;
+    };
+
     for (let i = 0; i < homes.length; i++) {
       const home = homes[i];
       const locCity = home.__loc?.city || "";
       for (let k = 0; k < 2; k++) {
         const idx = i * 2 + k;
         const traveler = travelers[idx % travelers.length];
-        const startDay = (idx % 20) + 1;
-        const checkIn = new Date(Date.UTC(2025, 0, startDay));
-        const checkOut = new Date(Date.UTC(2025, 0, startDay + 3));
+        // stays ya completadas pero recientes para permitir reviews
+        const baseStart = addDays(now, -10 - (idx % 5));
+        const checkIn = baseStart;
+        const checkOut = addDays(baseStart, 3);
         // origen: BA por defecto; para Madrid y Rio alternamos BA/Miami
         let origin = originBA;
         if (locCity === "Rio de Janeiro" || locCity === "Madrid") {
@@ -229,7 +237,7 @@ async function main() {
           guest_phone: null,
           adults: 2,
           children: 0,
-          status: "CONFIRMED",
+          status: "COMPLETED",
           payment_status: "PAID",
           gross_price: 500 + (idx % 5) * 20,
           currency: "USD",
