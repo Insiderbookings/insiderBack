@@ -947,6 +947,17 @@ export const getHomeRecommendations = async (req, res) => {
     const sliderSections = [];
     const usedCityKeys = new Set();
 
+    const cityKeyFromCards = (cards) => {
+      if (!Array.isArray(cards) || !cards.length) return null;
+      const label =
+        cards[0]?.city ||
+        cards[0]?.location ||
+        cards[0]?.state ||
+        cards[0]?.country ||
+        null;
+      return label ? String(label).toLowerCase() : null;
+    };
+
     const cityTitle = (cards, fallback) => {
       const label =
         cards?.[0]?.city ||
@@ -977,7 +988,11 @@ export const getHomeRecommendations = async (req, res) => {
       if (nearbyGroups[0]?.key) usedCityKeys.add(nearbyGroups[0].key);
     }
     if (trending1.length) {
-      sliderSections.push({ id: "homes-slider-trending-1", title: cityTitle(trending1, "Trending stays"), items: trending1 });
+      const key = cityKeyFromCards(trending1);
+      if (!key || !usedCityKeys.has(key)) {
+        sliderSections.push({ id: "homes-slider-trending-1", title: cityTitle(trending1, "Trending stays"), items: trending1 });
+        if (key) usedCityKeys.add(key);
+      }
     }
     if (nearbyGroup2.length) {
       sliderSections.push({
@@ -988,13 +1003,25 @@ export const getHomeRecommendations = async (req, res) => {
       if (nearbyGroups[1]?.key) usedCityKeys.add(nearbyGroups[1].key);
     }
     if (best1.length) {
-      sliderSections.push({ id: "homes-slider-best-1", title: cityTitle(best1, "Best value"), items: best1 });
+      const key = cityKeyFromCards(best1);
+      if (!key || !usedCityKeys.has(key)) {
+        sliderSections.push({ id: "homes-slider-best-1", title: cityTitle(best1, "Best value"), items: best1 });
+        if (key) usedCityKeys.add(key);
+      }
     }
     if (trending2.length) {
-      sliderSections.push({ id: "homes-slider-trending-2", title: cityTitle(trending2, "Trending stays"), items: trending2 });
+      const key = cityKeyFromCards(trending2);
+      if (!key || !usedCityKeys.has(key)) {
+        sliderSections.push({ id: "homes-slider-trending-2", title: cityTitle(trending2, "Trending stays"), items: trending2 });
+        if (key) usedCityKeys.add(key);
+      }
     }
     if (best2.length) {
-      sliderSections.push({ id: "homes-slider-best-2", title: cityTitle(best2, "Best value"), items: best2 });
+      const key = cityKeyFromCards(best2);
+      if (!key || !usedCityKeys.has(key)) {
+        sliderSections.push({ id: "homes-slider-best-2", title: cityTitle(best2, "Best value"), items: best2 });
+        if (key) usedCityKeys.add(key);
+      }
     }
 
     const locationLabel =
