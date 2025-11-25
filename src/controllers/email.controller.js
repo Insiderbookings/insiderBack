@@ -5,7 +5,7 @@ import db         from "../models/index.js"   // adjust if your path differs
 /* ─────────────────────────────────────
       DB MODELS
 ───────────────────────────────────── */
-const { Hotel, Booking, OutsideMeta } = db
+const { Hotel, Booking } = db
 
 /* ─────────────────────────────────────
       TRANSPORT
@@ -75,7 +75,7 @@ export const sendReservationEmail = async (req, res) => {
 
     /* 3) Guarda la meta específica de outside */
     await OutsideMeta.create({
-      booking_id         : booking.id,
+      stay_id            : booking.id,
       confirmation_token : bookingConfirmation,
       confirmed_at       : null,
       staff_user_id      : null,      // si algún staff la cargó

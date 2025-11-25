@@ -282,7 +282,7 @@ export const getInfluencerStats = async (req, res) => {
     // 1) Traer cÃ³digos del influencer
     const codes = await models.DiscountCode.findAll({
       where: { user_id: userId },
-      attributes: ["id", "code", "percentage", "special_discount_price", "times_used", "booking_id", "created_at"],
+      attributes: ["id", "code", "percentage", "special_discount_price", "times_used", "stay_id", "created_at"],
       order: [["created_at", "DESC"]],
     })
 
@@ -295,9 +295,9 @@ export const getInfluencerStats = async (req, res) => {
       })
     }
 
-    // a) bookings enlazadas explÃ­citamente por DiscountCode.booking_id
+    // a) bookings enlazadas explÃ­citamente por DiscountCode.stay_id
     const bookingIdsFromCodes = codes
-      .map(c => c.booking_id)
+      .map(c => c.stay_id)
       .filter(id => Number.isInteger(id))
 
     // b) bookings enlazadas por FK en Booking.discount_code_id
@@ -359,7 +359,7 @@ export const getInfluencerStats = async (req, res) => {
         percentage: c.percentage,
         special_discount_price: c.special_discount_price,
         times_used: c.times_used ?? 0,
-        booking_id: c.booking_id ?? null,
+        stay_id: c.stay_id ?? null,
       })),
       totals: {
         bookingsCount: bookings.length,

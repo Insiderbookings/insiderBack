@@ -143,20 +143,14 @@ const buildHomePayload = (homeStay) => {
 }
 
 const mapStay = (row, source) => {
-  const hotel = toPlain(row.Hotel ?? row.hotel) ?? null
-  const room = toPlain(row.Room ?? row.room) ?? null
-  const tgxMeta = toPlain(row.tgxMeta) ?? null
+  const hotelStay = toPlain(row.hotelStay ?? row.StayHotel ?? row.stayHotel) ?? null
+  const hotel = toPlain(hotelStay?.hotel) ?? null
+  const room = toPlain(hotelStay?.room) ?? null
   const stayHome = toPlain(row.homeStay ?? row.StayHome ?? row.stayHome) ?? null
   const homePayload = stayHome ? buildHomePayload(stayHome) : null
 
   let mergedHotel = hotel
   let mergedRoom = room
-  if (source === "tgx" && tgxMeta) {
-    const tgxHotel = tgxMeta?.hotel ?? {}
-    const tgxRoom = tgxMeta?.rooms?.[0] ?? {}
-    mergedHotel = { ...mergedHotel, ...tgxHotel }
-    mergedRoom = { ...mergedRoom, ...tgxRoom }
-  }
 
   const checkIn = row.check_in ?? row.checkIn ?? null
   const checkOut = row.check_out ?? row.checkOut ?? null
@@ -184,7 +178,7 @@ const mapStay = (row, source) => {
     source,
     bookingConfirmation: row.bookingConfirmation ?? row.external_ref ?? null,
 
-    hotel_id: isHomeStay ? null : row.hotel_id ?? mergedHotel?.id ?? null,
+    hotel_id: isHomeStay ? null : hotelStay?.hotel_id ?? mergedHotel?.id ?? null,
     hotel_name: listingName,
     location,
     image,
@@ -225,22 +219,13 @@ const mapStay = (row, source) => {
 
 const STAY_BASE_INCLUDE = [
   {
-    model: models.Hotel,
-    attributes: ["id", "name", "city", "country", "image", "rating"],
-  },
-  {
-    model: models.Room,
-    attributes: ["id", "name", "room_number", "image", "price", "beds", "capacity"],
-  },
-  {
-    model: models.TGXMeta,
-    as: "tgxMeta",
+    model: models.StayHotel,
+    as: "hotelStay",
     required: false,
-  },
-  {
-    model: models.OutsideMeta,
-    as: "outsideMeta",
-    required: false,
+    include: [
+      { model: models.Hotel, as: "hotel", attributes: ["id", "name", "city", "country", "image", "rating"] },
+      { model: models.Room, as: "room", attributes: ["id", "name", "room_number", "image", "price", "beds", "capacity"] },
+    ],
   },
   {
     model: models.StayHome,
@@ -429,8 +414,6 @@ export const createBooking = async (req, res) => {
       const stay = await models.Booking.create(
         {
           user_id: userId,
-          hotel_id: hotelIdValue,
-          room_id: roomIdValue,
           discount_code_id: discountRecord ? discountRecord.id : null,
           source,
           check_in: normalizedCheckIn,
@@ -485,6 +468,15 @@ export const createBooking = async (req, res) => {
           stay_id: stay.id,
           hotel_id: hotelIdValue,
           room_id: roomIdValue,
+        },
+        { transaction: tx }
+      )
+
+      await models.StayHotel.create(
+        {
+          stay_id: stay.id,
+          hotel_id: hotelIdValue,
+          room_id: roomIdValue,
           room_name: room.name ?? null,
           room_snapshot: {
             id: room.id,
@@ -507,7 +499,7 @@ export const createBooking = async (req, res) => {
           const commissionAmount = Number.parseFloat(((grossTotal * commissionPct) / 100).toFixed(2))
           await models.Commission.create(
             {
-              booking_id: stay.id,
+              stay_id: stay.id,
               staff_id: discountRecord.staff_id,
               amount: commissionAmount,
             },
@@ -517,7 +509,7 @@ export const createBooking = async (req, res) => {
       }
 
       if (discountRecord) {
-        await discountRecord.update({ booking_id: stay.id }, { transaction: tx })
+        await discountRecord.update({ stay_id: stay.id }, { transaction: tx })
       }
 
       return stay
@@ -1432,7 +1424,7 @@ export const cancelBooking = async (req, res) => {
     // Si quedó REFUNDED, revertir comisión influencer asociada (si no fue pagada)
     if (String(booking.payment_status).toUpperCase() === 'PAID') {
       try {
-        const ic = await models.InfluencerCommission.findOne({ where: { booking_id: booking.id } })
+        const ic = await models.InfluencerCommission.findOne({ where: { stay_id: booking.id } })
         if (ic && ic.status !== 'paid') {
           await ic.update({ status: 'reversed', reversal_reason: 'cancelled' })
         }

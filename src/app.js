@@ -21,6 +21,7 @@ import diagnoseForeignKeyError from "./utils/diagnoseForeignKeyError.js";
 
 const app = express();
 const server = http.createServer(app);
+app.disable("etag");
 
 /* ---------- Stripe webhook RAW antes de json() ---------- */
 app.post(
@@ -73,8 +74,12 @@ const PORT = process.env.PORT || 3000;
 (async () => {
   try {
     await sequelize.authenticate();
-    const alter = String(process.env.DB_ALTER_SYNC || "false").toLowerCase()
-    await sequelize.sync({ alter: ["1","true","yes"].includes(alter) })
+    const alterEnv = String(process.env.DB_ALTER_SYNC || "false").toLowerCase();
+    const allowAlter = ["1", "true", "yes"].includes(alterEnv) && process.env.NODE_ENV !== "production";
+    if (!allowAlter && ["1", "true", "yes"].includes(alterEnv)) {
+      console.warn('[sequelize] alter sync was requested but ignored in this environment');
+    }
+    await sequelize.sync({ alter: allowAlter });
     await ensureHomeFavoriteIndexes();
     await ensureDefaultPlatforms();
     initSocketServer(server);

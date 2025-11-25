@@ -15,11 +15,20 @@ export default (sequelize) => {
     {
       id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
 
-      booking_id: {
+      stay_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
         references: { model: "booking", key: "id" },
         onDelete: "CASCADE",
+      },
+      booking_id: {
+        type: DataTypes.VIRTUAL,
+        set(value) {
+          if (value != null) this.setDataValue("stay_id", value);
+        },
+        get() {
+          return this.getDataValue("stay_id");
+        },
       },
       home_id: { type: DataTypes.INTEGER, allowNull: true },
       host_id: { type: DataTypes.INTEGER, allowNull: true },
@@ -64,7 +73,7 @@ export default (sequelize) => {
       freezeTableName: true,
       paranoid: true,
       indexes: [
-        { fields: ["booking_id"], unique: false },
+        { fields: ["stay_id"], unique: false },
         { fields: ["home_id"] },
         { fields: ["host_id"] },
         { fields: ["guest_id"] },
@@ -75,8 +84,8 @@ export default (sequelize) => {
   );
 
   Review.associate = (models) => {
-    if (models.Booking) {
-      Review.belongsTo(models.Booking, { foreignKey: "booking_id", as: "booking" });
+    if (models.Stay) {
+      Review.belongsTo(models.Stay, { foreignKey: "stay_id", as: "stay" });
     }
     if (models.Home) {
       Review.belongsTo(models.Home, { foreignKey: "home_id", as: "home" });

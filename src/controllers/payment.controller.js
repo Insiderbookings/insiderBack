@@ -20,6 +20,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-
 
 const safeURL   = (maybe, fallback) => { try { return new URL(maybe).toString() } catch { return fallback } }
 const YOUR_DOMAIN = safeURL(process.env.CLIENT_URL, "http://localhost:5173")
+const getStayIdFromMeta = (meta = {}) =>
+  Number(meta.stayId || meta.stay_id || meta.bookingId || meta.booking_id) || 0;
 
 /* ============================================================================
    1. CREAR SESSION PARA BOOKING
@@ -255,7 +257,7 @@ export const handleWebhook = async (req, res) => {
       console.log("[payments] markBookingAddOnsAsPaid:start", { bookingId });
       await models.BookingAddOn.update(
         { payment_status: "PAID" },
-        { where: { booking_id: bookingId } }
+        { where: { stay_id: bookingId } }
       )
       console.log("[payments] markBookingAddOnsAsPaid:done", { bookingId });
     } catch (e) { console.error("DB error (BookingAddOn):", e) }
@@ -264,7 +266,7 @@ export const handleWebhook = async (req, res) => {
   /* ─── Procesar eventos ─── */
   if (event.type === "checkout.session.completed") {
     const s              = event.data.object
-    const bookingId      = Number(s.metadata?.bookingId || s.metadata?.booking_id) || 0
+    const bookingId      = getStayIdFromMeta(s.metadata)
     const upsellCodeId   = Number(s.metadata?.upsellCodeId)     || 0
     const outsideBooking = Number(s.metadata?.outsideBookingId) || 0
     console.log("[payments] webhook checkout.session.completed", {
@@ -281,7 +283,7 @@ export const handleWebhook = async (req, res) => {
 
   if (event.type === "payment_intent.succeeded") {
     const pi             = event.data.object
-    const bookingId      = Number(pi.metadata?.bookingId || pi.metadata?.booking_id) || 0
+    const bookingId      = getStayIdFromMeta(pi.metadata)
     const upsellCodeId   = Number(pi.metadata?.upsellCodeId)     || 0
     const outsideBooking = Number(pi.metadata?.outsideBookingId) || 0
     const vccCardId      = Number(pi.metadata?.vccCardId)        || 0
@@ -326,7 +328,7 @@ export const handleWebhook = async (req, res) => {
 
   if (event.type === "payment_intent.amount_capturable_updated") {
     const pi        = event.data.object;
-    const bookingId = Number(pi.metadata?.bookingId || pi.metadata?.booking_id) || 0;
+    const bookingId = getStayIdFromMeta(pi.metadata);
     console.log("[payments] webhook amount_capturable_updated", {
       intentId: pi.id,
       bookingId,
@@ -337,7 +339,7 @@ export const handleWebhook = async (req, res) => {
 
   if (event.type === "payment_intent.canceled") {
     const pi        = event.data.object;
-    const bookingId = Number(pi.metadata?.bookingId || pi.metadata?.booking_id) || 0;
+    const bookingId = getStayIdFromMeta(pi.metadata);
     console.log("[payments] webhook payment_intent.canceled", {
       intentId: pi.id,
       bookingId,
@@ -347,7 +349,7 @@ export const handleWebhook = async (req, res) => {
 
   if (event.type === "payment_intent.payment_failed") {
     const pi        = event.data.object;
-    const bookingId = Number(pi.metadata?.bookingId || pi.metadata?.booking_id) || 0;
+    const bookingId = getStayIdFromMeta(pi.metadata);
     console.log("[payments] webhook payment_intent.payment_failed", {
       intentId: pi.id,
       bookingId,
@@ -570,9 +572,6 @@ export const createPartnerPaymentIntent = async (req, res) => {
     const booking = await models.Booking.create({
       booking_ref,
       user_id,
-      hotel_id,
-      tgx_hotel_id: null,
-      room_id,
       discount_code_id,
 
       source: normalizedSource,
@@ -626,6 +625,17 @@ export const createPartnerPaymentIntent = async (req, res) => {
       },
     }, { transaction: tx });
 
+    await models.StayHotel.create({
+      stay_id: booking.id,
+      hotel_id,
+      room_id,
+      board_code: bookingData.boardCode ?? null,
+      cancellation_policy: bookingData.cancellationPolicy ?? null,
+      rate_plan_name: bookingData.ratePlanName ?? null,
+      room_name: bookingData.roomName ?? bookingData.roomType ?? null,
+      room_snapshot: bookingData.roomSnapshot ?? null,
+    }, { transaction: tx });
+
     const wantManualCapture =
       captureManual === true ||
       String(process.env.STRIPE_CAPTURE_MANUAL || "").toLowerCase() === "true";
@@ -634,7 +644,8 @@ export const createPartnerPaymentIntent = async (req, res) => {
       type: isVault ? "vault_booking" : "partner_booking",
       source: normalizedSource,
       bookingRef: booking_ref,
-      booking_id: String(booking.id),
+      stayId: String(booking.id),
+      bookingId: String(booking.id), // compat
       guestName: trim500(guestInfo.fullName),
       guestEmail: trim500(guestInfo.email),
       checkIn: trim500(checkInDO),
@@ -720,9 +731,11 @@ export const confirmPartnerPayment = async (req, res) => {
     if (!booking && bookingRef) {
       booking = await models.Booking.findOne({ where: { booking_ref: bookingRef } });
     }
-    if (!booking && pi?.metadata?.booking_id) {
-      const id = Number(pi.metadata.booking_id);
-      if (Number.isFinite(id)) booking = await models.Booking.findByPk(id);
+    if (!booking && pi?.metadata) {
+      const id = getStayIdFromMeta(pi.metadata);
+      if (Number.isFinite(id) && id > 0) {
+        booking = await models.Booking.findByPk(id);
+      }
     }
     if (!booking && pi?.metadata?.bookingRef) {
       booking = await models.Booking.findOne({ where: { booking_ref: pi.metadata.bookingRef } });
@@ -795,7 +808,7 @@ export const confirmPartnerPayment = async (req, res) => {
             user_id : !isStaffCode
               ? (Number.isFinite(Number(vb.user_id))  ? Number(vb.user_id)  : null)
               : null,
-            booking_id: booking.id,
+            stay_id: booking.id,
             starts_at: null,
             ends_at: null,
             max_uses: null,
@@ -809,7 +822,7 @@ export const confirmPartnerPayment = async (req, res) => {
           if (discount.specialDiscountPrice != null) {
             updates.special_discount_price = Number(discount.specialDiscountPrice);
           }
-          if (!dc.booking_id) updates.booking_id = booking.id;
+          if (!dc.stay_id) updates.stay_id = booking.id;
           if (!dc.staff_id && vb.staff_id) updates.staff_id = Number(vb.staff_id);
           if (!dc.user_id && vb.user_id)   updates.user_id  = Number(vb.user_id);
 
@@ -870,10 +883,10 @@ export const confirmPartnerPayment = async (req, res) => {
             } catch {}
             const useHold = String(process.env.INFLUENCER_USE_HOLD || '').toLowerCase() === 'true'
             await models.InfluencerCommission.findOrCreate({
-              where: { booking_id: booking.id },
+              where: { stay_id: booking.id },
               defaults: {
                 influencer_user_id: dc.user_id,
-                booking_id: booking.id,
+                stay_id: booking.id,
                 discount_code_id: dc.id,
                 commission_base: baseType,
                 commission_rate_pct: ratePct,
@@ -1130,8 +1143,8 @@ export const createHomePaymentIntent = async (req, res) => {
 
     const metadata = {
       type: "home_booking",
+      stayId: String(booking.id),
       bookingId: String(booking.id),
-      booking_id: String(booking.id),
       bookingRef: booking.booking_ref || "",
       userId: booking.user_id ? String(booking.user_id) : "",
       homeId:

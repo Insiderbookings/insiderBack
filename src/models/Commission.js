@@ -7,11 +7,21 @@ export default (sequelize) => {
       primaryKey: true,
       autoIncrement: true,
     },
-    booking_id: {
+    stay_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
       unique: true,
       references: { model: "booking", key: "id" },
+    },
+    // Compat: aceptar booking_id y mapearlo a stay_id
+    booking_id: {
+      type: DataTypes.VIRTUAL,
+      set(value) {
+        if (value != null) this.setDataValue("stay_id", value);
+      },
+      get() {
+        return this.getDataValue("stay_id");
+      },
     },
     staff_id: {
       type: DataTypes.INTEGER,
@@ -30,7 +40,7 @@ export default (sequelize) => {
   });
 
   Commission.associate = (models) => {
-    Commission.belongsTo(models.Booking, { foreignKey: "booking_id", as: "booking" });
+    Commission.belongsTo(models.Stay, { foreignKey: "stay_id", as: "stay" });
     Commission.belongsTo(models.Staff, { foreignKey: "staff_id", as: "staff" });
   };
 

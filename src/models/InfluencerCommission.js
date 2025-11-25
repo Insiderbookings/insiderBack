@@ -15,13 +15,22 @@ export default (sequelize) => {
         onDelete: "CASCADE",
       },
 
-      booking_id: {
+      stay_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        unique: true, // una comisin por booking
+        unique: true, // una comisión por stay
         references: { model: "booking", key: "id" },
         onUpdate: "CASCADE",
         onDelete: "CASCADE",
+      },
+      booking_id: {
+        type: DataTypes.VIRTUAL,
+        set(value) {
+          if (value != null) this.setDataValue("stay_id", value);
+        },
+        get() {
+          return this.getDataValue("stay_id");
+        },
       },
 
       discount_code_id: {
@@ -63,10 +72,9 @@ export default (sequelize) => {
 
   InfluencerCommission.associate = (models) => {
     InfluencerCommission.belongsTo(models.User,         { foreignKey: "influencer_user_id", as: "influencer" })
-    InfluencerCommission.belongsTo(models.Booking,      { foreignKey: "booking_id",         as: "booking" })
+    InfluencerCommission.belongsTo(models.Stay,         { foreignKey: "stay_id",            as: "stay" })
     InfluencerCommission.belongsTo(models.DiscountCode, { foreignKey: "discount_code_id",   as: "discountCode" })
   }
 
   return InfluencerCommission
 }
-
