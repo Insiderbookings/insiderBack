@@ -510,7 +510,8 @@ export const createTravelgatePaymentIntent = async (req, res) => {
     const metadata = {
       type: "travelgate_booking",
       bookingRef: booking_ref,
-      booking_id: String(booking.id),
+      stayId: String(booking.id),
+      bookingId: String(booking.id),
       tgxRefHash: sha32(quoteOptionRefId),
       guestName: trim500(guestInfo.fullName),
       guestEmail: trim500(guestInfo.email),
@@ -813,7 +814,7 @@ export const confirmPaymentAndBook = async (req, res) => {
           if (discount.specialDiscountPrice != null) {
             updates.special_discount_price = Number(discount.specialDiscountPrice);
           }
-          if (!dc.booking_id) updates.booking_id = booking.id;
+          if (!dc.stay_id) updates.stay_id = booking.id;
           if (!dc.staff_id && vb.staff_id) updates.staff_id = Number(vb.staff_id);
           if (!dc.user_id && vb.user_id)   updates.user_id  = Number(vb.user_id);
 

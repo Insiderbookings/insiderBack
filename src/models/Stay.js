@@ -42,23 +42,6 @@ export default (sequelize) => {
       },
       inventory_id: { type: DataTypes.STRING(80), allowNull: true },
 
-      hotel_id: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        references: { model: "hotel", key: "id" },
-      },
-      tgx_hotel_id: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        references: { model: "tgx_hotel", key: "id" },
-        onDelete: "SET NULL",
-      },
-      room_id: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        references: { model: "room", key: "id" },
-      },
-
       source: {
         type: DataTypes.ENUM(...SOURCE_ENUM),
         allowNull: false,
@@ -154,17 +137,10 @@ export default (sequelize) => {
 
   Stay.associate = (models) => {
     Stay.belongsTo(models.User, { foreignKey: "user_id" });
-    Stay.belongsTo(models.Hotel, { foreignKey: "hotel_id" });
-    Stay.belongsTo(models.TgxHotel, { foreignKey: "tgx_hotel_id", as: "tgxHotel" });
-    Stay.belongsTo(models.Room, { foreignKey: "room_id" });
-
     Stay.hasOne(models.Payment, { foreignKey: "stay_id" });
     Stay.hasOne(models.StayHotel, { foreignKey: "stay_id", as: "hotelStay" });
     Stay.hasOne(models.StayHome, { foreignKey: "stay_id", as: "homeStay" });
     Stay.hasOne(models.StayManual, { foreignKey: "stay_id", as: "manualStay" });
-
-    Stay.hasOne(models.OutsideMeta, { foreignKey: "stay_id", as: "outsideMeta" });
-    Stay.hasOne(models.TGXMeta, { foreignKey: "stay_id", as: "tgxMeta" });
 
     Stay.belongsToMany(models.AddOn, {
       through: models.BookingAddOn,
@@ -174,7 +150,7 @@ export default (sequelize) => {
     Stay.hasMany(models.BookingAddOn, { foreignKey: "stay_id" });
 
     if (models.Commission) {
-      Stay.hasOne(models.Commission, { foreignKey: "booking_id" });
+      Stay.hasOne(models.Commission, { foreignKey: "stay_id" });
     }
   };
 

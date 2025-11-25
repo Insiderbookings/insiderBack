@@ -75,7 +75,7 @@ export const validateUpsellCode = async (req, res) => {
     await record.save()
 
     const pivot = await models.BookingAddOn.create({
-      booking_id        : bookingId,
+      stay_id           : bookingId,
       add_on_id         : record.add_on_id,
       add_on_option_id  : record.add_on_option_id,
       qty               : record.qty ?? 1,

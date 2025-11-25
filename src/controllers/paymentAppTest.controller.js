@@ -86,8 +86,8 @@ export const createHomePaymentIntentAppTest = async (req, res) => {
     const metadata = {
       type: "home_booking",
       environment: "test",
+      stayId: String(booking.id),
       bookingId: String(booking.id),
-      booking_id: String(booking.id),
       bookingRef: booking.booking_ref || "",
       userId: booking.user_id ? String(booking.user_id) : "",
       homeId: booking.homeStay?.home_id != null ? String(booking.homeStay.home_id) : "",

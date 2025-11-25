@@ -18,8 +18,6 @@ import StayHotelModel from "./StayHotel.js";
 import StayHomeModel from "./StayHome.js";
 import StayManualModel from "./StayManual.js";
 import PaymentModel from "./Payment.js";
-import TGXMetaModel from "./TGXMeta.js";
-import OutsideMetaModel from "./OutsideMeta.js";
 import CommissionModel from "./Commission.js";
 import InfluencerCommissionModel from "./InfluencerCommission.js";
 
@@ -114,8 +112,6 @@ const models = {
   StayHome: StayHomeModel(sequelize),
   StayManual: StayManualModel(sequelize),
   Payment: PaymentModel(sequelize),
-  TGXMeta: TGXMetaModel(sequelize),
-  OutsideMeta: OutsideMetaModel(sequelize),
   Commission: CommissionModel(sequelize),
   InfluencerCommission: InfluencerCommissionModel(sequelize),
 

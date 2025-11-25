@@ -12,9 +12,7 @@ import emailRoutes from "./email.routes.js"
 import subscriberRoutes from "./subscriber.routes.js"
 import addonRoutes from "./addon.routes.js"
 import staffAddonRoutes from "./staffAddon.routes.js"
-import travelGateRoutes from "./travelgate.routes.js"
 import webbedsRoutes from "./webbeds.routes.js"
-import travelgatepaymentRoutes from "./travelgate-payment.routes.js" 
 import tenantsWebconstructorRoutes from './tenants.webconstructor.routes.js'
 import vccRoutes from './vcc.routes.js'
 import operatorRoutes from './operator.routes.js'
@@ -41,8 +39,6 @@ router.use("/email", emailRoutes)
 router.use("/subscribers", subscriberRoutes)
 router.use("/addons", addonRoutes)
 router.use("/api/staff-addon", staffAddonRoutes)
-router.use("/tgx", travelGateRoutes)
-router.use("/tgx-payment", travelgatepaymentRoutes);
 router.use("/webbeds", webbedsRoutes)
 router.use("/tenants", tenantsWebconstructorRoutes)
 router.use("/tenants", vccRoutes)

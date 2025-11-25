@@ -19,6 +19,8 @@ import {
   listHostHomes,
   listExploreHomes,
   getHomeRecommendations,
+  listHomeDestinations,
+  searchHomes,
 } from "../controllers/home.controller.js";
 import { loadHostHome } from "../middleware/ensureHomeOwner.js";
 import { uploadImagesArray } from "../middleware/s3UploadArray.js";
@@ -27,6 +29,8 @@ const router = Router();
 
 router.get("/explore", listExploreHomes);
 router.get("/recommendations", getHomeRecommendations);
+router.get("/destinations", listHomeDestinations);
+router.get("/search", searchHomes);
 
 router.get("/public/:id", getPublicHome);
 router.get("/public/:id/availability", getPublicHomeAvailability);

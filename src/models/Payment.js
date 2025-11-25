@@ -10,8 +10,17 @@ export default (sequelize) => {
         {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
 
-            stay_id: { type: DataTypes.INTEGER, allowNull: true },
-            booking_id: { type: DataTypes.INTEGER, allowNull: true },
+            stay_id: { type: DataTypes.INTEGER, allowNull: false },
+            // Compat: aceptar booking_id y mapearlo a stay_id
+            booking_id: {
+                type: DataTypes.VIRTUAL,
+                set(value) {
+                    if (value != null) this.setDataValue("stay_id", value);
+                },
+                get() {
+                    return this.getDataValue("stay_id");
+                },
+            },
 
             stripe_payment_intent_id: { type: DataTypes.STRING(255) },
             stripe_charge_id: { type: DataTypes.STRING(255) },
@@ -35,19 +44,9 @@ export default (sequelize) => {
             engine: "InnoDB",
             indexes: [
                 { fields: ["stay_id"] },
-                { fields: ["booking_id"] },
             ],
         }
     );
-
-    Payment.addHook("beforeSave", (instance) => {
-        if (instance.stay_id == null && instance.booking_id != null) {
-            instance.stay_id = instance.booking_id;
-        }
-        if (instance.booking_id == null && instance.stay_id != null) {
-            instance.booking_id = instance.stay_id;
-        }
-    });
 
     Payment.associate = (models) => {
         Payment.belongsTo(models.Stay, {

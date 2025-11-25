@@ -212,9 +212,16 @@ export const requestAddOn = async (req, res) => {
       status: { [Op.eq]: "confirmed" }
     },
     include: [
-      { model: models.Hotel },
       { model: models.User, attributes: ["name", "email"] },
-      { model: models.Room }
+      {
+        model: models.StayHotel,
+        as: "hotelStay",
+        required: false,
+        include: [
+          { model: models.Hotel, as: "hotel" },
+          { model: models.Room, as: "room" },
+        ],
+      },
     ],
     order: [["createdAt", "DESC"]],
   })
@@ -234,8 +241,9 @@ export const requestAddOn = async (req, res) => {
     if (!roomId) {
       return res.status(400).json({ error: "Missing roomId for roomUpgrade" })
     }
+    const bookingHotelId = booking.hotelStay?.hotel_id || null
     newRoom = await models.Room.findOne({
-      where: { id: roomId, hotel_id: booking.hotel_id }
+      where: { id: roomId, hotel_id: bookingHotelId }
     })
     if (!newRoom) {
       return res.status(404).json({ error: "Room not found in this hotel" })
@@ -246,7 +254,7 @@ export const requestAddOn = async (req, res) => {
   let unitPrice = parseFloat(addOn.price)
   if (addOn.slug === "roomUpgrade") {
     const originalRoom = await models.Room.findOne({
-      where: { id: booking.room_id }
+      where: { id: booking.hotelStay?.room_id || booking.hotelStay?.room?.id || null }
     })
     if (!originalRoom) {
       return res.status(500).json({ error: "Original room data missing" })
@@ -265,7 +273,7 @@ export const requestAddOn = async (req, res) => {
   let pivot
   try {
     pivot = await models.BookingAddOn.create({
-      booking_id        : booking.id,
+      stay_id           : booking.id,
       add_on_id         : addOn.id,
       add_on_option_id  : optionId,
       room_id           : addOn.slug === "roomUpgrade" ? roomId : null,
@@ -414,7 +422,7 @@ export const saveBookingAddOns = async (req, res) => {
   try {
     // 1. Eliminar add-ons previos
     await models.BookingAddOn.destroy({
-      where: { booking_id: bookingId },
+      where: { stay_id: bookingId },
       transaction: t,
     });
 
@@ -442,7 +450,7 @@ export const saveBookingAddOns = async (req, res) => {
 
       await models.BookingAddOn.create(
         {
-          booking_id       : bookingId,
+          stay_id          : bookingId,
           add_on_id        : addOn.id,
           add_on_option_id : optionId,
           quantity         : quantity,

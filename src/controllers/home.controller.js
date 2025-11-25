@@ -1,5 +1,6 @@
 import { Op } from "sequelize";
 import models, { sequelize } from "../models/index.js";
+import axios from "axios";
 import { getHomeBadges, getHostBadges } from "../services/badge.service.js";
 import { HOME_PROPERTY_TYPES, HOME_SPACE_TYPES } from "../models/Home.js";
 import { HOME_DISCOUNT_RULE_TYPES } from "../models/HomeDiscountRule.js";
@@ -236,6 +237,149 @@ export const listExploreHomes = async (req, res) => {
   }
 };
 
+export const listHomeDestinations = async (req, res) => {
+  try {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+    const limitParam = Number(req.query?.limit);
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 20) : 12;
+    const query = typeof req.query?.query === "string" ? req.query.query.trim() : "";
+    const lat = parseCoordinate(req.query?.lat);
+    const lng = parseCoordinate(req.query?.lng);
+    const iLikeOp = (typeof sequelize.getDialect === "function" ? sequelize.getDialect() : "mysql") === "mysql" ? Op.like : Op.iLike;
+
+    const addressWhere = {};
+    if (query.length >= 2) {
+      addressWhere[Op.or] = [
+        { city: { [iLikeOp]: `%${query}%` } },
+        { state: { [iLikeOp]: `%${query}%` } },
+        { country: { [iLikeOp]: `%${query}%` } },
+      ];
+    }
+
+    const rows = await models.HomeAddress.findAll({
+      attributes: [
+        "city",
+        "state",
+        "country",
+        [sequelize.fn("COUNT", sequelize.col("Home.id")), "stays"],
+        [sequelize.fn("AVG", sequelize.col("latitude")), "lat"],
+        [sequelize.fn("AVG", sequelize.col("longitude")), "lng"],
+      ],
+      include: [
+        {
+          model: models.Home,
+          required: true,
+          attributes: [],
+          where: { status: "PUBLISHED", is_visible: true },
+        },
+      ],
+      where: addressWhere,
+      group: ["city", "state", "country"],
+      order: [[sequelize.literal("stays"), "DESC"]],
+      limit,
+      raw: true,
+    });
+
+    const normalized = rows
+      .map((row, idx) => {
+        const labelParts = [row.city, row.state, row.country].filter(Boolean);
+        if (!labelParts.length) return null;
+        const latCenter = Number(row.lat);
+        const lngCenter = Number(row.lng);
+        const distance =
+          lat != null && lng != null && Number.isFinite(latCenter) && Number.isFinite(lngCenter)
+            ? Math.abs(latCenter - lat) + Math.abs(lngCenter - lng)
+            : null;
+        return {
+          id: `${row.city || row.state || row.country || "dest"}-${idx}`,
+          city: row.city,
+          state: row.state,
+          country: row.country,
+          label: labelParts.join(", "),
+          lat: Number.isFinite(latCenter) ? latCenter : null,
+          lng: Number.isFinite(lngCenter) ? lngCenter : null,
+          stays: Number(row.stays) || 0,
+          bookings: Number(row.bookings) || 0,
+          distance,
+          source: "internal",
+        };
+      })
+      .filter(Boolean);
+
+    const sorted =
+      lat != null && lng != null
+        ? normalized.sort((a, b) => {
+            if (a.distance == null && b.distance == null) return b.stays - a.stays;
+            if (a.distance == null) return 1;
+            if (b.distance == null) return -1;
+            return a.distance - b.distance;
+          })
+        : normalized;
+
+    const destinations = [...sorted];
+
+    // Fallback to Google Geocoding when there are few/no internal matches and a query is provided
+    if (query.length >= 2 && destinations.length < Math.max(3, limit / 2)) {
+      const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
+      if (apiKey) {
+        try {
+          const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKey}`;
+          const { data } = await axios.get(url, { timeout: 4000 });
+          if (data?.status === "OK" && Array.isArray(data.results)) {
+            const geocoderResults = data.results
+              .map((result, idx) => {
+                const types = Array.isArray(result.types) ? result.types : [];
+                const isLocality =
+                  types.includes("locality") ||
+                  types.includes("administrative_area_level_1") ||
+                  types.includes("administrative_area_level_2") ||
+                  types.includes("political");
+                if (!isLocality) return null;
+                const city =
+                  result.address_components?.find((c) => c.types?.includes("locality"))?.long_name ||
+                  null;
+                const state =
+                  result.address_components?.find((c) => c.types?.includes("administrative_area_level_1"))?.long_name ||
+                  null;
+                const country =
+                  result.address_components?.find((c) => c.types?.includes("country"))?.long_name || null;
+                const label = result.formatted_address || [city, state, country].filter(Boolean).join(", ");
+                const latLng = result.geometry?.location || {};
+                const destId = `geo-${idx}-${label}`;
+                // Avoid duplicates against internal list
+                if (destinations.some((d) => d.label?.toLowerCase() === label.toLowerCase())) return null;
+                return {
+                  id: destId,
+                  city,
+                  state,
+                  country,
+                  label: label || query,
+                  lat: latLng.lat ?? null,
+                  lng: latLng.lng ?? null,
+                  stays: 0,
+                  bookings: 0,
+                  distance: null,
+                  source: "geocoder",
+                };
+              })
+              .filter(Boolean);
+            destinations.push(...geocoderResults);
+          }
+        } catch (geoErr) {
+          console.warn("[listHomeDestinations] geocoder fallback failed:", geoErr?.message || geoErr);
+        }
+      }
+    }
+
+    res.json({ destinations: destinations.slice(0, limit) });
+  } catch (err) {
+    console.error("[listHomeDestinations]", err);
+    res.status(500).json({ error: "Unable to load destinations" });
+  }
+};
+
 const parseCoordinate = (value) => {
   if (value == null || value === "") return null;
   const num = Number(value);
@@ -248,8 +392,107 @@ const TRAVELER_COORDINATE_DELTA = 0.75;
 const TRAVELER_USER_LIMIT = 200;
 const TRAVELER_STATUS_SCOPE = ["CONFIRMED", "COMPLETED"];
 
+export const searchHomes = async (req, res) => {
+  try {
+    console.log("[searchHomes] query", req.query);
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+
+    const rawCity = typeof req.query?.city === "string" ? req.query.city.trim() : "";
+    const rawCountry = typeof req.query?.country === "string" ? req.query.country.trim() : "";
+    const lat = parseCoordinate(req.query?.lat);
+    const lng = parseCoordinate(req.query?.lng);
+    const limitParam = Number(req.query?.limit);
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 60) : 30;
+
+    const addressAttributes = ["address_line1", "city", "state", "country", "latitude", "longitude"];
+    const baseWhere = { status: "PUBLISHED", is_visible: true };
+    const dialect = typeof sequelize.getDialect === "function" ? sequelize.getDialect() : "mysql";
+    const iLikeOp = dialect === "mysql" ? Op.like : Op.iLike;
+
+    const addressWhere =
+      lat != null && lng != null
+        ? {
+            latitude: { [Op.not]: null, [Op.between]: [lat - 1, lat + 1] },
+            longitude: { [Op.not]: null, [Op.between]: [lng - 1, lng + 1] },
+          }
+        : rawCity || rawCountry
+        ? {
+            ...(rawCity ? { city: { [iLikeOp]: rawCity } } : {}),
+            ...(rawCountry ? { country: { [iLikeOp]: rawCountry } } : {}),
+          }
+        : null;
+
+    const include = [
+      {
+        model: models.HomeAddress,
+        as: "address",
+        attributes: addressAttributes,
+        required: Boolean(addressWhere),
+        where: addressWhere || undefined,
+      },
+      {
+        model: models.HomePricing,
+        as: "pricing",
+        attributes: ["currency", "base_price"],
+        required: false,
+      },
+      {
+        model: models.HomeMedia,
+        as: "media",
+        attributes: ["id", "url", "is_cover", "order"],
+        separate: true,
+        limit: 6,
+        order: [
+          ["is_cover", "DESC"],
+          ["order", "ASC"],
+          ["id", "ASC"],
+        ],
+      },
+      {
+        model: models.User,
+        as: "host",
+        attributes: ["id", "name", "email", "avatar_url", "role"],
+      },
+    ];
+
+    const homes = await models.Home.findAll({
+      where: baseWhere,
+      include,
+      order: [
+        ["updated_at", "DESC"],
+        ["id", "DESC"],
+      ],
+      limit,
+    });
+
+    const cards = homes
+      .map((home) => mapHomeToCard(home))
+      .filter(Boolean);
+
+    return res.json({
+      items: cards,
+      count: cards.length,
+      query: {
+        city: rawCity || null,
+        country: rawCountry || null,
+        lat: lat ?? null,
+        lng: lng ?? null,
+      },
+    });
+  } catch (err) {
+    console.error("[searchHomes]", err);
+    return res.status(500).json({ error: "Failed to search homes" });
+  }
+};
+
 export const getHomeRecommendations = async (req, res) => {
   try {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+    console.log("[getHomeRecommendations] query", req.query);
     const rawCity = typeof req.query?.city === "string" ? req.query.city.trim() : "";
     const rawCountry =
       typeof req.query?.country === "string" ? req.query.country.trim() : "";
@@ -276,7 +519,9 @@ export const getHomeRecommendations = async (req, res) => {
 
     const limitParam = Number(req.query?.limit);
     const limit =
-      Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 20) : 12;
+      Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 60) : 12;
+
+    console.log("[getHomeRecommendations] inferred location", { city, country, lat, lng, region, limit });
 
     const baseWhere = {
       status: "PUBLISHED",
@@ -395,6 +640,12 @@ export const getHomeRecommendations = async (req, res) => {
       bestValuePromise,
     ]);
 
+    console.log("[getHomeRecommendations] raw counts", {
+      nearbyRaw: nearbyRaw.length,
+      trendingRaw: trendingRaw.length,
+      bestValueRaw: bestValueRaw.length,
+    });
+
     const dedupeById = (arr = []) => {
       const seen = new Set();
       const result = [];
@@ -418,6 +669,12 @@ export const getHomeRecommendations = async (req, res) => {
     const nearbyCards = mapCards(nearbyRaw);
     const trendingCards = mapCards(trendingRaw);
     const bestValueCards = mapCards(bestValueRaw);
+
+    console.log("[getHomeRecommendations] card counts after map", {
+      nearbyCards: nearbyCards.length,
+      trendingCards: trendingCards.length,
+      bestValueCards: bestValueCards.length,
+    });
 
     const cityKeyForCard = (card) => {
       const label =
@@ -687,120 +944,61 @@ export const getHomeRecommendations = async (req, res) => {
       });
     };
 
-    const groupsNearby = buildCityGroups(nearbyCards);
-    const groupsTrending = buildCityGroups(trendingCards);
-    const groupsBestValue = buildCityGroups(bestValueCards);
-
-    let primaryGroup =
-      groupsNearby.find((group) => group.cards.length) ||
-      groupsTrending.find((group) => group.cards.length) ||
-      groupsBestValue.find((group) => group.cards.length) ||
-      null;
-
-    const primaryKey = primaryGroup?.key || null;
-
-    const pickSecondaryGroup = () => {
-      const allGroups = [
-        ...groupsNearby.slice(groupsNearby.indexOf(primaryGroup) + 1),
-        ...groupsTrending,
-        ...groupsBestValue,
-      ];
-      return allGroups.find((group) => group && group.cards.length && group.key !== primaryKey) || null;
-    };
-
-    let secondaryGroup = pickSecondaryGroup();
-
-    const buildSectionFromGroup = (group, fallbackTitle, idSuffix) => {
-      if (!group || !group.cards?.length) return null;
-      const slice = group.cards.slice(0, sliderLimit);
-      return {
-        id: `homes-slider-${idSuffix}`,
-        title: group.label ? fallbackTitle(group.label) : fallbackTitle(null),
-        items: slice,
-      };
-    };
-
     const sliderSections = [];
     const usedCityKeys = new Set();
 
-    if (primaryGroup) {
-      const primarySection = buildSectionFromGroup(
-        primaryGroup,
-        (label) => (label ? `Popular in ${label}` : "Homes near you"),
-        "primary"
-      );
-      sliderSections.push(primarySection);
-      if (primaryGroup?.key) {
-        usedCityKeys.add(primaryGroup.key);
-      }
-    }
+    const cityTitle = (cards, fallback) => {
+      const label =
+        cards?.[0]?.city ||
+        cards?.[0]?.location ||
+        cards?.[0]?.state ||
+        cards?.[0]?.country ||
+        null;
+      return label ? `${fallback} in ${label}` : fallback;
+    };
 
-    if (secondaryGroup) {
-      const secondarySection = buildSectionFromGroup(
-        secondaryGroup,
-        (label) => (label ? `Also in ${label}` : "More homes nearby"),
-        "secondary"
-      );
-      sliderSections.push(secondarySection);
-      if (secondaryGroup?.key) {
-        usedCityKeys.add(secondaryGroup.key);
-      }
-    }
+    const buildSlices = (cards) => [
+      cards.slice(0, sliderLimit),
+      cards.slice(sliderLimit, sliderLimit * 2),
+    ];
 
-    if (!secondaryGroup && primaryGroup?.label) {
-      const fallbackInclude = [
-        {
-          model: models.HomeAddress,
-          as: "address",
-          attributes: addressAttributes,
-          required: true,
-          where: {
-            city: { [Op.ne]: primaryGroup.label },
-          },
-        },
-        ...includeBase.slice(1),
-      ];
+    const nearbyGroups = buildCityGroups(nearbyCards);
+    const nearbyGroup1 = nearbyGroups[0]?.cards?.slice(0, sliderLimit) || [];
+    const nearbyGroup2 = nearbyGroups[1]?.cards?.slice(0, sliderLimit) || [];
+    const [trending1, trending2] = buildSlices(trendingCards);
+    const [best1, best2] = buildSlices(bestValueCards);
 
-      const fallbackRaw = await models.Home.findAll({
-        where: baseWhere,
-        include: fallbackInclude,
-        order: [
-          ["updated_at", "DESC"],
-          ["id", "DESC"],
-        ],
-        limit,
+    if (nearbyGroup1.length) {
+      sliderSections.push({
+        id: "homes-slider-nearby-1",
+        title: cityTitle(nearbyGroup1, "Nearby stays"),
+        items: nearbyGroup1,
       });
-
-      const fallbackGroup =
-        buildCityGroups(mapCards(fallbackRaw)).find((group) => group && group.cards.length && group.key !== primaryKey) || null;
-
-      if (fallbackGroup) {
-        const fallbackSection = buildSectionFromGroup(
-          fallbackGroup,
-          (label) => (label ? `Also in ${label}` : "More homes nearby"),
-          "secondary-fallback"
-        );
-        sliderSections.push(fallbackSection);
-        if (fallbackGroup?.key) {
-          usedCityKeys.add(fallbackGroup.key);
-        }
-      }
+      if (nearbyGroups[0]?.key) usedCityKeys.add(nearbyGroups[0].key);
     }
-
-    if (!sliderSections.length) {
-      const fallbackCards = mapCards(trendingRaw);
-      buildExploreSections(fallbackCards).forEach((section, index) => {
-        sliderSections.push({
-          id: `homes-slider-fallback-${index + 1}`,
-          title: section.title || "Homes",
-          items: (section.items || []).slice(0, sliderLimit),
-        });
+    if (trending1.length) {
+      sliderSections.push({ id: "homes-slider-trending-1", title: cityTitle(trending1, "Trending stays"), items: trending1 });
+    }
+    if (nearbyGroup2.length) {
+      sliderSections.push({
+        id: "homes-slider-nearby-2",
+        title: cityTitle(nearbyGroup2, "Nearby stays"),
+        items: nearbyGroup2,
       });
+      if (nearbyGroups[1]?.key) usedCityKeys.add(nearbyGroups[1].key);
+    }
+    if (best1.length) {
+      sliderSections.push({ id: "homes-slider-best-1", title: cityTitle(best1, "Best value"), items: best1 });
+    }
+    if (trending2.length) {
+      sliderSections.push({ id: "homes-slider-trending-2", title: cityTitle(trending2, "Trending stays"), items: trending2 });
+    }
+    if (best2.length) {
+      sliderSections.push({ id: "homes-slider-best-2", title: cityTitle(best2, "Best value"), items: best2 });
     }
 
     const locationLabel =
       city ||
-      primaryGroup?.label ||
       nearbyCards[0]?.city ||
       null;
 

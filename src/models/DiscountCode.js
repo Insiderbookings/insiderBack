@@ -10,8 +10,6 @@ export default (sequelize) => {
       code: {
         type: DataTypes.STRING(16),
         allowNull: false,
-        // Permite códigos alfanuméricos (influencers, staff, etc.)
-        // y hasta 16 caracteres. Case-insensitive por la /i
         validate: { len: [1, 16], is: /^[A-Z0-9]+$/i },
       },
 
@@ -33,9 +31,7 @@ export default (sequelize) => {
         defaultValue: true,
       },
 
-      /* ───────── FKs ───────── */
-
-      // Opcional
+      // Opcional: asociado a staff
       staff_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
@@ -44,7 +40,7 @@ export default (sequelize) => {
         onUpdate: "CASCADE",
       },
 
-      // Opcional: (ajusta el nombre si tu tabla real de usuarios es “users”)
+      // Opcional: asociado a un usuario
       user_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
@@ -53,25 +49,31 @@ export default (sequelize) => {
         onUpdate: "CASCADE",
       },
 
-      // Enlaza el código con la booking donde se usó
-      booking_id: {
+      // Enlaza el código con la stay donde se usó
+      stay_id: {
         type: DataTypes.INTEGER,
-        references: { model: 'booking', key: 'id' },
+        references: { model: "booking", key: "id" },
+      },
+      booking_id: {
+        type: DataTypes.VIRTUAL,
+        set(value) {
+          if (value != null) this.setDataValue("stay_id", value);
+        },
+        get() {
+          return this.getDataValue("stay_id");
+        },
       },
 
-      /* ───────── Lógica de uso ───────── */
       starts_at: DataTypes.DATE,
       ends_at: DataTypes.DATE,
       max_uses: DataTypes.INTEGER,
       times_used: { type: DataTypes.INTEGER, defaultValue: 0 },
     },
     {
-      tableName: "discount_code", // usamos snake_case unificada
+      tableName: "discount_code",
       freezeTableName: true,
       underscored: true,
       paranoid: true,
-
-      // Requiere al menos uno de staff_id o user_id
       validate: {
         staffOrUser() {
           const hasStaff = !!this.staff_id;
@@ -79,16 +81,11 @@ export default (sequelize) => {
           if (!hasStaff && !hasUser) {
             throw new Error("Either staff_id or user_id must be provided.");
           }
-          // Si quieres que sean mutuamente excluyentes, usa:
-          // if ((hasStaff ? 1 : 0) + (hasUser ? 1 : 0) !== 1) {
-          //   throw new Error("Provide exactly one of staff_id or user_id.");
-          // }
         },
       },
     }
   );
 
-  /* ───────── Associations ───────── */
   DiscountCode.associate = (models) => {
     DiscountCode.belongsTo(models.Staff, {
       foreignKey: "staff_id",
@@ -98,9 +95,9 @@ export default (sequelize) => {
       foreignKey: "user_id",
       as: "user",
     });
-    DiscountCode.belongsTo(models.Booking, {
-      foreignKey: "booking_id",
-      as: "booking",
+    DiscountCode.belongsTo(models.Stay, {
+      foreignKey: "stay_id",
+      as: "stay",
     });
   };
 

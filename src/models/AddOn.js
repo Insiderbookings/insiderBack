@@ -45,10 +45,10 @@ export default (sequelize) => {
     AddOn.hasMany(models.AddOnOption, { foreignKey: "add_on_id" });
     AddOn.hasMany(models.HotelAddOn, { foreignKey: "add_on_id" });
 
-    AddOn.belongsToMany(models.Booking, {
+    AddOn.belongsToMany(models.Stay, {
       through: models.BookingAddOn,
       foreignKey: "add_on_id",
-      otherKey: "booking_id",
+      otherKey: "stay_id",
     });
 
     AddOn.belongsToMany(models.Hotel, {

@@ -9,8 +9,16 @@ export default (sequelize) => {
     "TGXMeta",
     {
       id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-      stay_id: { type: DataTypes.INTEGER, allowNull: true },
-      booking_id: { type: DataTypes.INTEGER, allowNull: true },
+      stay_id: { type: DataTypes.INTEGER, allowNull: false },
+      booking_id: {
+        type: DataTypes.VIRTUAL,
+        set(value) {
+          if (value != null) this.setDataValue("stay_id", value);
+        },
+        get() {
+          return this.getDataValue("stay_id");
+        },
+      },
 
       option_id: DataTypes.TEXT,
 
@@ -49,7 +57,6 @@ export default (sequelize) => {
       engine: "InnoDB",
       indexes: [
         { fields: ["stay_id"] },
-        { fields: ["booking_id"] },
         { fields: ["access"] },
         { fields: ["option_id"] },
         { fields: ["reference_booking_id"] },
@@ -58,11 +65,6 @@ export default (sequelize) => {
       ],
     }
   );
-
-  TGXMeta.addHook("beforeSave", (instance) => {
-    if (instance.stay_id == null && instance.booking_id != null) instance.stay_id = instance.booking_id;
-    if (instance.booking_id == null && instance.stay_id != null) instance.booking_id = instance.stay_id;
-  });
 
   TGXMeta.associate = (models) => {
     TGXMeta.belongsTo(models.Stay, {

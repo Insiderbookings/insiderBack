@@ -32,7 +32,7 @@ const serializeUser = (user) => {
 
 const serializeReview = (review) => ({
   id: review.id,
-  bookingId: review.booking_id,
+  bookingId: review.stay_id,
   homeId: review.home_id,
   hostId: review.host_id,
   guestId: review.guest_id,
@@ -131,14 +131,14 @@ export const createHomeReview = async (req, res) => {
     enforceReviewWindow(booking);
 
     const existing = await models.Review.findOne({
-      where: { booking_id: bookingId, author_id: userId, author_type: "GUEST" },
+      where: { stay_id: bookingId, author_id: userId, author_type: "GUEST" },
     });
     if (existing) {
       return res.status(409).json({ error: "Review already submitted for this stay" });
     }
 
     const review = await models.Review.create({
-      booking_id: booking.id,
+      stay_id: booking.id,
       home_id: booking.homeStay?.home_id ?? null,
       host_id: booking.homeStay?.host_id ?? null,
       guest_id: booking.user_id,
@@ -198,14 +198,14 @@ export const createGuestReview = async (req, res) => {
     enforceReviewWindow(booking);
 
     const existing = await models.Review.findOne({
-      where: { booking_id: bookingId, author_id: userId, author_type: "HOST" },
+      where: { stay_id: bookingId, author_id: userId, author_type: "HOST" },
     });
     if (existing) {
       return res.status(409).json({ error: "Review already submitted for this guest" });
     }
 
     const review = await models.Review.create({
-      booking_id: booking.id,
+      stay_id: booking.id,
       home_id: booking.homeStay?.home_id ?? null,
       host_id: hostId,
       guest_id: booking.user_id,
@@ -409,10 +409,10 @@ export const getPendingReviews = async (req, res) => {
     let existingMap = new Map();
     if (allBookingIds.length) {
       const existing = await models.Review.findAll({
-        where: { booking_id: { [Op.in]: allBookingIds }, author_id: userId },
-        attributes: ["booking_id", "author_type"],
+        where: { stay_id: { [Op.in]: allBookingIds }, author_id: userId },
+        attributes: ["stay_id", "author_type"],
       });
-      existingMap = new Map(existing.map((row) => [row.booking_id, true]));
+      existingMap = new Map(existing.map((row) => [row.stay_id, true]));
     }
 
     const formatPending = (booking, role) => {

@@ -102,7 +102,7 @@ export const cancel = async (req, res, next) => {
 
     // 4.0-bis) Revertir comisión de influencer si aplica y no fue pagada
     try {
-      const ic = await models.InfluencerCommission.findOne({ where: { booking_id: bk.id } })
+      const ic = await models.InfluencerCommission.findOne({ where: { stay_id: bk.id } })
       if (ic && ic.status !== 'paid') {
         await ic.update({ status: 'reversed', reversal_reason: 'tgx_cancel' })
       }

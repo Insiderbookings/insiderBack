@@ -256,6 +256,43 @@ export const getHostDashboard = async (req, res) => {
       };
     });
 
+    // Aggregate metrics across confirmed/completed stays (all time)
+    const staysAll = await models.Stay.findAll({
+      where: {
+        inventory_type: "HOME",
+        status: { [Op.in]: ["CONFIRMED", "COMPLETED"] },
+      },
+      include: [
+        {
+          model: models.StayHome,
+          as: "homeStay",
+          required: true,
+          attributes: [],
+          where: buildStayHomeFilter(hostId),
+        },
+      ],
+    });
+
+    let nightsSum = 0;
+    let staysCount = 0;
+    staysAll.forEach((stay) => {
+      let nights = Number(stay.nights ?? 0);
+      if (!Number.isFinite(nights) || nights <= 0) {
+        const ci = stay.check_in ? new Date(stay.check_in) : null;
+        const co = stay.check_out ? new Date(stay.check_out) : null;
+        if (ci && co) {
+          const diff = (co - ci) / (1000 * 60 * 60 * 24);
+          if (Number.isFinite(diff) && diff > 0) nights = diff;
+        }
+      }
+      if (Number.isFinite(nights) && nights > 0) {
+        nightsSum += nights;
+        staysCount += 1;
+      }
+    });
+
+    const averageNights = staysCount > 0 ? nightsSum / staysCount : 0;
+
     const earningsStart = new Date();
     earningsStart.setDate(1);
     earningsStart.setHours(0, 0, 0, 0);
@@ -281,6 +318,8 @@ export const getHostDashboard = async (req, res) => {
       metrics: {
         monthlyEarnings: Number(earningsSum || 0),
         upcomingCount: reservationsPayload.length,
+        nightsBooked: Math.round(nightsSum),
+        averageNights: Number(averageNights.toFixed(1)),
       },
     });
   } catch (error) {
