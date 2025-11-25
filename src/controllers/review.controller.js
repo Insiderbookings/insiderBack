@@ -3,7 +3,7 @@ import { Op } from "sequelize";
 import models, { sequelize } from "../models/index.js";
 import { getCoverImage } from "../utils/homeMapper.js";
 
-const REVIEW_WINDOW_DAYS = 30;
+const REVIEW_WINDOW_DAYS = Number(process.env.REVIEW_WINDOW_DAYS || 30);
 const STATUS_PUBLISHED = "PUBLISHED";
 
 const allowedGuestStatuses = new Set(["CONFIRMED", "COMPLETED"]);
@@ -86,6 +86,7 @@ const enforceReviewWindow = (booking) => {
   if (Number.isNaN(checkOutDate.getTime())) return;
   const limit = new Date(checkOutDate);
   limit.setDate(limit.getDate() + REVIEW_WINDOW_DAYS);
+  if (REVIEW_WINDOW_DAYS <= 0) return; // allow always if configured to 0 or negative
   if (Date.now() > limit.getTime()) {
     throw Object.assign(new Error("The review window for this booking has expired."), { status: 400 });
   }
