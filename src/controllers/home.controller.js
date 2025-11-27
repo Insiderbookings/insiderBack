@@ -389,7 +389,6 @@ const parseCoordinate = (value) => {
 };
 
 const TRAVELER_COORDINATE_DELTA = 0.75;
-const TRAVELER_USER_LIMIT = 200;
 const TRAVELER_STATUS_SCOPE = ["CONFIRMED", "COMPLETED"];
 
 export const searchHomes = async (req, res) => {
@@ -500,6 +499,13 @@ export const getHomeRecommendations = async (req, res) => {
     let country = rawCountry || null;
     let lat = parseCoordinate(req.query?.lat);
     let lng = parseCoordinate(req.query?.lng);
+    const gpsCustom = ["1", "true", "yes"].includes(String(req.query?.gpscustom || req.query?.gpsCustom || "false").toLowerCase());
+    const latCustom = parseCoordinate(req.query?.lat_custom || req.query?.latCustom);
+    const lngCustom = parseCoordinate(req.query?.lng_custom || req.query?.lngCustom);
+    if (gpsCustom && latCustom != null && lngCustom != null) {
+      lat = latCustom;
+      lng = lngCustom;
+    }
     let region = null;
 
     if (!city && !country && lat == null && lng == null) {
@@ -779,26 +785,9 @@ export const getHomeRecommendations = async (req, res) => {
       const bookingWhere = {
         booking_latitude: { [Op.between]: [lat - TRAVELER_COORDINATE_DELTA, lat + TRAVELER_COORDINATE_DELTA] },
         booking_longitude: { [Op.between]: [lng - TRAVELER_COORDINATE_DELTA, lng + TRAVELER_COORDINATE_DELTA] },
-        user_id: { [Op.ne]: null },
         inventory_type: "HOME",
         status: { [Op.in]: TRAVELER_STATUS_SCOPE },
       };
-
-      const travelerRows = await models.Booking.findAll({
-        attributes: [[sequelize.fn("DISTINCT", sequelize.col("user_id")), "user_id"]],
-        where: bookingWhere,
-        raw: true,
-      });
-
-      const travelerUserIds = Array.from(
-        new Set(
-          travelerRows
-            .map((row) => Number(row.user_id))
-            .filter((value) => Number.isFinite(value))
-        )
-      ).slice(0, TRAVELER_USER_LIMIT);
-
-      if (!travelerUserIds.length) return null;
 
       const destinationRows = await models.Booking.findAll({
         attributes: [
@@ -808,9 +797,7 @@ export const getHomeRecommendations = async (req, res) => {
           [sequelize.fn("COUNT", sequelize.col("Stay.id")), "count"],
         ],
         where: {
-          user_id: { [Op.in]: travelerUserIds },
-          inventory_type: "HOME",
-          status: { [Op.in]: TRAVELER_STATUS_SCOPE },
+          ...bookingWhere,
         },
         include: [
           {
