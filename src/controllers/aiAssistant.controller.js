@@ -39,17 +39,27 @@ export const handleAssistantSearch = async (req, res) => {
   }
 
   const plan = await extractSearchPlan(messages);
-  const listingTypes = Array.isArray(plan?.listingTypes) ? plan.listingTypes : ["HOMES"];
-  const wantsHomes = listingTypes.includes("HOMES") || listingTypes.length === 0;
-  const wantsHotels = listingTypes.includes("HOTELS");
+  const intent = plan?.intent || "SMALL_TALK";
+
+  // Solo buscar si el intent es SEARCH
+  const shouldSearch = intent === "SEARCH";
 
   try {
-    const [homes, hotels] = await Promise.all([
-      wantsHomes ? searchHomesForPlan(plan, { limit: req.body?.limit?.homes }) : [],
-      wantsHotels ? searchHotelsForPlan(plan, { limit: req.body?.limit?.hotels }) : [],
-    ]);
+    let inventory = { homes: [], hotels: [] };
 
-    const inventory = { homes, hotels };
+    if (shouldSearch) {
+      const listingTypes = Array.isArray(plan?.listingTypes) ? plan.listingTypes : ["HOMES"];
+      const wantsHomes = listingTypes.includes("HOMES") || listingTypes.length === 0;
+      const wantsHotels = listingTypes.includes("HOTELS");
+
+      const [homes, hotels] = await Promise.all([
+        wantsHomes ? searchHomesForPlan(plan, { limit: req.body?.limit?.homes }) : [],
+        wantsHotels ? searchHotelsForPlan(plan, { limit: req.body?.limit?.hotels }) : [],
+      ]);
+
+      inventory = { homes, hotels };
+    }
+
     const replyPayload = await generateAssistantReply({ plan, messages, inventory });
 
     return res.json({
@@ -61,7 +71,7 @@ export const handleAssistantSearch = async (req, res) => {
       counts: buildResultCounts(inventory),
       assistantReady: isAssistantEnabled(),
       quickStartPrompts: QUICK_START_PROMPTS,
-      debug: buildDebugInfo(plan),
+      debug: { ...buildDebugInfo(plan), intent },
     });
   } catch (err) {
     console.error("[aiAssistant] query failed", err);
