@@ -10,6 +10,7 @@ const clampLimit = (value, fallback = 6) => {
 };
 
 const toNumberOrNull = (value) => {
+  if (value === null || value === undefined) return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
 };
@@ -80,6 +81,11 @@ const buildHomeMatchReasons = ({ plan, home, card }) => {
   return reasons;
 };
 
+const buildPricingOrderLiteral = () =>
+  sequelize.literal(
+    "(SELECT hp.base_price FROM home_pricing AS hp WHERE hp.home_id = Home.id AND hp.deleted_at IS NULL LIMIT 1)"
+  );
+
 const runHomeQuery = async ({ plan, limit, guests, coordinateFilter, addressWhere, budgetMax, respectGuest, respectBudget }) => {
   const where = {
     status: "PUBLISHED",
@@ -101,11 +107,14 @@ const runHomeQuery = async ({ plan, limit, guests, coordinateFilter, addressWher
           ...(coordinateFilter || {}),
         }).length > 0
           ? {
-              ...(Object.keys(addressWhere).length ? addressWhere : {}),
-              ...(coordinateFilter || {}),
-            }
+            ...(Object.keys(addressWhere).length ? addressWhere : {}),
+            ...(coordinateFilter || {}),
+          }
           : undefined,
     },
+    // LOGGING: Check the address where clause
+    // console.log("[assistant] runHomeQuery address where:", JSON.stringify(addressWhere));
+    // console.log("[assistant] runHomeQuery coordinate filter:", JSON.stringify(coordinateFilter));
     {
       model: models.HomePricing,
       as: "pricing",
@@ -153,22 +162,46 @@ const runHomeQuery = async ({ plan, limit, guests, coordinateFilter, addressWher
     },
   ];
 
+  const order = [];
+  if (plan?.sortBy === "POPULARITY") {
+    // We need to count the recent views for each home
+    // Since we can't easily do a subquery sort in Sequelize without raw queries or complex associations,
+    // we will include the HomeRecentView association and sort by the count of views.
+    // However, Sequelize's count on include can be tricky.
+    // A simpler approach for "Most Visited" is to sort by a "visits_count" if we had it denormalized.
+    // Assuming we don't, we can try to order by the count of recentViews.
+    // But standard Sequelize findAll with include and order by count is complex.
+    // Let's check if we can use a literal for sorting.
+    order.push([sequelize.literal("(SELECT COUNT(*) FROM home_recent_view WHERE home_recent_view.home_id = Home.id)"), "DESC"]);
+  } else if (plan?.sortBy === "PRICE_ASC") {
+    order.push([buildPricingOrderLiteral(), "ASC"]);
+  } else if (plan?.sortBy === "PRICE_DESC") {
+    order.push([buildPricingOrderLiteral(), "DESC"]);
+  } else {
+    // Default sort
+    order.push(["updated_at", "DESC"]);
+    order.push(["id", "DESC"]);
+  }
+
+  console.log("[assistant] runHomeQuery executing with where:", JSON.stringify(where));
+  console.log("[assistant] runHomeQuery address include where:", JSON.stringify(include[0].where));
+
   const homes = await models.Home.findAll({
     where,
     include,
-    order: [
-      ["updated_at", "DESC"],
-      ["id", "DESC"],
-    ],
+    order,
     limit,
   });
 
+  console.log(`[assistant] runHomeQuery found ${homes.length} raw homes`);
   return homes;
 };
 
 export const searchHomesForPlan = async (plan = {}, options = {}) => {
   console.log("[assistant] plan", JSON.stringify(plan));
-  const limit = clampLimit(options.limit);
+  // If the plan has a specific limit, use it, otherwise use the default or requested limit
+  const planLimit = typeof plan.limit === "number" && plan.limit > 0 ? plan.limit : null;
+  const limit = clampLimit(planLimit || options.limit);
   const guests = resolveGuestTotal(plan);
   const addressWhere = {};
   if (plan?.location?.city) {
@@ -179,7 +212,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
     const filter = buildStringFilter(plan.location.country);
     if (filter) addressWhere.country = filter;
   }
-  if (plan?.location?.state) {
+  if (plan?.location?.state && !plan?.location?.city) {
     const filter = buildStringFilter(plan.location.state);
     if (filter) addressWhere.state = filter;
   }
@@ -189,9 +222,9 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
   const coordinateFilter =
     latValue != null && lngValue != null
       ? {
-          latitude: { [Op.between]: [latValue - 0.35, latValue + 0.35] },
-          longitude: { [Op.between]: [lngValue - 0.35, lngValue + 0.35] },
-        }
+        latitude: { [Op.between]: [latValue - 0.35, latValue + 0.35] },
+        longitude: { [Op.between]: [lngValue - 0.35, lngValue + 0.35] },
+      }
       : null;
 
   const budgetMax = resolveBudgetMax(plan);
@@ -215,6 +248,8 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
       respectBudget: attempt.respectBudget,
     });
 
+    console.log(`[assistant] attempt ${JSON.stringify(attempt)} returned ${homes.length} homes`);
+
     const enriched = homes
       .map((home) => {
         if (plan?.amenities?.parking && !matchParking(home)) {
@@ -237,7 +272,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
       })
       .filter(Boolean);
 
-    console.log("[assistant] attempt result count", enriched.length);
+    console.log(`[assistant] attempt enriched count: ${enriched.length}`);
     if (enriched.length) {
       return enriched;
     }
@@ -261,7 +296,8 @@ const buildHotelMatchReasons = ({ plan, hotel }) => {
 };
 
 export const searchHotelsForPlan = async (plan = {}, options = {}) => {
-  const limit = clampLimit(options.limit);
+  const planLimit = typeof plan.limit === "number" && plan.limit > 0 ? plan.limit : null;
+  const limit = clampLimit(planLimit || options.limit);
   const where = {};
   if (plan?.location?.city) {
     const filter = buildStringFilter(plan.location.city);
