@@ -23,6 +23,7 @@ import chatRoutes from "./chat.routes.js"
 import favoriteRoutes from "./favorite.routes.js"
 import reviewRoutes from "./review.routes.js"
 import guestRoutes from "./guest.routes.js"
+import assistantRoutes from "./assistant.routes.js"
 
 const router = Router()
 
@@ -50,5 +51,6 @@ router.use("/chats", chatRoutes)
 router.use("/favorites", favoriteRoutes)
 router.use("/reviews", reviewRoutes)
 router.use("/guests", guestRoutes)
+router.use("/assistant", assistantRoutes)
 
 export default router
