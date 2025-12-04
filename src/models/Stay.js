@@ -141,6 +141,12 @@ export default (sequelize) => {
     Stay.hasOne(models.StayHotel, { foreignKey: "stay_id", as: "hotelStay" });
     Stay.hasOne(models.StayHome, { foreignKey: "stay_id", as: "homeStay" });
     Stay.hasOne(models.StayManual, { foreignKey: "stay_id", as: "manualStay" });
+    if (models.TGXMeta) {
+      Stay.hasOne(models.TGXMeta, { foreignKey: "stay_id", as: "tgxMeta" });
+    }
+    if (models.OutsideMeta) {
+      Stay.hasOne(models.OutsideMeta, { foreignKey: "stay_id", as: "outsideMeta" });
+    }
 
     Stay.belongsToMany(models.AddOn, {
       through: models.BookingAddOn,

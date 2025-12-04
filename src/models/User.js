@@ -74,6 +74,17 @@ export default (sequelize) => {
         type: DataTypes.TEXT,
         allowNull: true,
       },
+      // DOTW/WebBeds: códigos internos de país (nacionalidad y residencia)
+      country_code: {
+        type: DataTypes.STRING(10),
+        allowNull: true,
+        comment: "Passenger nationality (DOTW internal country code)",
+      },
+      residence_country_code: {
+        type: DataTypes.STRING(10),
+        allowNull: true,
+        comment: "Passenger country of residence (DOTW internal country code)",
+      },
     },
     {
       tableName: "user",
@@ -125,6 +136,13 @@ export default (sequelize) => {
       User.hasMany(models.HomeFavorite, {
         foreignKey: "user_id",
         as: "homeFavorites",
+        onDelete: "CASCADE",
+      });
+    }
+    if (models.PayoutAccount) {
+      User.hasOne(models.PayoutAccount, {
+        foreignKey: "user_id",
+        as: "payoutAccount",
         onDelete: "CASCADE",
       });
     }

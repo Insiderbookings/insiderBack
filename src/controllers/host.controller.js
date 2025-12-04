@@ -51,9 +51,9 @@ export const getHostBookingsList = async (req, res) => {
 
   const parsedStatuses = typeof status === "string"
     ? status
-        .split(",")
-        .map((value) => value.trim().toUpperCase())
-        .filter(Boolean)
+      .split(",")
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean)
     : [];
 
   const where = {
@@ -140,13 +140,13 @@ export const getHostBookingsList = async (req, res) => {
         },
         home: home
           ? {
-              id: home.id,
-              title: home.title,
-              city: home.city,
-              country: home.country,
-              status: home.status,
-              coverImage: getCoverImage(home),
-            }
+            id: home.id,
+            title: home.title,
+            city: home.city,
+            country: home.country,
+            status: home.status,
+            coverImage: getCoverImage(home),
+          }
           : null,
         createdAt: stay.createdAt,
         updatedAt: stay.updatedAt,
@@ -246,12 +246,12 @@ export const getHostDashboard = async (req, res) => {
         status: stay.status,
         home: home
           ? {
-              id: home.id,
-              title: home.title,
-              city: home.address?.city ?? null,
-              country: home.address?.country ?? null,
-              coverImage: getCoverImage(home),
-            }
+            id: home.id,
+            title: home.title,
+            city: home.address?.city ?? null,
+            country: home.address?.country ?? null,
+            coverImage: getCoverImage(home),
+          }
           : null,
       };
     });
@@ -458,23 +458,23 @@ export const getHostEarnings = async (req, res) => {
       .slice(0, 6)
       .map(([key, values]) => {
         const [year, month] = key.split("-");
-      const gross = values.gross || 0;
-      const adjustments = values.adjustments || 0;
-      const serviceFees = values.serviceFees || 0;
-      const taxes = values.taxes || 0;
-      const net = gross + adjustments - serviceFees - taxes;
-      return {
-        key,
-        year: Number(year),
-        month: Number(month),
-        gross,
-        adjustments,
-        serviceFees,
-        taxes,
-        net,
-        stays: staysByMonth.get(key) || [],
-      };
-    });
+        const gross = values.gross || 0;
+        const adjustments = values.adjustments || 0;
+        const serviceFees = values.serviceFees || 0;
+        const taxes = values.taxes || 0;
+        const net = gross + adjustments - serviceFees - taxes;
+        return {
+          key,
+          year: Number(year),
+          month: Number(month),
+          gross,
+          adjustments,
+          serviceFees,
+          taxes,
+          net,
+          stays: staysByMonth.get(key) || [],
+        };
+      });
 
     const topListings = Array.from(listingTotals.values())
       .filter((item) => item.home)
@@ -577,11 +577,11 @@ export const getHostBookingDetail = async (req, res) => {
       },
       home: home
         ? {
-            id: home.id,
-            title: home.title,
-            address: home.address || null,
-            coverImage: getCoverImage(home),
-          }
+          id: home.id,
+          title: home.title,
+          address: home.address || null,
+          coverImage: getCoverImage(home),
+        }
         : null,
       pricing: {
         currency: stay.currency || pricingSnapshot.currency || "USD",
@@ -609,6 +609,8 @@ export const getHostBookingDetail = async (req, res) => {
     return res.status(500).json({ error: "Unable to load booking detail" })
   }
 }
+
+
 
 export const getHostListings = async (req, res) => {
   const hostId = Number(req.user?.id);
@@ -804,4 +806,32 @@ export const getHostCalendar = async (req, res) => {
   }
 };
 
+export const updatePayoutMethod = async (req, res) => {
+  const hostId = Number(req.user?.id);
+  const { routingNumber, accountNumber, accountHolder } = req.body;
 
+  if (!hostId) return res.status(400).json({ error: "Invalid host ID" });
+  if (!routingNumber || !accountNumber) {
+    return res.status(400).json({ error: "Routing number and account number are required" });
+  }
+
+  try {
+    const hostProfile = await models.HostProfile.findOne({ where: { user_id: hostId } });
+    if (!hostProfile) {
+      // Should exist due to hooks, but just in case
+      return res.status(404).json({ error: "Host profile not found" });
+    }
+
+    await hostProfile.update({
+      bank_routing_number: routingNumber,
+      bank_account_number: accountNumber,
+      bank_account_holder: accountHolder,
+      payout_status: "READY",
+    });
+
+    return res.json({ success: true, message: "Payout method updated" });
+  } catch (error) {
+    console.error("updatePayoutMethod error:", error);
+    return res.status(500).json({ error: "Unable to update payout method" });
+  }
+};

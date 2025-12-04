@@ -2,10 +2,11 @@ import { extractSearchPlan, generateAssistantReply, isAssistantEnabled } from ".
 import { searchHomesForPlan, searchHotelsForPlan } from "../services/assistantSearch.service.js";
 
 const QUICK_START_PROMPTS = [
-  "Mostrame casas para 4 personas en Córdoba capital con cochera la tercera semana de enero.",
-  "Busco un hotel business class en Buenos Aires con desayuno incluido.",
-  "Necesito una cabaña pet friendly cerca de Bariloche para 6 huéspedes.",
+  "Show me homes for 4 people in downtown Cordoba with parking for the third week of January.",
+  "Looking for a business-class hotel in Buenos Aires with breakfast included.",
+  "Need a pet-friendly cabin near Bariloche for 6 guests.",
 ];
+const MAX_RESULTS = 3;
 
 const normalizeMessagesInput = (messages) => {
   if (!Array.isArray(messages)) return [];
@@ -46,6 +47,7 @@ export const handleAssistantSearch = async (req, res) => {
 
   try {
     let inventory = { homes: [], hotels: [] };
+    let counts = buildResultCounts(inventory);
 
     if (shouldSearch) {
       const listingTypes = Array.isArray(plan?.listingTypes) ? plan.listingTypes : ["HOMES"];
@@ -57,7 +59,11 @@ export const handleAssistantSearch = async (req, res) => {
         wantsHotels ? searchHotelsForPlan(plan, { limit: req.body?.limit?.hotels }) : [],
       ]);
 
-      inventory = { homes, hotels };
+      counts = buildResultCounts({ homes, hotels });
+      inventory = {
+        homes: Array.isArray(homes) ? homes.slice(0, MAX_RESULTS) : [],
+        hotels: Array.isArray(hotels) ? hotels.slice(0, MAX_RESULTS) : [],
+      };
     }
 
     const replyPayload = await generateAssistantReply({ plan, messages, inventory });
@@ -68,7 +74,7 @@ export const handleAssistantSearch = async (req, res) => {
       followUps: replyPayload.followUps,
       plan,
       inventory,
-      counts: buildResultCounts(inventory),
+      counts,
       assistantReady: isAssistantEnabled(),
       quickStartPrompts: QUICK_START_PROMPTS,
       debug: { ...buildDebugInfo(plan), intent },

@@ -52,22 +52,6 @@ const toPlain = (value) => {
   return value
 }
 
-const toFiniteNumber = (value) => {
-  if (value == null || value === "") return null
-  const num = Number(value)
-  return Number.isFinite(num) ? num : null
-}
-
-const normalizeCoordinate = (value, min, max) => {
-  const num = toFiniteNumber(value)
-  if (num == null) return null
-  if (num < min || num > max) return null
-  return num
-}
-
-const normalizeLatitude = (value) => normalizeCoordinate(value, -90, 90)
-const normalizeLongitude = (value) => normalizeCoordinate(value, -180, 180)
-
 const pickCoverImage = (media) => {
   if (!Array.isArray(media) || !media.length) return null
   const normalized = media.map(toPlain)
@@ -143,14 +127,23 @@ const buildHomePayload = (homeStay) => {
 }
 
 const mapStay = (row, source) => {
-  const hotelStay = toPlain(row.hotelStay ?? row.StayHotel ?? row.stayHotel) ?? null
-  const hotel = toPlain(hotelStay?.hotel) ?? null
-  const room = toPlain(hotelStay?.room) ?? null
+  const stayHotel = toPlain(row.hotelStay ?? row.StayHotel ?? row.stayHotel) ?? null
+  const hotelFromStay = toPlain(stayHotel?.hotel) ?? null
+  const roomFromStay = toPlain(stayHotel?.room) ?? toPlain(stayHotel?.room_snapshot) ?? null
+  const hotel = toPlain(row.Hotel ?? row.hotel ?? hotelFromStay) ?? null
+  const room = toPlain(row.Room ?? row.room ?? roomFromStay) ?? null
+  const tgxMeta = toPlain(row.tgxMeta) ?? null
   const stayHome = toPlain(row.homeStay ?? row.StayHome ?? row.stayHome) ?? null
   const homePayload = stayHome ? buildHomePayload(stayHome) : null
 
   let mergedHotel = hotel
   let mergedRoom = room
+  if (source === "tgx" && tgxMeta) {
+    const tgxHotel = tgxMeta?.hotel ?? {}
+    const tgxRoom = tgxMeta?.rooms?.[0] ?? {}
+    mergedHotel = { ...mergedHotel, ...tgxHotel }
+    mergedRoom = { ...mergedRoom, ...tgxRoom }
+  }
 
   const checkIn = row.check_in ?? row.checkIn ?? null
   const checkOut = row.check_out ?? row.checkOut ?? null
@@ -178,7 +171,7 @@ const mapStay = (row, source) => {
     source,
     bookingConfirmation: row.bookingConfirmation ?? row.external_ref ?? null,
 
-    hotel_id: isHomeStay ? null : hotelStay?.hotel_id ?? mergedHotel?.id ?? null,
+    hotel_id: isHomeStay ? null : row.hotel_id ?? mergedHotel?.id ?? null,
     hotel_name: listingName,
     location,
     image,
@@ -193,8 +186,10 @@ const mapStay = (row, source) => {
 
     room_type: isHomeStay
       ? homePayload?.spaceType ?? "HOME"
-      : row.room_type ?? mergedRoom?.name ?? null,
-    room_number: isHomeStay ? null : row.room_number ?? mergedRoom?.room_number ?? null,
+      : row.room_type ?? mergedRoom?.name ?? mergedRoom?.room_type ?? null,
+    room_number: isHomeStay
+      ? null
+      : row.room_number ?? mergedRoom?.room_number ?? mergedRoom?.roomNumber ?? null,
 
     guests: (row.adults ?? 0) + (row.children ?? 0),
     total: Number.parseFloat(row.gross_price ?? row.total ?? 0),
@@ -203,8 +198,6 @@ const mapStay = (row, source) => {
     guestLastName: row.guest_last_name ?? row.guestLastName ?? null,
     guestEmail: row.guest_email ?? row.guestEmail ?? null,
     guestPhone: row.guest_phone ?? row.guestPhone ?? null,
-    bookingLatitude: row.booking_latitude ?? row.bookingLatitude ?? null,
-    bookingLongitude: row.booking_longitude ?? row.bookingLongitude ?? null,
 
     hotel: isHomeStay ? null : mergedHotel,
     room: isHomeStay ? null : mergedRoom,
@@ -223,9 +216,27 @@ const STAY_BASE_INCLUDE = [
     as: "hotelStay",
     required: false,
     include: [
-      { model: models.Hotel, as: "hotel", attributes: ["id", "name", "city", "country", "image", "rating"] },
-      { model: models.Room, as: "room", attributes: ["id", "name", "room_number", "image", "price", "beds", "capacity"] },
+      {
+        model: models.Hotel,
+        as: "hotel",
+        attributes: ["id", "name", "city", "country", "image", "rating"],
+      },
+      {
+        model: models.Room,
+        as: "room",
+        attributes: ["id", "name", "room_number", "image", "price", "beds", "capacity"],
+      },
     ],
+  },
+  {
+    model: models.TGXMeta,
+    as: "tgxMeta",
+    required: false,
+  },
+  {
+    model: models.OutsideMeta,
+    as: "outsideMeta",
+    required: false,
   },
   {
     model: models.StayHome,
@@ -414,6 +425,8 @@ export const createBooking = async (req, res) => {
       const stay = await models.Booking.create(
         {
           user_id: userId,
+          hotel_id: hotelIdValue,
+          room_id: roomIdValue,
           discount_code_id: discountRecord ? discountRecord.id : null,
           source,
           check_in: normalizedCheckIn,
@@ -468,15 +481,6 @@ export const createBooking = async (req, res) => {
           stay_id: stay.id,
           hotel_id: hotelIdValue,
           room_id: roomIdValue,
-        },
-        { transaction: tx }
-      )
-
-      await models.StayHotel.create(
-        {
-          stay_id: stay.id,
-          hotel_id: hotelIdValue,
-          room_id: roomIdValue,
           room_name: room.name ?? null,
           room_snapshot: {
             id: room.id,
@@ -499,7 +503,7 @@ export const createBooking = async (req, res) => {
           const commissionAmount = Number.parseFloat(((grossTotal * commissionPct) / 100).toFixed(2))
           await models.Commission.create(
             {
-              stay_id: stay.id,
+              booking_id: stay.id,
               staff_id: discountRecord.staff_id,
               amount: commissionAmount,
             },
@@ -509,7 +513,7 @@ export const createBooking = async (req, res) => {
       }
 
       if (discountRecord) {
-        await discountRecord.update({ stay_id: stay.id }, { transaction: tx })
+        await discountRecord.update({ booking_id: stay.id }, { transaction: tx })
       }
 
       return stay
@@ -529,7 +533,6 @@ export const createBooking = async (req, res) => {
 
 export const createHomeBooking = async (req, res) => {
   try {
-    const body = req.body || {}
     const userId = Number(req.user?.id ?? 0)
     if (!userId) return res.status(401).json({ error: "Unauthorized" })
 
@@ -543,11 +546,8 @@ export const createHomeBooking = async (req, res) => {
       guestName,
       guestEmail,
       guestPhone,
-      bookingLatitude: bodyBookingLatitude,
-      bookingLongitude: bodyBookingLongitude,
-      bookingLocation: bodyBookingLocation,
       meta: metaPayload = {},
-    } = body
+    } = req.body || {}
 
     const homeIdValue = Number(homeId ?? 0) || null
     if (!homeIdValue || !checkIn || !checkOut)
@@ -698,40 +698,6 @@ export const createHomeBooking = async (req, res) => {
       .trim()
       .toUpperCase()
 
-    const locationFromBody =
-      bodyBookingLocation && typeof bodyBookingLocation === "object" ? bodyBookingLocation : null
-    let locationFromMeta = null
-    if (metaPayload && typeof metaPayload === "object") {
-      if (metaPayload.deviceLocation && typeof metaPayload.deviceLocation === "object") {
-        locationFromMeta = metaPayload.deviceLocation
-      } else if (metaPayload.location && typeof metaPayload.location === "object") {
-        locationFromMeta = metaPayload.location
-      }
-    }
-    const bookingLatitudeValue = normalizeLatitude(
-      bodyBookingLatitude ??
-        locationFromBody?.latitude ??
-        locationFromBody?.lat ??
-        body?.lat ??
-        body?.latitude ??
-        locationFromMeta?.latitude ??
-        locationFromMeta?.lat ??
-        null
-    )
-    const bookingLongitudeValue = normalizeLongitude(
-      bodyBookingLongitude ??
-        locationFromBody?.longitude ??
-        locationFromBody?.lng ??
-        locationFromBody?.lon ??
-        body?.lng ??
-        body?.lon ??
-        body?.longitude ??
-        locationFromMeta?.longitude ??
-        locationFromMeta?.lng ??
-        locationFromMeta?.lon ??
-        null
-    )
-
     const stay = await sequelize.transaction(async (tx) => {
       const created = await models.Booking.create(
         {
@@ -757,8 +723,6 @@ export const createHomeBooking = async (req, res) => {
           status: "PENDING",
           outside: false,
           active: true,
-           booking_latitude: bookingLatitudeValue,
-           booking_longitude: bookingLongitudeValue,
           booked_at: new Date(),
           pricing_snapshot: {
             nightlyBreakdown,
@@ -1424,7 +1388,7 @@ export const cancelBooking = async (req, res) => {
     // Si quedó REFUNDED, revertir comisión influencer asociada (si no fue pagada)
     if (String(booking.payment_status).toUpperCase() === 'PAID') {
       try {
-        const ic = await models.InfluencerCommission.findOne({ where: { stay_id: booking.id } })
+        const ic = await models.InfluencerCommission.findOne({ where: { booking_id: booking.id } })
         if (ic && ic.status !== 'paid') {
           await ic.update({ status: 'reversed', reversal_reason: 'cancelled' })
         }

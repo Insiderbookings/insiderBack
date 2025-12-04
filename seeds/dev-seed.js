@@ -153,13 +153,20 @@ async function main() {
     ];
 
     // Catálogo de amenities/tags mínimos
+    const amenityIconMap = {
+      WIFI: "wifi-outline",
+      AC: "snow-outline",
+      KITCHEN: "restaurant-outline",
+      WASHER: "refresh-outline",
+      TV: "tv-outline",
+    };
     const amenityPayload = [
       { name: "Wifi", group_key: "BASICS", amenity_key: "WIFI", label: "Wifi" },
       { name: "A/C", group_key: "BASICS", amenity_key: "AC", label: "Air conditioning" },
       { name: "Kitchen", group_key: "BASICS", amenity_key: "KITCHEN", label: "Kitchen" },
       { name: "Washer", group_key: "BASICS", amenity_key: "WASHER", label: "Washer" },
       { name: "TV", group_key: "BASICS", amenity_key: "TV", label: "TV" },
-    ];
+    ].map((item) => ({ ...item, icon: amenityIconMap[item.amenity_key] || "sparkles-outline" }));
     const amenityCatalog = [];
     for (const payload of amenityPayload) {
       const [row] = await models.HomeAmenity.findOrCreate({

@@ -68,8 +68,8 @@ test("WebbedsProvider.search sanitizes numeric codes and forwards payload", asyn
 
   assert.equal(captured.command, "searchhotels")
   const [room] = captured.payload.bookingDetails.rooms.room
-  assert.equal(room.passengerNationality, "604")
-  assert.equal(room.passengerCountryOfResidence, "604")
+  assert.equal(room.passengerNationality, "102")
+  assert.equal(room.passengerCountryOfResidence, "102")
   assert.deepEqual(
     captured.payload.return.filters["c:condition"]["a:condition"][0].fieldValues.fieldValue,
     ["30694", "30674"],

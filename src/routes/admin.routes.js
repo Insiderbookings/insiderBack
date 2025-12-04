@@ -15,6 +15,7 @@ import { adminListSubscribers, adminBroadcastEmail } from "../controllers/subscr
 import { adminListTransfers, adminCreateTransfer, adminCancelTransfer } from "../controllers/operatorTransfer.controller.js"
 import { syncWebbedsCountriesController, syncWebbedsCitiesController, syncWebbedsHotelsController } from "../controllers/webbedsStatic.controller.js"
 import { adminListContracts, adminCreateContract, adminUpdateContract, adminDeleteContract } from "../controllers/contract.controller.js"
+import { runMockPayouts, runPayoutBatch } from "../controllers/payout.controller.js"
 
 const router = Router()
 
@@ -65,6 +66,10 @@ router.get("/contracts", authenticate, authorizeRoles(100), adminListContracts)
 router.post("/contracts", authenticate, authorizeRoles(100), adminCreateContract)
 router.put("/contracts/:id", authenticate, authorizeRoles(100), adminUpdateContract)
 router.delete("/contracts/:id", authenticate, authorizeRoles(100), adminDeleteContract)
+
+// Payouts mock (trigger manual, admin only)
+router.post("/payouts/mock", authenticate, authorizeRoles(100), runMockPayouts)
+router.post("/payouts/batch", authenticate, authorizeRoles(100), runPayoutBatch)
 
 export default router
 

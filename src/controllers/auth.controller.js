@@ -17,7 +17,17 @@ dotenv.config();
 const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-const USER_SAFE_ATTRIBUTES = ["id", "name", "email", "phone", "role", "avatar_url", "is_active"];
+const USER_SAFE_ATTRIBUTES = [
+  "id",
+  "name",
+  "email",
+  "phone",
+  "role",
+  "avatar_url",
+  "is_active",
+  "country_code",
+  "residence_country_code",
+];
 const USER_INCLUDES = [
   { model: models.HostProfile, as: "hostProfile" },
   { model: models.GuestProfile, as: "guestProfile" },
@@ -34,6 +44,8 @@ const presentUser = (user) => {
     role: plain.role ?? 0,
     avatar_url: plain.avatar_url ?? null,
     is_active: plain.is_active ?? true,
+    countryCode: plain.country_code ?? null,
+    countryOfResidenceCode: plain.residence_country_code ?? null,
     hostProfile: plain.hostProfile || null,
     guestProfile: plain.guestProfile || null,
   };
@@ -237,7 +249,13 @@ export const loginStaff = async (req, res) => {
    USER: REGISTER (local)
    ──────────────────────────────────────────────────────────────── */
 export const registerUser = async (req, res) => {
-  const { name, email, password } = req.body;
+  const {
+    name,
+    email,
+    password,
+    countryCode,
+    countryOfResidenceCode,
+  } = req.body;
   try {
     const exists = await models.User.findOne({ where: { email } });
     if (exists) return res.status(409).json({ error: "Email taken" });
@@ -248,6 +266,8 @@ export const registerUser = async (req, res) => {
       name,
       email,
       password_hash: hash,
+      country_code: countryCode ? String(countryCode).trim() : null,
+      residence_country_code: countryOfResidenceCode ? String(countryOfResidenceCode).trim() : null,
     });
     // generate verification token valid for 1 day
     const verifyToken = jwt.sign(
@@ -286,7 +306,13 @@ export const registerUser = async (req, res) => {
 
     // Emit a token + user to satisfy FE expectations; still send verify email above
     await ensureGuestProfile(user.id)
-    const token = signToken({ id: user.id, type: "user", role: user.role })
+    const token = signToken({
+      id: user.id,
+      type: "user",
+      role: user.role,
+      countryCode: user.country_code ?? null,
+      countryOfResidenceCode: user.residence_country_code ?? null,
+    })
     const safeUser = await loadSafeUser(user.id)
     return res.status(201).json({ token, user: safeUser })
   } catch (err) {
@@ -322,7 +348,13 @@ export const loginUser = async (req, res) => {
 
     /* 3 ▸ Emitir JWT */
     await ensureGuestProfile(user.id);
-    const token = signToken({ id: user.id, type: "user", role: user.role });
+    const token = signToken({
+      id: user.id,
+      type: "user",
+      role: user.role,
+      countryCode: user.country_code ?? null,
+      countryOfResidenceCode: user.residence_country_code ?? null,
+    });
     if (process.env.NODE_ENV != "production") {
       console.log("[loginUser] issued token:", token);
     }
@@ -447,7 +479,12 @@ export const setPasswordWithToken = async (req, res) => {
     await user.update({ password_hash: hash });
 
     /* 4. emitir JWT de sesión -------------------- */
-    const sessionToken = signToken({ id: user.id, type: "user" });
+    const sessionToken = signToken({
+      id: user.id,
+      type: "user",
+      countryCode: user.country_code ?? null,
+      countryOfResidenceCode: user.residence_country_code ?? null,
+    });
 
     /* 5. respuesta                                 */
     return res.json({
@@ -458,6 +495,8 @@ export const setPasswordWithToken = async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
+        countryCode: user.country_code ?? null,
+        countryOfResidenceCode: user.residence_country_code ?? null,
       },
     });
   } catch (err) {
@@ -660,7 +699,13 @@ export const googleExchange = async (req, res) => {
     }
 
     // 4) Emitir JWT (mismo formato que login local)
-    const token = signToken({ id: user.id, type: "user", role: user.role });
+    const token = signToken({
+      id: user.id,
+      type: "user",
+      role: user.role,
+      countryCode: user.country_code ?? null,
+      countryOfResidenceCode: user.residence_country_code ?? null,
+    });
 
     return res.json({
       token,
@@ -671,6 +716,8 @@ export const googleExchange = async (req, res) => {
         phone: user.phone,
         role: user.role,
         avatar_url: user.avatar_url,
+        countryCode: user.country_code ?? null,
+        countryOfResidenceCode: user.residence_country_code ?? null,
       },
     });
   } catch (err) {

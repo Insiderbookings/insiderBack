@@ -20,6 +20,11 @@ import StayManualModel from "./StayManual.js";
 import PaymentModel from "./Payment.js";
 import CommissionModel from "./Commission.js";
 import InfluencerCommissionModel from "./InfluencerCommission.js";
+import OutsideMetaModel from "./OutsideMeta.js";
+import TGXMetaModel from "./TGXMeta.js";
+import PayoutAccountModel from "./PayoutAccount.js";
+import PayoutBatchModel from "./PayoutBatch.js";
+import PayoutItemModel from "./PayoutItem.js";
 
 import AddOnModel from "./AddOn.js";
 import AddOnOptionModel from "./AddonOption.js";
@@ -114,6 +119,11 @@ const models = {
   Payment: PaymentModel(sequelize),
   Commission: CommissionModel(sequelize),
   InfluencerCommission: InfluencerCommissionModel(sequelize),
+  OutsideMeta: OutsideMetaModel(sequelize),
+  TGXMeta: TGXMetaModel(sequelize),
+  PayoutAccount: PayoutAccountModel(sequelize),
+  PayoutBatch: PayoutBatchModel(sequelize),
+  PayoutItem: PayoutItemModel(sequelize),
 
   AddOn: AddOnModel(sequelize),
   AddOnOption: AddOnOptionModel(sequelize),

@@ -172,7 +172,7 @@ export const createWebbedsClient = ({
   product = "hotel",
   timeoutMs = 30000,
   retries = 2,
-  preferCompressedRequests = true,
+  preferCompressedRequests = false,
   logger = defaultLogger,
   axiosInstance = axios,
 } = {}) => {

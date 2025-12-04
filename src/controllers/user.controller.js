@@ -16,6 +16,8 @@ export const getCurrentUser = async (req, res) => {
         ["is_active", "isActive"], // opcional alias
         "avatar_url",
         "createdAt",
+        ["country_code", "countryCode"],
+        ["residence_country_code", "countryOfResidenceCode"],
       ],
       include: [
         { model: models.HostProfile, as: "hostProfile" },
@@ -32,7 +34,7 @@ export const getCurrentUser = async (req, res) => {
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ PUT /api/users/me â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const updateUserProfile = async (req, res) => {
   try {
-    const { name, email, phone } = req.body
+    const { name, email, phone, countryCode, countryOfResidenceCode } = req.body
     const userId = req.user.id
 
     // Validaciones bÃ¡sicas
@@ -66,12 +68,33 @@ export const updateUserProfile = async (req, res) => {
       }
     }
 
+    // Validar y normalizar códigos de país (opcionales)
+    const normalizeCode = (value) => {
+      if (value === undefined || value === null || value === "") return null
+      const trimmed = String(value).trim()
+      if (!/^\d+$/.test(trimmed)) {
+        throw new Error("Country codes must be numeric")
+      }
+      return trimmed
+    }
+
+    let normalizedCountryCode = null
+    let normalizedResidenceCode = null
+    try {
+      normalizedCountryCode = normalizeCode(countryCode)
+      normalizedResidenceCode = normalizeCode(countryOfResidenceCode)
+    } catch (validationError) {
+      return res.status(400).json({ error: validationError.message })
+    }
+
     // Actualizar usuario
     const [updatedRowsCount] = await models.User.update(
       {
         name: name.trim(),
         email: email.trim().toLowerCase(),
         phone: phone ? phone.trim() : null,
+        country_code: normalizedCountryCode,
+        residence_country_code: normalizedResidenceCode,
       },
       {
         where: { id: userId },
@@ -84,9 +107,20 @@ export const updateUserProfile = async (req, res) => {
     }
 
     // Obtener usuario actualizado
- const updatedUser = await models.User.findByPk(userId, {
-  attributes: ["id","name","email","phone","role","avatar_url","createdAt",["is_active","isActive"]],
-})
+    const updatedUser = await models.User.findByPk(userId, {
+      attributes: [
+        "id",
+        "name",
+        "email",
+        "phone",
+        "role",
+        "avatar_url",
+        "createdAt",
+        ["is_active","isActive"],
+        ["country_code","countryCode"],
+        ["residence_country_code","countryOfResidenceCode"],
+      ],
+    })
 
     return res.json({
       message: "Profile updated successfully",

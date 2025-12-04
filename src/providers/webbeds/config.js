@@ -34,7 +34,7 @@ export const getWebbedsConfig = (overrides = {}) => {
     retries: overrides.retries ?? toNumberOr(WEBBEDS_RETRIES, 2),
     preferCompressedRequests:
       overrides.preferCompressedRequests ??
-      toBooleanOr(WEBBEDS_COMPRESS_REQUESTS, true),
+      toBooleanOr(WEBBEDS_COMPRESS_REQUESTS, false),
   }
 
   if (!config.username) throw new Error("Missing WebBeds username (WEBBEDS_USERNAME)")

@@ -1,0 +1,299 @@
+import dayjs from "dayjs"
+
+const DATE_FORMAT = (process.env.WEBBEDS_DATE_FORMAT || "YYYY-MM-DD").trim()
+
+const ensureArray = (value) => {
+  if (!value) return []
+  return Array.isArray(value) ? value : [value]
+}
+
+const normalizeBoolean = (value) => {
+  if (typeof value === "boolean") return value
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    return ["1", "true", "yes", "y"].includes(normalized)
+  }
+  return false
+}
+
+const toNumber = (value) => {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null
+  if (typeof value === "string") {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  if (value && typeof value === "object") {
+    const raw = value["#"] ?? value.value ?? value.amount ?? value._ ?? null
+    if (raw != null) return toNumber(String(raw))
+  }
+  return null
+}
+
+const getText = (value) => {
+  if (value == null) return null
+  if (typeof value === "string" || typeof value === "number") return String(value)
+  if (typeof value === "object") {
+    return value["#"] ?? value["#text"] ?? value.text ?? value.__cdata ?? value.cdata ?? null
+  }
+  return null
+}
+
+const formatDateValue = (value) => {
+  const parsed = dayjs(value)
+  if (!parsed.isValid()) return null
+  const normalized = DATE_FORMAT.toLowerCase()
+  if (["unix", "epoch", "seconds", "x"].includes(normalized)) {
+    return Math.floor(parsed.valueOf() / 1000).toString()
+  }
+  return parsed.format(DATE_FORMAT)
+}
+
+const parseChildrenSegment = (segment) => {
+  if (!segment || segment === "0") return []
+  if (segment.includes("-")) {
+    return segment
+      .split("-")
+      .map((age) => toNumber(age))
+      .filter((age) => Number.isFinite(age))
+  }
+  const count = toNumber(segment)
+  if (!Number.isFinite(count) || count <= 0) return []
+  return Array.from({ length: count }, () => 8)
+}
+
+const parseOccupancies = (raw) => {
+  if (!raw) return [{ adults: 2, children: [] }]
+  const serialized = Array.isArray(raw) ? raw : String(raw).split(",")
+  return serialized
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .map((token) => {
+      const [adultsStr = "2", childrenStr = "0"] = token.split("|")
+      const adults = Math.min(Math.max(toNumber(adultsStr) ?? 2, 1), 10)
+      const children = parseChildrenSegment(childrenStr)
+      return { adults, children }
+    })
+}
+
+export const buildGetRoomsPayload = ({
+  checkIn,
+  checkOut,
+  currency = "520",
+  occupancies,
+  rateBasis = "1",
+  nationality,
+  residence,
+  hotelId,
+  roomTypeCode,
+  selectedRateBasis,
+  allocationDetails,
+} = {}) => {
+  const fromDate = formatDateValue(checkIn)
+  const toDate = formatDateValue(checkOut)
+
+  if (!fromDate || !toDate) {
+    throw new Error("WebBeds getrooms requires valid checkIn and checkOut dates")
+  }
+  const hotelCode = hotelId != null ? String(hotelId).trim() : null
+  if (!hotelCode || !/^\d+$/.test(hotelCode)) {
+    throw new Error("WebBeds getrooms requires hotelId (productId)")
+  }
+
+  const parsedRooms = parseOccupancies(occupancies)
+  const rooms = parsedRooms.map((room, idx) => {
+    const childrenCount = room.children.length
+    const childrenNode = {
+      "@no": String(childrenCount),
+    }
+    if (childrenCount) {
+      childrenNode.child = room.children.map((age, childIdx) => ({
+        "@runno": String(childIdx),
+        "#": String(age ?? 8),
+      }))
+    }
+
+    const roomNode = {
+      "@runno": String(idx),
+      adultsCode: String(room.adults),
+      children: childrenNode,
+      rateBasis: rateBasis ?? "1",
+      passengerNationality: nationality,
+      passengerCountryOfResidence: residence,
+    }
+
+    if (roomTypeCode || allocationDetails || selectedRateBasis) {
+      roomNode.roomTypeSelected = {
+        ...(roomTypeCode ? { code: roomTypeCode } : {}),
+        ...(selectedRateBasis ? { selectedRateBasis } : {}),
+        ...(allocationDetails ? { allocationDetails } : {}),
+      }
+    }
+
+    return roomNode
+  })
+
+  return {
+    bookingDetails: {
+      fromDate,
+      toDate,
+      currency: currency || "520",
+      rooms: {
+        "@no": String(rooms.length),
+        room: rooms,
+      },
+      productId: hotelCode,
+    },
+  }
+}
+
+const parseCancellationRules = (node) => {
+  const rules = ensureArray(node?.rule ?? node)
+  return rules.map((rule) => ({
+    runno: rule?.["@_runno"] ?? null,
+    fromDate: rule?.fromDate ?? null,
+    fromDateDetails: rule?.fromDateDetails ?? null,
+    toDate: rule?.toDate ?? null,
+    toDateDetails: rule?.toDateDetails ?? null,
+    amendRestricted: normalizeBoolean(rule?.amendRestricted),
+    cancelRestricted: normalizeBoolean(rule?.cancelRestricted),
+    noShowPolicy: normalizeBoolean(rule?.noShowPolicy),
+    amendCharge: toNumber(rule?.amendCharge),
+    cancelCharge: toNumber(rule?.cancelCharge ?? rule?.charge),
+    currency: rule?.rateType?.["@_currencyid"] ?? null,
+    formatted: getText(rule?.charge?.formatted ?? rule?.cancelCharge?.formatted),
+  }))
+}
+
+const parsePropertyFees = (rateBasis) => {
+  const fees = ensureArray(rateBasis?.propertyFees?.propertyFee)
+  return fees.map((fee) => ({
+    runno: fee?.["@_runno"] ?? null,
+    name: fee?.["@_name"] ?? null,
+    description: fee?.["@_description"] ?? null,
+    includedInPrice: normalizeBoolean(fee?.["@_includedinprice"]),
+    amount: toNumber(fee?.["#"]),
+    currency: fee?.["@_currencyshort"] ?? null,
+  }))
+}
+
+const parseRateBases = (rateBasesNode, requestedCurrency) => {
+  const rateBases = ensureArray(rateBasesNode?.rateBasis ?? rateBasesNode)
+  return rateBases.map((rateBasis) => {
+    const rateType = rateBasis?.rateType ?? {}
+    return {
+      id: rateBasis?.["@_id"] ?? null,
+      description: rateBasis?.["@_description"] ?? rateBasis?.description ?? null,
+      status: rateBasis?.status ?? rateBasis?.["@_status"] ?? null,
+      rateType: {
+        id: rateType?.["@_id"] ?? null,
+        description: rateType?.["@_description"] ?? null,
+        currencyId: rateType?.["@_currencyid"] ?? requestedCurrency ?? null,
+        currencyShort: rateType?.["@_currencyshort"] ?? null,
+        nonRefundable: normalizeBoolean(rateType?.["@_nonrefundable"]),
+        notes: rateType?.["@_notes"] ?? null,
+      },
+      paymentMode: rateBasis?.paymentMode ?? null,
+      allowsExtraMeals: normalizeBoolean(rateBasis?.allowsExtraMeals),
+      allowsSpecialRequests: normalizeBoolean(rateBasis?.allowsSpecialRequests),
+      allowsBeddingPreference: normalizeBoolean(rateBasis?.allowsBeddingPreference),
+      allocationDetails: getText(rateBasis?.allocationDetails),
+      minStay: toNumber(rateBasis?.minStay),
+      dateApplyMinStay: rateBasis?.dateApplyMinStay ?? null,
+      cancellationRules: parseCancellationRules(rateBasis?.cancellationRules),
+      isBookable: normalizeBoolean(rateBasis?.isBookable),
+      onRequest: normalizeBoolean(rateBasis?.onRequest),
+      total: toNumber(rateBasis?.total),
+      totalFormatted: getText(rateBasis?.total?.formatted ?? rateBasis?.totalFormatted),
+      totalMinimumSelling: toNumber(rateBasis?.totalMinimumSelling),
+      totalMinimumSellingFormatted: getText(
+        rateBasis?.totalMinimumSelling?.formatted ?? rateBasis?.totalMinimumSellingFormatted,
+      ),
+      totalInRequestedCurrency: toNumber(rateBasis?.totalInRequestedCurrency),
+      totalMinimumSellingInRequestedCurrency: toNumber(
+        rateBasis?.totalMinimumSellingInRequestedCurrency,
+      ),
+      totalTaxes: toNumber(rateBasis?.totalTaxes),
+      totalFee: toNumber(rateBasis?.totalFee),
+      propertyFees: parsePropertyFees(rateBasis),
+      dates: ensureArray(rateBasis?.dates?.date).map((date) => ({
+        datetime: date?.["@_datetime"] ?? date?.datetime ?? null,
+        day: date?.["@_day"] ?? date?.day ?? null,
+        wday: date?.["@_wday"] ?? date?.wday ?? null,
+        price: toNumber(date?.price),
+        priceFormatted: getText(date?.price?.formatted),
+        priceMinimumSelling: toNumber(date?.priceMinimumSelling),
+        priceMinimumSellingFormatted: getText(date?.priceMinimumSelling?.formatted),
+        freeStay: normalizeBoolean(date?.freeStay),
+        dayOnRequest: normalizeBoolean(date?.dayOnRequest),
+      })),
+      leftToSell: toNumber(rateBasis?.leftToSell),
+      tariffNotes: getText(rateBasis?.tariffNotes),
+    }
+  })
+}
+
+const parseRoomTypes = (roomNode, requestedCurrency) => {
+  const roomTypes = ensureArray(roomNode?.roomType)
+  return roomTypes.map((roomType) => ({
+    runno: roomType?.["@_runno"] ?? null,
+    roomTypeCode: roomType?.["@_roomtypecode"] ?? null,
+    name: roomType?.name ?? null,
+    twin: normalizeBoolean(roomType?.twin),
+    roomInfo: {
+      maxOccupancy: toNumber(roomType?.roomInfo?.maxOccupancy ?? roomType?.maxOccupancy),
+      maxAdults: toNumber(roomType?.roomInfo?.maxAdults ?? roomType?.roomInfo?.maxAdult),
+      maxExtraBed: toNumber(roomType?.roomInfo?.maxExtraBed),
+      maxChildren: toNumber(roomType?.roomInfo?.maxChildren),
+    },
+    specialsCount: toNumber(roomType?.specials?.["@_count"]),
+    rateBases: parseRateBases(roomType?.rateBases, requestedCurrency),
+  }))
+}
+
+export const mapGetRoomsResponse = (result) => {
+  const currency = result?.currencyShort ?? null
+  const hotel = result?.hotel ?? {}
+  const roomsNode = ensureArray(hotel?.rooms?.room)
+
+  return {
+    currency,
+    hotel: {
+      id: hotel?.["@_id"] ?? hotel?.id ?? null,
+      name: hotel?.["@_name"] ?? hotel?.name ?? null,
+      allowBook: normalizeBoolean(hotel?.allowBook),
+      rooms: roomsNode.map((room) => ({
+        runno: room?.["@_runno"] ?? null,
+        count: toNumber(room?.["@_count"]),
+        adults: toNumber(room?.["@_adults"]),
+        children: toNumber(room?.["@_children"]),
+        childrenAges: room?.["@_childrenages"] ?? null,
+        extrabeds: toNumber(room?.["@_extrabeds"]),
+        lookedForText: room?.lookedForText ?? null,
+        from: toNumber(room?.from),
+        fromFormatted: getText(room?.from?.formatted),
+        roomTypes: parseRoomTypes(room, currency),
+      })),
+      extraMeals: ensureArray(result?.extraMeals?.mealDate ?? hotel?.extraMeals?.mealDate).map(
+        (mealDate) => ({
+          datetime: mealDate?.["@_datetime"] ?? mealDate?.datetime ?? null,
+          day: mealDate?.["@_day"] ?? mealDate?.day ?? null,
+          wday: mealDate?.["@_wday"] ?? mealDate?.wday ?? null,
+          mealType: ensureArray(mealDate?.mealType).map((mealType) => ({
+            code: mealType?.["@_mealtypecode"] ?? null,
+            name: mealType?.["@_mealtypename"] ?? null,
+            meals: ensureArray(mealType?.meal).map((meal) => ({
+              runno: meal?.["@_runno"] ?? null,
+              applicableFor: meal?.["@_applicablefor"] ?? null,
+              startAge: toNumber(meal?.["@_startage"]),
+              endAge: toNumber(meal?.["@_endage"]),
+              mealCode: meal?.mealCode ?? null,
+              mealName: meal?.mealName ?? null,
+              price: toNumber(meal?.mealPrice),
+              priceFormatted: getText(meal?.mealPrice?.formatted),
+            })),
+          })),
+        }),
+      ),
+    },
+  }
+}

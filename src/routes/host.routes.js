@@ -7,8 +7,11 @@ import {
   getHostCalendar,
   getHostBookingsList,
   getHostEarnings,
+  updatePayoutMethod,
 } from "../controllers/host.controller.js";
 import { getHostCalendarDetail, upsertHostCalendarDay, getArrivalGuide, updateArrivalGuide } from "../controllers/home.controller.js";
+import { getPayoutAccount, upsertPayoutAccount, listHostPayouts } from "../controllers/payout.controller.js";
+import { createStripeOnboardingLink } from "../controllers/payout.controller.js";
 
 const router = Router();
 
@@ -24,5 +27,10 @@ router.patch("/calendar/:homeId/day", upsertHostCalendarDay);
 router.get("/listings/:homeId/arrival-guide", getArrivalGuide);
 router.put("/listings/:homeId/arrival-guide", updateArrivalGuide);
 router.get("/bookings", getHostBookingsList);
+router.put("/payout-methods", updatePayoutMethod);
+router.get("/payout-account", getPayoutAccount);
+router.put("/payout-account", upsertPayoutAccount);
+router.get("/payouts", listHostPayouts);
+router.post("/payout-account/stripe/link", createStripeOnboardingLink);
 
 export default router;

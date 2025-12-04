@@ -1,9 +1,17 @@
 import dayjs from "dayjs"
 
-const toUnixSeconds = (value) => {
+const DATE_FORMAT = (process.env.WEBBEDS_DATE_FORMAT || "YYYY-MM-DD").trim()
+
+const formatDateWebbeds = (value) => {
   const parsed = dayjs(value)
   if (!parsed.isValid()) return null
-  return Math.floor(parsed.valueOf() / 1000).toString()
+
+  const normalized = DATE_FORMAT.toLowerCase()
+  if (["unix", "epoch", "seconds", "x"].includes(normalized)) {
+    return Math.floor(parsed.valueOf() / 1000).toString()
+  }
+
+  return parsed.format(DATE_FORMAT)
 }
 const MAX_ADULTS = 10
 const DEFAULT_RATE_BASIS = "1"
@@ -35,7 +43,7 @@ const ensureArray = (value) => {
 
 const formatDate = (value) => {
   if (!value) return null
-  return toUnixSeconds(value)
+  return formatDateWebbeds(value)
 }
 
 const parseChildrenSegment = (segment) => {

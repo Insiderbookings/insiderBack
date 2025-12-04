@@ -5,6 +5,7 @@ import { HotelProvider } from "../hotelProvider.js"
 import { createWebbedsClient, buildEnvelope } from "./client.js"
 import { getWebbedsConfig } from "./config.js"
 import { buildSearchHotelsPayload, mapSearchHotelsResponse } from "./searchHotels.js"
+import { buildGetRoomsPayload, mapGetRoomsResponse } from "./getRooms.js"
 
 const MAX_HOTEL_IDS_PER_REQUEST = 50
 const DEFAULT_HOTEL_ID_CONCURRENCY = 4
@@ -100,6 +101,8 @@ export class WebbedsProvider extends HotelProvider {
 
   async search(req, res, next) {
     try {
+      const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102"
+
       const ensureNumericCode = (value, fallback) => {
         if (value === undefined || value === null || value === "") {
           return fallback
@@ -115,23 +118,31 @@ export class WebbedsProvider extends HotelProvider {
         currency,
         cityCode,
         countryCode,
-        rateBasis = "-1",
+        rateBasis,
       } = req.query
+
+      const resolveRateBasis = (value) => {
+        const parsed = Number(value)
+        if (Number.isFinite(parsed) && parsed > 0) return String(parsed)
+        const str = String(value ?? "").trim()
+        if (/^\d+$/.test(str) && Number(str) > 0) return str
+        return "1"
+      }
 
       const nationality = ensureNumericCode(
         req.query.passengerNationality ??
           req.query.nationality ??
           req?.user?.countryCode ??
           req?.user?.country,
-        "604",
+        defaultCountryCode,
       )
 
       const residence = ensureNumericCode(
         req.query.passengerCountryOfResidence ??
           req.query.residence ??
           req?.user?.countryCode ??
-        req?.user?.country,
-        "604",
+          req?.user?.country,
+        defaultCountryCode,
       )
 
       const includeFieldsList = parseCsvList(req.query.fields)
@@ -149,7 +160,7 @@ export class WebbedsProvider extends HotelProvider {
         occupancies,
         nationality,
         residence,
-        rateBasis,
+        rateBasis: resolveRateBasis(rateBasis),
         cityCode,
         countryCode,
         includeFields,
@@ -191,14 +202,158 @@ export class WebbedsProvider extends HotelProvider {
       return res.json(this.groupOptionsByHotel(enriched))
     } catch (error) {
       if (error.name === "WebbedsError") {
+        const xsdMessages =
+          Array.isArray(error.extra?.xsd_error?.error_message) &&
+          error.extra.xsd_error.error_message.length
+            ? error.extra.xsd_error.error_message
+            : null
         console.error("[webbeds] search error", {
           command: error.command,
           code: error.code,
           details: error.details,
           extra: error.extraDetails,
+          xsdMessages,
           metadata: error.metadata,
           requestXml: error.requestXml,
         })
+      } else {
+        console.error("[webbeds] unexpected error", error)
+      }
+      return next(error)
+    }
+  }
+
+  async getRooms(req, res, next) {
+    const {
+      checkIn,
+      checkOut,
+      occupancies,
+      currency,
+      rateBasis,
+      hotelId,
+      productId,
+      roomTypeCode,
+      selectedRateBasis,
+      allocationDetails,
+    } = req.query
+
+    try {
+
+      const hotelCode = hotelId ?? productId
+      if (!hotelCode || !/^\d+$/.test(String(hotelCode).trim())) {
+        throw new Error("WebBeds getrooms requires numeric hotelId (productId)")
+      }
+
+      const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102"
+      const ensureNumericCode = (value, fallback) => {
+        if (value === undefined || value === null || value === "") {
+          return fallback
+        }
+        const strValue = String(value).trim()
+        return /^\d+$/.test(strValue) ? strValue : fallback
+      }
+
+      const resolveRateBasis = (value) => {
+        const parsed = Number(value)
+        if (Number.isFinite(parsed) && parsed > 0) return String(parsed)
+        const str = String(value ?? "").trim()
+        if (/^\d+$/.test(str) && Number(str) > 0) return str
+        return "1"
+      }
+
+      const nationality = ensureNumericCode(
+        req.query.passengerNationality ??
+          req.query.nationality ??
+          req?.user?.countryCode ??
+          req?.user?.country,
+        defaultCountryCode,
+      )
+
+      const residence = ensureNumericCode(
+        req.query.passengerCountryOfResidence ??
+          req.query.residence ??
+          req?.user?.countryCode ??
+          req?.user?.country,
+        defaultCountryCode,
+      )
+
+      const payload = buildGetRoomsPayload({
+        checkIn,
+        checkOut,
+        currency,
+        occupancies,
+        rateBasis: resolveRateBasis(rateBasis),
+        nationality,
+        residence,
+        hotelId: hotelCode,
+        roomTypeCode,
+        selectedRateBasis,
+        allocationDetails,
+      })
+
+      console.info("[webbeds] getRooms request", {
+        hotelCode,
+        checkIn,
+        checkOut,
+        currency,
+        occupancies,
+        rateBasis: resolveRateBasis(rateBasis),
+        roomTypeCode,
+        selectedRateBasis,
+        allocationDetails: allocationDetails ? "[provided]" : null,
+        nationality,
+        residence,
+      })
+
+      const { result } = await this.client.send("getrooms", payload, {
+        requestId: this.getRequestId(req),
+      })
+      console.info("[webbeds] getRooms result", {
+        hotelId: result?.hotel?.["@_id"] ?? result?.hotel?.id ?? null,
+        currency: result?.currencyShort ?? null,
+        roomsCount:
+          Array.isArray(result?.hotel?.rooms?.room) && result.hotel.rooms.room.length
+            ? result.hotel.rooms.room.length
+            : result?.hotel?.rooms?.room
+              ? 1
+              : 0,
+      })
+      const mapped = mapGetRoomsResponse(result)
+      try {
+        console.log("[webbeds] getRooms mapped payload:", JSON.stringify(mapped, null, 2))
+      } catch {
+        console.log("[webbeds] getRooms mapped payload: [unserializable]")
+      }
+      return res.json(mapped)
+    } catch (error) {
+      if (error.name === "WebbedsError") {
+        const xsdMessages =
+          Array.isArray(error.extra?.xsd_error?.error_message) &&
+          error.extra.xsd_error.error_message.length
+            ? error.extra.xsd_error.error_message
+            : null
+        console.error("[webbeds] search error", {
+          command: error.command,
+          code: error.code,
+          details: error.details,
+          extra: error.extraDetails,
+          xsdMessages,
+          metadata: error.metadata,
+          requestXml: error.requestXml,
+        })
+        const code = String(error.code ?? "")
+        if (code === "12" || code === "149") {
+          return res.json({
+            currency: null,
+            hotel: {
+              id: (hotelId ?? productId) ?? null,
+              name: null,
+              allowBook: false,
+              rooms: [],
+            },
+            warning: error.details,
+          })
+        }
       } else {
         console.error("[webbeds] unexpected error", error)
       }
@@ -363,6 +518,41 @@ export class WebbedsProvider extends HotelProvider {
       return options
     }
 
+    // Fetch room types for these hotels to expose static room metadata on search
+    let roomTypesByHotel = new Map()
+    try {
+      const roomTypes = await models.WebbedsHotelRoomType.findAll({
+        where: {
+          hotel_id: {
+            [Op.in]: hotelCodes,
+          },
+        },
+        attributes: [
+          "hotel_id",
+          "roomtype_code",
+          "name",
+          "twin",
+          "room_info",
+          "room_capacity",
+        ],
+        raw: true,
+      })
+      roomTypesByHotel = roomTypes.reduce((map, rt) => {
+        const key = String(rt.hotel_id)
+        if (!map.has(key)) map.set(key, [])
+        map.get(key).push({
+          roomTypeCode: rt.roomtype_code,
+          name: rt.name,
+          twin: rt.twin === "yes" || rt.twin === "true" || rt.twin === true,
+          roomInfo: rt.room_info,
+          roomCapacity: rt.room_capacity,
+        })
+        return map
+      }, new Map())
+    } catch (error) {
+      console.warn("[webbeds] failed to fetch hotel room types:", error.message)
+    }
+
     if (!records.length) {
       return options
     }
@@ -431,6 +621,7 @@ export class WebbedsProvider extends HotelProvider {
           code: details.region_code ?? option.hotelDetails?.region?.code ?? null,
         },
         fullAddress: details.full_address ?? option.hotelDetails?.fullAddress ?? null,
+        roomTypes: roomTypesByHotel.get(String(details.hotel_id)) ?? option.hotelDetails?.roomTypes ?? [],
       }
 
       return {

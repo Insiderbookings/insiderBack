@@ -31,6 +31,8 @@ test("buildSearchHotelsPayload builds rooms, defaults, and filters correctly", (
   })
 
   assert.equal(payload.bookingDetails.currency, "520")
+  assert.equal(payload.bookingDetails.fromDate, "2025-12-01")
+  assert.equal(payload.bookingDetails.toDate, "2025-12-05")
   assert.equal(payload.bookingDetails.rooms["@no"], "1")
 
   const [room] = payload.bookingDetails.rooms.room

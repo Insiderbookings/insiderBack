@@ -19,6 +19,80 @@ const asNumber = (value, fallback = null) => {
   return Number.isFinite(num) ? num : fallback;
 };
 
+const getUserId = (user) => user?.id || user?.sub;
+
+const AMENITY_ICON_BY_KEY = {
+  WIFI: "wifi-outline",
+  INTERNET: "wifi-outline",
+  AC: "snow-outline",
+  AIR_CONDITIONING: "snow-outline",
+  HEATING: "flame-outline",
+  KITCHEN: "restaurant-outline",
+  COOKING_BASICS: "restaurant-outline",
+  WASHER: "refresh-outline",
+  DRYER: "sync-outline",
+  TV: "tv-outline",
+  STREAMING: "play-circle-outline",
+  PARKING: "car-outline",
+  GARAGE: "car-sport-outline",
+  POOL: "water-outline",
+  HOT_TUB: "flame-outline",
+  GYM: "barbell-outline",
+  FITNESS: "barbell-outline",
+  PETS: "paw-outline",
+  PET_FRIENDLY: "paw-outline",
+  WORKSPACE: "desktop-outline",
+  DESK: "desktop-outline",
+  BREAKFAST: "cafe-outline",
+  COFFEE: "cafe-outline",
+  SECURITY: "shield-checkmark-outline",
+  CAMERA: "videocam-outline",
+  LOCKBOX: "key-outline",
+  SELF_CHECKIN: "key-outline",
+};
+
+const AMENITY_ICON_KEYWORDS = [
+  { keyword: "wifi", icon: "wifi-outline" },
+  { keyword: "internet", icon: "wifi-outline" },
+  { keyword: "air conditioning", icon: "snow-outline" },
+  { keyword: "a/c", icon: "snow-outline" },
+  { keyword: "ac", icon: "snow-outline" },
+  { keyword: "heat", icon: "flame-outline" },
+  { keyword: "kitchen", icon: "restaurant-outline" },
+  { keyword: "cook", icon: "restaurant-outline" },
+  { keyword: "washer", icon: "refresh-outline" },
+  { keyword: "dryer", icon: "sync-outline" },
+  { keyword: "laundry", icon: "refresh-outline" },
+  { keyword: "tv", icon: "tv-outline" },
+  { keyword: "stream", icon: "play-circle-outline" },
+  { keyword: "parking", icon: "car-outline" },
+  { keyword: "garage", icon: "car-sport-outline" },
+  { keyword: "pool", icon: "water-outline" },
+  { keyword: "alberca", icon: "water-outline" },
+  { keyword: "swim", icon: "water-outline" },
+  { keyword: "gym", icon: "barbell-outline" },
+  { keyword: "fitness", icon: "barbell-outline" },
+  { keyword: "pet", icon: "paw-outline" },
+  { keyword: "workspace", icon: "desktop-outline" },
+  { keyword: "desk", icon: "desktop-outline" },
+  { keyword: "breakfast", icon: "cafe-outline" },
+  { keyword: "coffee", icon: "cafe-outline" },
+  { keyword: "lockbox", icon: "key-outline" },
+  { keyword: "self check", icon: "key-outline" },
+  { keyword: "security", icon: "shield-checkmark-outline" },
+  { keyword: "camera", icon: "videocam-outline" },
+];
+
+const resolveAmenityIcon = (amenity) => {
+  if (!amenity) return "sparkles-outline";
+  if (amenity.icon) return amenity.icon;
+  const key = (amenity.amenity_key || amenity.key || amenity.name || "").toUpperCase();
+  if (AMENITY_ICON_BY_KEY[key]) return AMENITY_ICON_BY_KEY[key];
+  const label = String(amenity.label || amenity.name || "").toLowerCase();
+  const match = AMENITY_ICON_KEYWORDS.find((item) => label.includes(item.keyword));
+  return match?.icon || "sparkles-outline";
+};
+
 const defaultArrivalGuide = () => ({
   checkInInstructions: "",
   accessCode: "",
@@ -1152,7 +1226,7 @@ export const getPublicHome = async (req, res) => {
 };
 export const createHomeDraft = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     if (!hostId) return res.status(401).json({ error: "Unauthorized" });
 
     let {
@@ -1197,7 +1271,7 @@ export const createHomeDraft = async (req, res) => {
 
 export const updateHomeBasics = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     const { id } = req.params;
     const home = await models.Home.findOne({ where: { id, host_id: hostId } });
     if (!home) return res.status(404).json({ error: "Home not found" });
@@ -1263,7 +1337,7 @@ export const updateHomeBasics = async (req, res) => {
 
 export const upsertHomeAddress = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     const { id } = req.params;
     const home = await models.Home.findOne({ where: { id, host_id: hostId } });
     if (!home) return res.status(404).json({ error: "Home not found" });
@@ -1299,7 +1373,7 @@ export const upsertHomeAddress = async (req, res) => {
 
 export const updateHomeAmenities = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     const { id } = req.params;
     const home = await models.Home.findOne({ where: { id, host_id: hostId } });
     if (!home) return res.status(404).json({ error: "Home not found" });
@@ -1334,7 +1408,7 @@ export const updateHomeAmenities = async (req, res) => {
 
 export const updateHomePricing = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     const { id } = req.params;
     const home = await models.Home.findOne({ where: { id, host_id: hostId }, include: [{ model: models.HomePricing, as: "pricing" }] });
     if (!home) return res.status(404).json({ error: "Home not found" });
@@ -1369,7 +1443,7 @@ export const updateHomePricing = async (req, res) => {
 
 export const attachHomeMedia = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     const { id } = req.params;
     const home = req.home ?? (await models.Home.findOne({ where: { id, host_id: hostId } }));
     if (!home) return res.status(404).json({ error: "Home not found" });
@@ -1409,7 +1483,7 @@ export const attachHomeMedia = async (req, res) => {
 
 export const updateHomePolicies = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     const { id } = req.params;
     const home = await models.Home.findOne({
       where: { id, host_id: hostId },
@@ -1447,7 +1521,7 @@ export const updateHomePolicies = async (req, res) => {
 
 export const updateHomeSecurity = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     const { id } = req.params;
     const home = await models.Home.findOne({
       where: { id, host_id: hostId },
@@ -1482,7 +1556,7 @@ export const updateHomeSecurity = async (req, res) => {
 
 export const updateHomeDiscounts = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     const { id } = req.params;
     const home = await models.Home.findOne({ where: { id, host_id: hostId } });
     if (!home) return res.status(404).json({ error: "Home not found" });
@@ -1558,7 +1632,7 @@ export const getHomeCatalogs = async (_req, res) => {
         key: amenity.amenity_key,
         label: amenity.label,
         description: amenity.description,
-        icon: amenity.icon,
+        icon: resolveAmenityIcon(amenity),
       });
     }
 
@@ -1631,7 +1705,7 @@ export const getHomeCatalogs = async (_req, res) => {
 
 export const publishHome = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     const { id } = req.params;
     const home = await models.Home.findOne({
       where: { id, host_id: hostId },
@@ -1685,7 +1759,7 @@ export const respondUploadedMedia = (req, res) => {
 
 export const getHomeById = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     const { id } = req.params;
     const homeInstance = await models.Home.findOne({
       where: { id, host_id: hostId },
@@ -1813,7 +1887,7 @@ export const getPublicHomeAvailability = async (req, res) => {
 
 export const listHostHomes = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     if (!hostId) return res.status(401).json({ error: "Unauthorized" });
 
     const homes = await models.Home.findAll({
@@ -1914,7 +1988,7 @@ const buildCalendarDay = ({ date, basePrice, weekendPrice, defaultCurrency, entr
 };
 
 export const getHostCalendarDetail = async (req, res) => {
-  const hostId = Number(req.user?.id);
+  const hostId = Number(getUserId(req.user));
   if (!hostId) return res.status(400).json({ error: 'Invalid host ID' });
 
   const homeId = Number(req.params?.homeId);
@@ -2082,7 +2156,7 @@ export const getHostCalendarDetail = async (req, res) => {
 
 export const getArrivalGuide = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     const { homeId } = req.params;
     const home = await models.Home.findOne({
       where: { id: homeId, host_id: hostId },
@@ -2100,7 +2174,7 @@ export const getArrivalGuide = async (req, res) => {
 
 export const updateArrivalGuide = async (req, res) => {
   try {
-    const hostId = req.user?.id;
+    const hostId = getUserId(req.user);
     const { homeId } = req.params;
     const home = await models.Home.findOne({
       where: { id: homeId, host_id: hostId },
@@ -2134,7 +2208,7 @@ export const updateArrivalGuide = async (req, res) => {
 };
 
 export const upsertHostCalendarDay = async (req, res) => {
-  const hostId = Number(req.user?.id);
+  const hostId = Number(getUserId(req.user));
   if (!hostId) return res.status(400).json({ error: 'Invalid host ID' });
 
   const homeId = Number(req.params?.homeId);

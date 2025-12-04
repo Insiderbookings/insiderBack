@@ -54,16 +54,16 @@ export const mapHomeToCard = (home) => {
   const hostProfileMeta = home.host?.hostProfile?.metadata ?? {};
   const hostUser = home.host
     ? {
-        id: home.host.id,
-        name: home.host.name,
-        email: home.host.email,
-        avatarUrl: home.host.avatar_url,
-        responseRate: home.host.response_rate ?? null,
-        responseTime: home.host.response_time ?? null,
-        isSuperhost: Boolean(
-          hostProfileMeta.is_superhost ?? hostProfileMeta.superhost ?? false
-        ),
-      }
+      id: home.host.id,
+      name: home.host.name,
+      email: home.host.email,
+      avatarUrl: home.host.avatar_url,
+      responseRate: home.host.response_rate ?? null,
+      responseTime: home.host.response_time ?? null,
+      isSuperhost: Boolean(
+        hostProfileMeta.is_superhost ?? hostProfileMeta.superhost ?? false
+      ),
+    }
     : null;
 
   return {
@@ -75,7 +75,7 @@ export const mapHomeToCard = (home) => {
     state: address.state ?? null,
     country: address.country ?? null,
     pricePerNight:
-      pricing?.base_price != null ? Number(pricing.base_price) : null,
+      pricing?.base_price != null ? Number(pricing.base_price) * 1.1 : null,
     currency: pricing?.currency ?? "USD",
     summaryLine: buildSummaryLine(home),
     maxGuests: home.max_guests ?? null,

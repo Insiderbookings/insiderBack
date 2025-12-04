@@ -6,6 +6,7 @@ import { formatStaticHotel } from "../utils/webbedsMapper.js"
 const provider = new WebbedsProvider()
 
 export const search = (req, res, next) => provider.search(req, res, next)
+export const getRooms = (req, res, next) => provider.getRooms(req, res, next)
 
 export const listStaticHotels = async (req, res, next) => {
   try {
@@ -82,6 +83,22 @@ export const listStaticHotels = async (req, res, next) => {
         offset: safeOffset,
       },
     })
+  } catch (error) {
+    return next(error)
+  }
+}
+
+export const listCountries = async (_req, res, next) => {
+  try {
+    const rows = await models.WebbedsCountry.findAll({
+      attributes: ["code", "name"],
+      order: [["name", "ASC"]],
+    })
+    const items = rows.map((row) => ({
+      code: row.code != null ? String(row.code) : null,
+      name: row.name,
+    }))
+    return res.json({ items })
   } catch (error) {
     return next(error)
   }
