@@ -125,8 +125,6 @@ export default (sequelize) => {
       indexes: [
         { fields: ["booking_ref"], unique: true },
         { fields: ["user_id"] },
-        { fields: ["hotel_id"] },
-        { fields: ["tgx_hotel_id"] },
         { fields: ["status"] },
         { fields: ["payment_status"] },
         { fields: ["source", "external_ref"] },
