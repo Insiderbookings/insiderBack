@@ -29,35 +29,35 @@ const buildPlannerPrompt = () => [
   {
     role: "system",
     content:
-      "Eres un asistente de viajes inteligente que analiza conversaciones y detecta intenciones. " +
-      "Tu trabajo es determinar si el usuario quiere BUSCAR alojamiento, solo CONVERSAR, o necesita AYUDA.\n\n" +
+      "You are a smart travel assistant that analyzes conversations and detects intents. " +
+      "Your job is to determine if the user wants to SEARCH for accommodation, just SMALL_TALK, or needs HELP.\n\n" +
 
-      "REGLAS PARA DETECTAR INTENT:\n" +
-      "- SEARCH: Solo cuando el usuario menciona explícitamente búsqueda de alojamiento con suficiente información (ubicación, tipo, fechas, o huéspedes). " +
-      "Verbos clave: 'busco', 'necesito', 'quiero', 'mostrame', 'tenés disponible', 'hay'.\n" +
-      "- SMALL_TALK: Saludos, despedidas, agradecimientos, preguntas personales, conversación casual sin intención de búsqueda.\n" +
-      "- HELP: Preguntas sobre funcionalidad, capacidades del asistente, o información general sobre tipos de alojamiento.\n\n" +
+      "INTENT DETECTION RULES:\n" +
+      "- SEARCH: Only when the user explicitly mentions looking for accommodation with enough information (location, type, dates, or guests). " +
+      "Key verbs: 'search', 'need', 'want', 'show me', 'is there', 'available'.\n" +
+      "- SMALL_TALK: Greetings, farewells, thanks, personal questions, casual conversation without search intent.\n" +
+      "- HELP: Questions about functionality, assistant capabilities, or general information about accommodation types.\n\n" +
 
-      "IMPORTANTE: Si el usuario solo menciona un destino sin pedir búsqueda explícita ('quiero ir a Córdoba'), usa SMALL_TALK, NO SEARCH.\n" +
-      "Solo usa SEARCH cuando haya una solicitud clara de encontrar/buscar/mostrar alojamiento.\n\n" +
+      "IMPORTANT: If the user only mentions a destination without explicit search request ('I want to go to Cordoba'), use SMALL_TALK, NOT SEARCH.\n" +
+      "Only use SEARCH when there is a clear request to find/search/show accommodation.\n\n" +
 
-      "DETECCIÓN DE LENGUAJE Y MODISMOS:\n" +
-      "Detecta y reconoce modismos regionales:\n" +
-      "- Argentinos: che, boludo, copado, finde, buenísimo, genial, dale, bárbaro\n" +
-      "- Mexicanos: wey, chido, padre, qué onda\n" +
-      "- Chilenos: po, cachai, bacán\n" +
-      "- Colombianos: parce, chévere, berraco\n" +
-      "Anota estos modismos en 'notes' para que el asistente responda en el mismo registro.\n\n" +
+      "LANGUAGE AND IDIOMS DETECTION:\n" +
+      "Detect and recognize regional idioms:\n" +
+      "- Argentinians: che, boludo, copado, finde, buenísimo, genial, dale, bárbaro\n" +
+      "- Mexicans: wey, chido, padre, qué onda\n" +
+      "- Chileans: po, cachai, bacán\n" +
+      "- Colombians: parce, chévere, berraco\n" +
+      "Note these idioms in 'notes' so the assistant can respond in the same register if needed.\n\n" +
 
-      "EJEMPLOS:\n" +
-      "Usuario: 'Hola, cómo andás?' → intent: SMALL_TALK\n" +
-      "Usuario: '¿Qué tipos de alojamiento tenés?' → intent: HELP\n" +
-      "Usuario: 'Busco casa en Córdoba para 4' → intent: SEARCH\n" +
-      "Usuario: 'Che, tenés algo copado?' → intent: SMALL_TALK (falta info específica)\n" +
-      "Usuario: 'Quiero ir a Bariloche' → intent: SMALL_TALK (no pide búsqueda)\n" +
-      "Usuario: 'Mostrame hoteles en CABA' → intent: SEARCH\n\n" +
+      "EXAMPLES:\n" +
+      "User: 'Hi, how are you?' → intent: SMALL_TALK\n" +
+      "User: 'What types of accommodation do you have?' → intent: HELP\n" +
+      "User: 'Looking for a house in Cordoba for 4' → intent: SEARCH\n" +
+      "User: 'Hey, do you have something cool?' → intent: SMALL_TALK (lacks specific info)\n" +
+      "User: 'I want to go to Bariloche' → intent: SMALL_TALK (no search request)\n" +
+      "User: 'Show me hotels in CABA' → intent: SEARCH\n\n" +
 
-      "Responde ÚNICAMENTE un objeto JSON válido con este esquema:\n" +
+      "Respond ONLY with a valid JSON object with this schema:\n" +
       `{
         "intent": "SEARCH" | "SMALL_TALK" | "HELP",
         "listingTypes": ["HOMES","HOTELS"],
@@ -68,7 +68,7 @@ const buildPlannerPrompt = () => [
         "budget": {"currency": string|null, "max": number|null, "min": number|null},
         "sortBy": "POPULARITY" | "PRICE_ASC" | "PRICE_DESC" | "RELEVANCE",
         "limit": number|null,
-        "language": "es",
+        "language": "en",
         "notes": string[]
       }`,
   },
@@ -155,22 +155,22 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
   };
 
   if (!client) {
-    // Fallback sin OpenAI
+    // Fallback without OpenAI
     if (intent === "SEARCH") {
       const reply =
         inventory.homes?.length || inventory.hotels?.length
-          ? "Encontré algunas opciones que encajan con tu búsqueda. Revisa los resultados debajo y dime si querés ajustar fechas o presupuesto."
-          : "Todavía no pude encontrar coincidencias. Probá cambiando ciudad, fechas o cantidad de huéspedes.";
+          ? "I found some options that match your search. Check the results below and let me know if you want to adjust dates or budget."
+          : "I couldn't find matches yet. Try changing city, dates, or guest count.";
       return { reply, followUps: [] };
     } else if (intent === "HELP") {
       return {
-        reply: "Puedo ayudarte a buscar homes (casas, departamentos, cabañas) y hoteles. ¿Qué estás buscando?",
-        followUps: ["Busco una casa", "Necesito un hotel", "¿Qué amenities tienen?"],
+        reply: "I can help you look for homes (houses, apartments, cabins) and hotels. What are you looking for?",
+        followUps: ["Looking for a house", "Need a hotel", "What amenities do they have?"],
       };
     } else {
       return {
-        reply: "¡Hola! Soy tu asistente de viajes. ¿En qué puedo ayudarte hoy?",
-        followUps: ["Buscar alojamiento", "¿Qué puedes hacer?", "Ver opciones disponibles"],
+        reply: "Hello! I am your travel assistant. How can I help you today?",
+        followUps: ["Search accommodation", "What can you do?", "See available options"],
       };
     }
   }
@@ -180,33 +180,33 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
 
     if (intent === "SEARCH") {
       systemPrompt =
-        "Eres un asistente de viajes amigable y profesional. El usuario está buscando alojamiento.\n" +
-        "Responde en español latino neutral (o usa modismos si el usuario los usa).\n" +
-        "Devuelve siempre JSON con shape {\"reply\": string, \"followUps\": string[]}.\n" +
-        "- Si hay resultados: Explica por qué son relevantes, menciona características destacadas.\n" +
-        "- Si NO hay resultados: Sugiere ajustes concretos (cambiar ciudad, fechas, presupuesto).\n" +
-        "- followUps: 3-4 sugerencias de seguimiento relevantes.\n" +
-        (modismos ? `- El usuario usa modismos: ${modismos}. Responde en el mismo registro.\n` : "");
+        "You are a friendly and professional travel assistant. The user is looking for accommodation.\n" +
+        "Reply in neutral English (or use idioms if the user uses them).\n" +
+        "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
+        "- If there are results: Explain why they are relevant, mention highlighted features.\n" +
+        "- If NO results: Suggest concrete adjustments (change city, dates, budget).\n" +
+        "- followUps: 3-4 relevant follow-up suggestions.\n" +
+        (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     } else if (intent === "HELP") {
       systemPrompt =
-        "Eres un asistente de viajes amigable. El usuario necesita ayuda o información.\n" +
-        "Responde en español latino neutral (o usa modismos si el usuario los usa).\n" +
-        "Devuelve siempre JSON con shape {\"reply\": string, \"followUps\": string[]}.\n" +
-        "- Explica qué puedes hacer: buscar homes y hoteles, filtrar por amenities, fechas, presupuesto.\n" +
-        "- Sé conciso pero útil.\n" +
-        "- followUps: Sugerencias de cómo empezar a buscar.\n" +
-        (modismos ? `- El usuario usa modismos: ${modismos}. Responde en el mismo registro.\n` : "");
+        "You are a friendly travel assistant. The user needs help or information.\n" +
+        "Reply in neutral English (or use idioms if the user uses them).\n" +
+        "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
+        "- Explain what you can do: search for homes and hotels, filter by amenities, dates, budget.\n" +
+        "- Be concise but helpful.\n" +
+        "- followUps: Suggestions on how to start searching.\n" +
+        (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     } else {
       // SMALL_TALK
       systemPrompt =
-        "Eres un asistente de viajes amigable y conversacional. El usuario está conversando casualmente.\n" +
-        "Responde en español latino neutral (o usa modismos si el usuario los usa).\n" +
-        "Devuelve siempre JSON con shape {\"reply\": string, \"followUps\": string[]}.\n" +
-        "- Responde de forma natural y amigable.\n" +
-        "- Si mencionan destinos sin pedir búsqueda, pregunta más detalles antes de buscar.\n" +
-        "- NO asumas que quieren buscar a menos que lo pidan explícitamente.\n" +
-        "- followUps: Preguntas naturales para continuar la conversación o guiarlos hacia búsqueda.\n" +
-        (modismos ? `- El usuario usa modismos: ${modismos}. Responde en el mismo registro (ej: 'che', 'copado', 'dale').\n` : "");
+        "You are a friendly and conversational travel assistant. The user is chatting casually.\n" +
+        "Reply in neutral English (or use idioms if the user uses them).\n" +
+        "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
+        "- Reply naturally and in a friendly way.\n" +
+        "- If they mention destinations without asking for a search, ask for more details before searching.\n" +
+        "- DO NOT assume they want to search unless explicitly requested.\n" +
+        "- followUps: Natural questions to continue the conversation or guide them towards search.\n" +
+        (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     }
 
     const userContent = intent === "SEARCH"
@@ -234,21 +234,21 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
   } catch (err) {
     console.error("[aiAssistant] generate reply failed", err?.message || err);
 
-    // Fallback basado en intent
+    // Fallback based on intent
     if (intent === "SEARCH") {
       const reply =
         inventory.homes?.length || inventory.hotels?.length
-          ? "Encontré algunas coincidencias. Toca cualquiera para ver más detalles o dime cómo ajustar la búsqueda."
-          : "Por ahora no encontré resultados. ¿Querés que busquemos en otra ciudad o con fechas diferentes?";
+          ? "I found some matches. Tap any to see more details or tell me how to adjust the search."
+          : "I couldn't find results yet. try changing the city, dates, or guest count.";
       return { reply, followUps: [] };
     } else if (intent === "HELP") {
       return {
-        reply: "Puedo ayudarte a encontrar homes y hoteles. Decime qué necesitás y te muestro opciones.",
+        reply: "I can help you find homes and hotels. Tell me what you need and I'll show you options.",
         followUps: [],
       };
     } else {
       return {
-        reply: "¡Hola! ¿En qué puedo ayudarte hoy?",
+        reply: "Hello! How can I help you today?",
         followUps: [],
       };
     }

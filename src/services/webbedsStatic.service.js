@@ -10,6 +10,7 @@ const ensureArray = (value) => {
   return Array.isArray(value) ? value : [value]
 }
 
+const STATIC_LOOKAHEAD_DAYS = Number(process.env.WEBBEDS_STATIC_LOOKAHEAD_DAYS || 120)
 const normalizeBoolean = (value) => {
   if (typeof value === "boolean") return value
   if (typeof value === "string") {
@@ -31,6 +32,8 @@ let webbedsClient = null
 let cachedConfig = null
 let countryNameCache = null
 const STATIC_CURRENCY = process.env.WEBBEDS_STATIC_CURRENCY || "520"
+const STATIC_OCCUPANCIES =
+  process.env.WEBBEDS_STATIC_OCCUPANCIES || "1|0,1|0,2|0"
 const NAMESPACE_ATOMIC = "http://us.dotwconnect.com/xsd/atomicCondition"
 const NAMESPACE_COMPLEX = "http://us.dotwconnect.com/xsd/complexCondition"
 const MAX_NOTIN_VALUES = Number(process.env.WEBBEDS_NOTIN_MAX || 20000)
@@ -152,7 +155,9 @@ const buildStaticHotelsPayload = ({
   }
 
   const today = dayjs().format("YYYY-MM-DD")
-  const tomorrow = dayjs().add(1, "day").format("YYYY-MM-DD")
+  const futureStart = dayjs().add(STATIC_LOOKAHEAD_DAYS, "day")
+  const fromDate = futureStart.format("YYYY-MM-DD")
+  const toDate = futureStart.add(1, "day").format("YYYY-MM-DD")
 
   const filters = {
     "@xmlns:a": NAMESPACE_ATOMIC,
@@ -259,6 +264,20 @@ const buildStaticHotelsPayload = ({
   const fieldSet = [...new Set([...baseFields, ...ensureArray(additionalFields).filter(Boolean)])]
   const roomFieldSet = [...new Set([...baseRoomFields, ...ensureArray(additionalRoomFields).filter(Boolean)])]
 
+  const roomNodes = ensureArray(STATIC_OCCUPANCIES.split(","))
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .map((token, idx) => {
+      const [adultsStr = "1", childrenStr = "0"] = token.split("|")
+      const childrenNo = String(childrenStr).trim()
+      return {
+        "@runno": String(idx),
+        adultsCode: String(adultsStr).trim() || "1",
+        children: { "@no": childrenNo || "0" },
+        rateBasis: "-1",
+      }
+    })
+
   const returnNode = {}
   if (includeRooms) {
     returnNode.getRooms = "true"
@@ -271,19 +290,21 @@ const buildStaticHotelsPayload = ({
 
   return {
     bookingDetails: {
-      fromDate: today,
-      toDate: tomorrow,
+      fromDate,
+      toDate,
       currency: STATIC_CURRENCY,
       rooms: {
-        "@no": "1",
-        room: [
-          {
-            "@runno": "0",
-            adultsCode: "1",
-            children: { "@no": "0" },
-            rateBasis: "-1",
-          },
-        ],
+        "@no": String(roomNodes.length || 1),
+        room: roomNodes.length
+          ? roomNodes
+          : [
+              {
+                "@runno": "0",
+                adultsCode: "1",
+                children: { "@no": "0" },
+                rateBasis: "-1",
+              },
+            ],
       },
     },
     return: returnNode,

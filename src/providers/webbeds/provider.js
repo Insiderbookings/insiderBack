@@ -6,6 +6,10 @@ import { createWebbedsClient, buildEnvelope } from "./client.js"
 import { getWebbedsConfig } from "./config.js"
 import { buildSearchHotelsPayload, mapSearchHotelsResponse } from "./searchHotels.js"
 import { buildGetRoomsPayload, mapGetRoomsResponse } from "./getRooms.js"
+import { buildSaveBookingPayload, mapSaveBookingResponse } from "./saveBooking.js"
+import { buildConfirmBookingPayload, mapConfirmBookingResponse } from "./confirmBooking.js"
+import { buildCancelBookingPayload, mapCancelBookingResponse } from "./cancelBooking.js"
+import { buildGetBookingDetailsPayload, mapGetBookingDetailsResponse } from "./getBookingDetails.js"
 
 const MAX_HOTEL_IDS_PER_REQUEST = 50
 const DEFAULT_HOTEL_ID_CONCURRENCY = 4
@@ -22,15 +26,173 @@ const parseCsvList = (value) => {
   )
 }
 
+const parseBooleanFlag = (value) => {
+  if (value === undefined || value === null || value === "") return null
+  if (typeof value === "boolean") return value
+  const normalized = String(value).trim().toLowerCase()
+  if (["1", "true", "yes", "y", "si"].includes(normalized)) return true
+  if (["0", "false", "no", "n"].includes(normalized)) return false
+  return null
+}
+
+const buildAdvancedConditionsFromQuery = (query = {}) => {
+  const conditions = []
+
+  const addEquals = (fieldName, rawValue) => {
+    if (rawValue === undefined || rawValue === null || rawValue === "") return
+    conditions.push({
+      fieldName,
+      fieldTest: "equals",
+      fieldValues: [String(rawValue)],
+    })
+  }
+
+  const addBetween = (fieldName, min, max) => {
+    const values = []
+    if (min !== undefined && min !== null && min !== "") values.push(String(min))
+    if (max !== undefined && max !== null && max !== "") values.push(String(max))
+    if (!values.length) return
+    conditions.push({
+      fieldName,
+      fieldTest: "between",
+      fieldValues: values,
+    })
+  }
+
+  const addIn = (fieldName, rawValues) => {
+    const values = parseCsvList(rawValues)
+    if (!values.length) return
+    conditions.push({
+      fieldName,
+      fieldTest: "in",
+      fieldValues: values,
+    })
+  }
+
+  const addLike = (fieldName, rawValue) => {
+    if (!rawValue) return
+    conditions.push({
+      fieldName,
+      fieldTest: "like",
+      fieldValues: [String(rawValue)],
+    })
+  }
+
+  const addRegexp = (fieldName, rawValue) => {
+    if (!rawValue) return
+    conditions.push({
+      fieldName,
+      fieldTest: "regexp",
+      fieldValues: [String(rawValue)],
+    })
+  }
+
+  // Price band
+  addBetween(
+    "price",
+    query.priceMin ?? query.minPrice ?? query.price_from ?? query.priceFrom,
+    query.priceMax ?? query.maxPrice ?? query.price_to ?? query.priceTo,
+  )
+
+  // Preferred / availability / luxury / rate basis
+  const preferredFlag = parseBooleanFlag(query.preferred ?? query.isPreferred)
+  if (preferredFlag !== null) {
+    addEquals("preferred", preferredFlag ? "1" : "0")
+  }
+
+  const availabilityFlag = parseBooleanFlag(query.availability ?? query.available)
+  if (availabilityFlag !== null) {
+    addEquals("availability", availabilityFlag ? "1" : "0")
+  }
+
+  const luxuryValue =
+    query.luxury ?? query.classification ?? query.starRating ?? query.classificationCode
+  if (luxuryValue !== undefined && luxuryValue !== null && luxuryValue !== "") {
+    addEquals("luxury", luxuryValue)
+  }
+
+  addIn("ratebasis", query.rateBasisFilter ?? query.rateBasisFilters ?? query.ratebasis)
+
+  // Location / hotel-level filters
+  addIn("location", query.location ?? query.locations)
+  addIn("amenitie", query.amenities ?? query.amenityIds)
+  addIn("leisure", query.leisure ?? query.leisureIds)
+  addIn("business", query.business ?? query.businessIds)
+  addIn(
+    "hotelpreference",
+    query.hotelPreference ?? query.hotelPreferenceIds ?? query.hotelPreferences,
+  )
+  addIn("chain", query.chain ?? query.chainIds)
+  addIn("attraction", query.attraction ?? query.attractionIds ?? query.attractions)
+
+  // Ratings
+  addBetween(
+    "rating",
+    query.ratingMin ?? query.minRating ?? query.hotelRateMin,
+    query.ratingMax ?? query.maxRating ?? query.hotelRateMax,
+  )
+
+  // Hotel meta
+  addBetween(
+    "builtYear",
+    query.builtYearMin ?? query.builtYearFrom,
+    query.builtYearMax ?? query.builtYearTo,
+  )
+  addBetween(
+    "renovationYear",
+    query.renovationYearMin ?? query.renovationYearFrom,
+    query.renovationYearMax ?? query.renovationYearTo,
+  )
+  addBetween("floors", query.floorsMin ?? query.minFloors, query.floorsMax ?? query.maxFloors)
+
+  const notRooms = query.notRooms ?? query.notrooms ?? query.roomCount
+  if (notRooms !== undefined && notRooms !== null && notRooms !== "") {
+    addEquals("notrooms", notRooms)
+  }
+
+  // Room-level filters
+  addIn("roomtypecode", query.roomTypeCode ?? query.roomTypeCodes)
+  addLike("roomtype", query.roomTypeLike ?? query.roomType)
+  addIn("roomamenitie", query.roomAmenity ?? query.roomAmenityIds)
+  addIn("roomfacilities", query.roomFacilities ?? query.roomFacilityIds)
+
+  const suiteFlag = parseBooleanFlag(query.suite ?? query.isSuite)
+  if (suiteFlag !== null) {
+    addEquals("suite", suiteFlag ? "1" : "0")
+  }
+
+  addLike("roomname", query.roomNameLike)
+  addRegexp("roomname", query.roomNameRegexp ?? query.roomNameRegex)
+
+  // Hotel name filter
+  addLike("hotelName", query.hotelNameLike ?? query.hotelName)
+
+  // Last updated
+  addBetween(
+    "lastupdated",
+    query.lastUpdatedFrom ?? query.lastUpdatedMin ?? query.updatedFrom,
+    query.lastUpdatedTo ?? query.lastUpdatedMax ?? query.updatedTo,
+  )
+
+  return conditions
+}
+
+const normalizeAdvancedOperator = (value) => {
+  if (!value) return null
+  const upper = String(value).trim().toUpperCase()
+  if (upper === "AND" || upper === "OR") return upper
+  return null
+}
+
 const buildHotelIdConditions = (ids) =>
   ids?.length
     ? [
-        {
-          fieldName: "hotelId",
-          fieldTest: "in",
-          fieldValues: ids,
-        },
-      ]
+      {
+        fieldName: "hotelId",
+        fieldTest: "in",
+        fieldValues: ids,
+      },
+    ]
     : undefined
 
 const chunkArray = (items, size = MAX_HOTEL_IDS_PER_REQUEST) => {
@@ -126,22 +288,22 @@ export class WebbedsProvider extends HotelProvider {
         if (Number.isFinite(parsed) && parsed > 0) return String(parsed)
         const str = String(value ?? "").trim()
         if (/^\d+$/.test(str) && Number(str) > 0) return str
-        return "1"
+        return "-1"
       }
 
       const nationality = ensureNumericCode(
         req.query.passengerNationality ??
-          req.query.nationality ??
-          req?.user?.countryCode ??
-          req?.user?.country,
+        req.query.nationality ??
+        req?.user?.countryCode ??
+        req?.user?.country,
         defaultCountryCode,
       )
 
       const residence = ensureNumericCode(
         req.query.passengerCountryOfResidence ??
-          req.query.residence ??
-          req?.user?.countryCode ??
-          req?.user?.country,
+        req.query.residence ??
+        req?.user?.countryCode ??
+        req?.user?.country,
         defaultCountryCode,
       )
 
@@ -150,9 +312,15 @@ export class WebbedsProvider extends HotelProvider {
       const includeFields = includeFieldsList.length ? includeFieldsList : undefined
       const includeRoomFields = includeRoomFieldsList.length ? includeRoomFieldsList : undefined
       const includeNoPrice = req.query.noPrice === "true"
+      const mergeStaticDetails = parseBooleanFlag(req.query.merge) === true
       const debug = req.query.debug ?? undefined
       const providedHotelIds = parseCsvList(req.query.hotelIds)
       const credentials = this.getCredentials()
+      const queryAdvancedConditions = buildAdvancedConditionsFromQuery(req.query)
+      const advancedOperator = normalizeAdvancedOperator(
+        req.query.conditionOperator ?? req.query.advancedOperator ?? req.query.operator,
+      )
+
       const payloadOptions = {
         checkIn,
         checkOut,
@@ -166,6 +334,10 @@ export class WebbedsProvider extends HotelProvider {
         includeFields,
         includeRoomFields,
         includeNoPrice,
+        resultsPerPage: req.query.limit || req.query.resultsPerPage,
+        page: req.query.page || req.query.offset ? Math.floor((Number(req.query.offset) || 0) / (Number(req.query.limit) || 20)) + 1 : undefined,
+        rateTypes: parseCsvList(req.query.rateTypes),
+        productCodeRequested: ensureNumericCode(req.query.productCodeRequested ?? req.query.productId, null),
         debug,
       }
 
@@ -181,6 +353,8 @@ export class WebbedsProvider extends HotelProvider {
           providedHotelIds,
           credentials,
           cityCode,
+          queryAdvancedConditions,
+          advancedOperator,
         })
       }
 
@@ -189,7 +363,11 @@ export class WebbedsProvider extends HotelProvider {
         requestAttributes,
       } = buildSearchHotelsPayload({
         ...payloadOptions,
-        advancedConditions: buildHotelIdConditions(providedHotelIds),
+        advancedConditions: [
+          ...queryAdvancedConditions,
+          ...(buildHotelIdConditions(providedHotelIds) ?? []),
+        ],
+        advancedOperator,
       })
 
       const options = await this.sendSearchRequest({
@@ -198,13 +376,14 @@ export class WebbedsProvider extends HotelProvider {
         requestAttributes,
         credentials,
       })
-      const enriched = await this.enrichWithHotelDetails(options)
-      return res.json(this.groupOptionsByHotel(enriched))
+      // Merge con metadata estática solo cuando el cliente lo solicita.
+      const results = mergeStaticDetails ? await this.enrichWithHotelDetails(options) : options
+      return res.json(this.groupOptionsByHotel(results))
     } catch (error) {
       if (error.name === "WebbedsError") {
         const xsdMessages =
           Array.isArray(error.extra?.xsd_error?.error_message) &&
-          error.extra.xsd_error.error_message.length
+            error.extra.xsd_error.error_message.length
             ? error.extra.xsd_error.error_message
             : null
         console.error("[webbeds] search error", {
@@ -232,6 +411,7 @@ export class WebbedsProvider extends HotelProvider {
       rateBasis,
       hotelId,
       productId,
+      hotelCode,
       roomTypeCode,
       selectedRateBasis,
       allocationDetails,
@@ -239,12 +419,22 @@ export class WebbedsProvider extends HotelProvider {
 
     try {
 
-      const hotelCode = hotelId ?? productId
-      if (!hotelCode || !/^\d+$/.test(String(hotelCode).trim())) {
+      const resolvedHotelCode = hotelId ?? productId ?? hotelCode
+      if (!resolvedHotelCode || !/^\d+$/.test(String(resolvedHotelCode).trim())) {
         throw new Error("WebBeds getrooms requires numeric hotelId (productId)")
       }
 
       const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102"
+      const defaultCurrencyCode = process.env.WEBBEDS_DEFAULT_CURRENCY_CODE || "520"
+      const normalizeCurrency = (value) => {
+        const str = String(value ?? "").trim()
+        if (/^\d+$/.test(str) && Number(str) > 0) return str
+        const upper = str.toUpperCase()
+        if (upper === "USD") return "520"
+        if (upper === "EUR") return "978"
+        if (upper === "GBP") return "826"
+        return defaultCurrencyCode
+      }
       const ensureNumericCode = (value, fallback) => {
         if (value === undefined || value === null || value === "") {
           return fallback
@@ -263,17 +453,17 @@ export class WebbedsProvider extends HotelProvider {
 
       const nationality = ensureNumericCode(
         req.query.passengerNationality ??
-          req.query.nationality ??
-          req?.user?.countryCode ??
-          req?.user?.country,
+        req.query.nationality ??
+        req?.user?.countryCode ??
+        req?.user?.country,
         defaultCountryCode,
       )
 
       const residence = ensureNumericCode(
         req.query.passengerCountryOfResidence ??
-          req.query.residence ??
-          req?.user?.countryCode ??
-          req?.user?.country,
+        req.query.residence ??
+        req?.user?.countryCode ??
+        req?.user?.country,
         defaultCountryCode,
       )
 
@@ -285,17 +475,18 @@ export class WebbedsProvider extends HotelProvider {
         rateBasis: resolveRateBasis(rateBasis),
         nationality,
         residence,
-        hotelId: hotelCode,
+        hotelId: resolvedHotelCode,
+        currency: normalizeCurrency(currency),
         roomTypeCode,
         selectedRateBasis,
         allocationDetails,
       })
 
       console.info("[webbeds] getRooms request", {
-        hotelCode,
+        hotelCode: resolvedHotelCode,
         checkIn,
         checkOut,
-        currency,
+        currency: normalizeCurrency(currency),
         occupancies,
         rateBasis: resolveRateBasis(rateBasis),
         roomTypeCode,
@@ -329,7 +520,7 @@ export class WebbedsProvider extends HotelProvider {
       if (error.name === "WebbedsError") {
         const xsdMessages =
           Array.isArray(error.extra?.xsd_error?.error_message) &&
-          error.extra.xsd_error.error_message.length
+            error.extra.xsd_error.error_message.length
             ? error.extra.xsd_error.error_message
             : null
         console.error("[webbeds] search error", {
@@ -356,6 +547,209 @@ export class WebbedsProvider extends HotelProvider {
         }
       } else {
         console.error("[webbeds] unexpected error", error)
+      }
+      return next(error)
+    }
+  }
+
+  async saveBooking(req, res, next) {
+    const {
+      checkIn,
+      checkOut,
+      currency,
+      rateBasis,
+      hotelId,
+      productId,
+      hotelCode,
+      rooms,
+      contact,
+      passengers,
+      voucherRemark,
+      specialRequest,
+    } = req.body || {}
+
+    try {
+      const resolvedHotelCode = hotelId ?? productId ?? hotelCode
+      if (!resolvedHotelCode || !/^\d+$/.test(String(resolvedHotelCode).trim())) {
+        throw new Error("WebBeds savebooking requires numeric hotelId (productId)")
+      }
+
+      const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102"
+      const defaultCurrencyCode = process.env.WEBBEDS_DEFAULT_CURRENCY_CODE || "520"
+      const normalizeCurrency = (value) => {
+        const str = String(value ?? "").trim()
+        if (/^\d+$/.test(str) && Number(str) > 0) return str
+        const upper = str.toUpperCase()
+        if (upper === "USD") return "520"
+        if (upper === "EUR") return "978"
+        if (upper === "GBP") return "826"
+        return defaultCurrencyCode
+      }
+      const ensureNumericCode = (value, fallback) => {
+        if (value === undefined || value === null || value === "") {
+          return fallback
+        }
+        const strValue = String(value).trim()
+        return /^\d+$/.test(strValue) ? strValue : fallback
+      }
+      const resolveRateBasis = (value) => {
+        const parsed = Number(value)
+        if (Number.isFinite(parsed) && parsed > 0) return String(parsed)
+        const str = String(value ?? "").trim()
+        if (/^\d+$/.test(str) && Number(str) > 0) return str
+        return "1"
+      }
+
+      const nationality = ensureNumericCode(
+        req.body?.passengerNationality ??
+        req.body?.nationality ??
+        req?.user?.countryCode ??
+        req?.user?.country,
+        defaultCountryCode,
+      )
+
+      const residence = ensureNumericCode(
+        req.body?.passengerCountryOfResidence ??
+        req.body?.residence ??
+        req?.user?.countryCode ??
+        req?.user?.country,
+        defaultCountryCode,
+      )
+
+      const payload = buildSaveBookingPayload({
+        checkIn,
+        checkOut,
+        currency: normalizeCurrency(currency),
+        hotelId: resolvedHotelCode,
+        rateBasis: resolveRateBasis(rateBasis),
+        nationality,
+        residence,
+        rooms,
+        contact,
+        passengers,
+        voucherRemark,
+        specialRequest,
+      })
+
+      const { result } = await this.client.send("savebooking", payload, {
+        requestId: this.getRequestId(req),
+      })
+
+      const mapped = mapSaveBookingResponse(result)
+      return res.json(mapped)
+    } catch (error) {
+      if (error.name === "WebbedsError") {
+        const xsdMessages =
+          Array.isArray(error.extra?.xsd_error?.error_message) &&
+            error.extra.xsd_error.error_message.length
+            ? error.extra.xsd_error.error_message
+            : null
+        console.error("[webbeds] savebooking error", {
+          command: error.command,
+          code: error.code,
+          details: error.details,
+          extra: error.extraDetails,
+          xsdMessages,
+          metadata: error.metadata,
+          requestXml: error.requestXml,
+        })
+        if (xsdMessages) {
+          console.error("[webbeds] XSD VALIDATION DETAILS:", JSON.stringify(xsdMessages, null, 2))
+        }
+      } else {
+        console.error("[webbeds] unexpected error", error)
+      }
+      return next(error)
+    }
+  }
+
+  async confirmBooking(req, res, next) {
+    const { bookingId } = req.body || {}
+
+    try {
+      if (!bookingId) {
+        throw new Error("Webbeds confirmation requires bookingId")
+      }
+
+      const payload = buildConfirmBookingPayload({ bookingId })
+
+      const { result } = await this.client.send("confirmbooking", payload, {
+        requestId: this.getRequestId(req),
+      })
+
+      const mapped = mapConfirmBookingResponse(result)
+      return res.json(mapped)
+    } catch (error) {
+      if (error.name === "WebbedsError") {
+        console.error("[webbeds] confirmbooking error", {
+          command: error.command,
+          code: error.code,
+          details: error.details,
+          extra: error.extraDetails,
+          metadata: error.metadata,
+        })
+      } else {
+        console.error("[webbeds] unexpected error", error)
+      }
+      return next(error)
+    }
+  }
+
+  async cancelBooking(req, res, next) {
+    const { bookingId, reason } = req.body || {}
+
+    try {
+      if (!bookingId) {
+        throw new Error("Webbeds cancellation requires bookingId")
+      }
+
+      const payload = buildCancelBookingPayload({ bookingId, reason })
+
+      const { result } = await this.client.send("cancelbooking", payload, {
+        requestId: this.getRequestId(req),
+      })
+
+      const mapped = mapCancelBookingResponse(result)
+      return res.json(mapped)
+    } catch (error) {
+      if (error.name === "WebbedsError") {
+        console.error("[webbeds] cancelbooking error", {
+          command: error.command,
+          code: error.code,
+          details: error.details,
+          extra: error.extraDetails,
+          metadata: error.metadata,
+        })
+      } else {
+        console.error("[webbeds] unexpected error", error)
+      }
+      return next(error)
+    }
+  }
+
+  async getBookingDetails(req, res, next) {
+    const { bookingId } = req.query || req.body || {}
+
+    try {
+      if (!bookingId) throw new Error("Webbeds getBookingDetails requires bookingId")
+
+      const payload = buildGetBookingDetailsPayload({ bookingId })
+
+      const { result } = await this.client.send("getbookingdetails", payload, {
+        requestId: this.getRequestId(req),
+      })
+
+      const mapped = mapGetBookingDetailsResponse(result)
+      return res.json(mapped)
+    } catch (error) {
+      if (error.name === "WebbedsError") {
+        console.error("[webbeds] getbookingdetails error", {
+          command: error.command,
+          code: error.code,
+          details: error.details,
+          extra: error.extraDetails,
+          metadata: error.metadata,
+        })
       }
       return next(error)
     }
@@ -408,6 +802,8 @@ export class WebbedsProvider extends HotelProvider {
     providedHotelIds,
     credentials,
     cityCode,
+    queryAdvancedConditions = [],
+    advancedOperator,
   }) {
     let hotelIds = providedHotelIds
     if (!hotelIds.length) {
@@ -435,7 +831,11 @@ export class WebbedsProvider extends HotelProvider {
     const batchResults = await runBatchesWithLimit(batches, concurrency, async (batch) => {
       const { payload, requestAttributes } = buildSearchHotelsPayload({
         ...payloadOptions,
-        advancedConditions: buildHotelIdConditions(batch),
+        advancedConditions: [
+          ...queryAdvancedConditions,
+          ...(buildHotelIdConditions(batch) ?? []),
+        ],
+        advancedOperator,
       })
       return this.sendSearchRequest({
         req,

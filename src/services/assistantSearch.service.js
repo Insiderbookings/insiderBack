@@ -58,6 +58,45 @@ const matchParking = (home) =>
     return label.includes("parking") || label.includes("cochera");
   });
 
+const collectAmenityKeywords = (plan = {}) => {
+  const keywords = new Set();
+  const noteText = Array.isArray(plan.notes) ? plan.notes.join(" ").toLowerCase() : "";
+
+  const pushAll = (arr) => arr.forEach((k) => keywords.add(k.toLowerCase()));
+
+  if (plan?.amenities?.workspace) pushAll(["workspace", "desk", "escritorio"]);
+  if (plan?.amenities?.pool) pushAll(["pool", "piscina", "pileta"]);
+  if (plan?.amenities?.petFriendly) pushAll(["pet", "mascota", "pet friendly"]);
+  if (plan?.amenities?.parking) pushAll(["parking", "garage", "cochera", "estacionamiento"]);
+
+  // free-form detection from notes (common synonyms)
+  const keywordMap = [
+    { cues: ["washer", "laundry", "washing machine", "lavadora", "lavarropas"], add: ["washer", "laundry"] },
+    { cues: ["dryer", "secadora"], add: ["dryer"] },
+    { cues: ["parking", "cochera", "garage", "estacionamiento"], add: ["parking", "cochera"] },
+    { cues: ["workspace", "desk", "escritorio"], add: ["workspace", "desk"] },
+    { cues: ["pool", "piscina", "pileta"], add: ["pool", "piscina"] },
+    { cues: ["pet", "mascota"], add: ["pet friendly"] },
+  ];
+  keywordMap.forEach(({ cues, add }) => {
+    if (cues.some((cue) => noteText.includes(cue.toLowerCase()))) {
+      pushAll(add);
+    }
+  });
+
+  return Array.from(keywords).filter(Boolean);
+};
+
+const hasAmenityKeywords = (home, keywords = []) => {
+  if (!keywords.length) return true;
+  return keywords.some((kw) =>
+    hasAmenityMatch(home, ({ label, key }) => {
+      const lowerKey = key.toLowerCase();
+      return label.includes(kw) || lowerKey.includes(kw);
+    })
+  );
+};
+
 const buildHomeMatchReasons = ({ plan, home, card }) => {
   const reasons = [];
   if (plan?.location?.city && card?.city) {
@@ -81,12 +120,14 @@ const buildHomeMatchReasons = ({ plan, home, card }) => {
   return reasons;
 };
 
-const buildPricingOrderLiteral = () =>
-  sequelize.literal(
-    "(SELECT hp.base_price FROM home_pricing AS hp WHERE hp.home_id = Home.id AND hp.deleted_at IS NULL LIMIT 1)"
+const buildPricingOrderLiteral = () => {
+  const alias = resolveDialect() === "postgres" ? '"Home"' : "Home";
+  return sequelize.literal(
+    `(SELECT hp.base_price FROM home_pricing AS hp WHERE hp.home_id = ${alias}.id AND hp.deleted_at IS NULL LIMIT 1)`
   );
+};
 
-const runHomeQuery = async ({ plan, limit, guests, coordinateFilter, addressWhere, budgetMax, respectGuest, respectBudget }) => {
+const runHomeQuery = async ({ plan, limit, guests, coordinateFilter, addressWhere, budgetMax, respectGuest, respectBudget, amenityKeywords }) => {
   const where = {
     status: "PUBLISHED",
     is_visible: true,
@@ -151,7 +192,7 @@ const runHomeQuery = async ({ plan, limit, guests, coordinateFilter, addressWher
     {
       model: models.HomeAmenityLink,
       as: "amenities",
-      required: Boolean(plan?.amenities?.parking),
+      required: Boolean(plan?.amenities?.parking || (amenityKeywords && amenityKeywords.length)),
       include: [
         {
           model: models.HomeAmenity,
@@ -163,6 +204,8 @@ const runHomeQuery = async ({ plan, limit, guests, coordinateFilter, addressWher
   ];
 
   const order = [];
+  const homeAlias = resolveDialect() === "postgres" ? '"Home"' : "Home";
+
   if (plan?.sortBy === "POPULARITY") {
     // We need to count the recent views for each home
     // Since we can't easily do a subquery sort in Sequelize without raw queries or complex associations,
@@ -172,7 +215,12 @@ const runHomeQuery = async ({ plan, limit, guests, coordinateFilter, addressWher
     // Assuming we don't, we can try to order by the count of recentViews.
     // But standard Sequelize findAll with include and order by count is complex.
     // Let's check if we can use a literal for sorting.
-    order.push([sequelize.literal("(SELECT COUNT(*) FROM home_recent_view WHERE home_recent_view.home_id = Home.id)"), "DESC"]);
+    order.push([
+      sequelize.literal(
+        `(SELECT COUNT(*) FROM home_recent_view WHERE home_recent_view.home_id = ${homeAlias}.id)`
+      ),
+      "DESC",
+    ]);
   } else if (plan?.sortBy === "PRICE_ASC") {
     order.push([buildPricingOrderLiteral(), "ASC"]);
   } else if (plan?.sortBy === "PRICE_DESC") {
@@ -228,6 +276,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
       : null;
 
   const budgetMax = resolveBudgetMax(plan);
+  const amenityKeywords = collectAmenityKeywords(plan);
 
   const attempts = [
     { respectGuest: true, respectBudget: true },
@@ -246,13 +295,14 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
       budgetMax,
       respectGuest: attempt.respectGuest,
       respectBudget: attempt.respectBudget,
+      amenityKeywords,
     });
 
     console.log(`[assistant] attempt ${JSON.stringify(attempt)} returned ${homes.length} homes`);
 
     const enriched = homes
       .map((home) => {
-        if (plan?.amenities?.parking && !matchParking(home)) {
+        if ((plan?.amenities?.parking && !matchParking(home)) || (amenityKeywords.length && !hasAmenityKeywords(home, amenityKeywords))) {
           return null;
         }
         const card = mapHomeToCard(home);

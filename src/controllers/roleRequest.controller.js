@@ -393,27 +393,53 @@ export async function adminApproveInitial(req, res, next) {
     if (!reqRow) return res.status(404).json({ error: "Request not found" })
     await reqRow.update({ status: "needs_info" })
     await models.User.update({ role_pending_info: true }, { where: { id: reqRow.user_id } })
-    
-    // Notify user to start Step 1 (KYC)
+
+    // Notify user to start verification
     try {
       const user = await models.User.findByPk(reqRow.user_id)
       if (user?.email) {
         const clientUrl = process.env.CLIENT_URL || "http://localhost:5173"
-        const subject = "Action required: Complete Step 1 (KYC)"
-        const body = `
-          <p>Hi ${user.name || ''},</p>
-          <p>Your request to become a Vault Operator was pre-approved. You can now complete <strong>Step 1 of 2</strong>: Personal Information & KYC.</p>
-          <p>Please upload:</p>
-          <ul>
-            <li>Full name, personal email and phone</li>
-            <li>SSN</li>
-            <li>Government-issued ID</li>
-            <li>Personal address</li>
-          </ul>
-          <p>You can track your progress at any time and preview your uploads before submitting.</p>
-        `
-        const html = wrapEmail({ title: "Vault Operator Onboarding — Step 1", body, ctaLabel: "Open Submit Info", ctaHref: `${clientUrl}/complete-info` })
-        await sendMail({ to: user.email, subject, html, text: `Please complete Step 1 (KYC) at ${clientUrl}/complete-info` })
+        const isHost = Number(reqRow.role_requested) === 6
+        const subject = isHost
+          ? "Host application: complete verification"
+          : "Action required: Complete Step 1 (KYC)"
+        const body = isHost
+          ? `
+            <p>Hi ${user.name || ''},</p>
+            <p>Your host application was received. Please complete your verification details so we can review and approve it.</p>
+            <p>We need:</p>
+            <ul>
+              <li>Full name and phone</li>
+              <li>Address</li>
+              <li>Payout preference</li>
+              <li>Tax ID (optional)</li>
+            </ul>
+            <p>You can follow the status and submit these details from the app or the web portal.</p>
+          `
+          : `
+            <p>Hi ${user.name || ''},</p>
+            <p>Your request was pre-approved. You can now complete <strong>Step 1 of 2</strong>: Personal Information & KYC.</p>
+            <p>Please upload:</p>
+            <ul>
+              <li>Full name, personal email and phone</li>
+              <li>SSN</li>
+              <li>Government-issued ID</li>
+              <li>Personal address</li>
+            </ul>
+            <p>You can track your progress at any time and preview your uploads before submitting.</p>
+          `
+        const html = wrapEmail({
+          title: isHost ? "Host verification required" : "Vault Operator Onboarding - Step 1",
+          body,
+          ctaLabel: "Open verification",
+          ctaHref: `${clientUrl}/complete-info`,
+        })
+        await sendMail({
+          to: user.email,
+          subject,
+          html,
+          text: `${subject}. Continue at ${clientUrl}/complete-info`,
+        })
       }
     } catch (e) {
       console.warn('adminApproveInitial: failed to send user mail:', e?.message || e)
@@ -438,6 +464,9 @@ export async function adminApproveKyc(req, res, next) {
     const { id } = req.params
     const reqRow = await models.UserRoleRequest.findByPk(id)
     if (!reqRow) return res.status(404).json({ error: "Request not found" })
+    if (Number(reqRow.role_requested) === 6) {
+      return res.status(409).json({ error: "KYC step not applicable for host" })
+    }
     if (reqRow.status !== "submitted") return res.status(409).json({ error: "Request not in submitted state" })
 
     const fd = Object.assign({}, reqRow.form_data || {})
@@ -514,6 +543,23 @@ export async function adminApproveFinal(req, res, next) {
         }
       } catch (e) {
         console.warn('adminApproveFinal: failed to send final user mail:', e?.message || e)
+      }
+    }
+    if (Number(reqRow.role_requested) === 6) {
+      try {
+        if (user?.email) {
+          const subject = "Host application approved"
+          const clientUrl = process.env.CLIENT_URL || "http://localhost:5173"
+          const body = `
+            <p>Hi ${user.name || ''},</p>
+            <p><strong>Welcome!</strong> Your host application has been approved.</p>
+            <p>You can now switch to host mode and access your host tools.</p>
+          `
+          const html = wrapEmail({ title: "You're now a Host", body, ctaLabel: "Open host tools", ctaHref: `${clientUrl}/` })
+          await sendMail({ to: user.email, subject, html, text: `Host role approved. Sign in to start hosting.` })
+        }
+      } catch (e) {
+        console.warn('adminApproveFinal: failed to send host approval mail:', e?.message || e)
       }
     }
 

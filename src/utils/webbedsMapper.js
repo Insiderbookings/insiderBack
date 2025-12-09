@@ -48,6 +48,12 @@ export const formatStaticHotel = (hotel) => {
   const amenityList = extractTextList(plain.amenities, "amenitieItem").slice(0, 6);
   const leisureList = extractTextList(plain.leisure, "leisureItem").slice(0, 4);
   const businessList = extractTextList(plain.business, "businessItem").slice(0, 4);
+  const roomTypesRaw =
+    plain.room_static?.roomTypes ||
+    plain.room_static ||
+    plain.roomTypes ||
+    plain.room_types ||
+    [];
 
   return {
     id: String(plain.hotel_id),
@@ -84,6 +90,7 @@ export const formatStaticHotel = (hotel) => {
     amenities: amenityList,
     leisure: leisureList,
     business: businessList,
+    roomTypes: roomTypesRaw,
     metadata: {
       hasLeisure: leisureList.length > 0,
       hasBusiness: businessList.length > 0,

@@ -6,7 +6,7 @@ const QUICK_START_PROMPTS = [
   "Looking for a business-class hotel in Buenos Aires with breakfast included.",
   "Need a pet-friendly cabin near Bariloche for 6 guests.",
 ];
-const MAX_RESULTS = 3;
+const MAX_RESULTS = 5;
 
 const normalizeMessagesInput = (messages) => {
   if (!Array.isArray(messages)) return [];
@@ -40,6 +40,7 @@ export const handleAssistantSearch = async (req, res) => {
   }
 
   const plan = await extractSearchPlan(messages);
+  console.log("[DEBUG] Extracted Plan:", JSON.stringify(plan, null, 2));
   const intent = plan?.intent || "SMALL_TALK";
 
   // Solo buscar si el intent es SEARCH

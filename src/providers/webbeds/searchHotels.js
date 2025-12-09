@@ -14,7 +14,7 @@ const formatDateWebbeds = (value) => {
   return parsed.format(DATE_FORMAT)
 }
 const MAX_ADULTS = 10
-const DEFAULT_RATE_BASIS = "1"
+const DEFAULT_RATE_BASIS = "-1"
 const DEFAULT_CURRENCY = "520"
 const DEFAULT_CHILD_AGE = 8
 
@@ -96,7 +96,7 @@ const buildRoomNode = ({
   if (childrenCount > 0) {
     node.children.child = children.map((age, idx) => ({
       "@runno": String(idx),
-      "#": String(age ?? DEFAULT_CHILD_AGE),
+      "#text": String(age ?? DEFAULT_CHILD_AGE),
     }))
   }
 
@@ -120,7 +120,14 @@ const buildFilters = ({ cityCode, countryCode, filterConditions }) => {
   return filters
 }
 
-const buildAdvancedConditions = (conditions = []) => {
+const normalizeOperator = (value) => {
+  if (!value) return null
+  const upper = String(value).trim().toUpperCase()
+  if (upper === "AND" || upper === "OR") return upper
+  return null
+}
+
+const buildAdvancedConditions = (conditions = [], operator) => {
   if (!conditions.length) return null
   const formatted = conditions
     .map((condition) => {
@@ -135,16 +142,46 @@ const buildAdvancedConditions = (conditions = []) => {
           fieldValue: values,
         },
       }
-    })
+  })
     .filter(Boolean)
 
   if (!formatted.length) return null
+
+  const normalizedOperator = normalizeOperator(operator) || "AND"
+
+  if (formatted.length === 1) {
+    return {
+      "@xmlns:a": NAMESPACE_ATOMIC,
+      "@xmlns:c": NAMESPACE_COMPLEX,
+      "c:condition": {
+        "a:condition": formatted[0],
+      },
+    }
+  }
+
+  // Para múltiples condiciones, generamos el XML manualmente para respetar el XSD:
+  // <c:condition><a:condition/> <operator/> <a:condition/> ...</c:condition>
+  const serializeCondition = (item) => {
+    const values = Array.isArray(item.fieldValues?.fieldValue)
+      ? item.fieldValues.fieldValue
+      : [item.fieldValues?.fieldValue ?? item.fieldValues].filter(Boolean)
+    const valuesXml = values.map((val) => `<fieldValue>${val}</fieldValue>`).join("")
+    return `<a:condition><fieldName>${item.fieldName}</fieldName><fieldTest>${item.fieldTest}</fieldTest><fieldValues>${valuesXml}</fieldValues></a:condition>`
+  }
+
+  const raw = formatted
+    .map((item, idx) => {
+      const part = serializeCondition(item)
+      if (idx === formatted.length - 1) return part
+      return `${part}<operator>${normalizedOperator}</operator>`
+    })
+    .join("")
 
   return {
     "@xmlns:a": NAMESPACE_ATOMIC,
     "@xmlns:c": NAMESPACE_COMPLEX,
     "c:condition": {
-      "a:condition": formatted,
+      "#raw": raw,
     },
   }
 }
@@ -161,9 +198,14 @@ export const buildSearchHotelsPayload = ({
   countryCode,
   filterConditions,
   advancedConditions,
+  advancedOperator,
   includeFields = [],
   includeRoomFields = [],
   includeNoPrice = false,
+  resultsPerPage,
+  page,
+  rateTypes,
+  productCodeRequested,
   debug,
 } = {}) => {
   const fromDate = formatDate(checkIn)
@@ -188,7 +230,14 @@ export const buildSearchHotelsPayload = ({
   if (includeNoPrice) {
     filters.noPrice = "true"
   }
-  const advanced = buildAdvancedConditions(advancedConditions)
+
+  if (rateTypes && rateTypes.length) {
+    filters.rateTypes = {
+      rateType: rateTypes
+    }
+  }
+
+  const advanced = buildAdvancedConditions(advancedConditions, advancedOperator)
   if (advanced) {
     filters["@xmlns:a"] = advanced["@xmlns:a"]
     filters["@xmlns:c"] = advanced["@xmlns:c"]
@@ -197,6 +246,11 @@ export const buildSearchHotelsPayload = ({
 
   const returnNode = {
     filters,
+  }
+
+  if (resultsPerPage || page) {
+    returnNode.resultsPerPage = String(resultsPerPage || "20")
+    returnNode.page = String(page || "1")
   }
 
   const fieldsNode = {}
@@ -212,16 +266,21 @@ export const buildSearchHotelsPayload = ({
     returnNode.fields = fieldsNode
   }
 
-  const payload = {
-    bookingDetails: {
-      fromDate,
-      toDate,
-      currency: currency || DEFAULT_CURRENCY,
-      rooms: {
-        "@no": String(rooms.length),
-        room: rooms,
-      },
+  const bookingDetails = {
+    fromDate,
+    toDate,
+    currency: currency || DEFAULT_CURRENCY,
+    productCodeRequested: productCodeRequested ? String(productCodeRequested) : undefined,
+    rooms: {
+      "@no": String(rooms.length),
+      room: rooms,
     },
+  }
+  // Remove undefined keys in bookingDetails if any (productCodeRequested)
+  Object.keys(bookingDetails).forEach(key => bookingDetails[key] === undefined && delete bookingDetails[key])
+
+  const payload = {
+    bookingDetails,
     return: returnNode,
   }
 

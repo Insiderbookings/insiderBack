@@ -1,0 +1,3407 @@
+[
+	{
+		"hotelCode": "449255",
+		"hotelName": "The Tower Plaza Hotel Dubai",
+		"hotelDetails": {
+			"hotelCode": "449255",
+			"hotelName": "The Tower Plaza Hotel Dubai",
+			"city": "DUBAI",
+			"cityCode": "364",
+			"country": "UNITED ARAB EMIRATES",
+			"countryCode": "6",
+			"state": null,
+			"region": {
+				"name": "GCC",
+				"code": "14"
+			},
+			"address": "Sheikh Zayed Road",
+			"zipCode": "191055",
+			"locations": [
+				"Sheikh Zayed Road",
+				"World Trade Centre",
+				"Dubai Intl Financial Centre"
+			],
+			"geoPoint": {
+				"lat": 25.21748,
+				"lng": 55.278759
+			},
+			"geoLocations": {
+				"@_count": "40",
+				"geoLocation": [
+					{
+						"@_id": "2985",
+						"name": "DXB - Dubai International Airport",
+						"type": "Airport/Terminal",
+						"@_runno": "0",
+						"distance": "8234"
+					},
+					{
+						"@_id": "3015",
+						"name": "Restless Planet",
+						"type": "POI",
+						"@_runno": "1",
+						"distance": "16254"
+					},
+					{
+						"@_id": "3025",
+						"name": "Zayed University",
+						"type": "POI",
+						"@_runno": "2",
+						"distance": "16401"
+					},
+					{
+						"@_id": "3035",
+						"name": "Institute of Management Technology Dubai",
+						"type": "POI",
+						"@_runno": "3",
+						"distance": "16980"
+					},
+					{
+						"@_id": "3045",
+						"name": "SP Jain Center of Management (SPJCM)",
+						"type": "POI",
+						"@_runno": "4",
+						"distance": "16980"
+					},
+					{
+						"@_id": "3055",
+						"name": "Al Mamzar Beach Park",
+						"type": "POI",
+						"@_runno": "5",
+						"distance": "13600"
+					},
+					{
+						"@_id": "3075",
+						"name": "Dubai Silicon Oasis",
+						"type": "POI",
+						"@_runno": "6",
+						"distance": "14711"
+					},
+					{
+						"@_id": "3085",
+						"name": "Dubai International Academic City",
+						"type": "POI",
+						"@_runno": "7",
+						"distance": "12770"
+					},
+					{
+						"@_id": "3115",
+						"name": "Ras Al Khor Wildlife Sanctury",
+						"type": "POI",
+						"@_runno": "8",
+						"distance": "4376"
+					},
+					{
+						"@_id": "3145",
+						"name": "DWC - Al Maktoum Inter. Airport, Dubai",
+						"type": "Airport/Terminal",
+						"@_runno": "9",
+						"distance": "38809"
+					},
+					{
+						"@_id": "3155",
+						"name": "Dragon Mart",
+						"type": "POI",
+						"@_runno": "10",
+						"distance": "14473"
+					},
+					{
+						"@_id": "3175",
+						"name": "Kite Beach",
+						"type": "POI",
+						"@_runno": "11",
+						"distance": "9462"
+					},
+					{
+						"@_id": "3185",
+						"name": "Umm Suqeim Beach",
+						"type": "POI",
+						"@_runno": "12",
+						"distance": "11464"
+					},
+					{
+						"@_id": "3195",
+						"name": "Mushrif Park",
+						"type": "POI",
+						"@_runno": "13",
+						"distance": "17390"
+					},
+					{
+						"@_id": "3205",
+						"name": "Al Twar Center",
+						"type": "POI",
+						"@_runno": "14",
+						"distance": "11880"
+					},
+					{
+						"@_id": "3215",
+						"name": "The Walk",
+						"type": "POI",
+						"@_runno": "15",
+						"distance": "21318"
+					},
+					{
+						"@_id": "3225",
+						"name": "Marina Beach",
+						"type": "POI",
+						"@_runno": "16",
+						"distance": "21772"
+					},
+					{
+						"@_id": "3255",
+						"name": "Global Village",
+						"type": "POI",
+						"@_runno": "17",
+						"distance": "16613"
+					},
+					{
+						"@_id": "3275",
+						"name": "Dubai Outlet Mall",
+						"type": "POI",
+						"@_runno": "18",
+						"distance": "19935"
+					},
+					{
+						"@_id": "3285",
+						"name": "Autism Rocks Arena",
+						"type": "POI",
+						"@_runno": "19",
+						"distance": "22030"
+					},
+					{
+						"@_id": "3305",
+						"name": "World Trade Center",
+						"type": "Neighborhood",
+						"@_runno": "20"
+					},
+					{
+						"@_id": "3335",
+						"name": "Dubai Science Park",
+						"type": "POI",
+						"@_runno": "21",
+						"distance": "16291"
+					},
+					{
+						"@_id": "1016365",
+						"name": "Wafi City Mall",
+						"type": "POI",
+						"@_runno": "22",
+						"distance": "4195"
+					},
+					{
+						"@_id": "1016375",
+						"name": "Dubai Creek",
+						"type": "POI",
+						"@_runno": "23",
+						"distance": "5377"
+					},
+					{
+						"@_id": "1016385",
+						"name": "Zabeel Stadium",
+						"type": "POI",
+						"@_runno": "24",
+						"distance": "3670"
+					},
+					{
+						"@_id": "1016395",
+						"name": "Lamcy Plaza",
+						"type": "POI",
+						"@_runno": "25",
+						"distance": "3424"
+					},
+					{
+						"@_id": "1016405",
+						"name": "Creek Park",
+						"type": "POI",
+						"@_runno": "26",
+						"distance": "5305"
+					},
+					{
+						"@_id": "1016415",
+						"name": "American Hospital Dubai",
+						"type": "POI",
+						"@_runno": "27",
+						"distance": "3945"
+					},
+					{
+						"@_id": "1016425",
+						"name": "Rashed Stadium",
+						"type": "POI",
+						"@_runno": "28",
+						"distance": "10634"
+					},
+					{
+						"@_id": "1016435",
+						"name": "Al Bustan Center",
+						"type": "POI",
+						"@_runno": "29",
+						"distance": "10997"
+					},
+					{
+						"@_id": "1016455",
+						"name": "Arabian Ranches Golf Club",
+						"type": "POI",
+						"@_runno": "30",
+						"distance": "17640"
+					},
+					{
+						"@_id": "1016465",
+						"name": "Artspace Gallery",
+						"type": "POI",
+						"@_runno": "31",
+						"distance": "584"
+					},
+					{
+						"@_id": "1253285",
+						"name": "DXB - Dubai International Airport T1, Dubai",
+						"type": "Airport/Terminal",
+						"@_runno": "32",
+						"distance": "9607"
+					},
+					{
+						"@_id": "1253295",
+						"name": "DXB - Dubai International Airport T3, Dubai",
+						"type": "Airport/Terminal",
+						"@_runno": "33",
+						"distance": "9615"
+					},
+					{
+						"@_id": "1259655",
+						"name": "DXB - Dubai International Airport T2, Dubai",
+						"type": "Airport/Terminal",
+						"@_runno": "34",
+						"distance": "9513"
+					},
+					{
+						"@_id": "1267045",
+						"name": "SHJ - Sharjah International Airport, Dubai",
+						"type": "Airport/Terminal",
+						"@_runno": "35",
+						"distance": "26477"
+					},
+					{
+						"@_id": "1277385",
+						"name": "Burj Khalifa",
+						"type": "POI",
+						"@_runno": "36",
+						"distance": "2304"
+					},
+					{
+						"@_id": "1281475",
+						"name": "Port Rashid Dubai Harbour - Dubai Cruise Port, Dubai - UAE",
+						"type": "Airport/Terminal",
+						"@_runno": "37",
+						"distance": "7441"
+					},
+					{
+						"@_id": "1308375",
+						"name": "Transfer - Dubai Harbour Cruise Terminal",
+						"type": "Airport/Terminal",
+						"@_runno": "38",
+						"distance": "20268"
+					},
+					{
+						"@_id": "1312795",
+						"name": "Dubai Harbour Cruise Terminal",
+						"type": "Airport/Terminal",
+						"@_runno": "39",
+						"distance": "20286"
+					}
+				]
+			},
+			"rating": "563",
+			"phone": "+971 438-77777",
+			"checkIn": "15:00",
+			"checkOut": "12:00",
+			"minAge": "21",
+			"builtYear": "2011",
+			"renovationYear": "",
+			"amenities": {
+				"@_count": "59",
+				"language": {
+					"@_id": "EN",
+					"@_name": "English",
+					"amenitieItem": [
+						{
+							"@_id": "98475",
+							"#text": "24 Hour Check In"
+						},
+						{
+							"@_id": "17956",
+							"#text": "Adjoining Rooms"
+						},
+						{
+							"@_id": "719",
+							"#text": "Air Conditioning"
+						},
+						{
+							"@_id": "100485",
+							"#text": "Air Purifier"
+						},
+						{
+							"@_id": "98415",
+							"#text": "Airport Shuttle"
+						},
+						{
+							"@_id": "603",
+							"#text": "Baby Sitting"
+						},
+						{
+							"@_id": "100555",
+							"#text": "Babysitting Services"
+						},
+						{
+							"@_id": "3174",
+							"#text": "Banquet Hall"
+						},
+						{
+							"@_id": "18896",
+							"#text": "Barber Shop"
+						},
+						{
+							"@_id": "100575",
+							"#text": "Bathrobe"
+						},
+						{
+							"@_id": "99885",
+							"#text": "Bbq Facilities"
+						},
+						{
+							"@_id": "3204",
+							"#text": "Beauty Salon"
+						},
+						{
+							"@_id": "99995",
+							"#text": "Breakfast In The Room"
+						},
+						{
+							"@_id": "100065",
+							"#text": "Breakfast Takeaway Containers"
+						},
+						{
+							"@_id": "100495",
+							"#text": "Buffet Breakfast"
+						},
+						{
+							"@_id": "18006",
+							"#text": "Business Centre"
+						},
+						{
+							"@_id": "3094",
+							"#text": "Car Parking - Onsite Free"
+						},
+						{
+							"@_id": "666",
+							"#text": "Car Rental Desk"
+						},
+						{
+							"@_id": "99955",
+							"#text": "Cashless Payment Available"
+						},
+						{
+							"@_id": "98485",
+							"#text": "Cctv/Security"
+						},
+						{
+							"@_id": "99945",
+							"#text": "Children’s Swimming Area"
+						},
+						{
+							"@_id": "18776",
+							"#text": "Complimentary In-Room Coffee Or Tea"
+						},
+						{
+							"@_id": "48325",
+							"#text": "Complimentary Wifi Access"
+						},
+						{
+							"@_id": "646",
+							"#text": "Concierge"
+						},
+						{
+							"@_id": "100045",
+							"#text": "Contactless Check-In/Check-Out"
+						},
+						{
+							"@_id": "100085",
+							"#text": "Continental Breakfast"
+						},
+						{
+							"@_id": "97075",
+							"#text": "Currency Exchange"
+						},
+						{
+							"@_id": "3084",
+							"#text": "Doctor On Call"
+						},
+						{
+							"@_id": "100025",
+							"#text": "Dry Cleaning"
+						},
+						{
+							"@_id": "20016",
+							"#text": "Dry Hotel – No Alcohol Served"
+						},
+						{
+							"@_id": "2007",
+							"#text": "Elevators"
+						},
+						{
+							"@_id": "99965",
+							"#text": "Entertainment Area"
+						},
+						{
+							"@_id": "18236",
+							"#text": "Express Check-In"
+						},
+						{
+							"@_id": "100015",
+							"#text": "Express Check-In/Check-Out"
+						},
+						{
+							"@_id": "18246",
+							"#text": "Express Check-Out"
+						},
+						{
+							"@_id": "98455",
+							"#text": "Fitness"
+						},
+						{
+							"@_id": "3871",
+							"#text": "Foreign Currency Exchange"
+						},
+						{
+							"@_id": "98445",
+							"#text": "Free Wifi"
+						},
+						{
+							"@_id": "3214",
+							"#text": "Hair Dresser"
+						},
+						{
+							"@_id": "18836",
+							"#text": "Halal Food Available"
+						},
+						{
+							"@_id": "3664",
+							"#text": "High Speed Internet"
+						},
+						{
+							"@_id": "18316",
+							"#text": "Housekeeping-Daily"
+						},
+						{
+							"@_id": "97065",
+							"#text": "Kettle"
+						},
+						{
+							"@_id": "18366",
+							"#text": "Laundry Service"
+						},
+						{
+							"@_id": "18816",
+							"#text": "Limited Time Reception"
+						},
+						{
+							"@_id": "18856",
+							"#text": "Limousine Service - Paid"
+						},
+						{
+							"@_id": "19116",
+							"#text": "Long Term Parking"
+						},
+						{
+							"@_id": "100535",
+							"#text": "Meal Services"
+						},
+						{
+							"@_id": "3074",
+							"#text": "Multilingual Staff"
+						},
+						{
+							"@_id": "99435",
+							"#text": "Payable Wifi"
+						},
+						{
+							"@_id": "3234",
+							"#text": "Porterage"
+						},
+						{
+							"@_id": "18426",
+							"#text": "Ramp Access"
+						},
+						{
+							"@_id": "641",
+							"#text": "Restaurant"
+						},
+						{
+							"@_id": "18446",
+							"#text": "Room Service - 24 Hours"
+						},
+						{
+							"@_id": "1993",
+							"#text": "Safety Deposit Box"
+						},
+						{
+							"@_id": "100075",
+							"#text": "Smoking Area"
+						},
+						{
+							"@_id": "98195",
+							"#text": "Tableware"
+						},
+						{
+							"@_id": "698",
+							"#text": "Valet Parking"
+						},
+						{
+							"@_id": "1995",
+							"#text": "Wheelchair Access"
+						}
+					]
+				}
+			},
+			"leisure": {
+				"@_count": "6",
+				"language": {
+					"@_id": "EN",
+					"@_name": "English",
+					"leisureItem": [
+						{
+							"@_id": "3891",
+							"#text": "Jacuzzi"
+						},
+						{
+							"@_id": "1685",
+							"#text": "Kids Pool"
+						},
+						{
+							"@_id": "17716",
+							"#text": "Poolside Snack Bar"
+						},
+						{
+							"@_id": "650",
+							"#text": "Sauna"
+						},
+						{
+							"@_id": "1985",
+							"#text": "Spa"
+						},
+						{
+							"@_id": "3264",
+							"#text": "Steam Room"
+						}
+					]
+				}
+			},
+			"business": {
+				"@_count": "6",
+				"language": {
+					"@_id": "EN",
+					"@_name": "English",
+					"businessItem": [
+						{
+							"@_id": "620",
+							"#text": "Av Equipment Available"
+						},
+						{
+							"@_id": "3694",
+							"#text": "Conference Rooms"
+						},
+						{
+							"@_id": "12229",
+							"#text": "Lounge Access For Club/Executive Rooms"
+						},
+						{
+							"@_id": "17536",
+							"#text": "Meeting Rooms"
+						},
+						{
+							"@_id": "17246",
+							"#text": "Post/Courier Services"
+						},
+						{
+							"@_id": "624",
+							"#text": "Video Conference"
+						}
+					]
+				}
+			},
+			"descriptions": {
+				"description1": {
+					"language": {
+						"@_id": "EN",
+						"#text": "The Tower Plaza Hotel enjoys a prime location on Sheikh Zayed Road, Dubai, directly opposite Emirates Towers Metro Station and near the Dubai International Convention and Exhibition Centre.  The hotel offers 431 air-conditioned rooms with minibars, complimentary Wi-Fi, digital programming, and bathrooms featuring showers, complimentary toiletries, and bidets.  Dining options include several restaurants serving international and Mediterranean cuisine, a café, 24-hour room service, and a poolside bar.  Amenities include an infinity pool with Jumeirah beach and Arabian Sea views, a spa offering massages and treatments, a fitness centre, a sauna, a hot tub, complimentary valet parking, a business centre, concierge services, and babysitting (surcharge).  Distances to key attractions include: Museum of the Future (1.3km), Dubai World Trade Centre (1.7km), Dubai Mall (3.2km), Burj Khalifa (3.4km), and Dubai International Airport (DXB) (11.7km).",
+						"@_name": "English"
+					}
+				},
+				"description2": {
+					"language": {
+						"@_id": "EN",
+						"#text": "The Tower Plaza Hotel Dubai is a Airport Hotel, Business, City hotel, Design Trendy, Family Style, Full Service, Honeymoon, Leisure, Modern, Tourist hotel. The nightlife/restaurants are within walking distance from the hotel.",
+						"@_name": "English"
+					}
+				}
+			},
+			"images": {
+				"hotelImages": {
+					"image": [
+						{
+							"alt": "",
+							"url": "https://static-images.webbeds.com/0/image/2ff5f480-33c3-433d-8506-0a522c753218.jpg",
+							"@_runno": "0",
+							"category": {
+								"@_id": "0"
+							}
+						},
+						{
+							"alt": "",
+							"url": "https://static-images.webbeds.com/0/image/de6e1c94-3f71-43d1-909b-a4d4e63eaa8b.jpg",
+							"@_runno": "1",
+							"category": {
+								"@_id": "0"
+							}
+						},
+						{
+							"alt": "",
+							"url": "https://static-images.webbeds.com/0/image/2ff5f480-33c3-433d-8506-0a522c753218.jpg",
+							"@_runno": "2",
+							"category": {
+								"@_id": "0"
+							}
+						},
+						{
+							"alt": "",
+							"url": "https://static-images.webbeds.com/0/image/de6e1c94-3f71-43d1-909b-a4d4e63eaa8b.jpg",
+							"@_runno": "3",
+							"category": {
+								"@_id": "0"
+							}
+						},
+						{
+							"alt": "lobby",
+							"url": "https://static-images.webbeds.com/0/image/b7ec5d1d-9dcb-457e-893c-e33eca1098e1.jpg",
+							"@_runno": "4",
+							"category": {
+								"@_id": "48819",
+								"#text": "Lobby"
+							}
+						},
+						{
+							"alt": "lobby",
+							"url": "https://static-images.webbeds.com/0/image/2e0b961e-1f47-42b4-a333-6962202f85b5.jpg",
+							"@_runno": "5",
+							"category": {
+								"@_id": "48819",
+								"#text": "Lobby"
+							}
+						},
+						{
+							"alt": "lobby",
+							"url": "https://static-images.webbeds.com/0/image/9c6b5cb6-734f-432b-b74e-f530d0c9f85b.jpg",
+							"@_runno": "6",
+							"category": {
+								"@_id": "48819",
+								"#text": "Lobby"
+							}
+						},
+						{
+							"alt": "lobby",
+							"url": "https://static-images.webbeds.com/0/image/93558903-0bfb-4ccb-b7dc-973730ba2240.jpg",
+							"@_runno": "7",
+							"category": {
+								"@_id": "48819",
+								"#text": "Lobby"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/ab623e29-603a-44fe-8504-b7663c106b52.jpg",
+							"@_runno": "8",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/a6507768-554b-4dcc-b976-33ae3fb2b861.jpg",
+							"@_runno": "9",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/9a08e06a-7876-4c4d-af06-0d692b0e98f4.jpg",
+							"@_runno": "10",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/41621853-7d28-4fa0-828d-d3edecc02984.jpg",
+							"@_runno": "11",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/efc52184-65fd-45fb-b13e-8e18b2fc4a8a.jpg",
+							"@_runno": "12",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/1e06690a-df6b-4571-bfa4-4d03e6a21872.jpg",
+							"@_runno": "13",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/9a08e06a-7876-4c4d-af06-0d692b0e98f4.jpg",
+							"@_runno": "14",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/0bbd8a2a-c73f-4692-8530-b064bce93d7c.jpg",
+							"@_runno": "15",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/a3b3e11d-b76d-4a31-80ff-a90db95b89d0.jpg",
+							"@_runno": "16",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/6b6de10d-06a1-4e4d-8211-d92e0029eecf.jpg",
+							"@_runno": "17",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/2497b2f4-3164-4cff-a7b9-a4f52acd3e19.jpeg",
+							"@_runno": "18",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/439dab02-9311-40ad-84e5-0bd16cfd5cb9.jpeg",
+							"@_runno": "19",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/5774adb3-f882-4082-a507-69211966a2ff.jpeg",
+							"@_runno": "20",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/2101b314-ff48-438a-a012-52a1112a0db9.jpg",
+							"@_runno": "21",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/bcc65e36-dc17-4b64-9bf7-136f76ebb2c6.jpg",
+							"@_runno": "22",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/d24af9f3-cdd6-455c-b1d3-ff41a481a501.jpg",
+							"@_runno": "23",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/c062e219-7a2e-4134-9ba5-f9a9e49a3baf.jpg",
+							"@_runno": "24",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/7e2fffcc-d881-4397-b70e-0e69474275e9.jpg",
+							"@_runno": "25",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/0a0f5381-3dfd-41a1-9fd7-a7a4eda90b51.jpg",
+							"@_runno": "26",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/0a0f5381-3dfd-41a1-9fd7-a7a4eda90b51.jpg",
+							"@_runno": "27",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/a32e3962-87f3-41c8-a274-b1e5f304890c.jpg",
+							"@_runno": "28",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/25813fd0-0c84-4bda-a53b-fedfef760729.jpg",
+							"@_runno": "29",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/aca34ae9-8d9e-442a-98be-988335fa348f.jpg",
+							"@_runno": "30",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/f00d23dd-5d3c-44e6-8764-f55daf53753a.jpg",
+							"@_runno": "31",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/078e8747-8686-429b-9e28-cbab636c62ef.jpg",
+							"@_runno": "32",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/d5418fe3-2fa1-43f5-8a1c-c7b9b1c3beab.jpg",
+							"@_runno": "33",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/0fcb2dc8-284b-452f-a227-62ab46929403.jpg",
+							"@_runno": "34",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/3d8c8585-776b-4fc3-83a8-c363fa342d2a.jpg",
+							"@_runno": "35",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/3d8c8585-776b-4fc3-83a8-c363fa342d2a.jpg",
+							"@_runno": "36",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/1b9d07fe-c6f7-4554-b32d-7ae146397c04.jpg",
+							"@_runno": "37",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/5b73cb4f-b3b3-48c1-9a84-54900832a06e.jpg",
+							"@_runno": "38",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/f00d23dd-5d3c-44e6-8764-f55daf53753a.jpg",
+							"@_runno": "39",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/7e2fffcc-d881-4397-b70e-0e69474275e9.jpg",
+							"@_runno": "40",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/7e2fffcc-d881-4397-b70e-0e69474275e9.jpg",
+							"@_runno": "41",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/1b9d07fe-c6f7-4554-b32d-7ae146397c04.jpg",
+							"@_runno": "42",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/5b73cb4f-b3b3-48c1-9a84-54900832a06e.jpg",
+							"@_runno": "43",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/78a95798-6d65-4a6a-b3b0-8a3a03864802.jpg",
+							"@_runno": "44",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/0ef26893-7550-4c01-8503-725dd9310087.jpg",
+							"@_runno": "45",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/ef796580-6282-4de2-abcf-0d36275ac16f.jpg",
+							"@_runno": "46",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/ef796580-6282-4de2-abcf-0d36275ac16f.jpg",
+							"@_runno": "47",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/ef796580-6282-4de2-abcf-0d36275ac16f.jpg",
+							"@_runno": "48",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/309e6508-3bb2-495e-9b4b-071a4a2200e0.jpg",
+							"@_runno": "49",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/4bd5518c-b716-4c08-b5ee-1f9f2f50a451.jpg",
+							"@_runno": "50",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/2a456544-4796-4e19-9b1e-1cfd62663e57.jpg",
+							"@_runno": "51",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/28bc0d19-2f67-4426-aacc-6f7e530b381e.jpg",
+							"@_runno": "52",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/4c58f059-754e-4688-9939-e3402325753d.jpg",
+							"@_runno": "53",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/2a456544-4796-4e19-9b1e-1cfd62663e57.jpg",
+							"@_runno": "54",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/d9ca5bcd-9603-484b-a953-fe1929c891c9.jpg",
+							"@_runno": "55",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/4147793a-5769-49e9-9159-d1af3abe6342.jpeg",
+							"@_runno": "56",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/aa8ff461-70fe-46f2-9e0b-e09c09f22ca1.jpg",
+							"@_runno": "57",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/85f651ed-bf94-4ebb-a8f6-11499d9136a9.jpeg",
+							"@_runno": "58",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/2998cd12-4514-4093-8f44-75c0f6f12383.jpg",
+							"@_runno": "59",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/82517f6e-0f30-40ec-83ea-33e1b856f478.jpg",
+							"@_runno": "60",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/a9ca9729-65ab-4867-a6c3-4bd998dbc9ec.jpg",
+							"@_runno": "61",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/c20c3479-a6a7-4378-bb3b-790f8e8eccba.jpg",
+							"@_runno": "62",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/8307ddc1-740a-4435-98a9-79fe0274d640.jpg",
+							"@_runno": "63",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/8307ddc1-740a-4435-98a9-79fe0274d640.jpg",
+							"@_runno": "64",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/0010b287-d9f0-462f-84ab-36b2bd0bdfbf.jpg",
+							"@_runno": "65",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/104116ca-14ec-4ba4-a38a-8d2cfd085de2.jpg",
+							"@_runno": "66",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/4c58f059-754e-4688-9939-e3402325753d.jpg",
+							"@_runno": "67",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/0cdaf2e3-a13b-447a-9360-844690592093.jpg",
+							"@_runno": "68",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/42f01f82-3d29-4578-8f0f-7eb9a3ceb03c.jpg",
+							"@_runno": "69",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/c20c3479-a6a7-4378-bb3b-790f8e8eccba.jpg",
+							"@_runno": "70",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/82517f6e-0f30-40ec-83ea-33e1b856f478.jpg",
+							"@_runno": "71",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/82517f6e-0f30-40ec-83ea-33e1b856f478.jpg",
+							"@_runno": "72",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/42f01f82-3d29-4578-8f0f-7eb9a3ceb03c.jpg",
+							"@_runno": "73",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/0010b287-d9f0-462f-84ab-36b2bd0bdfbf.jpg",
+							"@_runno": "74",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/104116ca-14ec-4ba4-a38a-8d2cfd085de2.jpg",
+							"@_runno": "75",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/0cdaf2e3-a13b-447a-9360-844690592093.jpg",
+							"@_runno": "76",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/3cd2b2cd-2e44-44b2-83a1-41517164c420.jpg",
+							"@_runno": "77",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/5f866e42-222b-4dc7-af38-7603681be0b1.jpg",
+							"@_runno": "78",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/57f07f85-5ad9-4035-885b-d36881362059.jpg",
+							"@_runno": "79",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/57f07f85-5ad9-4035-885b-d36881362059.jpg",
+							"@_runno": "80",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/57f07f85-5ad9-4035-885b-d36881362059.jpg",
+							"@_runno": "81",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/a4be5aed-c769-4e32-8aec-9f7e1b9ad172.jpg",
+							"@_runno": "82",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/6c6133c3-7520-46ff-8234-9bbef77db9ae.jpg",
+							"@_runno": "83",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/9f8c0df1-bef9-4113-914f-9e2da10fa1b1.jpg",
+							"@_runno": "84",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/6c6133c3-7520-46ff-8234-9bbef77db9ae.jpg",
+							"@_runno": "85",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/777286ee-673b-44c9-bd9e-1dfd488a75ca.jpg",
+							"@_runno": "86",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/b6e63088-685b-435d-873a-564af2be8f13.jpg",
+							"@_runno": "87",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/27027335-e2d6-4eff-9d88-44eb2c8f02d6.jpg",
+							"@_runno": "88",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/c4fef7d6-f390-4850-83a9-7cdf60e29c68.jpg",
+							"@_runno": "89",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/8aaa8d66-1102-44e1-b5fd-4910925a5ff1.jpg",
+							"@_runno": "90",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/6bcb8abb-543b-443d-b049-517184aba0b5.jpg",
+							"@_runno": "91",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/4940b84d-3ea1-4bfe-ab75-3327c1156876.jpg",
+							"@_runno": "92",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/27027335-e2d6-4eff-9d88-44eb2c8f02d6.jpg",
+							"@_runno": "93",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/4940b84d-3ea1-4bfe-ab75-3327c1156876.jpg",
+							"@_runno": "94",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/c4fef7d6-f390-4850-83a9-7cdf60e29c68.jpg",
+							"@_runno": "95",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/8aaa8d66-1102-44e1-b5fd-4910925a5ff1.jpg",
+							"@_runno": "96",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/6bcb8abb-543b-443d-b049-517184aba0b5.jpg",
+							"@_runno": "97",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/fcb8997f-abbf-4a2a-9cda-6fd0e3025d5a.jpg",
+							"@_runno": "98",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/63643d5b-c498-4c7f-bfd5-72e67e664478.jpg",
+							"@_runno": "99",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/fe28b09b-c850-4d11-93d8-e1bbebacaea4.jpg",
+							"@_runno": "100",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/f200040e-8cd1-4d7b-a278-4adf0bc92d74.jpg",
+							"@_runno": "101",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/f200040e-8cd1-4d7b-a278-4adf0bc92d74.jpg",
+							"@_runno": "102",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/e7cd73e0-e46d-4a43-be5c-2aa02b3e3ffe.jpg",
+							"@_runno": "103",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/adcaa690-0e9b-4d4a-899f-ff579a3a8d08.jpg",
+							"@_runno": "104",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/19e856d0-c9e9-45f4-882f-f4be00418142.jpg",
+							"@_runno": "105",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/630623b4-6d72-41ff-803c-93fb3d49e813.jpg",
+							"@_runno": "106",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/5a96e7c3-e901-4bcd-bc23-46e30645818c.jpg",
+							"@_runno": "107",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/adcaa690-0e9b-4d4a-899f-ff579a3a8d08.jpg",
+							"@_runno": "108",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/5a96e7c3-e901-4bcd-bc23-46e30645818c.jpg",
+							"@_runno": "109",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/19e856d0-c9e9-45f4-882f-f4be00418142.jpg",
+							"@_runno": "110",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/630623b4-6d72-41ff-803c-93fb3d49e813.jpg",
+							"@_runno": "111",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/3ffed667-d1e0-4104-a6c6-e615c655dcc8.jpg",
+							"@_runno": "112",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/2b94ac50-37f9-4c2b-a9d7-0043ae6069fc.jpg",
+							"@_runno": "113",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/64f282ba-38ac-4cb7-a9f3-51c4c1544791.jpg",
+							"@_runno": "114",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/8fc2c9f8-3e62-4100-93bc-6ba27c2aacad.jpg",
+							"@_runno": "115",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/8fc2c9f8-3e62-4100-93bc-6ba27c2aacad.jpg",
+							"@_runno": "116",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/6fb60879-9974-4ddd-9000-4113215ab101.jpg",
+							"@_runno": "117",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/9181ff97-316b-4692-ac01-c38597b645e2.jpg",
+							"@_runno": "118",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/461c7808-80a0-470a-81be-926e9aabc34c.jpg",
+							"@_runno": "119",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/3730c8f8-01e9-4ede-a8cb-bb78c4b0574a.jpg",
+							"@_runno": "120",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/3730c8f8-01e9-4ede-a8cb-bb78c4b0574a.jpg",
+							"@_runno": "121",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/3b15d808-623c-4266-a541-45406bc129bb.jpg",
+							"@_runno": "122",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/6a580921-d69d-4d7d-9d4e-7df523560df3.jpg",
+							"@_runno": "123",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/1d4ac12b-145f-423e-afa7-f53a63ce8655.jpg",
+							"@_runno": "124",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/d3e80342-f517-4692-9666-f90aa3e97c86.jpg",
+							"@_runno": "125",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/b0b11be8-b621-4db3-9e7b-521ecc84f4a4.jpg",
+							"@_runno": "126",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/952d2ba0-a385-42f2-a590-459235d112ca.jpg",
+							"@_runno": "127",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/4f859b40-1ea5-4129-bfac-988d2bfa32cf.jpg",
+							"@_runno": "128",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/30796919-e937-4c73-a80d-66219839c7d8.jpg",
+							"@_runno": "129",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/bbf23f9d-b960-4844-b0b1-54823087827b.jpg",
+							"@_runno": "130",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "room",
+							"url": "https://static-images.webbeds.com/0/image/c613e2a9-1fd6-4c90-a743-fde246c88187.jpg",
+							"@_runno": "131",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "rooms",
+							"url": "https://static-images.webbeds.com/0/image/198ae414-3828-4a2b-bc88-2e406d9ab9c3.jpg",
+							"@_runno": "132",
+							"category": {
+								"@_id": "48829",
+								"#text": "Rooms"
+							}
+						},
+						{
+							"alt": "other",
+							"url": "https://static-images.webbeds.com/0/image/cebb2632-c5d9-4efb-a76d-4c6bbf1b07bc.jpg",
+							"@_runno": "133",
+							"category": {
+								"@_id": "75183",
+								"#text": "Other"
+							}
+						},
+						{
+							"alt": "swimming pool spa",
+							"url": "https://static-images.webbeds.com/0/image/5957c439-3733-48c9-a99c-7e9a981914e4.jpg",
+							"@_runno": "134",
+							"category": {
+								"@_id": "87315",
+								"#text": "Swimming pool-spa"
+							}
+						},
+						{
+							"alt": "swimming pool spa",
+							"url": "https://static-images.webbeds.com/0/image/f62dffa2-3204-4e25-b84e-8eca72118bb3.jpg",
+							"@_runno": "135",
+							"category": {
+								"@_id": "87315",
+								"#text": "Swimming pool-spa"
+							}
+						},
+						{
+							"alt": "swimming pool spa",
+							"url": "https://static-images.webbeds.com/0/image/e43b82fd-7484-4608-b56e-0c5534ab8cb2.jpg",
+							"@_runno": "136",
+							"category": {
+								"@_id": "87315",
+								"#text": "Swimming pool-spa"
+							}
+						},
+						{
+							"alt": "swimming pool spa",
+							"url": "https://static-images.webbeds.com/0/image/28de1829-5660-4ea9-abf7-a94c29b87dde.jpg",
+							"@_runno": "137",
+							"category": {
+								"@_id": "87315",
+								"#text": "Swimming pool-spa"
+							}
+						},
+						{
+							"alt": "swimming_pool-spa",
+							"url": "https://static-images.webbeds.com/0/image/467b5f97-5edf-49df-94fd-ba9b1265353d.jpg",
+							"@_runno": "138",
+							"category": {
+								"@_id": "87315",
+								"#text": "Swimming pool-spa"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/3b4373cc-d34b-4c05-a457-c7f11a3d7428.jpeg",
+							"@_runno": "139",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/c76916d2-8be8-42b6-8017-4531450aacc0.jpeg",
+							"@_runno": "140",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/cc8d27b0-2754-4b69-aaaf-ade9b2885a29.jpeg",
+							"@_runno": "141",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/f29ca5be-e7fa-4aa6-b33a-eb8434c491fa.jpeg",
+							"@_runno": "142",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/b5e18f35-6387-4577-a310-97486c77cb06.jpeg",
+							"@_runno": "143",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/562ccf9d-5d55-4dda-84cd-b837d289d85d.jpeg",
+							"@_runno": "144",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/94eb5e1c-974d-4017-a4f1-7e59b542b465.jpeg",
+							"@_runno": "145",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/f0c9cc2b-9f7e-442f-b73f-d5c7b9ea81de.jpeg",
+							"@_runno": "146",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/0731e671-dc46-4955-9f01-a3cc64fa7e8b.jpeg",
+							"@_runno": "147",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/4fb3e161-5d27-40fb-ad95-6cc6564b730e.jpeg",
+							"@_runno": "148",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/f9a1b192-8524-4b5b-9609-667728d6d402.jpeg",
+							"@_runno": "149",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/6b9016b6-b9cb-4c2e-994b-162ceaa6828d.jpeg",
+							"@_runno": "150",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/d3b93f86-bc82-4dcf-91ad-ee9177e06f51.jpeg",
+							"@_runno": "151",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/ef1f03ac-81f5-47ad-b1c0-e49503776e91.jpeg",
+							"@_runno": "152",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/087c7bda-375c-4d90-8a1e-9ca8ae2b73b9.jpeg",
+							"@_runno": "153",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/7239714d-bbcf-4531-8303-2a36048ef18c.jpeg",
+							"@_runno": "154",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/38d10707-2b2c-45b6-b8a5-dd4f01424276.jpeg",
+							"@_runno": "155",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/8df760bf-f1be-428f-84ae-3aa439d2a172.jpeg",
+							"@_runno": "156",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/7c2e8020-e7c8-4f98-8ef2-3131433a1823.jpeg",
+							"@_runno": "157",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/d7eddb7c-7673-4926-9e89-13578a7c5fc1.jpeg",
+							"@_runno": "158",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/ef1f03ac-81f5-47ad-b1c0-e49503776e91.jpeg",
+							"@_runno": "159",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/ef1f03ac-81f5-47ad-b1c0-e49503776e91.jpeg",
+							"@_runno": "160",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/72849b22-6a15-42c6-9190-d1c48102930d.jpeg",
+							"@_runno": "161",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/00a23186-2c1e-4890-976e-db8172d3f82b.jpeg",
+							"@_runno": "162",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/d763d1ba-ed52-4198-8373-3de62ca8bc60.jpeg",
+							"@_runno": "163",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/bc03e71b-2e43-4d8e-b133-70897cdff440.jpg",
+							"@_runno": "164",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/729371f2-9d65-4cc0-bbf5-36cb33f6fcab.jpg",
+							"@_runno": "165",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/bc03e71b-2e43-4d8e-b133-70897cdff440.jpg",
+							"@_runno": "166",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/185ebf94-df39-456b-9724-7a07f665a070.jpg",
+							"@_runno": "167",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/185ebf94-df39-456b-9724-7a07f665a070.jpg",
+							"@_runno": "168",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/67e2ac15-0261-4659-a645-542c2b31da47.jpg",
+							"@_runno": "169",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/333c543c-a0a0-47bb-8ff8-9d585c802232.jpg",
+							"@_runno": "170",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/67e2ac15-0261-4659-a645-542c2b31da47.jpg",
+							"@_runno": "171",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/c23eff0a-11a9-41fb-8099-e3d472b1f47a.jpg",
+							"@_runno": "172",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/c23eff0a-11a9-41fb-8099-e3d472b1f47a.jpg",
+							"@_runno": "173",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/1cc433df-d60b-43e9-85f9-62aac9ab22c3.jpg",
+							"@_runno": "174",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/b2c5c055-a317-4b75-b0ef-ac8d2fe25a7f.jpg",
+							"@_runno": "175",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/1cc433df-d60b-43e9-85f9-62aac9ab22c3.jpg",
+							"@_runno": "176",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/1b0bfa06-7bdb-4af6-944d-3a2a164503d4.jpg",
+							"@_runno": "177",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/9429d8ab-145a-4526-9e89-10d46e9fba50.jpg",
+							"@_runno": "178",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/1b0bfa06-7bdb-4af6-944d-3a2a164503d4.jpg",
+							"@_runno": "179",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/01e98174-2e81-4e16-abc3-28836173ec23.jpg",
+							"@_runno": "180",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/8883e3c0-0c45-405d-9eba-d278e0808388.jpg",
+							"@_runno": "181",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/8883e3c0-0c45-405d-9eba-d278e0808388.jpg",
+							"@_runno": "182",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/2df39032-3bbc-456c-8bb2-8b9713f96512.jpg",
+							"@_runno": "183",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/ae7bffdd-642b-4a71-8f60-32e8ad17dbe9.jpg",
+							"@_runno": "184",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/5375464a-d7cb-4821-98d1-6ee1284a2587.jpg",
+							"@_runno": "185",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/07cbf816-233c-4b00-b5c9-837445cdc129.jpg",
+							"@_runno": "186",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/9f1b1d23-5002-4243-850e-6bdb6c4f5eb3.jpg",
+							"@_runno": "187",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/d4a1d220-262f-400c-8e5f-3456bdf4aa7c.jpg",
+							"@_runno": "188",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/8323026f-c6bc-44b3-9585-480e1a635722.jpg",
+							"@_runno": "189",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/bc99d85b-e4b6-490e-95f3-fbe51d6e1a26.jpg",
+							"@_runno": "190",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/b1f5da8e-ec2a-462d-97ed-58a79f5472fe.jpg",
+							"@_runno": "191",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/bc45cac1-3f21-4e02-892f-6674f1603d9b.jpg",
+							"@_runno": "192",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/694febc8-b7a5-4c15-91fe-9776972a936d.jpg",
+							"@_runno": "193",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/16ec6810-fe20-42d4-b3e4-7468ab0931c2.jpg",
+							"@_runno": "194",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "lounge",
+							"url": "https://static-images.webbeds.com/0/image/0ab49472-e19f-4e81-8058-cf43321577ba.jpg",
+							"@_runno": "195",
+							"category": {
+								"@_id": "87335",
+								"#text": "Lounge"
+							}
+						},
+						{
+							"alt": "restaurant cafeteria",
+							"url": "https://static-images.webbeds.com/0/image/3e1154e4-67b5-4bc6-988b-f5d621d9c266.jpg",
+							"@_runno": "196",
+							"category": {
+								"@_id": "87345",
+								"#text": "Restaurant-cafeteria"
+							}
+						},
+						{
+							"alt": "restaurant-cafeteria",
+							"url": "https://static-images.webbeds.com/0/image/12eddea7-ad65-442a-a5e3-59ac74b4b025.jpg",
+							"@_runno": "197",
+							"category": {
+								"@_id": "87345",
+								"#text": "Restaurant-cafeteria"
+							}
+						},
+						{
+							"alt": "restaurant cafeteria",
+							"url": "https://static-images.webbeds.com/0/image/0335e08f-060f-4a6b-9c64-e2c21e43d80c.jpg",
+							"@_runno": "198",
+							"category": {
+								"@_id": "87345",
+								"#text": "Restaurant-cafeteria"
+							}
+						},
+						{
+							"alt": "bathroom",
+							"url": "https://static-images.webbeds.com/0/image/ca3bbdf2-7df5-4eed-8267-91edc4042aaf.jpg",
+							"@_runno": "199",
+							"category": {
+								"@_id": "103365",
+								"#text": "Bathroom"
+							}
+						},
+						{
+							"alt": "bathroom",
+							"url": "https://static-images.webbeds.com/0/image/ca3bbdf2-7df5-4eed-8267-91edc4042aaf.jpg",
+							"@_runno": "200",
+							"category": {
+								"@_id": "103365",
+								"#text": "Bathroom"
+							}
+						},
+						{
+							"alt": "bathroom",
+							"url": "https://static-images.webbeds.com/0/image/f66938d5-c4a5-4c1b-996b-b0c8b45d74ce.jpg",
+							"@_runno": "201",
+							"category": {
+								"@_id": "103365",
+								"#text": "Bathroom"
+							}
+						},
+						{
+							"alt": "bathroom",
+							"url": "https://static-images.webbeds.com/0/image/f66938d5-c4a5-4c1b-996b-b0c8b45d74ce.jpg",
+							"@_runno": "202",
+							"category": {
+								"@_id": "103365",
+								"#text": "Bathroom"
+							}
+						},
+						{
+							"alt": "bathroom",
+							"url": "https://static-images.webbeds.com/0/image/d201b44a-10fd-4496-8da9-7d17633bc1d0.jpg",
+							"@_runno": "203",
+							"category": {
+								"@_id": "103365",
+								"#text": "Bathroom"
+							}
+						},
+						{
+							"alt": "bathroom",
+							"url": "https://static-images.webbeds.com/0/image/d201b44a-10fd-4496-8da9-7d17633bc1d0.jpg",
+							"@_runno": "204",
+							"category": {
+								"@_id": "103365",
+								"#text": "Bathroom"
+							}
+						},
+						{
+							"alt": "bathroom",
+							"url": "https://static-images.webbeds.com/0/image/d201b44a-10fd-4496-8da9-7d17633bc1d0.jpg",
+							"@_runno": "205",
+							"category": {
+								"@_id": "103365",
+								"#text": "Bathroom"
+							}
+						},
+						{
+							"alt": "bathroom",
+							"url": "https://static-images.webbeds.com/0/image/e3a06fa5-21b4-4041-b6b1-65c3399f8452.jpg",
+							"@_runno": "206",
+							"category": {
+								"@_id": "103365",
+								"#text": "Bathroom"
+							}
+						},
+						{
+							"alt": "bathroom",
+							"url": "https://static-images.webbeds.com/0/image/dd375cef-0434-48b1-bb5c-dfb9a52b9573.jpg",
+							"@_runno": "207",
+							"category": {
+								"@_id": "103365",
+								"#text": "Bathroom"
+							}
+						},
+						{
+							"alt": "bathroom",
+							"url": "https://static-images.webbeds.com/0/image/dd375cef-0434-48b1-bb5c-dfb9a52b9573.jpg",
+							"@_runno": "208",
+							"category": {
+								"@_id": "103365",
+								"#text": "Bathroom"
+							}
+						},
+						{
+							"alt": "bathroom",
+							"url": "https://static-images.webbeds.com/0/image/dd375cef-0434-48b1-bb5c-dfb9a52b9573.jpg",
+							"@_runno": "209",
+							"category": {
+								"@_id": "103365",
+								"#text": "Bathroom"
+							}
+						},
+						{
+							"alt": "sport facilities",
+							"url": "https://static-images.webbeds.com/0/image/d7eddb7c-7673-4926-9e89-13578a7c5fc1.jpeg",
+							"@_runno": "210",
+							"category": {
+								"@_id": "87325",
+								"#text": "Sport Facilities"
+							}
+						}
+					],
+					"thumb": "https://static-images.webbeds.com/0/image/2ff5f480-33c3-433d-8506-0a522c753218.jpg",
+					"@_count": "211"
+				}
+			},
+			"chain": "2019",
+			"priority": 16,
+			"preferred": false,
+			"exclusive": false,
+			"fireSafety": false,
+			"fullAddress": {
+				"hotelCity": "DUBAI",
+				"hotelState": "",
+				"hotelCountry": "UNITED ARAB EMIRATES",
+				"hotelZipCode": "191055",
+				"hotelStreetAddress": "Sheikh Zayed Road"
+			},
+			"roomTypes": [
+				{
+					"roomTypeCode": "181569755",
+					"name": "Premium King Room",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "22615225",
+					"name": "SUPERIOR ROOM",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "4",
+						"maxChildren": "0",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "4",
+						"allowedAdultsWithChildren": "3",
+						"allowedAdultsWithoutChildren": "4"
+					}
+				},
+				{
+					"roomTypeCode": "682957465",
+					"name": "DBL-PREMIUM ROOM",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "682958565",
+					"name": "SGL-PREMIUM ROOM",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1332431893",
+					"name": "1/3 pax",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "740134325",
+					"name": "superior room-dbl",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1224014455",
+					"name": "Premium Room - Special Offer - TTPSB",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1224014415",
+					"name": "Superior Room - Special Offer - TTPSB",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1224014445",
+					"name": "Superior Sky Room - Special Offer - TTPSB",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1259022825",
+					"name": "Premium Room. - Special Offer - TTPSBA",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1258987335",
+					"name": "Superior Room. - Special Offer - TTPSBA",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1259022815",
+					"name": "Superior Sky Room. - Special Offer - TTPSBA",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1263428455",
+					"name": "Premium Room - Special Offer - TTPSHS",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1263428445",
+					"name": "Premium Room. - Special Offer - TTPSHS",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1263413565",
+					"name": "Superior Room - Special Offer - TTPSHS",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1263413415",
+					"name": "Superior Room. - Special Offer - TTPSHS",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1263428435",
+					"name": "Superior Sky Room - Special Offer - TTPSHS",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1263428425",
+					"name": "Superior Sky Room. - Special Offer - TTPSHS",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1308828225",
+					"name": "Premium Room - Special Offer - TTPSHB",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1308828165",
+					"name": "Superior Room - Special Offer - TTPSHB",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1308828185",
+					"name": "Superior Sky Room - Special Offer - TTPSHB",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1308828245",
+					"name": "Premium Room. - Special Offer - TTPSHB",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1308828175",
+					"name": "Superior Room. - Special Offer - TTPSHB",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				},
+				{
+					"roomTypeCode": "1308828205",
+					"name": "Superior Sky Room. - Special Offer - TTPSHB",
+					"twin": false,
+					"roomInfo": {
+						"maxAdult": "250",
+						"maxChildren": "120",
+						"maxExtraBed": "0"
+					},
+					"roomCapacity": {
+						"maxExtraBed": "0",
+						"roomPaxCapacity": "250",
+						"allowedAdultsWithChildren": "250",
+						"allowedAdultsWithoutChildren": "250"
+					}
+				}
+			]
+		},
+		"options": [
+			{
+				"rateKey": "449255|1332431893|0",
+				"board": null,
+				"paymentType": "MERCHANT",
+				"status": "AVAILABLE",
+				"price": 75.4242,
+				"currency": "520",
+				"refundable": true,
+				"rooms": [
+					{
+						"code": "1332431893",
+						"description": "1/3 pax",
+						"refundable": true,
+						"price": 75.4242,
+						"currency": "520",
+						"rateBasisId": "0",
+						"minStay": null,
+						"dateApplyMinStay": null
+					}
+				],
+				"cancelPolicy": {
+					"refundable": true,
+					"penalties": [
+						{
+							"fromDate": null,
+							"toDate": "2026-11-29 15:00:00",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 0,
+							"cancelCharge": 0,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-11-29 15:00:01",
+							"toDate": "2026-12-03 15:00:00",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 18.856,
+							"cancelCharge": 18.856,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-12-03 15:00:01",
+							"toDate": "2026-12-09 14:59:59",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 75.4242,
+							"cancelCharge": 75.4242,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-12-09 15:00:00",
+							"toDate": null,
+							"amendRestricted": true,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": null,
+							"cancelCharge": 75.4242,
+							"currency": "520"
+						}
+					]
+				},
+				"surcharges": [],
+				"metadata": {
+					"rateBasisId": "0",
+					"rateType": null,
+					"totalTaxes": null,
+					"totalFees": null,
+					"propertyFeesCount": null,
+					"minStay": null,
+					"dateApplyMinStay": null
+				}
+			},
+			{
+				"rateKey": "449255|1332431893|1331",
+				"board": null,
+				"paymentType": "MERCHANT",
+				"status": "AVAILABLE",
+				"price": 113.1494,
+				"currency": "520",
+				"refundable": true,
+				"rooms": [
+					{
+						"code": "1332431893",
+						"description": "1/3 pax",
+						"refundable": true,
+						"price": 113.1494,
+						"currency": "520",
+						"rateBasisId": "1331",
+						"minStay": null,
+						"dateApplyMinStay": null
+					}
+				],
+				"cancelPolicy": {
+					"refundable": true,
+					"penalties": [
+						{
+							"fromDate": null,
+							"toDate": "2026-11-29 15:00:00",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 0,
+							"cancelCharge": 0,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-11-29 15:00:01",
+							"toDate": "2026-12-03 15:00:00",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 28.2874,
+							"cancelCharge": 28.2874,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-12-03 15:00:01",
+							"toDate": "2026-12-09 14:59:59",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 113.1494,
+							"cancelCharge": 113.1494,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-12-09 15:00:00",
+							"toDate": null,
+							"amendRestricted": true,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": null,
+							"cancelCharge": 113.1494,
+							"currency": "520"
+						}
+					]
+				},
+				"surcharges": [],
+				"metadata": {
+					"rateBasisId": "1331",
+					"rateType": null,
+					"totalTaxes": null,
+					"totalFees": null,
+					"propertyFeesCount": null,
+					"minStay": null,
+					"dateApplyMinStay": null
+				}
+			},
+			{
+				"rateKey": "449255|1332431893|1336",
+				"board": null,
+				"paymentType": "MERCHANT",
+				"status": "AVAILABLE",
+				"price": 150.8483,
+				"currency": "520",
+				"refundable": true,
+				"rooms": [
+					{
+						"code": "1332431893",
+						"description": "1/3 pax",
+						"refundable": true,
+						"price": 150.8483,
+						"currency": "520",
+						"rateBasisId": "1336",
+						"minStay": null,
+						"dateApplyMinStay": null
+					}
+				],
+				"cancelPolicy": {
+					"refundable": true,
+					"penalties": [
+						{
+							"fromDate": null,
+							"toDate": "2026-11-29 15:00:00",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 0,
+							"cancelCharge": 0,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-11-29 15:00:01",
+							"toDate": "2026-12-03 15:00:00",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 37.7121,
+							"cancelCharge": 37.7121,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-12-03 15:00:01",
+							"toDate": "2026-12-09 14:59:59",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 150.8483,
+							"cancelCharge": 150.8483,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-12-09 15:00:00",
+							"toDate": null,
+							"amendRestricted": true,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": null,
+							"cancelCharge": 150.8483,
+							"currency": "520"
+						}
+					]
+				},
+				"surcharges": [],
+				"metadata": {
+					"rateBasisId": "1336",
+					"rateType": null,
+					"totalTaxes": null,
+					"totalFees": null,
+					"propertyFeesCount": null,
+					"minStay": null,
+					"dateApplyMinStay": null
+				}
+			},
+			{
+				"rateKey": "449255|1332431883|0",
+				"board": null,
+				"paymentType": "MERCHANT",
+				"status": "AVAILABLE",
+				"price": 72.9541,
+				"currency": "520",
+				"refundable": true,
+				"rooms": [
+					{
+						"code": "1332431883",
+						"description": "1/3 pax",
+						"refundable": true,
+						"price": 72.9541,
+						"currency": "520",
+						"rateBasisId": "0",
+						"minStay": null,
+						"dateApplyMinStay": null
+					}
+				],
+				"cancelPolicy": {
+					"refundable": true,
+					"penalties": [
+						{
+							"fromDate": null,
+							"toDate": "2026-11-29 15:00:00",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 0,
+							"cancelCharge": 0,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-11-29 15:00:01",
+							"toDate": "2026-12-03 15:00:00",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 18.2385,
+							"cancelCharge": 18.2385,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-12-03 15:00:01",
+							"toDate": "2026-12-09 14:59:59",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 72.9541,
+							"cancelCharge": 72.9541,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-12-09 15:00:00",
+							"toDate": null,
+							"amendRestricted": true,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": null,
+							"cancelCharge": 72.9541,
+							"currency": "520"
+						}
+					]
+				},
+				"surcharges": [],
+				"metadata": {
+					"rateBasisId": "0",
+					"rateType": null,
+					"totalTaxes": null,
+					"totalFees": null,
+					"propertyFeesCount": null,
+					"minStay": null,
+					"dateApplyMinStay": null
+				}
+			},
+			{
+				"rateKey": "449255|1332431883|1331",
+				"board": null,
+				"paymentType": "MERCHANT",
+				"status": "AVAILABLE",
+				"price": 109.4421,
+				"currency": "520",
+				"refundable": true,
+				"rooms": [
+					{
+						"code": "1332431883",
+						"description": "1/3 pax",
+						"refundable": true,
+						"price": 109.4421,
+						"currency": "520",
+						"rateBasisId": "1331",
+						"minStay": null,
+						"dateApplyMinStay": null
+					}
+				],
+				"cancelPolicy": {
+					"refundable": true,
+					"penalties": [
+						{
+							"fromDate": null,
+							"toDate": "2026-11-29 15:00:00",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 0,
+							"cancelCharge": 0,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-11-29 15:00:01",
+							"toDate": "2026-12-03 15:00:00",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 27.3605,
+							"cancelCharge": 27.3605,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-12-03 15:00:01",
+							"toDate": "2026-12-09 14:59:59",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 109.4421,
+							"cancelCharge": 109.4421,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-12-09 15:00:00",
+							"toDate": null,
+							"amendRestricted": true,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": null,
+							"cancelCharge": 109.4421,
+							"currency": "520"
+						}
+					]
+				},
+				"surcharges": [],
+				"metadata": {
+					"rateBasisId": "1331",
+					"rateType": null,
+					"totalTaxes": null,
+					"totalFees": null,
+					"propertyFeesCount": null,
+					"minStay": null,
+					"dateApplyMinStay": null
+				}
+			},
+			{
+				"rateKey": "449255|1332431883|1336",
+				"board": null,
+				"paymentType": "MERCHANT",
+				"status": "AVAILABLE",
+				"price": 145.9082,
+				"currency": "520",
+				"refundable": true,
+				"rooms": [
+					{
+						"code": "1332431883",
+						"description": "1/3 pax",
+						"refundable": true,
+						"price": 145.9082,
+						"currency": "520",
+						"rateBasisId": "1336",
+						"minStay": null,
+						"dateApplyMinStay": null
+					}
+				],
+				"cancelPolicy": {
+					"refundable": true,
+					"penalties": [
+						{
+							"fromDate": null,
+							"toDate": "2026-11-29 15:00:00",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 0,
+							"cancelCharge": 0,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-11-29 15:00:01",
+							"toDate": "2026-12-03 15:00:00",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 36.4771,
+							"cancelCharge": 36.4771,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-12-03 15:00:01",
+							"toDate": "2026-12-09 14:59:59",
+							"amendRestricted": false,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": 145.9082,
+							"cancelCharge": 145.9082,
+							"currency": "520"
+						},
+						{
+							"fromDate": "2026-12-09 15:00:00",
+							"toDate": null,
+							"amendRestricted": true,
+							"cancelRestricted": false,
+							"noShowPolicy": false,
+							"amendCharge": null,
+							"cancelCharge": 145.9082,
+							"currency": "520"
+						}
+					]
+				},
+				"surcharges": [],
+				"metadata": {
+					"rateBasisId": "1336",
+					"rateType": null,
+					"totalTaxes": null,
+					"totalFees": null,
+					"propertyFeesCount": null,
+					"minStay": null,
+					"dateApplyMinStay": null
+				}
+			}
+		]
+	}
+]
