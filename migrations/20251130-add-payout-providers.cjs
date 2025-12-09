@@ -2,27 +2,39 @@
 
 async function up(queryInterface) {
   const { Sequelize } = queryInterface.sequelize;
-  const dialect = queryInterface.sequelize.getDialect();
   const table = "payout_account";
 
-  // Add enum type for provider
-  await queryInterface.addColumn(table, "provider", {
+  const columnExists = async (column) => {
+    try {
+      const desc = await queryInterface.describeTable(table);
+      return Object.prototype.hasOwnProperty.call(desc, column);
+    } catch {
+      return false;
+    }
+  };
+
+  const addColumnIfMissing = async (column, def) => {
+    if (await columnExists(column)) return;
+    await queryInterface.addColumn(table, column, def);
+  };
+
+  await addColumnIfMissing("provider", {
     type: Sequelize.ENUM("BANK", "STRIPE", "PAYPAL"),
     allowNull: false,
     defaultValue: "BANK",
   });
 
-  await queryInterface.addColumn(table, "wallet_email", {
+  await addColumnIfMissing("wallet_email", {
     type: Sequelize.STRING(150),
     allowNull: true,
   });
 
-  await queryInterface.addColumn(table, "external_customer_id", {
+  await addColumnIfMissing("external_customer_id", {
     type: Sequelize.STRING(120),
     allowNull: true,
   });
 
-  await queryInterface.addColumn(table, "brand", {
+  await addColumnIfMissing("brand", {
     type: Sequelize.STRING(60),
     allowNull: true,
   });
@@ -30,10 +42,26 @@ async function up(queryInterface) {
 
 async function down(queryInterface) {
   const table = "payout_account";
-  await queryInterface.removeColumn(table, "brand");
-  await queryInterface.removeColumn(table, "external_customer_id");
-  await queryInterface.removeColumn(table, "wallet_email");
-  await queryInterface.removeColumn(table, "provider");
+
+  const columnExists = async (column) => {
+    try {
+      const desc = await queryInterface.describeTable(table);
+      return Object.prototype.hasOwnProperty.call(desc, column);
+    } catch {
+      return false;
+    }
+  };
+
+  const dropIfExists = async (column) => {
+    if (await columnExists(column)) {
+      await queryInterface.removeColumn(table, column);
+    }
+  };
+
+  await dropIfExists("brand");
+  await dropIfExists("external_customer_id");
+  await dropIfExists("wallet_email");
+  await dropIfExists("provider");
 }
 
 module.exports = { up, down };
