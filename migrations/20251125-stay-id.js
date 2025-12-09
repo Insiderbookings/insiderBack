@@ -1,6 +1,6 @@
 // Migration to unify stay_id and drop booking_id on child tables using sequelize helpers.
 
-export async function up(queryInterface) {
+async function up(queryInterface) {
   const { Sequelize } = queryInterface.sequelize;
   const dialect = queryInterface.sequelize.getDialect();
 
@@ -144,7 +144,9 @@ export async function up(queryInterface) {
   await addIdx("stay_hotel", "room_id", "idx_stay_hotel_room_id");
 }
 
-export async function down() {
+async function down() {
   // No automatic rollback provided; restore from backup if needed.
   throw new Error("Down migration not implemented. Restore from backup if needed.");
 }
+
+module.exports = { up, down };

@@ -1,6 +1,6 @@
 // Migration: add WebBeds country codes to user profile (nationality/residence)
 
-export async function up(queryInterface) {
+async function up(queryInterface) {
   const { Sequelize } = queryInterface.sequelize;
 
   await queryInterface.addColumn("user", "country_code", {
@@ -16,7 +16,9 @@ export async function up(queryInterface) {
   });
 }
 
-export async function down(queryInterface) {
+async function down(queryInterface) {
   await queryInterface.removeColumn("user", "residence_country_code");
   await queryInterface.removeColumn("user", "country_code");
 }
+
+module.exports = { up, down };

@@ -1,6 +1,6 @@
 // Migration: add provider + wallet fields to payout_account
 
-export async function up(queryInterface) {
+async function up(queryInterface) {
   const { Sequelize } = queryInterface.sequelize;
   const dialect = queryInterface.sequelize.getDialect();
   const table = "payout_account";
@@ -28,10 +28,12 @@ export async function up(queryInterface) {
   });
 }
 
-export async function down(queryInterface) {
+async function down(queryInterface) {
   const table = "payout_account";
   await queryInterface.removeColumn(table, "brand");
   await queryInterface.removeColumn(table, "external_customer_id");
   await queryInterface.removeColumn(table, "wallet_email");
   await queryInterface.removeColumn(table, "provider");
 }
+
+module.exports = { up, down };

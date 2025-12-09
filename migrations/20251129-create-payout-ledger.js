@@ -1,6 +1,6 @@
 // Migration: create payout ledger tables (accounts, batches, items)
 
-export async function up(queryInterface) {
+async function up(queryInterface) {
   const { Sequelize } = queryInterface.sequelize;
   const dialect = queryInterface.sequelize.getDialect();
   const JSON_TYPE = ["mysql", "mariadb"].includes(dialect) ? Sequelize.JSON : Sequelize.JSONB;
@@ -88,8 +88,10 @@ export async function up(queryInterface) {
   await queryInterface.addIndex("payout_item", ["scheduled_for"], { name: "idx_payout_item_scheduled" });
 }
 
-export async function down(queryInterface) {
+async function down(queryInterface) {
   await queryInterface.dropTable("payout_item");
   await queryInterface.dropTable("payout_batch");
   await queryInterface.dropTable("payout_account");
 }
+
+module.exports = { up, down };

@@ -1,6 +1,6 @@
 // Migration to remove TGX/Outside artifacts and hotel/tgx columns from booking.
 
-export async function up(queryInterface) {
+async function up(queryInterface) {
   const dialect = queryInterface.sequelize.getDialect();
 
   const tableExists = async (table) => {
@@ -61,6 +61,8 @@ export async function up(queryInterface) {
   }
 }
 
-export async function down() {
+async function down() {
   throw new Error("Down migration not implemented; restore from backup if needed.");
 }
+
+module.exports = { up, down };

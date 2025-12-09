@@ -1,6 +1,6 @@
 // Migration to add payout/bank columns to host_profile so it matches the model.
 
-export async function up(queryInterface) {
+async function up(queryInterface) {
   const { Sequelize } = queryInterface.sequelize;
   const dialect = queryInterface.sequelize.getDialect();
 
@@ -37,7 +37,7 @@ export async function up(queryInterface) {
   await addColumnIfMissing(table, "bank_account_holder", { type: Sequelize.STRING(150), allowNull: true });
 }
 
-export async function down(queryInterface) {
+async function down(queryInterface) {
   const table = "host_profile";
 
   const columnExists = async (column) => {
@@ -59,3 +59,5 @@ export async function down(queryInterface) {
   await dropIfExists("bank_account_number");
   await dropIfExists("bank_account_holder");
 }
+
+module.exports = { up, down };
