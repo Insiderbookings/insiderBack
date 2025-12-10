@@ -122,6 +122,10 @@ export default (sequelize) => {
       tableName: "booking",
       underscored: true,
       freezeTableName: true,
+      defaultScope: {
+        // Prevent selecting legacy hotel_id fields removed from the schema
+        attributes: { exclude: ["hotel_id", "room_id", "tgx_hotel_id"] },
+      },
       indexes: [
         { fields: ["booking_ref"], unique: true },
         { fields: ["user_id"] },

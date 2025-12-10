@@ -236,12 +236,12 @@ export const requestAddOn = async (req, res) => {
   }
 
   /* 3. If roomUpgrade, validate roomId and load newRoom */
+  const bookingHotelId = booking.hotelStay?.hotel_id || null
   let newRoom = null
   if (addOn.slug === "roomUpgrade") {
     if (!roomId) {
       return res.status(400).json({ error: "Missing roomId for roomUpgrade" })
     }
-    const bookingHotelId = booking.hotelStay?.hotel_id || null
     newRoom = await models.Room.findOne({
       where: { id: roomId, hotel_id: bookingHotelId }
     })
@@ -291,7 +291,15 @@ export const requestAddOn = async (req, res) => {
 
   /* 6. If roomUpgrade, update booking */
   if (addOn.slug === "roomUpgrade") {
-    await booking.update({ room_id: newRoom.id })
+    if (booking.hotelStay) {
+      await booking.hotelStay.update({ room_id: newRoom.id })
+    } else {
+      await models.StayHotel.create({
+        stay_id: booking.id,
+        hotel_id: bookingHotelId,
+        room_id: newRoom.id,
+      })
+    }
   }
 
   /* 7. Build email details */

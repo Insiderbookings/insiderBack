@@ -436,9 +436,6 @@ export const createTravelgatePaymentIntent = async (req, res) => {
       {
         booking_ref,
         user_id: resolvedUserId || null,
-        hotel_id: booking_hotel_id,
-        tgx_hotel_id: booking_tgx_hotel_id,
-        room_id: roomIdFK,
         discount_code_id: discount_code_id || null,
 
         source,
@@ -478,6 +475,21 @@ export const createTravelgatePaymentIntent = async (req, res) => {
           ...((bookingData.meta && typeof bookingData.meta === "object") ? bookingData.meta : {}),
           ...(discount ? { discount } : {}),
         }),
+      },
+      { transaction: tx }
+    )
+
+    await models.StayHotel.create(
+      {
+        stay_id: booking.id,
+        hotel_id: booking_hotel_id,
+        room_id: roomIdFK,
+        tgx_option_id: quoteOptionRefId ? String(quoteOptionRefId) : null,
+        board_code: bookingData.boardCode ?? null,
+        cancellation_policy: bookingData.cancellationPolicy ?? null,
+        rate_plan_name: bookingData.ratePlanName ?? null,
+        room_name: bookingData.roomName ?? bookingData.roomType ?? null,
+        room_snapshot: bookingData.roomSnapshot ?? null,
       },
       { transaction: tx }
     )
@@ -1074,9 +1086,6 @@ export const bookWithCard = async (req, res) => {
       {
         booking_ref,
         user_id: resolvedUserId || null,
-        hotel_id: booking_hotel_id,
-        tgx_hotel_id: booking_tgx_hotel_id,
-        room_id: roomIdFK,
         discount_code_id: discount_code_id || null,
 
         source,
@@ -1117,6 +1126,21 @@ export const bookWithCard = async (req, res) => {
           // 🚫 No guardamos PAN/CVC
           ...((bookingData.meta && typeof bookingData.meta === "object") ? bookingData.meta : {}),
         },
+      },
+      { transaction: tx }
+    )
+
+    await models.StayHotel.create(
+      {
+        stay_id: booking.id,
+        hotel_id: booking_hotel_id,
+        room_id: roomIdFK,
+        tgx_option_id: optionRefId ? String(optionRefId) : null,
+        board_code: bookingData.boardCode ?? null,
+        cancellation_policy: bookingData.cancellationPolicy ?? null,
+        rate_plan_name: bookingData.ratePlanName ?? null,
+        room_name: bookingData.roomName ?? bookingData.roomType ?? null,
+        room_snapshot: bookingData.roomSnapshot ?? null,
       },
       { transaction: tx }
     )
