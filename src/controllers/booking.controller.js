@@ -748,7 +748,36 @@ export const createHomeBooking = async (req, res) => {
             home: { id: home.id, title: home.title, hostId: home.host_id },
           },
         },
-        { transaction: tx }
+        {
+          transaction: tx,
+          returning: ["id", "booking_ref"],
+          fields: [
+            "user_id",
+            "source",
+            "inventory_type",
+            "inventory_id",
+            "check_in",
+            "check_out",
+            "nights",
+            "adults",
+            "children",
+            "guest_name",
+            "guest_email",
+            "guest_phone",
+            "gross_price",
+            "net_cost",
+            "currency",
+            "payment_provider",
+            "payment_status",
+            "status",
+            "outside",
+            "active",
+            "booked_at",
+            "pricing_snapshot",
+            "guest_snapshot",
+            "meta",
+          ],
+        }
       )
 
       await models.StayHome.create(
