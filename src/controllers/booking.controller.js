@@ -702,8 +702,6 @@ export const createHomeBooking = async (req, res) => {
       const created = await models.Booking.create(
         {
           user_id: userId,
-          hotel_id: null,
-          room_id: null,
           source: "HOME",
           inventory_type: "HOME",
           inventory_id: String(homeIdValue),
