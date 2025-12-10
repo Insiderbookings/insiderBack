@@ -473,7 +473,7 @@ export const createBooking = async (req, res) => {
             roomsRequested: normalizedRooms,
           },
         },
-        { transaction: tx }
+        { transaction: tx, returning: ["id", "booking_ref"] }
       )
 
       await models.StayHotel.create(
