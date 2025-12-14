@@ -93,6 +93,8 @@ import ChatParticipantModel from "./ChatParticipant.js";
 import ChatMessageModel from "./ChatMessage.js";
 import ChatAutoPromptModel from "./ChatAutoPrompt.js";
 import ReviewModel from "./Review.js";
+import AiChatSessionModel from "./AiChatSession.js";
+import AiChatMessageModel from "./AiChatMessage.js";
 
 /* ---------- Construir objetos ---------- */
 const Stay = StayModel(sequelize);
@@ -139,6 +141,8 @@ const models = {
   ChatParticipant: ChatParticipantModel(sequelize),
   ChatMessage: ChatMessageModel(sequelize),
   ChatAutoPrompt: ChatAutoPromptModel(sequelize),
+  AiChatSession: AiChatSessionModel(sequelize),
+  AiChatMessage: AiChatMessageModel(sequelize),
   UpsellCode: UpsellCodeModel(sequelize),
   TgxHotel: TgxHotelModel(sequelize),
 
@@ -206,4 +210,3 @@ Object.values(models)
 
 export { sequelize };
 export default models;
-

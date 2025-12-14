@@ -1,5 +1,13 @@
 import { extractSearchPlan, generateAssistantReply, isAssistantEnabled } from "../services/aiAssistant.service.js";
 import { searchHomesForPlan, searchHotelsForPlan } from "../services/assistantSearch.service.js";
+import {
+  appendAssistantChatMessage,
+  createAssistantSessionForUser,
+  fetchAssistantMessages,
+  deleteAssistantSession,
+  getAssistantSessionWithMessages,
+  listAssistantSessionsForUser,
+} from "../services/aiAssistantHistory.service.js";
 
 const QUICK_START_PROMPTS = [
   "Show me homes for 4 people in downtown Cordoba with parking for the third week of January.",
@@ -33,17 +41,61 @@ const buildDebugInfo = (plan) => ({
   amenities: plan?.amenities ?? null,
 });
 
+const getAuthenticatedUserId = (req) => {
+  const value = Number(req.user?.id);
+  return Number.isFinite(value) ? value : null;
+};
+
+const extractLatestMessageFromBody = (body) => {
+  if (!body) return "";
+  if (typeof body.message === "string" && body.message.trim()) {
+    return body.message.trim();
+  }
+  const normalized = normalizeMessagesInput(body.messages);
+  if (!normalized.length) return "";
+  return normalized[normalized.length - 1].content || "";
+};
+
 export const handleAssistantSearch = async (req, res) => {
-  const messages = normalizeMessagesInput(req.body?.messages);
-  if (!messages.length) {
-    return res.status(400).json({ error: "messages array is required" });
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const plan = await extractSearchPlan(messages);
+  const sessionId = req.body?.sessionId;
+  if (!sessionId) {
+    return res.status(400).json({ error: "sessionId is required" });
+  }
+
+  const incomingMessage = extractLatestMessageFromBody(req.body);
+  if (!incomingMessage) {
+    return res.status(400).json({ error: "message is required" });
+  }
+
+  let storedMessages = [];
+  try {
+    await appendAssistantChatMessage(sessionId, userId, {
+      role: "user",
+      content: incomingMessage,
+    });
+    storedMessages = await fetchAssistantMessages(sessionId, userId, { limit: 60 });
+  } catch (err) {
+    if (err?.code === "AI_CHAT_NOT_FOUND") {
+      return res.status(404).json({ error: "Chat session not found" });
+    }
+    console.error("[aiAssistant] failed to persist user message", err);
+    return res.status(500).json({ error: "Unable to save chat message" });
+  }
+
+  const normalizedMessages = storedMessages.map((msg) => ({
+    role: msg.role === "assistant" ? "assistant" : msg.role === "system" ? "system" : "user",
+    content: msg.content,
+  }));
+
+  const plan = await extractSearchPlan(normalizedMessages);
   console.log("[DEBUG] Extracted Plan:", JSON.stringify(plan, null, 2));
   const intent = plan?.intent || "SMALL_TALK";
 
-  // Solo buscar si el intent es SEARCH
   const shouldSearch = intent === "SEARCH";
 
   try {
@@ -67,10 +119,27 @@ export const handleAssistantSearch = async (req, res) => {
       };
     }
 
-    const replyPayload = await generateAssistantReply({ plan, messages, inventory });
+    const replyPayload = await generateAssistantReply({
+      plan,
+      messages: normalizedMessages,
+      inventory,
+    });
+
+    try {
+      await appendAssistantChatMessage(sessionId, userId, {
+        role: "assistant",
+        content: replyPayload.reply,
+        planSnapshot: plan,
+        inventorySnapshot: inventory,
+      });
+    } catch (err) {
+      console.error("[aiAssistant] failed to persist assistant reply", err);
+      return res.status(500).json({ error: "Unable to save assistant reply" });
+    }
 
     return res.json({
       ok: true,
+      sessionId,
       reply: replyPayload.reply,
       followUps: replyPayload.followUps,
       plan,
@@ -83,5 +152,78 @@ export const handleAssistantSearch = async (req, res) => {
   } catch (err) {
     console.error("[aiAssistant] query failed", err);
     return res.status(500).json({ error: "Unable to process assistant query right now" });
+  }
+};
+
+export const createAssistantChat = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const session = await createAssistantSessionForUser(userId);
+    const messages = await fetchAssistantMessages(session.id, userId, { limit: 100 });
+    return res.status(201).json({ ok: true, session, messages });
+  } catch (err) {
+    console.error("[aiAssistant] failed to create session", err);
+    return res.status(500).json({ error: "Unable to create chat session" });
+  }
+};
+
+export const listAssistantChats = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const limit = Number(req.query?.limit) || 25;
+    const chats = await listAssistantSessionsForUser(userId, { limit });
+    return res.json({ ok: true, chats });
+  } catch (err) {
+    console.error("[aiAssistant] failed to list sessions", err);
+    return res.status(500).json({ error: "Unable to load chat history" });
+  }
+};
+
+export const getAssistantChat = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const sessionId = req.params?.sessionId;
+  if (!sessionId) {
+    return res.status(400).json({ error: "sessionId is required" });
+  }
+  try {
+    const limit = Number(req.query?.limit) || 200;
+    const payload = await getAssistantSessionWithMessages(sessionId, userId, { limit });
+    return res.json({ ok: true, ...payload });
+  } catch (err) {
+    if (err?.code === "AI_CHAT_NOT_FOUND") {
+      return res.status(404).json({ error: "Chat session not found" });
+    }
+    console.error("[aiAssistant] failed to load session", err);
+    return res.status(500).json({ error: "Unable to load chat session" });
+  }
+};
+
+export const deleteAssistantChat = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const sessionId = req.params?.sessionId;
+  if (!sessionId) {
+    return res.status(400).json({ error: "sessionId is required" });
+  }
+  try {
+    await deleteAssistantSession(sessionId, userId);
+    return res.json({ ok: true });
+  } catch (err) {
+    if (err?.code === "AI_CHAT_NOT_FOUND") {
+      return res.status(404).json({ error: "Chat session not found" });
+    }
+    console.error("[aiAssistant] failed to delete session", err);
+    return res.status(500).json({ error: "Unable to delete chat session" });
   }
 };
