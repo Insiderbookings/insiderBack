@@ -1,0 +1,143 @@
+openapi: 3.0.1
+info:
+  title: Insider API
+  version: "1.0.0"
+  description: >
+    Documentación inicial. El botón Authorize usa el token obtenido en el login
+    (`POST /api/auth/user/login`) para probar el resto de endpoints.
+servers:
+  - url: http://localhost:3006
+    description: Desarrollo local
+paths:
+  /api/auth/user/login:
+    post:
+      tags:
+        - Auth
+      summary: Inicia sesión y devuelve el token JWT
+      description: >
+        Endpoint público que valida las credenciales del usuario final. La
+        respuesta incluye el `token` que debe copiarse en el botón Authorize
+        (o se carga automáticamente si se configura `SWAGGER_DEMO_TOKEN`).
+      security: [] # login no requiere token previo
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              email: john.doe@example.com
+              password: superSecret123
+      responses:
+        "200":
+          description: Login exitoso
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+              example:
+                token: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        "401":
+          description: Credenciales inválidas
+  /api/webbeds/search:
+    get:
+      tags:
+        - Providers
+      summary: Busca disponibilidad en Webbeds
+      description: >
+        Endpoint que consulta al proveedor Webbeds. Requiere haber iniciado sesión y
+        tener el token cargado en el botón Authorize.
+      parameters:
+        - in: query
+          name: checkIn
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Fecha de entrada (YYYY-MM-DD).
+        - in: query
+          name: checkOut
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Fecha de salida (YYYY-MM-DD).
+        - in: query
+          name: occupancies
+          required: true
+          schema:
+            type: string
+          description: >
+            Cadena con el formato `adults|childAges,adults2|childAges` (ej: `2|5-7,1|-`).
+            Si se omite, se asume una habitación de 2 adultos.
+        - in: query
+          name: cityCode
+          schema:
+            type: string
+          description: Código de ciudad Webbeds. Ideal cuando se necesita filtrar por ciudad.
+        - in: query
+          name: countryCode
+          schema:
+            type: string
+          description: Código de país Webbeds. Solo se usa si no se envía `cityCode`.
+        - in: query
+          name: currency
+          required: true
+          schema:
+            type: string
+          description: Moneda opcional para la cotización.
+      responses:
+        "200":
+          description: Hoteles encontrados
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebbedsSearchResponse"
+        "400":
+          description: Parámetros faltantes o inválidos
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    LoginResponse:
+      type: object
+      description: En la doc solo mostramos el token aunque la API incluya campos adicionales.
+      properties:
+        token:
+          type: string
+          description: Incluye el prefijo `Bearer ` para copiarlo directamente en Authorize
+    WebbedsSearchResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        hotels:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              rating:
+                type: number
+              city:
+                type: string
+security:
+  - bearerAuth: []

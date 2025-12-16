@@ -10,6 +10,10 @@ import morgan          from "morgan";
 import cors            from "cors";
 import bodyParser      from "body-parser";
 import rateLimit       from "express-rate-limit";
+import path            from "node:path";
+import { fileURLToPath } from "node:url";
+import swaggerUi       from "swagger-ui-express";
+import YAML            from "yamljs";
 import models, { sequelize } from "./models/index.js";
 import router          from "./routes/index.js";
 import { handleWebhook } from "./controllers/payment.controller.js";
@@ -18,6 +22,34 @@ import { ensureDefaultPlatforms } from "./services/platform.service.js";
 import ensureHomeFavoriteIndexes from "./utils/ensureHomeFavoriteIndexes.js";
 import { initSocketServer } from "./websocket/index.js";
 import diagnoseForeignKeyError from "./utils/diagnoseForeignKeyError.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const swaggerDocument = YAML.load(path.resolve(__dirname, "./docs/swagger.yaml"));
+const swaggerDemoToken = (() => {
+  const raw = process.env.SWAGGER_DEMO_TOKEN || "";
+  if (!raw) return "Bearer <pega-tu-token>";
+  return raw.toLowerCase().startsWith("bearer ") ? raw : `Bearer ${raw}`;
+})();
+const swaggerAuthUser = process.env.SWAGGER_USER || null;
+const swaggerAuthPassword = process.env.SWAGGER_PASSWORD || null;
+const ensureSwaggerAuth = (() => {
+  if (!swaggerAuthUser || !swaggerAuthPassword) return (req, _res, next) => next();
+  return (req, res, next) => {
+    const header = req.headers.authorization || "";
+    if (!header.startsWith("Basic ")) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="Swagger Docs"');
+      return res.status(401).send("Authentication required");
+    }
+    const base64 = header.split(" ")[1] || "";
+    const [user, pass] = Buffer.from(base64, "base64").toString().split(":");
+    if (user === swaggerAuthUser && pass === swaggerAuthPassword) {
+      return next();
+    }
+    res.setHeader("WWW-Authenticate", 'Basic realm="Swagger Docs"');
+    return res.status(401).send("Authentication required");
+  };
+})();
 
 const app = express();
 const server = http.createServer(app);
@@ -36,11 +68,36 @@ app.use(
 
 /* ---------- Middlewares globales ---------- */
 app.use(cors());
-app.use(express.json());          // se aplica a todo lo DEMÁS
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 
 /* ---------- Resto de tu API ---------- */
 app.get("/", (req, res) => res.json({ status: "API running" }));
+// Swagger UI para explorar la documentación definida en src/docs/swagger.yaml
+app.use("/api/docs", ensureSwaggerAuth, swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
+  explorer: true,
+  customSiteTitle: "Insider API Docs",
+  swaggerOptions: {
+    persistAuthorization: true,
+    authAction: {
+      bearerAuth: {
+        name: "bearerAuth",
+        schema: {
+          type: "http",
+          in: "header",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+        },
+        value: swaggerDemoToken,
+      },
+    },
+  },
+}));
+app.get("/api/docs.json", ensureSwaggerAuth, (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.send(swaggerDocument);
+});
 // Rate limit básico para rutas de pago (omite webhooks)
 // rate limiter import moved to header
 const paymentsLimiter = rateLimit({
@@ -110,3 +167,4 @@ const PORT = process.env.PORT || 3000;
   }
 })();
  */
+

@@ -40,8 +40,10 @@
     "sharp": "^0.34.3",
     "socket.io": "^4.8.1",
     "stripe": "^18.1.0",
+    "swagger-ui-express": "^5.0.1",
     "undici": "^6.21.3",
     "xmlbuilder": "^15.1.1",
+    "yamljs": "^0.3.0",
     "yargs": "^17.7.2"
   },
   "devDependencies": {
