@@ -50,7 +50,13 @@ export const autoSignupOrLogin = async (req, res) => {
     }
 
     // 5. Generar JWT para el usuario
-    const token = signToken({ id: user.id, type: 'user' })
+    const token = signToken({
+      id: user.id,
+      type: 'user',
+      referredByInfluencerId: user.referred_by_influencer_id ?? null,
+      referredByCode: user.referred_by_code ?? null,
+      referredAt: user.referred_at ?? null,
+    })
 
     return res.json({ token, user })
   } catch (err) {

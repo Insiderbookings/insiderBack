@@ -306,6 +306,11 @@ export const createBooking = async (req, res) => {
     const userId = Number(req.user?.id ?? 0)
     if (!userId) return res.status(401).json({ error: "Unauthorized" })
 
+    const referral = {
+      influencerId: Number(req.user?.referredByInfluencerId) || null,
+      code: req.user?.referredByCode || null,
+    }
+
     const {
       hotelId,
       hotel_id,
@@ -434,6 +439,7 @@ export const createBooking = async (req, res) => {
           nights,
           adults: adultsCount,
           children: childrenCount,
+          influencer_user_id: referral.influencerId,
           guest_name: guestNameFinal,
           guest_email: guestEmailFinal,
           guest_phone: guestPhoneFinal,
@@ -466,6 +472,14 @@ export const createBooking = async (req, res) => {
           },
           meta: {
             ...(typeof metaPayload === "object" && metaPayload ? metaPayload : {}),
+            ...(referral.influencerId
+              ? {
+                  referral: {
+                    influencerUserId: referral.influencerId,
+                    code: referral.code || null,
+                  },
+                }
+              : {}),
             source,
             hotel: hotel
               ? { id: hotel.id, name: hotel.name, city: hotel.city, country: hotel.country }
@@ -535,6 +549,11 @@ export const createHomeBooking = async (req, res) => {
   try {
     const userId = Number(req.user?.id ?? 0)
     if (!userId) return res.status(401).json({ error: "Unauthorized" })
+
+    const referral = {
+      influencerId: Number(req.user?.referredByInfluencerId) || null,
+      code: req.user?.referredByCode || null,
+    }
 
     const {
       homeId,
@@ -710,6 +729,7 @@ export const createHomeBooking = async (req, res) => {
           nights,
           adults: adultsCount,
           children: childrenCount,
+          influencer_user_id: referral.influencerId,
           guest_name: guestNameFinal,
           guest_email: guestEmailFinal,
           guest_phone: guestPhoneFinal,
@@ -744,6 +764,14 @@ export const createHomeBooking = async (req, res) => {
           },
           meta: {
             ...(typeof metaPayload === "object" && metaPayload ? metaPayload : {}),
+            ...(referral.influencerId
+              ? {
+                  referral: {
+                    influencerUserId: referral.influencerId,
+                    code: referral.code || null,
+                  },
+                }
+              : {}),
             source: "HOME",
             home: { id: home.id, title: home.title, hostId: home.host_id },
           },
@@ -1633,6 +1661,3 @@ export const downloadBookingCertificate = async (req, res) => {
    Autorización: owner de la booking, staff o admin.
 ----------------------------------------------------------- */
 // requestRefund endpoint was removed — cancellation flow handles refunds.
-
-
-

@@ -36,6 +36,23 @@ export default (sequelize) => {
         // unique: true, // descomenta si querés forzar unicidad
       },
 
+      /* ───────── Referido por influencer ───────── */
+      referred_by_influencer_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: "user", key: "id" },
+        onDelete: "SET NULL",
+        onUpdate: "CASCADE",
+      },
+      referred_by_code: {
+        type: DataTypes.STRING(32),
+        allowNull: true,
+      },
+      referred_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+
       /* ───────── Estado / rol ───────── */
       is_active: {
         type: DataTypes.BOOLEAN,
