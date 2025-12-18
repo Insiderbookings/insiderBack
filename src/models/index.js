@@ -25,6 +25,7 @@ import TGXMetaModel from "./TGXMeta.js";
 import PayoutAccountModel from "./PayoutAccount.js";
 import PayoutBatchModel from "./PayoutBatch.js";
 import PayoutItemModel from "./PayoutItem.js";
+import InfluencerEventCommissionModel from "./InfluencerEventCommission.js";
 
 import AddOnModel from "./AddOn.js";
 import AddOnOptionModel from "./AddonOption.js";
@@ -121,6 +122,7 @@ const models = {
   Payment: PaymentModel(sequelize),
   Commission: CommissionModel(sequelize),
   InfluencerCommission: InfluencerCommissionModel(sequelize),
+  InfluencerEventCommission: InfluencerEventCommissionModel(sequelize),
   OutsideMeta: OutsideMetaModel(sequelize),
   TGXMeta: TGXMetaModel(sequelize),
   PayoutAccount: PayoutAccountModel(sequelize),

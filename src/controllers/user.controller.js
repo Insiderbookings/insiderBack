@@ -18,6 +18,9 @@ export const getCurrentUser = async (req, res) => {
         "createdAt",
         ["country_code", "countryCode"],
         ["residence_country_code", "countryOfResidenceCode"],
+        ["referred_by_influencer_id", "referredByInfluencerId"],
+        ["referred_by_code", "referredByCode"],
+        ["referred_at", "referredAt"],
       ],
       include: [
         { model: models.HostProfile, as: "hostProfile" },
@@ -320,15 +323,6 @@ export const getInfluencerStats = async (req, res) => {
       order: [["created_at", "DESC"]],
     })
 
-    if (!codes.length) {
-      return res.json({
-        user: { id: userId, name: req.user?.name, email: req.user?.email, role },
-        codes: [],
-        totals: { bookingsCount: 0, unpaidEarnings: {} },
-        recentBookings: [],
-      })
-    }
-
     // a) bookings enlazadas explÃ­citamente por DiscountCode.stay_id
     const bookingIdsFromCodes = codes
       .map(c => c.stay_id)
@@ -337,39 +331,54 @@ export const getInfluencerStats = async (req, res) => {
     // b) bookings enlazadas por FK en Booking.discount_code_id
     const codeIds = codes.map(c => c.id).filter(id => Number.isInteger(id))
 
-    // 2) Traer bookings confirmadas asociadas (por cualquiera de los dos caminos)
-    const whereBooking = {
-      status: "CONFIRMED", // coincide con tu ENUM
-      [Op.or]: [
-        ...(bookingIdsFromCodes.length ? [{ id: { [Op.in]: bookingIdsFromCodes } }] : []),
-        ...(codeIds.length ? [{ discount_code_id: { [Op.in]: codeIds } }] : []),
-      ],
-    }
+    const bookingConditions = [
+      { influencer_user_id: userId },
+      ...(bookingIdsFromCodes.length ? [{ id: { [Op.in]: bookingIdsFromCodes } }] : []),
+      ...(codeIds.length ? [{ discount_code_id: { [Op.in]: codeIds } }] : []),
+    ]
 
-    // Si por algÃºn motivo no hay or-conditions, devolvemos vacÃ­o de forma segura
-    const bookings = (whereBooking[Op.or]?.length)
+    // 2) Traer bookings confirmadas asociadas (por cualquiera de los caminos)
+    const bookings = bookingConditions.length
       ? await models.Booking.findAll({
-          where: whereBooking,
+          where: { status: "CONFIRMED", [Op.or]: bookingConditions },
           order: [["created_at", "DESC"]],
           limit: 200,
         })
       : []
 
-    // 3) ComisiÃ³n fija USD$5 â€œcappedâ€
-    const FLAT_COMMISSION = 5
+    // 3) Sumar comisiones pendientes (booking + eventos signup/booking)
     const earningsByCurrency = {}
+    const addEarning = (ccy, amt) => {
+      const currency = (ccy || "USD").toUpperCase()
+      const amount = Number(amt)
+      if (!Number.isFinite(amount)) return
+      earningsByCurrency[currency] = (earningsByCurrency[currency] || 0) + amount
+    }
 
-    const eligible = bookings.filter((b) => {
-      const pay    = String(b.payment_status ?? "").toUpperCase()    // 'UNPAID' | 'PAID' | 'REFUNDED'
-      const payout = String(b.payout_status   ?? "").toUpperCase()    // si tienes este campo
-      const paidOk        = ["PAID"].includes(pay)
-      const payoutPending = !payout || ["PENDING", "AWAITING", "QUEUED"].includes(payout)
-      return paidOk && payoutPending
-    })
+    // a) Comisiones por booking (influencer_commission) en estado elegible/hold
+    if (models.InfluencerCommission) {
+      const commissionRows = await models.InfluencerCommission.findAll({
+        where: {
+          influencer_user_id: userId,
+          status: { [Op.in]: ["eligible", "hold"] },
+        },
+        attributes: ["commission_amount", "commission_currency"],
+        limit: 500,
+      })
+      commissionRows.forEach((row) => addEarning(row.commission_currency, row.commission_amount))
+    }
 
-    for (const b of eligible) {
-      const ccy = b.currency || "USD"
-      earningsByCurrency[ccy] = (earningsByCurrency[ccy] || 0) + FLAT_COMMISSION
+    // b) Eventos signup/booking (influencer_event_commission) en estado elegible/hold
+    if (models.InfluencerEventCommission) {
+      const eventRows = await models.InfluencerEventCommission.findAll({
+        where: {
+          influencer_user_id: userId,
+          status: { [Op.in]: ["eligible", "hold"] },
+        },
+        attributes: ["amount", "currency"],
+        limit: 500,
+      })
+      eventRows.forEach((row) => addEarning(row.currency, row.amount))
     }
 
     // 4) Normalizar Ãºltimas reservas para el front
@@ -557,4 +566,3 @@ export const adminCreateInfluencerPayoutBatch = async (req, res) => {
     return res.status(500).json({ error: "Server error" })
   }
 }
-

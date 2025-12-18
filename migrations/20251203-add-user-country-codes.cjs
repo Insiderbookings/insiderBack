@@ -3,17 +3,30 @@
 async function up(queryInterface) {
   const { Sequelize } = queryInterface.sequelize;
 
-  await queryInterface.addColumn("user", "country_code", {
-    type: Sequelize.STRING(10),
-    allowNull: true,
-    comment: "Passenger nationality (DOTW internal country code)",
-  });
+  const hasColumn = async (table, column) => {
+    try {
+      const desc = await queryInterface.describeTable(table);
+      return Object.prototype.hasOwnProperty.call(desc, column);
+    } catch {
+      return false;
+    }
+  };
 
-  await queryInterface.addColumn("user", "residence_country_code", {
-    type: Sequelize.STRING(10),
-    allowNull: true,
-    comment: "Passenger country of residence (DOTW internal country code)",
-  });
+  if (!(await hasColumn("user", "country_code"))) {
+    await queryInterface.addColumn("user", "country_code", {
+      type: Sequelize.STRING(10),
+      allowNull: true,
+      comment: "Passenger nationality (DOTW internal country code)",
+    });
+  }
+
+  if (!(await hasColumn("user", "residence_country_code"))) {
+    await queryInterface.addColumn("user", "residence_country_code", {
+      type: Sequelize.STRING(10),
+      allowNull: true,
+      comment: "Passenger country of residence (DOTW internal country code)",
+    });
+  }
 }
 
 async function down(queryInterface) {

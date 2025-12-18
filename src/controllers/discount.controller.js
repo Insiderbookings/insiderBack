@@ -36,7 +36,10 @@ export const validateDiscount = async (req, res) => {
     ───────────────────────────────────────────────────────────── */
     if (isInfluencer) {
       const user = await models.User.findOne({
-        where: { user_code: CODE },
+        where: {
+          user_code: { [Op.iLike]: CODE },
+          role: 2,
+        },
         attributes: ["id", "name", "user_code"],
       })
 

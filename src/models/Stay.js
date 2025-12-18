@@ -34,6 +34,13 @@ export default (sequelize) => {
         allowNull: true,
         references: { model: "user", key: "id" },
       },
+      influencer_user_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: "user", key: "id" },
+        onDelete: "SET NULL",
+        onUpdate: "CASCADE",
+      },
 
       inventory_type: {
         type: DataTypes.ENUM(...INVENTORY_ENUM),
@@ -129,6 +136,7 @@ export default (sequelize) => {
       indexes: [
         { fields: ["booking_ref"], unique: true },
         { fields: ["user_id"] },
+        { fields: ["influencer_user_id"] },
         { fields: ["status"] },
         { fields: ["payment_status"] },
         { fields: ["source", "external_ref"] },
@@ -139,6 +147,7 @@ export default (sequelize) => {
 
   Stay.associate = (models) => {
     Stay.belongsTo(models.User, { foreignKey: "user_id" });
+    Stay.belongsTo(models.User, { foreignKey: "influencer_user_id", as: "influencer" });
     Stay.hasOne(models.Payment, { foreignKey: "stay_id" });
     Stay.hasOne(models.StayHotel, { foreignKey: "stay_id", as: "hotelStay" });
     Stay.hasOne(models.StayHome, { foreignKey: "stay_id", as: "homeStay" });

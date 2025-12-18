@@ -27,6 +27,9 @@ const USER_SAFE_ATTRIBUTES = [
   "is_active",
   "country_code",
   "residence_country_code",
+  "referred_by_influencer_id",
+  "referred_by_code",
+  "referred_at",
 ];
 const USER_INCLUDES = [
   { model: models.HostProfile, as: "hostProfile" },
@@ -46,6 +49,9 @@ const presentUser = (user) => {
     is_active: plain.is_active ?? true,
     countryCode: plain.country_code ?? null,
     countryOfResidenceCode: plain.residence_country_code ?? null,
+    referredByInfluencerId: plain.referred_by_influencer_id ?? null,
+    referredByCode: plain.referred_by_code ?? null,
+    referredAt: plain.referred_at ?? null,
     hostProfile: plain.hostProfile || null,
     guestProfile: plain.guestProfile || null,
   };
@@ -255,10 +261,32 @@ export const registerUser = async (req, res) => {
     password,
     countryCode,
     countryOfResidenceCode,
+    referralCode,
   } = req.body;
   try {
     const exists = await models.User.findOne({ where: { email } });
     if (exists) return res.status(409).json({ error: "Email taken" });
+
+    /* ───────── Validar código referido (opcional) ───────── */
+    const normalizedReferral = referralCode ? String(referralCode).trim().toUpperCase() : "";
+    let referral = { influencerId: null, code: null, at: null };
+    if (normalizedReferral) {
+      const influencer = await models.User.findOne({
+        where: {
+          role: 2,
+          user_code: { [Op.iLike]: normalizedReferral },
+        },
+        attributes: ["id", "user_code"],
+      });
+      if (!influencer) {
+        return res.status(400).json({ error: "Invalid referral code" });
+      }
+      referral = {
+        influencerId: influencer.id,
+        code: normalizedReferral,
+        at: new Date(),
+      };
+    }
 
     const hash = await bcrypt.hash(password, 10);
 
@@ -268,7 +296,33 @@ export const registerUser = async (req, res) => {
       password_hash: hash,
       country_code: countryCode ? String(countryCode).trim() : null,
       residence_country_code: countryOfResidenceCode ? String(countryOfResidenceCode).trim() : null,
+      referred_by_influencer_id: referral.influencerId,
+      referred_by_code: referral.code,
+      referred_at: referral.at,
     });
+
+    // Registrar bonus por signup referido
+    if (referral.influencerId && models.InfluencerEventCommission) {
+      try {
+        const bonusEnv = Number(process.env.INFLUENCER_SIGNUP_BONUS_USD);
+        const amount = Number.isFinite(bonusEnv) && bonusEnv > 0 ? bonusEnv : 0.25;
+        if (amount > 0) {
+          await models.InfluencerEventCommission.findOrCreate({
+            where: { event_type: "signup", signup_user_id: user.id },
+            defaults: {
+              influencer_user_id: referral.influencerId,
+              signup_user_id: user.id,
+              event_type: "signup",
+              amount,
+              currency: "USD",
+              status: "eligible",
+            },
+          });
+        }
+      } catch (e) {
+        console.warn("(INF) No se pudo registrar bonus de signup:", e?.message || e);
+      }
+    }
     // generate verification token valid for 1 day
     const verifyToken = jwt.sign(
       { id: user.id, type: "user", action: "verify-email" },
@@ -312,6 +366,9 @@ export const registerUser = async (req, res) => {
       role: user.role,
       countryCode: user.country_code ?? null,
       countryOfResidenceCode: user.residence_country_code ?? null,
+      referredByInfluencerId: referral.influencerId ?? null,
+      referredByCode: referral.code ?? null,
+      referredAt: referral.at ? referral.at.toISOString?.() ?? referral.at : null,
     })
     const safeUser = await loadSafeUser(user.id)
     return res.status(201).json({ token, user: safeUser })
@@ -354,6 +411,9 @@ export const loginUser = async (req, res) => {
       role: user.role,
       countryCode: user.country_code ?? null,
       countryOfResidenceCode: user.residence_country_code ?? null,
+      referredByInfluencerId: user.referred_by_influencer_id ?? null,
+      referredByCode: user.referred_by_code ?? null,
+      referredAt: user.referred_at ?? null,
     });
     if (process.env.NODE_ENV != "production") {
       console.log("[loginUser] issued token:", token);
@@ -484,6 +544,9 @@ export const setPasswordWithToken = async (req, res) => {
       type: "user",
       countryCode: user.country_code ?? null,
       countryOfResidenceCode: user.residence_country_code ?? null,
+      referredByInfluencerId: user.referred_by_influencer_id ?? null,
+      referredByCode: user.referred_by_code ?? null,
+      referredAt: user.referred_at ?? null,
     });
 
     /* 5. respuesta                                 */
@@ -705,6 +768,9 @@ export const googleExchange = async (req, res) => {
       role: user.role,
       countryCode: user.country_code ?? null,
       countryOfResidenceCode: user.residence_country_code ?? null,
+      referredByInfluencerId: user.referred_by_influencer_id ?? null,
+      referredByCode: user.referred_by_code ?? null,
+      referredAt: user.referred_at ?? null,
     });
 
     return res.json({
@@ -718,6 +784,9 @@ export const googleExchange = async (req, res) => {
         avatar_url: user.avatar_url,
         countryCode: user.country_code ?? null,
         countryOfResidenceCode: user.residence_country_code ?? null,
+        referredByInfluencerId: user.referred_by_influencer_id ?? null,
+        referredByCode: user.referred_by_code ?? null,
+        referredAt: user.referred_at ?? null,
       },
     });
   } catch (err) {

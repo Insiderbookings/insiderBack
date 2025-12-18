@@ -25,6 +25,10 @@ export const createPaymentIntent = async (req, res, next) => {
       holder, // { firstName, lastName, ... }
       roomName,
     } = req.body
+    const referral = {
+      influencerId: Number(req.user?.referredByInfluencerId) || null,
+      code: req.user?.referredByCode || null,
+    }
 
     // 1. Create Local Booking Record (PENDING)
     // We store the Webbeds ID as external_ref
@@ -38,6 +42,7 @@ export const createPaymentIntent = async (req, res, next) => {
     const localBooking = await models.Booking.create({
       booking_ref,
       user_id: req.user?.id || null,
+      influencer_user_id: referral.influencerId,
       source: "WEBBEDS",
       inventory_type: "WEBBEDS",
       external_ref: bookingId, // The Webbeds Booking ID
@@ -56,7 +61,15 @@ export const createPaymentIntent = async (req, res, next) => {
       meta: {
         hotelId,
         roomName,
-        guests
+        guests,
+        ...(referral.influencerId
+          ? {
+              referral: {
+                influencerUserId: referral.influencerId,
+                code: referral.code || null,
+              },
+            }
+          : {}),
       }
     })
 

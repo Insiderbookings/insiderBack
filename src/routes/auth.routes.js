@@ -57,6 +57,7 @@ router.post(
     body("password").isLength({ min: 6 }),
     body("countryCode").isInt().withMessage("countryCode is required"),
     body("countryOfResidenceCode").isInt().withMessage("countryOfResidenceCode is required"),
+    body("referralCode").optional().isString(),
   ],
   registerUser,
 );
