@@ -89,25 +89,28 @@ const buildEnvelope = ({
     throw new Error("WebBeds payload must be an object representing <request> children")
   }
 
-  const document = {
-    customer: {
-      username,
-      password: passwordMd5,
-      id: companyCode,
-      source: "1",
-      product,
-      request: {
-        "@command": command,
-        ...Object.entries(requestAttributes || {}).reduce((acc, [key, value]) => {
-          if (value != null) {
-            acc[`@${key}`] = value
-          }
-          return acc
-        }, {}),
-        ...payload,
-      },
-    },
+  const customer = {
+    username,
+    password: passwordMd5,
+    id: companyCode,
+    source: "1",
   }
+
+  // XSD order matters for most commands: <product> must appear before <request>.
+  if (product) customer.product = product
+
+  customer.request = {
+    "@command": command,
+    ...Object.entries(requestAttributes || {}).reduce((acc, [key, value]) => {
+      if (value != null) {
+        acc[`@${key}`] = value
+      }
+      return acc
+    }, {}),
+    ...payload,
+  }
+
+  const document = { customer }
 
   return builder
     .create(document, { version: "1.0", encoding: "UTF-8" })
@@ -231,13 +234,16 @@ export const createWebbedsClient = ({
     timeout,
     useCompression,
     logContext,
+    productOverride,
   }) => {
+    const computedProduct = productOverride !== undefined ? productOverride : product
+
     const envelopeXml = buildEnvelope({
       username,
       passwordMd5: passwordHash,
       companyCode,
       command,
-      product,
+      product: computedProduct,
       payload,
       requestAttributes,
     })
@@ -392,7 +398,7 @@ export const createWebbedsClient = ({
     )
   }
 
-  const send = async (command, payload = {}, { requestId, timeout, requestAttributes } = {}) => {
+  const send = async (command, payload = {}, { requestId, timeout, requestAttributes, productOverride } = {}) => {
     if (!command) {
       throw new Error("WebBeds command is required")
     }
@@ -408,6 +414,7 @@ export const createWebbedsClient = ({
         timeout,
         useCompression: preferCompressedRequests,
         logContext,
+        productOverride,
       })
     } catch (error) {
       if (isTransportParseError(error)) {

@@ -1,6 +1,11 @@
 import { Sequelize } from "sequelize";
 import dotenv from "dotenv";
-dotenv.config();
+import path from "path";
+import { fileURLToPath } from "url";
+
+// Cargar .env siempre desde la raíz del proyecto (aunque ejecutes node desde otro cwd)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 const sequelize = new Sequelize(
   process.env.DB_NAME,

@@ -8,8 +8,12 @@ const provider = new WebbedsProvider()
 export const search = (req, res, next) => provider.search(req, res, next)
 export const getRooms = (req, res, next) => provider.getRooms(req, res, next)
 export const saveBooking = (req, res, next) => provider.saveBooking(req, res, next)
+export const bookItinerary = (req, res, next) => provider.bookItinerary(req, res, next)
+export const bookItineraryRecheck = (req, res, next) => provider.bookItineraryRecheck(req, res, next)
+export const bookItineraryPreauth = (req, res, next) => provider.bookItineraryPreauth(req, res, next)
 export const confirmBooking = (req, res, next) => provider.confirmBooking(req, res, next)
 export const cancelBooking = (req, res, next) => provider.cancelBooking(req, res, next)
+export const deleteItinerary = (req, res, next) => provider.deleteItinerary(req, res, next)
 export const getBookingDetails = (req, res, next) => provider.getBookingDetails(req, res, next)
 
 export const createPaymentIntent = async (req, res, next) => {

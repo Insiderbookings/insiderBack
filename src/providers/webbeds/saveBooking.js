@@ -76,6 +76,42 @@ const buildRoomsNode = ({
     throw new Error("WebBeds savebooking requires at least one room")
   }
 
+  // Distribuye pasajeros globales entre rooms cuando no vienen por-room.
+  const globalPassengers = ensureArray(passengers)
+  let passengerCursor = 0
+  const assignPassengersForRoom = (roomIdx, room) => {
+    if (Array.isArray(room.passengers) && room.passengers.length) {
+      return room.passengers
+    }
+    const neededAdults = Math.max(1, toNumber(room.adults) || 1)
+    const slice = globalPassengers.slice(passengerCursor, passengerCursor + neededAdults)
+    passengerCursor += neededAdults
+    // Si no hay suficientes, rellena con placeholders
+    const placeholders = Array.from({ length: Math.max(0, neededAdults - slice.length) }).map((_, i) => ({
+      firstName: "Guest",
+      lastName: `R${roomIdx + 1}P${i + 1}`,
+      leading: false,
+    }))
+    return [...slice, ...placeholders]
+  }
+
+  // Marca al menos un leading="yes" por habitación (requerido por XSD)
+  const roomsPassengers = roomEntries.map((room, idx) => {
+    const rp = assignPassengersForRoom(idx, room)
+    const hasLeading = rp.some(
+      (pax) => String(pax.leading).toLowerCase() === "yes" || pax.leading === true,
+    )
+    if (!hasLeading && rp.length) {
+      rp[0] = { ...rp[0], leading: "yes" }
+    }
+    // Normaliza el resto a "no" si no viene especificado
+    return rp.map((pax, paxIdx) => {
+      if (paxIdx === 0 && String(pax.leading).toLowerCase() === "yes") return pax
+      if (pax.leading === undefined) return { ...pax, leading: "no" }
+      return pax
+    })
+  })
+
   return {
     "@no": String(roomEntries.length),
     room: roomEntries.map((room, idx) => {
@@ -87,26 +123,20 @@ const buildRoomsNode = ({
         "@no": String(children.length),
       }
       if (children.length) {
-        childrenNode.child = children.map((age, childIdx) => ({
-          "@runno": String(childIdx),
-          "#": String(age),
-        }))
+        childrenNode["#raw"] = children.map(
+          (age, childIdx) => `<child runno="${childIdx}">${String(age)}</child>`,
+        ).join("")
+      }
+      const actualChildrenNode = {
+        "@no": String(children.length),
+      }
+      if (children.length) {
+        actualChildrenNode["#raw"] = children.map(
+          (age, childIdx) => `<actualChild runno="${childIdx}">${String(age)}</actualChild>`,
+        ).join("")
       }
 
-      // Logic: For single room, put all passengers. 
-      // For multi-room, ideally split. Here we fallback to putting all in first room 
-      // or just the lead passenger. 
-      // Given typical use case is 1 room, we pass 'passengers' to the first room.
-      // If we are on subsequent rooms, we populate generic if list is exhausted.
-      let roomPassengers = []
-      if (idx === 0) {
-        roomPassengers = passengers
-      } else {
-        // Fallback for multi-room if passengers array not structured per room
-        roomPassengers = [{ firstName: "Guest", lastName: "Two" }]
-      }
-
-      const paxNode = buildPassengersDetails(roomPassengers)
+      const paxNode = buildPassengersDetails(roomsPassengers[idx])
 
       const node = {
         "@runno": String(idx),
@@ -118,9 +148,10 @@ const buildRoomsNode = ({
         actualAdults: String(Math.max(1, toNumber(room.adults) || 1)), // Mandatory in confirmRoomOccupancy
 
         children: childrenNode,
-        actualChildren: childrenNode, // Mandatory in confirmRoomOccupancy
+        actualChildren: actualChildrenNode, // Mandatory in confirmRoomOccupancy
 
-        // extraBed: ... (optional)
+        // extraBed requerido por XSD: siempre enviamos (default 0)
+        extraBed: String(room.extraBed != null ? room.extraBed : 0),
 
         passengerNationality: room.nationality || nationality || null,
         passengerCountryOfResidence: room.residence || residence || null,
@@ -132,7 +163,21 @@ const buildRoomsNode = ({
         // confirmBookingRoomType DOES NOT extend roomType in XSD. It redefines fields.
         // It does NOT have 'rateBasis' element. It has 'selectedRateBasis'.
 
-        passengersDetails: paxNode
+        passengersDetails: paxNode,
+
+        // Campos marcados como requeridos en la doc (orden XSD: passengersDetails -> specialRequests -> beddingPreference)
+        specialRequests: room.specialRequests
+          ? {
+            "@count": String(room.specialRequests.length),
+            req: room.specialRequests.map((reqCode, reqIdx) => ({
+              "@runno": String(reqIdx),
+              "#text": String(reqCode),
+            })),
+          }
+          : {
+            "@count": "0",
+          },
+        beddingPreference: room.beddingPreference != null ? String(room.beddingPreference) : "0",
       }
 
       return node
@@ -164,7 +209,7 @@ export const buildSaveBookingPayload = ({
   }
 
   // Booker email
-  const sendCommunicationTo = contact.email || null
+  // const sendCommunicationTo = contact.email || null
 
   const roomsNode = buildRoomsNode({
     rooms,
@@ -181,7 +226,6 @@ export const buildSaveBookingPayload = ({
     toDate,
     currency: currency || "520",
     productId,
-    sendCommunicationTo,
     customerReference,
     rooms: roomsNode,
   }
@@ -200,7 +244,10 @@ export const mapSaveBookingResponse = (result) => {
     returnedCode: result?.returnedCode ?? null,
     services: returnedServiceCodes.map((item) => ({
       code: item?.["@_runno"] != null ? String(item["@_runno"]) : null,
-      returnedServiceCode: item?.["#"] ?? item?.returnedServiceCode ?? null,
+      returnedServiceCode:
+        typeof item === "string" || typeof item === "number"
+          ? String(item)
+          : item?.["#text"] ?? item?.["#"] ?? item?.returnedServiceCode ?? null,
     })),
     successful: normalizeBoolean(result?.successful) ?? null,
     bookingId: result?.bookingId ?? null, // Often returned in success

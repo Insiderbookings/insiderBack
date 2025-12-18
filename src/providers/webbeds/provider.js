@@ -9,7 +9,14 @@ import { buildGetRoomsPayload, mapGetRoomsResponse } from "./getRooms.js"
 import { buildSaveBookingPayload, mapSaveBookingResponse } from "./saveBooking.js"
 import { buildConfirmBookingPayload, mapConfirmBookingResponse } from "./confirmBooking.js"
 import { buildCancelBookingPayload, mapCancelBookingResponse } from "./cancelBooking.js"
+import { buildDeleteItineraryPayload, mapDeleteItineraryResponse } from "./deleteItinerary.js"
 import { buildGetBookingDetailsPayload, mapGetBookingDetailsResponse } from "./getBookingDetails.js"
+import {
+  buildBookItineraryPayload,
+  buildBookItineraryPreauthPayload,
+  mapBookItineraryResponse,
+} from "./bookItinerary.js"
+import { tokenizeCard } from "./rezpayments.js"
 
 const MAX_HOTEL_IDS_PER_REQUEST = 50
 const DEFAULT_HOTEL_ID_CONCURRENCY = 4
@@ -261,6 +268,34 @@ export class WebbedsProvider extends HotelProvider {
     return req?.id || req?.headers?.["x-request-id"]
   }
 
+  async tokenizeBusinessCard() {
+    const {
+      WEBBEDS_CC_NAME,
+      WEBBEDS_CC_NUMBER,
+      WEBBEDS_CC_EXP_MONTH,
+      WEBBEDS_CC_EXP_YEAR,
+      WEBBEDS_CC_CVV,
+      WEBBEDS_TOKENIZER_URL,
+      WEBBEDS_TOKENIZER_AUTH,
+    } = process.env
+
+    if (!WEBBEDS_CC_NUMBER || !WEBBEDS_CC_EXP_MONTH || !WEBBEDS_CC_EXP_YEAR || !WEBBEDS_CC_CVV) {
+      throw new Error("Missing WebBeds business card config for tokenization")
+    }
+
+    const token = await tokenizeCard({
+      cardName: WEBBEDS_CC_NAME || "Insider Business",
+      cardNumber: WEBBEDS_CC_NUMBER,
+      expiryYear: WEBBEDS_CC_EXP_YEAR,
+      expiryMonth: WEBBEDS_CC_EXP_MONTH,
+      securityCode: WEBBEDS_CC_CVV,
+      tokenizerUrl: WEBBEDS_TOKENIZER_URL,
+      authHeader: WEBBEDS_TOKENIZER_AUTH,
+      logger: console,
+    })
+    return token
+  }
+
   async search(req, res, next) {
     try {
       const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102"
@@ -342,11 +377,17 @@ export class WebbedsProvider extends HotelProvider {
       }
 
       const searchMode = String(
-        req.query.mode ?? req.query.searchMode ?? "city",
+        req.query.mode ?? req.query.searchMode ?? "hotelids",
       ).toLowerCase()
 
       if (searchMode === "hotelids") {
-        return this.searchByHotelIdBatches({
+        if (!providedHotelIds.length && !cityCode) {
+          return res.status(400).json({
+            success: false,
+            message: "WebBeds hotelId mode requires a cityCode or the hotelIds parameter",
+          })
+        }
+        return await this.searchByHotelIdBatches({
           req,
           res,
           payloadOptions,
@@ -381,11 +422,13 @@ export class WebbedsProvider extends HotelProvider {
       return res.json(this.groupOptionsByHotel(results))
     } catch (error) {
       if (error.name === "WebbedsError") {
+        const xsdMessagesRaw = error.extraDetails?.xsd_error?.error_message
         const xsdMessages =
-          Array.isArray(error.extra?.xsd_error?.error_message) &&
-            error.extra.xsd_error.error_message.length
-            ? error.extra.xsd_error.error_message
-            : null
+          Array.isArray(xsdMessagesRaw) && xsdMessagesRaw.length
+            ? xsdMessagesRaw
+            : xsdMessagesRaw
+              ? [xsdMessagesRaw]
+              : null
         console.error("[webbeds] search error", {
           command: error.command,
           code: error.code,
@@ -394,6 +437,14 @@ export class WebbedsProvider extends HotelProvider {
           xsdMessages,
           metadata: error.metadata,
           requestXml: error.requestXml,
+        })
+        return res.status(400).json({
+          success: false,
+          code: error.code,
+          message: error.details,
+          extra: error.extraDetails,
+          xsdMessages,
+          metadata: error.metadata,
         })
       } else {
         console.error("[webbeds] unexpected error", error)
@@ -448,7 +499,7 @@ export class WebbedsProvider extends HotelProvider {
         if (Number.isFinite(parsed) && parsed > 0) return String(parsed)
         const str = String(value ?? "").trim()
         if (/^\d+$/.test(str) && Number(str) > 0) return str
-        return "1"
+        return "-1"
       }
 
       const nationality = ensureNumericCode(
@@ -480,6 +531,7 @@ export class WebbedsProvider extends HotelProvider {
         roomTypeCode,
         selectedRateBasis,
         allocationDetails,
+        req,
       })
 
       console.info("[webbeds] getRooms request", {
@@ -498,6 +550,7 @@ export class WebbedsProvider extends HotelProvider {
 
       const { result } = await this.client.send("getrooms", payload, {
         requestId: this.getRequestId(req),
+        productOverride: "hotel",
       })
       console.info("[webbeds] getRooms result", {
         hotelId: result?.hotel?.["@_id"] ?? result?.hotel?.id ?? null,
@@ -545,6 +598,15 @@ export class WebbedsProvider extends HotelProvider {
             warning: error.details,
           })
         }
+        // Respuesta clara al cliente para otros errores de Webbeds
+        return res.status(400).json({
+          success: false,
+          code: error.code,
+          message: error.details,
+          extra: error.extraDetails,
+          metadata: error.metadata,
+          xsdMessages,
+        })
       } else {
         console.error("[webbeds] unexpected error", error)
       }
@@ -597,7 +659,7 @@ export class WebbedsProvider extends HotelProvider {
         if (Number.isFinite(parsed) && parsed > 0) return String(parsed)
         const str = String(value ?? "").trim()
         if (/^\d+$/.test(str) && Number(str) > 0) return str
-        return "1"
+        return "-1"
       }
 
       const nationality = ensureNumericCode(
@@ -656,6 +718,307 @@ export class WebbedsProvider extends HotelProvider {
         if (xsdMessages) {
           console.error("[webbeds] XSD VALIDATION DETAILS:", JSON.stringify(xsdMessages, null, 2))
         }
+        return res.status(400).json({
+          success: false,
+          code: error.code,
+          message: error.details,
+          extra: error.extraDetails,
+          xsdMessages,
+          metadata: error.metadata,
+        })
+      } else {
+        console.error("[webbeds] unexpected error", error)
+      }
+      return next(error)
+    }
+  }
+
+  async bookItinerary(req, res, next) {
+    const {
+      bookingCode,
+      bookingType,
+      confirm = "yes",
+      contact = {},
+      payment = {},
+      services = [],
+    } = req.body || {}
+
+    try {
+      if (!bookingCode) {
+        throw new Error("WebBeds bookitinerary requires bookingCode")
+      }
+
+      const confirmValue = (() => {
+        if (typeof confirm === "boolean") {
+          return confirm ? "yes" : "no"
+        }
+        if (typeof confirm === "number") {
+          return confirm === 0 ? "no" : "yes"
+        }
+        const normalized = String(confirm ?? "")
+          .trim()
+          .toLowerCase()
+        if (normalized === "preauth") return "preauth"
+        if (normalized === "no" || normalized === "false" || normalized === "0") return "no"
+        return "yes"
+      })()
+      let amount = payment.amount ?? payment.creditCardCharge
+      // si faltó amount y tenemos servicios, lo inferimos sumando testPrice/servicePrice/price de cada service
+      if (amount == null && Array.isArray(services) && services.length) {
+        const prices = services
+          .map((s) => s.testPrice ?? s.servicePrice ?? s.price)
+          .filter((v) => v != null)
+          .map((v) => Number(v))
+          .filter((n) => !Number.isNaN(n))
+        if (prices.length) {
+          amount = prices.reduce((acc, n) => acc + n, 0)
+        }
+      }
+      if (confirmValue === "yes" && amount == null) {
+        throw new Error("WebBeds bookitinerary requires payment.amount (net to charge)")
+      }
+      if (confirmValue === "yes" && (!Array.isArray(services) || services.length === 0)) {
+        throw new Error("WebBeds bookitinerary requires services (testPricesAndAllocation)")
+      }
+      const paymentMethod =
+        payment.paymentMethod ||
+        process.env.WEBBEDS_PAYMENT_METHOD ||
+        "CC_PAYMENT_COMMISSIONABLE"
+      const isCommissionable = paymentMethod === "CC_PAYMENT_COMMISSIONABLE"
+      const authorisationId = payment.authorisationId ?? payment.authorizationId
+
+      let token = payment.token
+      if (confirmValue === "yes" && amount != null && !token && !isCommissionable) {
+        token = await this.tokenizeBusinessCard()
+      }
+
+      if (confirmValue === "yes" && isCommissionable) {
+        if (!payment.orderCode) {
+          throw new Error("WebBeds bookitinerary requires payment.orderCode for commissionable payments")
+        }
+        if (!authorisationId) {
+          throw new Error("WebBeds bookitinerary requires payment.authorisationId for commissionable payments")
+        }
+      }
+
+      const paymentPayload =
+        confirmValue !== "yes" || amount == null
+          ? {}
+          : {
+            paymentMethod,
+            usedCredit: payment.usedCredit ?? 0,
+            creditCardCharge: amount,
+            token,
+            cardHolderName: payment.cardHolderName || process.env.WEBBEDS_CC_NAME,
+            creditCardType: payment.creditCardType || process.env.WEBBEDS_CC_TYPE || 100,
+            avsDetails: payment.avsDetails,
+            authorisationId,
+            orderCode: payment.orderCode,
+            devicePayload: payment.devicePayload,
+            endUserIPAddress: payment.endUserIPAddress,
+          }
+
+      const commEmail = contact.email ||
+        payment.avsDetails?.avsEmail ||
+        process.env.WEBBEDS_COMM_EMAIL ||
+        process.env.WEBBEDS_CC_EMAIL
+
+      const payload = buildBookItineraryPayload({
+        bookingCode,
+        bookingType,
+        confirm: confirmValue,
+        sendCommunicationTo: commEmail,
+        payment: paymentPayload,
+        services,
+      })
+
+      const { result } = await this.client.send("bookitinerary", payload, {
+        requestId: this.getRequestId(req),
+        productOverride: null, // omit <product>
+      })
+
+      const mapped = mapBookItineraryResponse(result)
+      return res.json(mapped)
+    } catch (error) {
+      if (error.name === "WebbedsError") {
+        console.error("[webbeds] bookitinerary error", {
+          command: error.command,
+          code: error.code,
+          details: error.details,
+          extra: error.extraDetails,
+          metadata: error.metadata,
+        })
+        // Respuesta clara al cliente con el detalle que envía Webbeds
+        return res.status(400).json({
+          success: false,
+          code: error.code,
+          message: error.details,
+          extra: error.extraDetails,
+          metadata: error.metadata,
+        })
+      } else {
+        console.error("[webbeds] unexpected error", error)
+      }
+      return next(error)
+    }
+  }
+
+  async bookItineraryRecheck(req, res, next) {
+    const {
+      bookingCode,
+      bookingType = 1,
+      contact = {},
+    } = req.body || {}
+
+    try {
+      if (!bookingCode) {
+        throw new Error("WebBeds bookitinerary recheck requires bookingCode")
+      }
+
+      const payload = buildBookItineraryPayload({
+        bookingCode,
+        bookingType,
+        confirm: "no",
+        sendCommunicationTo: contact.email,
+        payment: {}, // no payment on recheck
+      })
+
+      const { result } = await this.client.send("bookitinerary", payload, {
+        requestId: this.getRequestId(req),
+        productOverride: null,
+      })
+
+      const mapped = mapBookItineraryResponse(result)
+      return res.json(mapped)
+    } catch (error) {
+      if (error.name === "WebbedsError") {
+        console.error("[webbeds] bookitinerary recheck error", {
+          command: error.command,
+          code: error.code,
+          details: error.details,
+          extra: error.extraDetails,
+          metadata: error.metadata,
+        })
+      } else {
+        console.error("[webbeds] unexpected error", error)
+      }
+      return next(error)
+    }
+  }
+
+  async bookItineraryPreauth(req, res, next) {
+    const {
+      bookingCode,
+      bookingType = 2,
+      contact = {},
+      payment = {},
+      services = [],
+    } = req.body || {}
+
+    try {
+      if (!bookingCode) {
+        throw new Error("WebBeds bookitinerary_preauth requires bookingCode")
+      }
+
+      let amount = payment.amount ?? payment.creditCardCharge
+      if (amount == null && Array.isArray(services) && services.length) {
+        const prices = services
+          .map((s) => s.testPrice ?? s.servicePrice ?? s.price)
+          .filter((v) => v != null)
+          .map((v) => Number(v))
+          .filter((n) => !Number.isNaN(n))
+        if (prices.length) {
+          amount = prices.reduce((acc, n) => acc + n, 0)
+        }
+      }
+      if (amount == null) {
+        throw new Error("WebBeds bookitinerary_preauth requires payment.amount (net to preauthorize)")
+      }
+      const paymentMethod = payment.paymentMethod ||
+        process.env.WEBBEDS_PAYMENT_METHOD ||
+        "CC_PAYMENT_COMMISSIONABLE"
+
+      // Validaciones mínimas solo si es flujo commissionable (tarjeta del cliente)
+      const isCommissionable = paymentMethod === "CC_PAYMENT_COMMISSIONABLE"
+      const endUserIPAddressRaw =
+        payment.endUserIPAddress ||
+        payment.endUserIPv4Address ||
+        req.ip ||
+        req?.headers?.["x-forwarded-for"] ||
+        process.env.WEBBEDS_DEFAULT_IP
+      if (isCommissionable) {
+        if (!payment.avsDetails) {
+          throw new Error("WebBeds bookitinerary_preauth requires avsDetails")
+        }
+        if (!payment.devicePayload) {
+          throw new Error("WebBeds bookitinerary_preauth requires devicePayload")
+        }
+        if (!endUserIPAddressRaw) {
+          throw new Error("WebBeds bookitinerary_preauth requires endUserIPv4Address")
+        }
+      }
+      const endUserIPAddress = endUserIPAddressRaw || undefined
+
+      let token = payment.token
+      if (!token) {
+        if (isCommissionable) {
+          throw new Error("WebBeds bookitinerary_preauth requires payment.token (RezToken)")
+        }
+        token = await this.tokenizeBusinessCard()
+      }
+
+      if (!Array.isArray(services) || services.length === 0) {
+        throw new Error("WebBeds bookitinerary_preauth requires services (testPricesAndAllocation)")
+      }
+
+      // Preautorización usando el mismo comando bookitinerary con confirm=no.
+      const commEmail = contact.email ||
+        payment.avsDetails?.avsEmail ||
+        process.env.WEBBEDS_COMM_EMAIL ||
+        process.env.WEBBEDS_CC_EMAIL
+
+      const payload = buildBookItineraryPayload({
+        bookingCode,
+        bookingType,
+        confirm: "preauth",
+        sendCommunicationTo: commEmail,
+        payment: {
+          paymentMethod,
+          usedCredit: payment.usedCredit ?? 0,
+          creditCardCharge: amount,
+          token,
+          cardHolderName: payment.cardHolderName || process.env.WEBBEDS_CC_NAME,
+          creditCardType: payment.creditCardType || process.env.WEBBEDS_CC_TYPE || 100,
+          avsDetails: payment.avsDetails,
+          devicePayload: payment.devicePayload,
+          endUserIPAddress,
+        },
+        services,
+      })
+
+      const { result } = await this.client.send("bookitinerary", payload, {
+        requestId: this.getRequestId(req),
+        productOverride: null, // omit <product>
+      })
+
+      const mapped = mapBookItineraryResponse(result)
+      return res.json(mapped)
+    } catch (error) {
+      if (error.name === "WebbedsError") {
+        console.error("[webbeds] bookitinerary_preauth error", {
+          command: error.command,
+          code: error.code,
+          details: error.details,
+          extra: error.extraDetails,
+          metadata: error.metadata,
+        })
+        return res.status(400).json({
+          success: false,
+          code: error.code,
+          message: error.details,
+          extra: error.extraDetails,
+          metadata: error.metadata,
+        })
       } else {
         console.error("[webbeds] unexpected error", error)
       }
@@ -664,14 +1027,43 @@ export class WebbedsProvider extends HotelProvider {
   }
 
   async confirmBooking(req, res, next) {
-    const { bookingId } = req.body || {}
+    const {
+      bookingId,
+      bookingCode,
+      parent,
+      addToBookedItn,
+      bookedItnParent,
+      fromDate,
+      toDate,
+      currency,
+      productId,
+      rooms,
+      passengers,
+      contact,
+      customerReference,
+    } = req.body || {}
 
     try {
-      if (!bookingId) {
-        throw new Error("Webbeds confirmation requires bookingId")
+      const code = bookingId || bookingCode
+      if (!code) {
+        throw new Error("Webbeds confirmation requires bookingId or bookingCode")
       }
 
-      const payload = buildConfirmBookingPayload({ bookingId })
+      const payload = buildConfirmBookingPayload({
+        bookingId: code,
+        bookingCode,
+        parent,
+        addToBookedItn,
+        bookedItnParent,
+        fromDate,
+        toDate,
+        currency,
+        productId,
+        rooms,
+        passengers,
+        contact,
+        customerReference,
+      })
 
       const { result } = await this.client.send("confirmbooking", payload, {
         requestId: this.getRequestId(req),
@@ -696,17 +1088,33 @@ export class WebbedsProvider extends HotelProvider {
   }
 
   async cancelBooking(req, res, next) {
-    const { bookingId, reason } = req.body || {}
+    const {
+      bookingId,
+      bookingCode,
+      bookingType,
+      confirm,
+      reason,
+      services,
+    } = req.body || {}
 
     try {
-      if (!bookingId) {
+      const code = bookingId || bookingCode
+      if (!code) {
         throw new Error("Webbeds cancellation requires bookingId")
       }
 
-      const payload = buildCancelBookingPayload({ bookingId, reason })
+      const payload = buildCancelBookingPayload({
+        bookingId: code,
+        bookingCode,
+        bookingType,
+        confirm,
+        reason,
+        services,
+      })
 
       const { result } = await this.client.send("cancelbooking", payload, {
         requestId: this.getRequestId(req),
+        productOverride: null,
       })
 
       const mapped = mapCancelBookingResponse(result)
@@ -744,6 +1152,39 @@ export class WebbedsProvider extends HotelProvider {
     } catch (error) {
       if (error.name === "WebbedsError") {
         console.error("[webbeds] getbookingdetails error", {
+          command: error.command,
+          code: error.code,
+          details: error.details,
+          extra: error.extraDetails,
+          metadata: error.metadata,
+        })
+      }
+      return next(error)
+    }
+  }
+
+  async deleteItinerary(req, res, next) {
+    const { bookingId, bookingCode, bookingType, confirm, reason } = req.body || {}
+
+    try {
+      const payload = buildDeleteItineraryPayload({
+        bookingId,
+        bookingCode,
+        bookingType,
+        confirm,
+        reason
+      })
+
+      const { result } = await this.client.send("deleteitinerary", payload, {
+        requestId: this.getRequestId(req),
+        productOverride: null,
+      })
+
+      const mapped = mapDeleteItineraryResponse(result)
+      return res.json(mapped)
+    } catch (error) {
+      if (error.name === "WebbedsError") {
+        console.error("[webbeds] deleteitinerary error", {
           command: error.command,
           code: error.code,
           details: error.details,

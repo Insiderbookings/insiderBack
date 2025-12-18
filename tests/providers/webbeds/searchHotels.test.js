@@ -39,7 +39,7 @@ test("buildSearchHotelsPayload builds rooms, defaults, and filters correctly", (
   assert.equal(room.adultsCode, "3")
   assert.equal(room.children["@no"], "2")
   assert.deepEqual(
-    room.children.child.map((child) => child["#"]),
+    room.children.child.map((child) => child["#text"]),
     ["5", "7"],
   )
   assert.equal(room.rateBasis, "-1")
@@ -48,7 +48,7 @@ test("buildSearchHotelsPayload builds rooms, defaults, and filters correctly", (
   assert.equal(filters.city, "364")
   assert.equal(filters.noPrice, "true")
   assert.ok(filters["c:condition"])
-  assert.deepEqual(filters["c:condition"]["a:condition"][0], {
+  assert.deepEqual(filters["c:condition"]["a:condition"], {
     fieldName: "chain",
     fieldTest: "in",
     fieldValues: {

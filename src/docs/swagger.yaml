@@ -1,23 +1,26 @@
 openapi: 3.0.1
 info:
-  title: Insider API
-  version: "1.0.0"
+  title: Insider API - DOTW/Webbeds Booking Flow
+  version: "1.0.1"
   description: >
-    Documentación inicial. El botón Authorize usa el token obtenido en el login
-    (`POST /api/auth/user/login`) para probar el resto de endpoints.
+    Documentacion basada en la coleccion "DOTW Booking Flow - CC/VCC". Incluye todas
+    las requests y parametros (query/body) que aparecen en la coleccion y agrega la
+    request de login para obtener el token JWT usado en el resto de endpoints.
 servers:
   - url: http://localhost:3006
-    description: Desarrollo local
+    description: Desarrollo local (todas las rutas incluyen prefijo /api)
+tags:
+  - name: Auth
+    description: Login y obtencion de token JWT
+  - name: Webbeds
+    description: Flujo de reservas DOTW/Webbeds
 paths:
   /api/auth/user/login:
     post:
       tags:
         - Auth
-      summary: Inicia sesión y devuelve el token JWT
-      description: >
-        Endpoint público que valida las credenciales del usuario final. La
-        respuesta incluye el `token` que debe copiarse en el botón Authorize
-        (o se carga automáticamente si se configura `SWAGGER_DEMO_TOKEN`).
+      summary: Inicia sesion y devuelve el token JWT
+      description: Endpoint publico para autenticarse. Usar el token en el boton Authorize.
       security: [] # login no requiere token previo
       requestBody:
         required: true
@@ -38,15 +41,19 @@ paths:
               example:
                 token: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
         "401":
-          description: Credenciales inválidas
+          description: Credenciales invalidas
+
   /api/webbeds/search:
     get:
       tags:
-        - Providers
-      summary: Busca disponibilidad en Webbeds
+        - Webbeds
+      summary: searchhotels (disponibilidad)
       description: >
-        Endpoint que consulta al proveedor Webbeds. Requiere haber iniciado sesión y
-        tener el token cargado en el botón Authorize.
+        Equivalente a la request searchHotels del Postman. Requiere cityCode o
+        hotelIds (csv). Devuelve opciones agrupadas por hotel. Usa los filtros/fields
+        del archivo DOTW.
+      security:
+        - bearerAuth: []
       parameters:
         - in: query
           name: checkIn
@@ -67,25 +74,103 @@ paths:
           required: true
           schema:
             type: string
-          description: >
-            Cadena con el formato `adults|childAges,adults2|childAges` (ej: `2|5-7,1|-`).
-            Si se omite, se asume una habitación de 2 adultos.
-        - in: query
-          name: cityCode
-          schema:
-            type: string
-          description: Código de ciudad Webbeds. Ideal cuando se necesita filtrar por ciudad.
-        - in: query
-          name: countryCode
-          schema:
-            type: string
-          description: Código de país Webbeds. Solo se usa si no se envía `cityCode`.
+          description: Cadena adults|childAges,adults2|childAges (ej 2|5-7,1|-). Si falta, se asume 2 adultos.
         - in: query
           name: currency
           required: true
           schema:
             type: string
-          description: Moneda opcional para la cotización.
+          description: Codigo numerico de moneda (ej 520 = USD).
+        - in: query
+          name: cityCode
+          schema:
+            type: string
+          description: Codigo de ciudad DOTW. Obligatorio si no se envian hotelIds.
+        - in: query
+          name: countryCode
+          schema:
+            type: string
+          description: Codigo de pais DOTW (solo si no se envia cityCode).
+        - in: query
+          name: hotelIds
+          schema:
+            type: string
+          description: Lista de hotelIds separados por coma. Si se envia, cityCode deja de ser obligatorio.
+        - in: query
+          name: passengerNationality
+          schema:
+            type: string
+          description: Nacionalidad numerica del pasajero (por defecto WEBBEDS_DEFAULT_COUNTRY_CODE).
+        - in: query
+          name: passengerCountryOfResidence
+          schema:
+            type: string
+          description: Pais de residencia numerico del pasajero.
+        - in: query
+          name: rateBasis
+          schema:
+            type: string
+          description: Codigo de rate basis (por defecto "-1").
+        - in: query
+          name: fields
+          schema:
+            type: string
+          description: Campos extra para hotel (csv), ej images,amenities,descriptions.
+        - in: query
+          name: roomFields
+          schema:
+            type: string
+          description: Campos extra para habitaciones (csv).
+        - in: query
+          name: merge
+          schema:
+            type: boolean
+          description: Si es true, mezcla detalles estaticos locales.
+        - in: query
+          name: priceMin
+          schema:
+            type: number
+          description: Filtro de precio minimo (opcional).
+        - in: query
+          name: priceMax
+          schema:
+            type: number
+          description: Filtro de precio maximo (opcional).
+        - in: query
+          name: ratingMin
+          schema:
+            type: number
+          description: Rating minimo (opcional).
+        - in: query
+          name: ratingMax
+          schema:
+            type: number
+          description: Rating maximo (opcional).
+        - in: query
+          name: preferred
+          schema:
+            type: boolean
+          description: Solo hoteles preferidos si es true (opcional).
+        - in: query
+          name: availability
+          schema:
+            type: boolean
+          description: Filtra por disponibilidad (opcional).
+        - in: query
+          name: hotelNameLike
+          schema:
+            type: string
+          description: Filtro por nombre de hotel (like).
+        - in: query
+          name: roomNameLike
+          schema:
+            type: string
+          description: Filtro por nombre de habitacion (like).
+        - in: query
+          name: roomNameRegex
+          schema:
+            type: string
+          description: Filtro regex para nombre de habitacion.
       responses:
         "200":
           description: Hoteles encontrados
@@ -94,7 +179,313 @@ paths:
               schema:
                 $ref: "#/components/schemas/WebbedsSearchResponse"
         "400":
-          description: Parámetros faltantes o inválidos
+          description: Parametros faltantes o invalidos
+
+  /api/webbeds/rooms:
+    get:
+      tags:
+        - Webbeds
+      summary: getrooms (detalles y rate basis de hotel)
+      description: >
+        Equivalente a la request GetRooms del Postman. Requiere hotelId/productId,
+        fechas y ocupaciones. Permite enviar seleccion de roomType/rateBasis/allocation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: checkIn
+          required: true
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: checkOut
+          required: true
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: occupancies
+          required: true
+          schema:
+            type: string
+          description: Cadena adults|childAges,adults2|childAges (ej 2|5-7).
+        - in: query
+          name: currency
+          required: true
+          schema:
+            type: string
+          description: Codigo de moneda (numerico o ISO, ej 520/USD).
+        - in: query
+          name: hotelId
+          required: true
+          schema:
+            type: string
+          description: Codigo numerico del hotel (productId).
+        - in: query
+          name: rateBasis
+          schema:
+            type: string
+          description: Rate basis solicitado (default "-1").
+        - in: query
+          name: passengerNationality
+          schema:
+            type: string
+        - in: query
+          name: passengerCountryOfResidence
+          schema:
+            type: string
+        - in: query
+          name: roomTypeCode
+          schema:
+            type: string
+          description: Codigo de roomType seleccionado.
+        - in: query
+          name: selectedRateBasis
+          schema:
+            type: string
+          description: Rate basis seleccionado para el roomType.
+        - in: query
+          name: allocationDetails
+          schema:
+            type: string
+          description: Allocation devuelto en search (para lock de tarifa).
+      responses:
+        "200":
+          description: Tarifas y rooms del hotel
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Respuesta mapeada de DOTW getrooms.
+        "400":
+          description: Parametros faltantes o invalidos
+
+  /api/webbeds/savebooking:
+    post:
+      tags:
+        - Webbeds
+      summary: savebooking (reserva preliminar)
+      description: >
+        Request Savebooking del Postman. Recibe seleccion de rooms con rateBasis y allocation.
+        Retorna returnedServiceCode para usarlos en bookitinerary.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveBookingRequest"
+            example:
+              checkIn: "2024-12-13"
+              checkOut: "2024-12-15"
+              currency: "520"
+              hotelId: "2058445"
+              customerReference: "PB-09X6JR_01JE9943BBQJGQNBMTNS6H4KXH-ZVJN"
+              rooms:
+                - roomTypeCode: "251722735"
+                  selectedRateBasis: "1331"
+                  allocationDetails: "1733328904006211B2025B1"
+                  adults: 2
+                  children: []
+                  extraBed: 0
+                  nationality: "102"
+                  residence: "102"
+                  passengers:
+                    - salutation: 3801
+                      firstName: Carol
+                      lastName: Pala
+                      leading: true
+                    - salutation: 3801
+                      firstName: Carolbrfen
+                      lastName: Pala
+      responses:
+        "200":
+          description: Reserva guardada (returnedServiceCode)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaveBookingResponse"
+
+  /api/webbeds/bookitinerary:
+    post:
+      tags:
+        - Webbeds
+      summary: bookitinerary (confirmar con pago)
+      description: >
+        Variante Bookitinerary(yes) del Postman. Usa returnedServiceCode de savebooking y
+        datos de pago (orderCode/authorisationId) para confirmar.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookItineraryRequest"
+            example:
+              bookingCode: "1326786013"
+              bookingType: 2
+              confirm: "yes"
+              services:
+                - serviceCode: "1326786023"
+                  testPrice: 722.4165
+                  allocationDetails: "1733337315000001B2023B1"
+              payment:
+                paymentMethod: "CC_PAYMENT_NET"
+                creditCardCharge: 722.4165
+                orderCode: "20376563"
+                authorisationId: "DOTW20376563-3608fe57f56b"
+      responses:
+        "200":
+          description: Itinerario confirmado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookItineraryResponse"
+
+  /api/webbeds/bookitinerary/recheck:
+    post:
+      tags:
+        - Webbeds
+      summary: bookitinerary (recheck sin pago, confirm=no)
+      description: >
+        Variante Bookitinerary(no) del Postman. No envia pago, solo revalida precios antes
+        de pasar a preauth/yes.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookItineraryRecheckRequest"
+            example:
+              bookingCode: "1326765515"
+              bookingType: 2
+              confirm: "no"
+              sendCommunicationTo: "confirmations@reservationcounter.com"
+      responses:
+        "200":
+          description: Recheck ejecutado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookItineraryResponse"
+
+  /api/webbeds/bookitinerary/preauth:
+    post:
+      tags:
+        - Webbeds
+      summary: bookitinerary (preauth con token CC)
+      description: >
+        Variante Bookitinerary(preauth) del Postman. Requiere token de tarjeta (RezToken),
+        datos AVS y devicePayload/endUserIPv4Address.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookItineraryPreauthRequest"
+            example:
+              bookingCode: "1326765515"
+              bookingType: 2
+              confirm: "preauth"
+              services:
+                - serviceCode: "1326765525"
+                  testPrice: 571.0124
+                  allocationDetails: "1713289359000655B2023B3"
+              payment:
+                paymentMethod: "CC_PAYMENT_COMMISSIONABLE"
+                creditCardCharge: 571.01
+                usedCredit: 0
+                token: "99B524366K7PP4PH9H9B2SZ8KKL256275"
+                avsDetails:
+                  avsFirstName: Carol
+                  avsLastName: Pala
+                  avsAddress: "518 East Cape Shores Drive, Lewes, DE, USA"
+                  avsZip: "19958"
+                  avsCountry: "US"
+                  avsCity: "Lewes"
+                  avsEmail: "capala518@gmail.com"
+                  avsPhone: "+13023121794"
+                devicePayload: "None"
+                endUserIPv4Address: "192.168.1.1"
+      responses:
+        "200":
+          description: Preautorizacion ejecutada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookItineraryResponse"
+
+  /api/webbeds/cancelbooking:
+    post:
+      tags:
+        - Webbeds
+      summary: cancelbooking (paso no/yes)
+      description: >
+        Requests CancelBooking(No) y CancelBooking(Yes) del Postman. En el primer paso
+        envia confirm=no para obtener cargos; en el segundo se reenvia con confirm=yes
+        y services[].penaltyApplied.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelBookingRequest"
+            examples:
+              step1:
+                summary: Paso 1 (confirm=no)
+                value:
+                  bookingCode: "636657073"
+                  bookingType: 1
+                  confirm: "no"
+              step2:
+                summary: Paso 2 (confirm=yes con penalties)
+                value:
+                  bookingCode: "636657073"
+                  bookingType: 1
+                  confirm: "yes"
+                  services:
+                    - serviceCode: "636657073"
+                      penaltyApplied: 0
+      responses:
+        "200":
+          description: Cancelacion procesada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelBookingResponse"
+
+  /api/webbeds/booking:
+    get:
+      tags:
+        - Webbeds
+      summary: getbookingdetails
+      description: Request GetBookingDetails del Postman.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: bookingId
+          required: true
+          schema:
+            type: string
+          description: bookingId/bookingCode DOTW a consultar.
+      responses:
+        "200":
+          description: Detalle de la reserva
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingDetailsResponse"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -120,7 +511,377 @@ components:
       properties:
         token:
           type: string
-          description: Incluye el prefijo `Bearer ` para copiarlo directamente en Authorize
+          description: Incluye el prefijo Bearer  para copiarlo directamente en Authorize
+
+    SaveBookingPassenger:
+      type: object
+      properties:
+        salutation:
+          type: integer
+          description: Codigo de titulo (ej 3801)
+        firstName:
+          type: string
+        lastName:
+          type: string
+        leading:
+          type: boolean
+          description: Debe haber al menos un leading=true por habitacion.
+
+    SaveBookingRoom:
+      type: object
+      required:
+        - roomTypeCode
+        - selectedRateBasis
+        - allocationDetails
+        - adults
+      properties:
+        roomTypeCode:
+          type: string
+        selectedRateBasis:
+          type: string
+        allocationDetails:
+          type: string
+        adults:
+          type: integer
+        children:
+          type: array
+          items:
+            type: integer
+          description: Edades de ninos.
+        nationality:
+          type: string
+        residence:
+          type: string
+        extraBed:
+          type: integer
+        passengers:
+          type: array
+          items:
+            $ref: "#/components/schemas/SaveBookingPassenger"
+        specialRequests:
+          type: array
+          items:
+            type: string
+        beddingPreference:
+          type: integer
+
+    SaveBookingRequest:
+      type: object
+      required:
+        - checkIn
+        - checkOut
+        - currency
+        - hotelId
+        - rooms
+      properties:
+        checkIn:
+          type: string
+          format: date
+        checkOut:
+          type: string
+          format: date
+        currency:
+          type: string
+        hotelId:
+          type: string
+          description: productId/hotelId DOTW.
+        rateBasis:
+          type: string
+          description: Rate basis usado para la seleccion.
+        nationality:
+          type: string
+        residence:
+          type: string
+        customerReference:
+          type: string
+        rooms:
+          type: array
+          items:
+            $ref: "#/components/schemas/SaveBookingRoom"
+
+    SaveBookingResponse:
+      type: object
+      properties:
+        returnedCode:
+          type: string
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              returnedServiceCode:
+                type: string
+        successful:
+          type: boolean
+        bookingId:
+          type: string
+        metadata:
+          type: object
+          properties:
+            command:
+              type: string
+            date:
+              type: string
+            ip:
+              type: string
+
+    BookItineraryService:
+      type: object
+      properties:
+        serviceCode:
+          type: string
+          description: returnedServiceCode devuelto en savebooking.
+        testPrice:
+          type: number
+        allocationDetails:
+          type: string
+        penaltyApplied:
+          type: number
+        paymentBalance:
+          type: number
+
+    BookItineraryPayment:
+      type: object
+      properties:
+        paymentMethod:
+          type: string
+          description: CC_PAYMENT_COMMISSIONABLE | CC_PAYMENT_NET
+        usedCredit:
+          type: number
+        creditCardCharge:
+          type: number
+        token:
+          type: string
+          description: RezToken (para preauth).
+        cardHolderName:
+          type: string
+        creditCardType:
+          type: integer
+        avsDetails:
+          type: object
+          properties:
+            avsFirstName:
+              type: string
+            avsLastName:
+              type: string
+            avsAddress:
+              type: string
+            avsZip:
+              type: string
+            avsCountry:
+              type: string
+            avsCity:
+              type: string
+            avsEmail:
+              type: string
+            avsPhone:
+              type: string
+        devicePayload:
+          type: string
+        endUserIPv4Address:
+          type: string
+        orderCode:
+          type: string
+          description: Usado en confirm=yes (pago ya autorizado).
+        authorisationId:
+          type: string
+
+    BookItineraryRequest:
+      type: object
+      required:
+        - bookingCode
+      properties:
+        bookingCode:
+          type: string
+        bookingType:
+          type: integer
+          description: 1=Confirmed, 2=Saved (default 2).
+        confirm:
+          type: string
+          enum: [no, preauth, yes]
+          description: Estado de confirmacion a enviar.
+        sendCommunicationTo:
+          type: string
+          format: email
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/BookItineraryService"
+        payment:
+          $ref: "#/components/schemas/BookItineraryPayment"
+
+    BookItineraryRecheckRequest:
+      allOf:
+        - $ref: "#/components/schemas/BookItineraryRequest"
+        - type: object
+          description: Confirm siempre no, sin pago.
+
+    BookItineraryPreauthRequest:
+      allOf:
+        - $ref: "#/components/schemas/BookItineraryRequest"
+        - type: object
+          required: [bookingCode, services, payment]
+          description: Confirm preauth, requiere payment.token, avsDetails y devicePayload/IP.
+
+    BookItineraryResponse:
+      type: object
+      properties:
+        currencyShort:
+          type: string
+        confirmationText:
+          type: string
+        returnedCode:
+          type: string
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              returnedServiceCode:
+                type: string
+        orderCode:
+          type: string
+        authorizationId:
+          type: string
+        successful:
+          type: boolean
+        threeDSData:
+          type: object
+          properties:
+            initiate3DS:
+              type: string
+            token:
+              type: string
+            status:
+              type: string
+            orderCode:
+              type: string
+            authorizationId:
+              type: string
+        bookings:
+          type: array
+          items:
+            type: object
+            properties:
+              bookingCode:
+                type: string
+              bookingReferenceNumber:
+                type: string
+              bookingStatus:
+                type: string
+              price:
+                type: string
+              currency:
+                type: string
+        metadata:
+          type: object
+          properties:
+            command:
+              type: string
+            transactionId:
+              type: string
+            ip:
+              type: string
+            date:
+              type: string
+
+    CancelBookingRequest:
+      type: object
+      required:
+        - bookingCode
+      properties:
+        bookingCode:
+          type: string
+        bookingType:
+          type: integer
+          description: 1=Confirmed, 2=Saved (default 1).
+        confirm:
+          type: string
+          enum: [yes, no]
+        reason:
+          type: string
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              serviceCode:
+                type: string
+              penaltyApplied:
+                type: number
+              paymentBalance:
+                type: number
+
+    CancelBookingResponse:
+      type: object
+      properties:
+        successful:
+          type: boolean
+        productsLeftOnItinerary:
+          type: integer
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              cancellationPenalties:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    charge:
+                      type: string
+                    chargeFormatted:
+                      type: string
+                    currency:
+                      type: string
+                    currencyShort:
+                      type: string
+
+    BookingDetailsResponse:
+      type: object
+      properties:
+        successful:
+          type: boolean
+        metadata:
+          type: object
+          properties:
+            command:
+              type: string
+            date:
+              type: string
+            ip:
+              type: string
+        product:
+          type: object
+          properties:
+            bookingReference:
+              type: string
+            bookingReferenceNumber:
+              type: string
+            status:
+              type: object
+            service:
+              type: object
+            dates:
+              type: object
+            room:
+              type: object
+            pax:
+              type: object
+            policies:
+              type: object
+            contact:
+              type: object
+            totals:
+              type: object
+
     WebbedsSearchResponse:
       type: object
       properties:

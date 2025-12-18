@@ -71,7 +71,7 @@ test("WebbedsProvider.search sanitizes numeric codes and forwards payload", asyn
   assert.equal(room.passengerNationality, "102")
   assert.equal(room.passengerCountryOfResidence, "102")
   assert.deepEqual(
-    captured.payload.return.filters["c:condition"]["a:condition"][0].fieldValues.fieldValue,
+    captured.payload.return.filters["c:condition"]["a:condition"].fieldValues.fieldValue,
     ["30694", "30674"],
   )
   assert.deepEqual(res.payloads[0], [])
@@ -135,9 +135,9 @@ test("WebbedsProvider.search batches hotelIds when mode=hotelIds", async () => {
   const firstPayload = capturedPayloads[0]
   const secondPayload = capturedPayloads[1]
   const firstFieldValues =
-    firstPayload.return.filters["c:condition"]["a:condition"][0].fieldValues.fieldValue
+    firstPayload.return.filters["c:condition"]["a:condition"].fieldValues.fieldValue
   const secondFieldValues =
-    secondPayload.return.filters["c:condition"]["a:condition"][0].fieldValues.fieldValue
+    secondPayload.return.filters["c:condition"]["a:condition"].fieldValues.fieldValue
 
   assert.equal(firstFieldValues.length, 50)
   assert.equal(secondFieldValues.length, 5)

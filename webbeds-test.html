@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WebBeds Token + DevicePayload helper (local)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0/dist/css/bootstrap.min.css" />
+  <style>
+    #threedsWidgetContainer { min-height: 400px; }
+    #threedsWidgetContainer iframe {
+      border: 0;
+      width: 600px;
+      height: 400px;
+      background: #fff;
+    }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container py-4">
+    <h3 class="mb-3">WebBeds Token + DevicePayload helper (local)</h3>
+    <div class="row g-3">
+      <div class="col-12 col-md-6">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">Credit Card</h5>
+            <div class="mb-2">
+              <label class="form-label">Number</label>
+              <input id="ccNumber" class="form-control" value="4242424242424242" />
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Holder</label>
+              <input id="ccName" class="form-control" value="Test User" />
+            </div>
+            <div class="row mb-2">
+              <div class="col-4">
+                <label class="form-label">Exp MM</label>
+                <input id="ccExpMonth" class="form-control" maxlength="2" value="08" />
+              </div>
+              <div class="col-4">
+                <label class="form-label">Exp YYYY</label>
+                <input id="ccExpYear" class="form-control" maxlength="4" value="2026" />
+              </div>
+              <div class="col-4">
+                <label class="form-label">CVV</label>
+                <input id="ccCvv" class="form-control" maxlength="4" value="123" />
+              </div>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label">RezToken</label>
+              <input id="tokenOutput" class="form-control" disabled />
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Device Payload</label>
+              <textarea id="deviceOutput" class="form-control" rows="3" disabled></textarea>
+            </div>
+            <div class="d-grid">
+              <button id="btnTokenize" class="btn btn-primary" type="button" disabled>Tokenize &amp; Collect</button>
+            </div>
+            <small class="text-muted d-block mt-2">Los valores mostrados aquí son los que debes pegar en Insomnia en bookitinerary preauth (token y devicePayload).</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-md-6">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5 class="card-title">3DS Challenge (solo si initiate3DS=1)</h5>
+            <div class="mb-2">
+              <label class="form-label">3DS Token (de respuesta preauth)</label>
+              <textarea id="threeDsTokenInput" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="d-grid mb-2">
+              <button id="btnRun3ds" class="btn btn-secondary" type="button">Iniciar 3DS</button>
+            </div>
+            <div id="threedsWidgetContainer" class="border rounded bg-white"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-3">
+      <label class="form-label">Log</label>
+      <textarea id="logArea" class="form-control" rows="8" readonly></textarea>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.webbeds.com/js/payment/test.js"></script>
+  <script>
+    const logArea = document.getElementById('logArea');
+    const log = (msg) => {
+      const text = `[${new Date().toISOString()}] ${msg}\n`;
+      logArea.value = text + logArea.value;
+      console.log(msg);
+    };
+
+    const btnTokenize = document.getElementById('btnTokenize');
+    const btnRun3ds = document.getElementById('btnRun3ds');
+    const tokenOutput = document.getElementById('tokenOutput');
+    const deviceOutput = document.getElementById('deviceOutput');
+
+    // Accertify payload (devicePayload)
+    webbeds.onDataCollect(function (payload) {
+      deviceOutput.value = payload;
+      btnTokenize.removeAttribute('disabled');
+      log('Device payload ready.');
+    });
+
+    webbeds.onError(function (err) {
+      log('ERROR: ' + err);
+      alert(err);
+    });
+
+    btnTokenize.addEventListener('click', function () {
+      tokenOutput.value = '';
+      const name = document.getElementById('ccName').value;
+      const number = document.getElementById('ccNumber').value;
+      const expM = document.getElementById('ccExpMonth').value;
+      const expY = document.getElementById('ccExpYear').value;
+      const cvv = document.getElementById('ccCvv').value;
+
+      log('Tokenizing card...');
+      webbeds.tokenize(name, number, expM, expY, cvv)
+        .then(token => {
+          tokenOutput.value = token;
+          log('RezToken: ' + token);
+        })
+        .catch(error => {
+          log('Tokenize error: ' + error);
+          alert('Tokenize error: ' + error);
+        });
+    });
+
+    btnRun3ds.addEventListener('click', function () {
+      const threeDsToken = document.getElementById('threeDsTokenInput').value.trim();
+      if (!threeDsToken) {
+        alert('Pega el 3DS token devuelto en el preauth (initiate3DS=1).');
+        return;
+      }
+      log('Starting 3DS auth...');
+      webbeds.initiate3dsAuth('threedsWidgetContainer', threeDsToken)
+        .then(() => { log('3DS SUCCESS'); alert('3DS success'); })
+        .catch(() => { log('3DS FAIL'); alert('3DS failed'); });
+    });
+  </script>
+</body>
+</html>

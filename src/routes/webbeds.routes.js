@@ -12,28 +12,36 @@ import {
   listHotelChains,
   listHotelClassifications,
   confirmBooking,
+  bookItineraryRecheck,
+  bookItineraryPreauth,
+  bookItinerary,
   cancelBooking,
+  deleteItinerary,
   getBookingDetails,
   createPaymentIntent,
 } from "../controllers/webbeds.controller.js"
+import { authenticate } from "../middleware/auth.js"
 
 const router = Router()
 
-router.get("/search", search)
-router.get("/rooms", getRooms)
-router.get("/rooms", getRooms)
-router.post("/create-payment-intent", createPaymentIntent)
-router.post("/savebooking", saveBooking)
-router.post("/confirmbooking", confirmBooking)
-router.post("/cancelbooking", cancelBooking)
-router.get("/booking", getBookingDetails)
-router.get("/static/hotels", listStaticHotels)
-router.get("/countries", listCountries)
-router.get("/cities", listCities)
-router.get("/ratebasis", listRateBasis)
-router.get("/amenities", listHotelAmenities)
-router.get("/room-amenities", listRoomAmenities)
-router.get("/chains", listHotelChains)
-router.get("/classifications", listHotelClassifications)
+router.get("/search", authenticate, search)
+router.get("/rooms", authenticate, getRooms)
+router.post("/create-payment-intent", authenticate, createPaymentIntent)
+router.post("/savebooking", authenticate, saveBooking)
+router.post("/bookitinerary", authenticate, bookItinerary)
+router.post("/bookitinerary/recheck", authenticate, bookItineraryRecheck)
+router.post("/bookitinerary/preauth", authenticate, bookItineraryPreauth)
+router.post("/confirmbooking", authenticate, confirmBooking)
+router.post("/cancelbooking", authenticate, cancelBooking)
+router.post("/deleteitinerary", authenticate, deleteItinerary)
+router.get("/booking", authenticate, getBookingDetails)
+router.get("/static/hotels", authenticate, listStaticHotels)
+router.get("/countries", authenticate, listCountries)
+router.get("/cities", authenticate, listCities)
+router.get("/ratebasis", authenticate, listRateBasis)
+router.get("/amenities", authenticate, listHotelAmenities)
+router.get("/room-amenities", authenticate, listRoomAmenities)
+router.get("/chains", authenticate, listHotelChains)
+router.get("/classifications", authenticate, listHotelClassifications)
 
 export default router

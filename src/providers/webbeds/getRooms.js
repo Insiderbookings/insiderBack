@@ -61,6 +61,22 @@ const parseChildrenSegment = (segment) => {
   return Array.from({ length: count }, () => 8)
 }
 
+const parseList = (value) => {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  const text = String(value).trim()
+  if (!text) return []
+  if (text.startsWith("[") && text.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(text)
+      if (Array.isArray(parsed)) return parsed
+    } catch {
+      // ignore JSON parse errors and fallback to comma split
+    }
+  }
+  return text.split(",").map((token) => token.trim()).filter(Boolean)
+}
+
 const parseOccupancies = (raw) => {
   if (!raw) return [{ adults: 2, children: [] }]
   const serialized = Array.isArray(raw) ? raw : String(raw).split(",")
@@ -87,6 +103,7 @@ export const buildGetRoomsPayload = ({
   roomTypeCode,
   selectedRateBasis,
   allocationDetails,
+  req = null,
 } = {}) => {
   const fromDate = formatDateValue(checkIn)
   const toDate = formatDateValue(checkOut)
@@ -100,16 +117,95 @@ export const buildGetRoomsPayload = ({
   }
 
   const parsedRooms = parseOccupancies(occupancies)
+
+  const sanitizeRoomTypeSelection = ({
+    roomTypeCode,
+    selectedRateBasis,
+    allocationDetails,
+  } = {}) => {
+    const code = roomTypeCode != null ? String(roomTypeCode).trim() : null
+    const rateBasisSel = selectedRateBasis != null ? String(selectedRateBasis).trim() : null
+    const alloc = allocationDetails != null ? String(allocationDetails).trim() : null
+
+    // Debe tener al menos code y allocation; selectedRateBasis opcional pero útil.
+    if (!code || !alloc) return null
+    // Evita enviar placeholders tipo "<ROOMTYPE_CODE>"
+    if (code.includes("<") || alloc.includes("<") || (rateBasisSel && rateBasisSel.includes("<"))) {
+      return null
+    }
+
+    const node = {
+      code,
+    }
+    if (rateBasisSel) {
+      // Orden segun XSD: code -> selectedRateBasis -> allocationDetails
+      node.selectedRateBasis = rateBasisSel
+    }
+    node.allocationDetails = alloc
+    return node
+  }
+
+  const roomTypeSelectedNode = sanitizeRoomTypeSelection({
+    roomTypeCode,
+    selectedRateBasis,
+    allocationDetails,
+  })
+
+  // Permitir selection por habitaciǬn: roomSelections (JSON) o listas CSV roomTypeCodes/selectedRateBases/allocationDetailsList
+  const selectionPerRoom = []
+
+  const rawRoomSelections = req?.query?.roomSelections ?? req?.body?.roomSelections
+  if (rawRoomSelections) {
+    try {
+      const parsed = typeof rawRoomSelections === "string" ? JSON.parse(rawRoomSelections) : rawRoomSelections
+      if (Array.isArray(parsed)) {
+        parsed.forEach((sel) => {
+          const node = sanitizeRoomTypeSelection({
+            roomTypeCode: sel?.code ?? sel?.roomTypeCode,
+            selectedRateBasis: sel?.selectedRateBasis ?? sel?.rateBasis ?? sel?.rateBasisId,
+            allocationDetails: sel?.allocationDetails ?? sel?.allocation ?? sel?.alloc,
+          })
+          if (node) selectionPerRoom.push(node)
+        })
+      }
+    } catch (error) {
+      console.warn("[webbeds] getRooms roomSelections parse error:", error.message)
+    }
+  }
+
+  if (!selectionPerRoom.length) {
+    const codes = parseList(
+      req?.query?.roomTypeCodes ?? req?.body?.roomTypeCodes ?? req?.query?.roomTypeCode ?? req?.body?.roomTypeCode,
+    )
+    const bases = parseList(
+      req?.query?.selectedRateBases ?? req?.body?.selectedRateBases ?? req?.query?.selectedRateBasis ?? req?.body?.selectedRateBasis,
+    )
+    const allocs = parseList(
+      req?.query?.allocationDetailsList ?? req?.body?.allocationDetailsList ?? req?.query?.allocationDetails ?? req?.body?.allocationDetails,
+    )
+    const maxLen = Math.max(codes.length, bases.length, allocs.length)
+    for (let idx = 0; idx < maxLen; idx += 1) {
+      const node = sanitizeRoomTypeSelection({
+        roomTypeCode: codes[idx] ?? codes[0],
+        selectedRateBasis: bases[idx] ?? bases[0],
+        allocationDetails: allocs[idx] ?? allocs[0],
+      })
+      if (node) selectionPerRoom.push(node)
+    }
+  }
+
   const rooms = parsedRooms.map((room, idx) => {
     const childrenCount = room.children.length
     const childrenNode = {
       "@no": String(childrenCount),
     }
     if (childrenCount) {
-      childrenNode.child = room.children.map((age, childIdx) => ({
-        "@runno": String(childIdx),
-        "#": String(age ?? 8),
-      }))
+      childrenNode["#raw"] = room.children
+        .map(
+          (age, childIdx) =>
+            `<child runno="${childIdx}">${String(age ?? 8)}</child>`,
+        )
+        .join("")
     }
 
     const roomNode = {
@@ -121,12 +217,9 @@ export const buildGetRoomsPayload = ({
       passengerCountryOfResidence: residence,
     }
 
-    if (roomTypeCode || allocationDetails || selectedRateBasis) {
-      roomNode.roomTypeSelected = {
-        ...(roomTypeCode ? { code: roomTypeCode } : {}),
-        ...(selectedRateBasis ? { selectedRateBasis } : {}),
-        ...(allocationDetails ? { allocationDetails } : {}),
-      }
+    const selection = selectionPerRoom[idx] ?? roomTypeSelectedNode
+    if (selection) {
+      roomNode.roomTypeSelected = selection
     }
 
     return roomNode
@@ -180,6 +273,19 @@ const parseRateBases = (rateBasesNode, requestedCurrency) => {
   const rateBases = ensureArray(rateBasesNode?.rateBasis ?? rateBasesNode)
   return rateBases.map((rateBasis) => {
     const rateType = rateBasis?.rateType ?? {}
+    const resolvedTotal =
+      toNumber(rateBasis?.totalInRequestedCurrency) ??
+      toNumber(rateBasis?.total) ??
+      toNumber(rateBasis?.totalNetPrice) ??
+      toNumber(rateBasis?.totalMinimumSelling)
+
+    const resolvedTotalFormatted =
+      getText(rateBasis?.totalInRequestedCurrencyFormatted) ??
+      getText(rateBasis?.totalFormatted) ??
+      getText(rateBasis?.total?.formatted) ??
+      getText(rateBasis?.totalMinimumSelling?.formatted) ??
+      getText(rateBasis?.totalMinimumSellingFormatted)
+
     return {
       id: rateBasis?.["@_id"] ?? null,
       description: rateBasis?.["@_description"] ?? rateBasis?.description ?? null,
@@ -202,12 +308,12 @@ const parseRateBases = (rateBasesNode, requestedCurrency) => {
       cancellationRules: parseCancellationRules(rateBasis?.cancellationRules),
       isBookable: normalizeBoolean(rateBasis?.isBookable),
       onRequest: normalizeBoolean(rateBasis?.onRequest),
-      total: toNumber(rateBasis?.total),
-      totalFormatted: getText(rateBasis?.total?.formatted ?? rateBasis?.totalFormatted),
+      total: resolvedTotal,
+      totalFormatted: resolvedTotalFormatted,
       totalMinimumSelling: toNumber(rateBasis?.totalMinimumSelling),
-      totalMinimumSellingFormatted: getText(
-        rateBasis?.totalMinimumSelling?.formatted ?? rateBasis?.totalMinimumSellingFormatted,
-      ),
+      totalMinimumSellingFormatted:
+        getText(rateBasis?.totalMinimumSelling?.formatted ?? rateBasis?.totalMinimumSellingFormatted) ??
+        resolvedTotalFormatted,
       totalInRequestedCurrency: toNumber(rateBasis?.totalInRequestedCurrency),
       totalMinimumSellingInRequestedCurrency: toNumber(
         rateBasis?.totalMinimumSellingInRequestedCurrency,
@@ -219,8 +325,13 @@ const parseRateBases = (rateBasesNode, requestedCurrency) => {
         datetime: date?.["@_datetime"] ?? date?.datetime ?? null,
         day: date?.["@_day"] ?? date?.day ?? null,
         wday: date?.["@_wday"] ?? date?.wday ?? null,
-        price: toNumber(date?.price),
-        priceFormatted: getText(date?.price?.formatted),
+        price:
+          toNumber(date?.price) ??
+          toNumber(date?.["@_price"]) ??
+          toNumber(getText(date?.price?.formatted ?? date?.priceFormatted)),
+        priceFormatted:
+          getText(date?.price?.formatted ?? date?.priceFormatted ?? date?.["@_priceFormatted"]) ??
+          getText(date?.price),
         priceMinimumSelling: toNumber(date?.priceMinimumSelling),
         priceMinimumSellingFormatted: getText(date?.priceMinimumSelling?.formatted),
         freeStay: normalizeBoolean(date?.freeStay),
