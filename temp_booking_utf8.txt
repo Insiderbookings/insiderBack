@@ -554,19 +554,6 @@ export const createHomeBooking = async (req, res) => {
       influencerId: Number(req.user?.referredByInfluencerId) || null,
       code: req.user?.referredByCode || null,
     }
-    console.log("[HOME BOOKING] createHomeBooking payload", {
-      userId,
-      referral,
-      body: {
-        homeId: req.body?.homeId,
-        checkIn: req.body?.checkIn,
-        checkOut: req.body?.checkOut,
-        adults: req.body?.adults,
-        children: req.body?.children,
-        infants: req.body?.infants,
-        hasReferralCode: Boolean(req.body?.referralCode || req.body?.referrerCode),
-      },
-    })
 
     const {
       homeId,
@@ -802,7 +789,6 @@ export const createHomeBooking = async (req, res) => {
             "nights",
             "adults",
             "children",
-            "influencer_user_id",
             "guest_name",
             "guest_email",
             "guest_phone",
@@ -837,15 +823,6 @@ export const createHomeBooking = async (req, res) => {
         },
         { transaction: tx }
       )
-
-      console.log("[HOME BOOKING] created stay", {
-        id: created.id,
-        status: created.status,
-        payment_status: created.payment_status,
-        influencer_user_id: created.influencer_user_id,
-        gross_price: created.gross_price,
-        currency: created.currency,
-      })
 
       for (const date of stayDates) {
         const existingEntry = existingCalendarMap.get(date)
@@ -1688,13 +1665,12 @@ export const downloadBookingCertificate = async (req, res) => {
 /* -----------------------------------------------------------
    PUT  /api/bookings/:id/confirm
    Marca la reserva como CONFIRMED/PAID (uso temporal desde app).
-  Autorización: owner de la booking.
+   Autorización: owner de la booking.
 ----------------------------------------------------------- */
 export const confirmBooking = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user?.id;
-    console.log("[CONFIRM BOOKING] request", { id, userId });
     if (!id || !userId) return res.status(401).json({ error: "Unauthorized" });
 
     const booking = await models.Booking.findOne({
@@ -1706,15 +1682,6 @@ export const confirmBooking = async (req, res) => {
     const statusLc = String(booking.status || "").toUpperCase();
     if (statusLc === "CANCELLED") return res.status(400).json({ error: "Booking is cancelled" });
 
-    console.log("[CONFIRM BOOKING] loaded booking", {
-      id: booking.id,
-      status: booking.status,
-      payment_status: booking.payment_status,
-      influencer_user_id: booking.influencer_user_id,
-      gross_price: booking.gross_price,
-      currency: booking.currency,
-    });
-
     const alreadyFinal = statusLc === "CONFIRMED" || statusLc === "COMPLETED";
     if (!alreadyFinal) {
       await booking.update({
@@ -1722,120 +1689,6 @@ export const confirmBooking = async (req, res) => {
         payment_status: "PAID",
         booked_at: booking.booked_at || new Date(),
       });
-      console.log("[CONFIRM BOOKING] updated to CONFIRMED/PAID", { id: booking.id });
-    }
-
-    const ensureInfluencerEventCommission = async (influencerUserId, eventType, payload = {}) => {
-      if (!models.InfluencerEventCommission) return;
-      const influencerId = Number(influencerUserId) || null;
-      if (!influencerId) return;
-      const { signup_user_id = null, stay_id = null } = payload;
-      const where = { event_type: eventType };
-      if (eventType === "signup") where.signup_user_id = signup_user_id;
-      if (eventType === "booking") where.stay_id = stay_id;
-      const bonusEnv =
-        eventType === "signup"
-          ? Number(process.env.INFLUENCER_SIGNUP_BONUS_USD)
-          : Number(process.env.INFLUENCER_BOOKING_BONUS_USD);
-      const defaultAmount = eventType === "signup" ? 0.25 : 2;
-      const amount = Number.isFinite(bonusEnv) && bonusEnv > 0 ? bonusEnv : defaultAmount;
-      if (!amount) return;
-
-      try {
-        await models.InfluencerEventCommission.findOrCreate({
-          where,
-          defaults: {
-            influencer_user_id: influencerId,
-            event_type: eventType,
-            signup_user_id: signup_user_id || null,
-            stay_id: stay_id || null,
-            amount,
-            currency: (booking.currency || "USD").toUpperCase(),
-            status: "eligible",
-          },
-        });
-        console.log("[CONFIRM BOOKING] influencer_event_commission created", {
-          influencer_user_id: influencerId,
-          stay_id: stay_id || null,
-          event_type: eventType,
-          amount,
-        });
-      } catch (e) {
-        console.warn("(INF) No se pudo registrar bonus de evento:", e?.message || e);
-      }
-    };
-
-    const ensureInfluencerCommission = async (influencerUserId) => {
-      const influencerId = Number(influencerUserId) || null;
-      if (!influencerId) return;
-      try {
-        const existing = await models.InfluencerCommission.findOne({ where: { stay_id: booking.id } });
-        if (existing) return;
-
-        const rateEnv = Number(process.env.INFLUENCER_COMMISSION_PCT);
-        const ratePct = Number.isFinite(rateEnv) && rateEnv > 0 ? rateEnv : 15;
-        const capUsdEnv = Number(process.env.INFLUENCER_COMMISSION_CAP_USD);
-        const capUsd = Number.isFinite(capUsdEnv) && capUsdEnv > 0 ? capUsdEnv : 5;
-        let capAmt = capUsd;
-        try {
-          const ratesStr = process.env.FX_USD_RATES || "{}";
-          const rates = JSON.parse(ratesStr);
-          const r = Number(rates[(booking.currency || "USD").toUpperCase()]);
-          if (Number.isFinite(r) && r > 0) capAmt = capUsd * r;
-        } catch {}
-        const holdDaysEnv = Number(process.env.INFLUENCER_HOLD_DAYS);
-        const holdDays = Number.isFinite(holdDaysEnv) && holdDaysEnv >= 0 ? holdDaysEnv : 3;
-
-        const gross = Number(booking.gross_price || 0);
-        const net = booking.net_cost != null ? Number(booking.net_cost) : null;
-        const markup = net != null ? Math.max(0, gross - Number(net)) : null;
-        const base = markup != null ? markup : gross;
-        const baseType = markup != null ? "markup" : "gross";
-
-        const rawCommission = base * (ratePct / 100);
-        const commissionAmount =
-          Math.round((Math.min(rawCommission, capAmt) + Number.EPSILON) * 100) / 100;
-        const currency = booking.currency || "USD";
-
-        let holdUntil = null;
-        try {
-          const co = booking.check_out ? new Date(booking.check_out) : null;
-          if (co && !isNaN(co)) {
-            co.setDate(co.getDate() + holdDays);
-            holdUntil = co;
-          }
-        } catch {}
-        const useHold = String(process.env.INFLUENCER_USE_HOLD || "").toLowerCase() === "true";
-        await models.InfluencerCommission.create({
-          influencer_user_id: influencerId,
-          stay_id: booking.id,
-          discount_code_id: null,
-          commission_base: baseType,
-          commission_rate_pct: ratePct,
-          commission_amount: commissionAmount,
-          commission_currency: currency,
-          status: useHold && holdUntil ? "hold" : "eligible",
-          hold_until: holdUntil,
-        });
-        console.log("[CONFIRM BOOKING] influencer_commission created", {
-          influencer_user_id: influencerId,
-          stay_id: booking.id,
-          commission_amount: commissionAmount,
-          commission_currency: currency,
-          status: useHold && holdUntil ? "hold" : "eligible",
-          commission_base: baseType,
-          commission_rate_pct: ratePct,
-        });
-      } catch (e) {
-        console.warn("(INF) Could not create InfluencerCommission:", e?.message || e);
-      }
-    };
-
-    const influencerId = booking.influencer_user_id || null;
-    if (influencerId) {
-      console.log("[CONFIRM BOOKING] processing influencer", { influencer_user_id: influencerId });
-      await ensureInfluencerCommission(influencerId);
-      await ensureInfluencerEventCommission(influencerId, "booking", { stay_id: booking.id });
     }
 
     const fresh =
@@ -1849,4 +1702,3 @@ export const confirmBooking = async (req, res) => {
     return res.status(500).json({ error: "Server error" });
   }
 };
-

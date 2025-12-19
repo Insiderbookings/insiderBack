@@ -10,6 +10,7 @@ import {
   getBookingsForStaff,
   getBookingById,
   cancelBooking,
+  confirmBooking,
   getOutsideBookingByConfirmation,
   getOutsideBookingWithAddOns,
   downloadBookingCertificate,
@@ -51,6 +52,7 @@ router.get("/staff/me", authenticate, authorizeStaff, getBookingsForStaff)
 /* ---- Single booking / cancel ---- */
 router.get("/:id",              getBookingById)
 router.put("/:id/cancel",       authenticate, cancelBooking)
+router.put("/:id/confirm",      authenticate, confirmBooking)
 
 /* ---- Outside-booking helpers ---- */
 router.get("/confirmation/:confirmation", getOutsideBookingByConfirmation)
