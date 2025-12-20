@@ -306,6 +306,10 @@ const parseRateBases = (rateBasesNode, requestedCurrency) => {
       minStay: toNumber(rateBasis?.minStay),
       dateApplyMinStay: rateBasis?.dateApplyMinStay ?? null,
       cancellationRules: parseCancellationRules(rateBasis?.cancellationRules),
+      withinCancellationDeadline: normalizeBoolean(rateBasis?.withinCancellationDeadline),
+      validForOccupancy: normalizeBoolean(rateBasis?.validForOccupancy),
+      changedOccupancy: normalizeBoolean(rateBasis?.changedOccupancy),
+      changedOccupancyText: getText(rateBasis?.changedOccupancyText),
       isBookable: normalizeBoolean(rateBasis?.isBookable),
       onRequest: normalizeBoolean(rateBasis?.onRequest),
       total: resolvedTotal,
@@ -318,6 +322,13 @@ const parseRateBases = (rateBasesNode, requestedCurrency) => {
       totalMinimumSellingInRequestedCurrency: toNumber(
         rateBasis?.totalMinimumSellingInRequestedCurrency,
       ),
+      minimumSelling: toNumber(
+        rateBasis?.minimumSelling ?? rateBasis?.priceMinimumSelling ?? rateBasis?.totalMinimumSelling,
+      ),
+      minimumSellingFormatted:
+        getText(rateBasis?.minimumSelling?.formatted ?? rateBasis?.priceMinimumSelling?.formatted) ??
+        getText(rateBasis?.totalMinimumSelling?.formatted ?? rateBasis?.totalMinimumSellingFormatted) ??
+        resolvedTotalFormatted,
       totalTaxes: toNumber(rateBasis?.totalTaxes),
       totalFee: toNumber(rateBasis?.totalFee),
       propertyFees: parsePropertyFees(rateBasis),

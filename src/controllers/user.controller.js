@@ -21,6 +21,7 @@ export const getCurrentUser = async (req, res) => {
         ["referred_by_influencer_id", "referredByInfluencerId"],
         ["referred_by_code", "referredByCode"],
         ["referred_at", "referredAt"],
+        "user_code",
       ],
       include: [
         { model: models.HostProfile, as: "hostProfile" },
@@ -119,9 +120,10 @@ export const updateUserProfile = async (req, res) => {
         "role",
         "avatar_url",
         "createdAt",
-        ["is_active","isActive"],
-        ["country_code","countryCode"],
-        ["residence_country_code","countryOfResidenceCode"],
+        ["is_active", "isActive"],
+        ["country_code", "countryCode"],
+        ["residence_country_code", "countryOfResidenceCode"],
+        "user_code",
       ],
     })
 
@@ -259,8 +261,8 @@ export const becomeHost = async (req, res) => {
       const normalizedLanguages = Array.isArray(languages)
         ? languages
         : languages
-        ? [languages]
-        : undefined
+          ? [languages]
+          : undefined
 
       const [profile, created] = await models.HostProfile.findOrCreate({
         where: { user_id: userId },
@@ -309,21 +311,32 @@ export const becomeHost = async (req, res) => {
 
 export const getInfluencerStats = async (req, res) => {
   try {
-    // En producciÃ³n, obtÃ©n estos datos desde req.user
     const userId = Number(req.user?.id)
     const role = Number(req.user?.role) // 2 = influencer
 
     if (!userId) return res.status(401).json({ error: "Unauthorized" })
     if (role !== 2) return res.status(403).json({ error: "Only influencers can access this endpoint" })
 
-    // 1) Traer cÃ³digos del influencer
+    // 1) Traer codigos del influencer
     const codes = await models.DiscountCode.findAll({
       where: { user_id: userId },
       attributes: ["id", "code", "percentage", "special_discount_price", "times_used", "stay_id", "created_at"],
       order: [["created_at", "DESC"]],
     })
 
-    // a) bookings enlazadas explÃ­citamente por DiscountCode.stay_id
+    // 2) Conteo de Usuarios Referidos (Signups)
+    const signupsCount = await models.User.count({
+      where: { referred_by_influencer_id: userId }
+    })
+
+    // 3) Traer IDs de usuarios referidos para buscar sus bookings
+    const referredUsers = await models.User.findAll({
+      where: { referred_by_influencer_id: userId },
+      attributes: ["id"]
+    })
+    const referredUserIds = referredUsers.map(u => u.id)
+
+    // a) bookings enlazadas explicitamente por DiscountCode.stay_id
     const bookingIdsFromCodes = codes
       .map(c => c.stay_id)
       .filter(id => Number.isInteger(id))
@@ -333,69 +346,74 @@ export const getInfluencerStats = async (req, res) => {
 
     const bookingConditions = [
       { influencer_user_id: userId },
+      ...(referredUserIds.length ? [{ user_id: { [Op.in]: referredUserIds } }] : []),
       ...(bookingIdsFromCodes.length ? [{ id: { [Op.in]: bookingIdsFromCodes } }] : []),
       ...(codeIds.length ? [{ discount_code_id: { [Op.in]: codeIds } }] : []),
     ]
 
-    // 2) Traer bookings confirmadas asociadas (por cualquiera de los caminos)
+    // 4) Traer bookings confirmadas asociadas
     const bookings = bookingConditions.length
       ? await models.Booking.findAll({
-          where: { status: "CONFIRMED", [Op.or]: bookingConditions },
-          order: [["created_at", "DESC"]],
-          limit: 200,
-        })
+        where: { status: "CONFIRMED", [Op.or]: bookingConditions },
+        order: [["created_at", "DESC"]],
+        limit: 200,
+      })
       : []
 
-    // 3) Sumar comisiones pendientes (booking + eventos signup/booking)
-    const earningsByCurrency = {}
-    const addEarning = (ccy, amt) => {
+    // 5) Sumar comisiones (booking + eventos signup/booking)
+    const unpaidByCurrency = {}
+    const paidByCurrency = {}
+
+    const addEarning = (ccy, amt, status) => {
       const currency = (ccy || "USD").toUpperCase()
       const amount = Number(amt)
       if (!Number.isFinite(amount)) return
-      earningsByCurrency[currency] = (earningsByCurrency[currency] || 0) + amount
+
+      const targetMap = (status === "paid") ? paidByCurrency : unpaidByCurrency
+      targetMap[currency] = (targetMap[currency] || 0) + amount
     }
 
-    // a) Comisiones por booking (influencer_commission) en estado elegible/hold
+    // a) Comisiones por booking (influencer_commission)
     if (models.InfluencerCommission) {
       const commissionRows = await models.InfluencerCommission.findAll({
         where: {
           influencer_user_id: userId,
-          status: { [Op.in]: ["eligible", "hold"] },
+          status: { [Op.in]: ["eligible", "hold", "paid"] },
         },
-        attributes: ["commission_amount", "commission_currency"],
-        limit: 500,
+        attributes: ["commission_amount", "commission_currency", "status"],
+        limit: 1000,
       })
-      commissionRows.forEach((row) => addEarning(row.commission_currency, row.commission_amount))
+      commissionRows.forEach((row) => addEarning(row.commission_currency, row.commission_amount, row.status))
     }
 
-    // b) Eventos signup/booking (influencer_event_commission) en estado elegible/hold
+    // b) Eventos signup/booking (influencer_event_commission)
     if (models.InfluencerEventCommission) {
       const eventRows = await models.InfluencerEventCommission.findAll({
         where: {
           influencer_user_id: userId,
-          status: { [Op.in]: ["eligible", "hold"] },
+          status: { [Op.in]: ["eligible", "hold", "paid"] },
         },
-        attributes: ["amount", "currency"],
-        limit: 500,
+        attributes: ["amount", "currency", "status"],
+        limit: 1000,
       })
-      eventRows.forEach((row) => addEarning(row.currency, row.amount))
+      eventRows.forEach((row) => addEarning(row.currency, row.amount, row.status))
     }
 
-    // 4) Normalizar Ãºltimas reservas para el front
+    // 6) Normalizar ultimas reservas
     const recentBookings = bookings.slice(0, 20).map((b) => ({
       id: b.id,
-      hotelName: b.hotel_name ?? b.hotel ?? null, // adapta si tienes esta info en otra tabla
+      hotelName: b.hotel_name ?? b.hotel ?? null,
       checkIn: b.check_in ?? null,
       checkOut: b.check_out ?? null,
       amount: Number(b.gross_price ?? 0),
       currency: b.currency || "USD",
       status: b.status,
-      payoutStatus: b.payout_status ?? null, // si existe la columna
+      payoutStatus: b.payout_status ?? null,
     }))
 
-    // 5) Respuesta
+    // 7) Respuesta
     return res.json({
-      user: { id: userId, name: req.user?.name, email: req.user?.email, role },
+      user: { id: userId, name: req.user?.name, email: req.user?.email, user_code: req.user?.user_code, role },
       codes: codes.map((c) => ({
         id: c.id,
         code: c.code,
@@ -405,8 +423,10 @@ export const getInfluencerStats = async (req, res) => {
         stay_id: c.stay_id ?? null,
       })),
       totals: {
+        signupsCount,
         bookingsCount: bookings.length,
-        unpaidEarnings: earningsByCurrency,
+        unpaidEarnings: unpaidByCurrency,
+        paidEarnings: paidByCurrency,
       },
       recentBookings,
     })
@@ -417,9 +437,9 @@ export const getInfluencerStats = async (req, res) => {
 }
 
 const ROLE_MAP = {
-  INFLUENCER    : { code: 2, label: "Influencer" },
-  CORPORATE     : { code: 3, label: "Corporate"  },
-  AGENCY        : { code: 4, label: "Agency"     },
+  INFLUENCER: { code: 2, label: "Influencer" },
+  CORPORATE: { code: 3, label: "Corporate" },
+  AGENCY: { code: 4, label: "Agency" },
   STAFF_OPERATOR: { code: 5, label: "Vault Operator" },
   OPERATOR: { code: 5, label: "Vault Operator" },
 }
@@ -438,7 +458,7 @@ export const requestPartnerInfo = async (req, res) => {
       name = "",
       email = "",
     } = req.body || {}
-    
+
 
     // Validaciones bÃ¡sicas
     if (!requestedRoleKey || !ROLE_MAP[requestedRoleKey]) {
@@ -457,10 +477,10 @@ export const requestPartnerInfo = async (req, res) => {
     const to = "ramiro.alet@gmail.com"
     const from = "partners@insiderbookings.com"
 
-    const cleanName  = sanitize(name)
+    const cleanName = sanitize(name)
     const cleanEmail = sanitize(email)
-    const ua  = sanitize(req.headers["user-agent"] || "")
-    const ip  = sanitize(
+    const ua = sanitize(req.headers["user-agent"] || "")
+    const ip = sanitize(
       (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").toString()
     )
 
@@ -517,7 +537,7 @@ export const requestPartnerInfo = async (req, res) => {
 export const getInfluencerCommissions = async (req, res) => {
   try {
     const userId = Number(req.user?.id)
-    const role   = Number(req.user?.role)
+    const role = Number(req.user?.role)
     if (!userId) return res.status(401).json({ error: "Unauthorized" })
     if (role !== 2) return res.status(403).json({ error: "Only influencers can access this endpoint" })
 
@@ -563,6 +583,51 @@ export const adminCreateInfluencerPayoutBatch = async (req, res) => {
     return res.json({ updated: count, batchId })
   } catch (err) {
     console.error("adminCreateInfluencerPayoutBatch:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+// GET /api/users (used for referrals)
+export const getInfluencerReferrals = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id)
+    const role = Number(req.user?.role)
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+    if (role !== 2 && role !== 100) return res.status(403).json({ error: "Forbidden" })
+
+    // Buscar usuarios referidos por este influencer
+    const referrals = await models.User.findAll({
+      where: { referred_by_influencer_id: userId },
+      attributes: [
+        "id",
+        "name",
+        "email",
+        "createdAt",
+      ],
+      order: [["createdAt", "DESC"]],
+      limit: 500,
+    })
+
+    // Para cada usuario, contar sus bookings confirmadas
+    const results = await Promise.all(
+      referrals.map(async (u) => {
+        const plainUser = u.get({ plain: true })
+        const bookingsCount = await models.Booking.count({
+          where: {
+            user_id: u.id,
+            status: "CONFIRMED",
+          }
+        })
+        return {
+          ...plainUser,
+          bookingsCount,
+        }
+      })
+    )
+
+    return res.json(results)
+  } catch (err) {
+    console.error("getInfluencerReferrals error:", err)
     return res.status(500).json({ error: "Server error" })
   }
 }

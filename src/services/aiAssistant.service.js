@@ -370,15 +370,15 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
       const reply =
         inventory.homes?.length || inventory.hotels?.length
           ? pickLanguageText(
-              targetLanguage,
-              "I found some options that match your search. Check the results below and tell me if you want to adjust dates or budget.",
-              "Encontré algunas opciones que coinciden con tu búsqueda. Revisá los resultados y decime si querés ajustar fechas o presupuesto."
-            )
+            targetLanguage,
+            "I found some options that match your search. Check the results below and tell me if you want to adjust dates or budget.",
+            "Encontré algunas opciones que coinciden con tu búsqueda. Revisá los resultados y decime si querés ajustar fechas o presupuesto."
+          )
           : pickLanguageText(
-              targetLanguage,
-              "I couldn't find matches yet. Try changing city, dates, or guest count.",
-              "Todavía no encontré coincidencias. Probá cambiando ciudad, fechas o cantidad de personas."
-            );
+            targetLanguage,
+            "I couldn't find matches yet. Try changing city, dates, or guest count.",
+            "Todavía no encontré coincidencias. Probá cambiando ciudad, fechas o cantidad de personas."
+          );
       return {
         reply,
         followUps:
@@ -422,7 +422,7 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
         "You are a friendly and professional travel assistant. The user is looking for accommodation.\n" +
         `${langLine}\n` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
-        "- If there are results: Explain why they are relevant, mention highlighted features.\n" +
+        "- If there are results: Return the 'reply' as a single, VERY concise and helpful sentence. If a location is known, mention it (e.g., 'I found these options in [Location] for you').\n" +
         "- If NO results: Suggest concrete adjustments (change city, dates, budget).\n" +
         "- followUps: 3-4 relevant follow-up suggestions.\n" +
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
@@ -478,15 +478,15 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
       const reply =
         inventory.homes?.length || inventory.hotels?.length
           ? pickLanguageText(
-              targetLanguage,
-              "I found some matches. Tap any to see more details or tell me how to adjust the search.",
-              "Encontré algunas coincidencias. Tocá cualquiera para ver más detalles o decime cómo ajustamos la búsqueda."
-            )
+            targetLanguage,
+            "I found some matches. Tap any to see more details or tell me how to adjust the search.",
+            "Encontré algunas coincidencias. Tocá cualquiera para ver más detalles o decime cómo ajustamos la búsqueda."
+          )
           : pickLanguageText(
-              targetLanguage,
-              "I couldn't find results yet. Try changing the city, dates, or guest count.",
-              "Todavía no encontré resultados. Probá cambiar la ciudad, las fechas o la cantidad de personas."
-            );
+            targetLanguage,
+            "I couldn't find results yet. Try changing the city, dates, or guest count.",
+            "Todavía no encontré resultados. Probá cambiar la ciudad, las fechas o la cantidad de personas."
+          );
       return { reply, followUps: [] };
     } else if (intent === "HELP") {
       return {

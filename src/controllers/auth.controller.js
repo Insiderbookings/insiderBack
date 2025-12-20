@@ -30,6 +30,7 @@ const USER_SAFE_ATTRIBUTES = [
   "referred_by_influencer_id",
   "referred_by_code",
   "referred_at",
+  "user_code",
 ];
 const USER_INCLUDES = [
   { model: models.HostProfile, as: "hostProfile" },
@@ -52,6 +53,7 @@ const presentUser = (user) => {
     referredByInfluencerId: plain.referred_by_influencer_id ?? null,
     referredByCode: plain.referred_by_code ?? null,
     referredAt: plain.referred_at ?? null,
+    user_code: plain.user_code ?? null,
     hostProfile: plain.hostProfile || null,
     guestProfile: plain.guestProfile || null,
   };
@@ -399,9 +401,9 @@ export const loginUser = async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: "Invalid credentials" });
 
-  /*   if (!user.email_verified) {
-      return res.status(403).json({ error: "Verifique su correo" });
-    } */
+    /*   if (!user.email_verified) {
+        return res.status(403).json({ error: "Verifique su correo" });
+      } */
 
     /* 3 ▸ Emitir JWT */
     await ensureGuestProfile(user.id);

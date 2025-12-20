@@ -9,6 +9,7 @@ import {
   requestPartnerInfo,
   getInfluencerCommissions,
   adminCreateInfluencerPayoutBatch,
+  getInfluencerReferrals,
   becomeHost,
 } from "../controllers/user.controller.js"
 import { authenticate, authorizeRoles } from "../middleware/auth.js"
@@ -28,6 +29,7 @@ const router = Router()
 // Partner stats (auth required)
 router.get("/me/influencer/stats", authenticate, authorizeRoles(2), getInfluencerStats)
 router.get("/me/influencer/commissions", authenticate, authorizeRoles(2), getInfluencerCommissions)
+router.get("/", authenticate, authorizeRoles(2), getInfluencerReferrals)
 router.post("/admin/influencer/payouts/create", authenticate, authorizeRoles(100), adminCreateInfluencerPayoutBatch)
 
 router.post("/request-info", requestPartnerInfo)

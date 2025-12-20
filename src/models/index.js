@@ -39,6 +39,8 @@ import HotelStaffAddOnModel from "./HotelStaffAddOn.js";
 import MessageModel from "./Message.js";
 import UpsellCodeModel from "./UpsellCode.js";
 import TgxHotelModel from "./TGXHotel.js";
+import BookingFlowModel from "./BookingFlow.js";
+import BookingFlowStepModel from "./BookingFlowStep.js";
 
 import HomeModel from "./Home.js";
 import HomeAddressModel from "./HomeAddress.js";
@@ -147,6 +149,8 @@ const models = {
   AiChatMessage: AiChatMessageModel(sequelize),
   UpsellCode: UpsellCodeModel(sequelize),
   TgxHotel: TgxHotelModel(sequelize),
+  BookingFlow: BookingFlowModel(sequelize),
+  BookingFlowStep: BookingFlowStepModel(sequelize),
 
   Home: HomeModel(sequelize),
   HomeAddress: HomeAddressModel(sequelize),

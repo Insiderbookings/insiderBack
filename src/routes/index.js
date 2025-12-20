@@ -24,6 +24,7 @@ import favoriteRoutes from "./favorite.routes.js"
 import reviewRoutes from "./review.routes.js"
 import guestRoutes from "./guest.routes.js"
 import assistantRoutes from "./assistant.routes.js"
+import flowsRoutes from "./flows.routes.js"
 
 const router = Router()
 
@@ -52,5 +53,6 @@ router.use("/favorites", favoriteRoutes)
 router.use("/reviews", reviewRoutes)
 router.use("/guests", guestRoutes)
 router.use("/assistant", assistantRoutes)
+router.use("/flows", flowsRoutes)
 
 export default router
