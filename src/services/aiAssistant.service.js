@@ -415,11 +415,17 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
   if (plan && typeof plan === "object") {
     plan.language = targetLanguage;
   }
+  const matchTypes = inventory?.matchTypes ?? {};
+  const matchTypeValues = Object.values(matchTypes);
+  const hasExactMatches = matchTypeValues.includes("EXACT");
+  const hasSimilarMatches = matchTypeValues.includes("SIMILAR");
+  const isSimilarOnly = hasSimilarMatches && !hasExactMatches;
 
   const summary = {
     location: plan?.location ?? null,
     guests: plan?.guests ?? null,
     dates: plan?.dates ?? null,
+    matchTypes,
     homes: (inventory.homes || []).slice(0, 5).map((home) => ({
       id: home.id,
       title: home.title,
@@ -440,21 +446,27 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
     if (intent === "SEARCH") {
       const reply =
         inventory.homes?.length || inventory.hotels?.length
-          ? pickLanguageText(
-            targetLanguage,
-            "I found some options that match your search. Check the results below and tell me if you want to adjust dates or budget.",
-            "Encontré algunas opciones que coinciden con tu búsqueda. Revisá los resultados y decime si querés ajustar fechas o presupuesto."
-          )
+          ? isSimilarOnly
+            ? pickLanguageText(
+              targetLanguage,
+              "I couldn't find exact matches, but I found similar options for you. Check the results below and tell me if you want to adjust dates or budget.",
+              "No encontre coincidencias exactas, pero tengo opciones similares para vos. Revisa los resultados y decime si queres ajustar fechas o presupuesto."
+            )
+            : pickLanguageText(
+              targetLanguage,
+              "I found some options that match your search. Check the results below and tell me if you want to adjust dates or budget.",
+              "Encontre algunas opciones que coinciden con tu busqueda. Revisa los resultados y decime si queres ajustar fechas o presupuesto."
+            )
           : pickLanguageText(
             targetLanguage,
             "I couldn't find matches yet. Try changing city, dates, or guest count.",
-            "Todavía no encontré coincidencias. Probá cambiando ciudad, fechas o cantidad de personas."
+            "Todavia no encontre coincidencias. Proba cambiando ciudad, fechas o cantidad de personas."
           );
       return {
         reply,
         followUps:
           targetLanguage === "es"
-            ? ["Buscar otra ciudad", "Cambiar fechas", "Agregar presupuesto máximo"]
+            ? ["Buscar otra ciudad", "Cambiar fechas", "Agregar presupuesto maximo"]
             : ["Search another city", "Adjust dates", "Add budget limit"],
       };
     } else if (intent === "HELP") {
@@ -494,6 +506,7 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
         `${langLine}\n` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
         "- If there are results: Return the 'reply' as a single, VERY concise and helpful sentence. If a location is known, mention it (e.g., 'I found these options in [Location] for you').\n" +
+        "- If results are marked as SIMILAR (matchTypes): say there were no exact matches and mention you found similar options.\n" +
         "- If NO results: Suggest concrete adjustments (change city, dates, budget).\n" +
         "- followUps: 3-4 relevant follow-up suggestions.\n" +
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
@@ -548,17 +561,29 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
     if (intent === "SEARCH") {
       const reply =
         inventory.homes?.length || inventory.hotels?.length
-          ? pickLanguageText(
-            targetLanguage,
-            "I found some matches. Tap any to see more details or tell me how to adjust the search.",
-            "Encontré algunas coincidencias. Tocá cualquiera para ver más detalles o decime cómo ajustamos la búsqueda."
-          )
+          ? isSimilarOnly
+            ? pickLanguageText(
+              targetLanguage,
+              "I couldn't find exact matches, but I found similar options for you. Check the results below and tell me if you want to adjust dates or budget.",
+              "No encontre coincidencias exactas, pero tengo opciones similares para vos. Revisa los resultados y decime si queres ajustar fechas o presupuesto."
+            )
+            : pickLanguageText(
+              targetLanguage,
+              "I found some options that match your search. Check the results below and tell me if you want to adjust dates or budget.",
+              "Encontre algunas opciones que coinciden con tu busqueda. Revisa los resultados y decime si queres ajustar fechas o presupuesto."
+            )
           : pickLanguageText(
             targetLanguage,
-            "I couldn't find results yet. Try changing the city, dates, or guest count.",
-            "Todavía no encontré resultados. Probá cambiar la ciudad, las fechas o la cantidad de personas."
+            "I couldn't find matches yet. Try changing city, dates, or guest count.",
+            "Todavia no encontre coincidencias. Proba cambiando ciudad, fechas o cantidad de personas."
           );
-      return { reply, followUps: [] };
+      return {
+        reply,
+        followUps:
+          targetLanguage === "es"
+            ? ["Buscar otra ciudad", "Cambiar fechas", "Agregar presupuesto maximo"]
+            : ["Search another city", "Adjust dates", "Add budget limit"],
+      };
     } else if (intent === "HELP") {
       return {
         reply: pickLanguageText(

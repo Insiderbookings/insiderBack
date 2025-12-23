@@ -106,15 +106,26 @@ export const handleAssistantSearch = async (req, res) => {
       const wantsHomes = listingTypes.includes("HOMES") || listingTypes.length === 0;
       const wantsHotels = listingTypes.includes("HOTELS");
 
-      const [homes, hotels] = await Promise.all([
-        wantsHomes ? searchHomesForPlan(plan, { limit: req.body?.limit?.homes }) : [],
-        wantsHotels ? searchHotelsForPlan(plan, { limit: req.body?.limit?.hotels }) : [],
+      const [homesResult, hotelsResult] = await Promise.all([
+        wantsHomes
+          ? searchHomesForPlan(plan, { limit: req.body?.limit?.homes })
+          : { items: [], matchType: "NONE" },
+        wantsHotels
+          ? searchHotelsForPlan(plan, { limit: req.body?.limit?.hotels })
+          : { items: [], matchType: "NONE" },
       ]);
+
+      const homes = Array.isArray(homesResult?.items) ? homesResult.items : [];
+      const hotels = Array.isArray(hotelsResult?.items) ? hotelsResult.items : [];
 
       counts = buildResultCounts({ homes, hotels });
       inventory = {
         homes: Array.isArray(homes) ? homes.slice(0, MAX_RESULTS) : [],
         hotels: Array.isArray(hotels) ? hotels.slice(0, MAX_RESULTS) : [],
+        matchTypes: {
+          homes: homesResult?.matchType || "NONE",
+          hotels: hotelsResult?.matchType || "NONE",
+        },
       };
     }
 

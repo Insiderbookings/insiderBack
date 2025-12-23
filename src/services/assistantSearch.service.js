@@ -460,6 +460,54 @@ const runHomeQuery = async ({
   return homes;
 };
 
+const mapHomesToResults = ({
+  homes = [],
+  plan,
+  attempt = {},
+  guests,
+  budgetMax,
+  requiredTagKeys = [],
+  requiredAmenityKeys = [],
+  amenityKeywords = [],
+  calendarRange = null,
+  fallbackNote = "",
+}) => {
+  const note = String(fallbackNote || "").trim();
+  return homes
+    .map((home) => {
+      if (calendarRange && hasCalendarConflicts(home)) {
+        return null;
+      }
+      if (requiredTagKeys.length && !hasRequiredTagKeys(home, requiredTagKeys)) {
+        return null;
+      }
+      if (requiredAmenityKeys.length && !hasRequiredAmenityKeys(home, requiredAmenityKeys)) {
+        return null;
+      }
+      if (amenityKeywords.length && !hasAmenityKeywords(home, amenityKeywords)) {
+        return null;
+      }
+      const card = mapHomeToCard(home);
+      if (!card) return null;
+      const reasons = buildHomeMatchReasons({ plan, home, card });
+      if (!attempt.respectGuest && guests) {
+        reasons.push("Mostrando opciones sin validar capacidad exacta");
+      }
+      if (!attempt.respectBudget && budgetMax != null) {
+        reasons.push("Incluye precios por encima del presupuesto seleccionado");
+      }
+      if (note) {
+        reasons.push(note);
+      }
+      return {
+        ...card,
+        inventoryType: "HOME",
+        matchReasons: reasons,
+      };
+    })
+    .filter(Boolean);
+};
+
 export const searchHomesForPlan = async (plan = {}, options = {}) => {
   console.log("[assistant] plan", JSON.stringify(plan));
   // If the plan has a specific limit, use it, otherwise use the default or requested limit
@@ -503,7 +551,8 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
     { respectGuest: false, respectBudget: false },
   ];
 
-  for (const attempt of attempts) {
+  for (let index = 0; index < attempts.length; index += 1) {
+    const attempt = attempts[index];
     console.log("[assistant] attempt", attempt);
     const homes = await runHomeQuery({
       plan,
@@ -523,45 +572,107 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
 
     console.log(`[assistant] attempt ${JSON.stringify(attempt)} returned ${homes.length} homes`);
 
-    const enriched = homes
-      .map((home) => {
-        if (calendarRange && hasCalendarConflicts(home)) {
-          return null;
-        }
-        if (requiredTagKeys.length && !hasRequiredTagKeys(home, requiredTagKeys)) {
-          return null;
-        }
-        if (requiredAmenityKeys.length && !hasRequiredAmenityKeys(home, requiredAmenityKeys)) {
-          return null;
-        }
-        if (amenityKeywords.length && !hasAmenityKeywords(home, amenityKeywords)) {
-          return null;
-        }
-        const card = mapHomeToCard(home);
-        if (!card) return null;
-        const reasons = buildHomeMatchReasons({ plan, home, card });
-        if (!attempt.respectGuest && guests) {
-          reasons.push("Mostrando opciones sin validar capacidad exacta");
-        }
-        if (!attempt.respectBudget && budgetMax != null) {
-          reasons.push("Incluye precios por encima del presupuesto seleccionado");
-        }
-        return {
-          ...card,
-          inventoryType: "HOME",
-          matchReasons: reasons,
-        };
-      })
-      .filter(Boolean);
+    const enriched = mapHomesToResults({
+      homes,
+      plan,
+      attempt,
+      guests,
+      budgetMax,
+      requiredTagKeys,
+      requiredAmenityKeys,
+      amenityKeywords,
+      calendarRange,
+    });
 
     console.log(`[assistant] attempt enriched count: ${enriched.length}`);
     if (enriched.length) {
-      return enriched;
+      return {
+        items: enriched,
+        matchType: index === 0 ? "EXACT" : "SIMILAR",
+      };
     }
   }
 
+  const relaxedHomeFilters = {
+    ...normalizedHomeFilters,
+    amenityKeys: [],
+    tagKeys: [],
+  };
+  const relaxedHomes = await runHomeQuery({
+    plan,
+    limit,
+    guests,
+    coordinateFilter,
+    addressWhere,
+    budgetMax,
+    respectGuest: false,
+    respectBudget: false,
+    amenityKeywords: [],
+    homeFilters: relaxedHomeFilters,
+    combinedGuestCapacity,
+    explicitGuestCapacity,
+    calendarRange,
+  });
+
+  const relaxedEnriched = mapHomesToResults({
+    homes: relaxedHomes,
+    plan,
+    attempt: { respectGuest: false, respectBudget: false },
+    guests,
+    budgetMax,
+    requiredTagKeys: [],
+    requiredAmenityKeys: [],
+    amenityKeywords: [],
+    calendarRange,
+    fallbackNote: "Opciones recomendadas con filtros flexibles",
+  });
+  if (relaxedEnriched.length) {
+    return {
+      items: relaxedEnriched,
+      matchType: "SIMILAR",
+    };
+  }
+
+  const fallbackHomes = await runHomeQuery({
+    plan,
+    limit,
+    guests: null,
+    coordinateFilter: null,
+    addressWhere: {},
+    budgetMax: null,
+    respectGuest: false,
+    respectBudget: false,
+    amenityKeywords: [],
+    homeFilters: {
+      ...relaxedHomeFilters,
+      propertyTypes: normalizedHomeFilters.propertyTypes,
+      spaceTypes: normalizedHomeFilters.spaceTypes,
+    },
+    combinedGuestCapacity: null,
+    explicitGuestCapacity: null,
+    calendarRange: null,
+  });
+  const fallbackEnriched = mapHomesToResults({
+    homes: fallbackHomes,
+    plan,
+    attempt: { respectGuest: false, respectBudget: false },
+    guests: null,
+    budgetMax: null,
+    requiredTagKeys: [],
+    requiredAmenityKeys: [],
+    amenityKeywords: [],
+    calendarRange: null,
+    fallbackNote: "Opciones recomendadas basadas en tu busqueda",
+  });
+  if (fallbackEnriched.length) {
+    return {
+      items: fallbackEnriched,
+      matchType: "SIMILAR",
+    };
+  }
+
   console.log("[assistant] final result count 0");
-  return [];
+  return { items: [], matchType: "NONE" };
 };
 
 const buildHotelMatchReasons = ({ plan, hotel }) => {
@@ -839,7 +950,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     coordinateFilter,
   });
   if (liveResults.length) {
-    return liveResults;
+    return { items: liveResults, matchType: "EXACT" };
   }
 
   const where = {};
@@ -922,5 +1033,77 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
       matchReasons: buildHotelMatchReasons({ plan, hotel }),
     }))
     .slice(0, limit);
-  return cards;
+  if (cards.length) {
+    return { items: cards, matchType: "EXACT" };
+  }
+
+  let relaxedCards = hotels.map(formatStaticHotel).filter(Boolean);
+  relaxedCards = relaxedCards
+    .map((hotel) => ({
+      ...hotel,
+      inventoryType: "HOTEL",
+      matchReasons: [...buildHotelMatchReasons({ plan, hotel }), "Opciones recomendadas con filtros flexibles"],
+    }))
+    .slice(0, limit);
+  if (relaxedCards.length) {
+    return { items: relaxedCards, matchType: "SIMILAR" };
+  }
+
+  const fallbackHotels = await models.WebbedsHotel.findAll({
+    where: {},
+    attributes: [
+      "hotel_id",
+      "name",
+      "city_name",
+      "city_code",
+      "country_name",
+      "country_code",
+      "address",
+      "full_address",
+      "lat",
+      "lng",
+      "rating",
+      "priority",
+      "preferred",
+      "exclusive",
+      "chain",
+      "chain_code",
+      "classification_code",
+      "images",
+      "amenities",
+      "leisure",
+      "business",
+      "descriptions",
+    ],
+    include: [
+      {
+        model: models.WebbedsHotelChain,
+        as: "chainCatalog",
+        attributes: ["code", "name"],
+      },
+      {
+        model: models.WebbedsHotelClassification,
+        as: "classification",
+        attributes: ["code", "name"],
+      },
+    ],
+    order: [
+      ["preferred", "DESC"],
+      ["priority", "DESC"],
+      ["name", "ASC"],
+    ],
+    limit: fetchLimit,
+  });
+
+  const fallbackCards = fallbackHotels
+    .map(formatStaticHotel)
+    .filter(Boolean)
+    .map((hotel) => ({
+      ...hotel,
+      inventoryType: "HOTEL",
+      matchReasons: [...buildHotelMatchReasons({ plan, hotel }), "Opciones recomendadas basadas en tu busqueda"],
+    }))
+    .slice(0, limit);
+
+  return { items: fallbackCards, matchType: fallbackCards.length ? "SIMILAR" : "NONE" };
 };
