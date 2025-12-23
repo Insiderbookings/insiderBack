@@ -11,6 +11,8 @@ import {
   adminCreateInfluencerPayoutBatch,
   getInfluencerReferrals,
   becomeHost,
+  recordDiscountCodeStatus,
+  applyDiscountCode,
 } from "../controllers/user.controller.js"
 import { authenticate, authorizeRoles } from "../middleware/auth.js"
 import {
@@ -62,6 +64,9 @@ router.post(
 
 // All below require authenticate
 router.use(authenticate)
+
+router.post("/me/discount-code/status", recordDiscountCodeStatus)
+router.post("/me/discount-code", applyDiscountCode)
 
 // Contracts
 router.get("/contracts", getUserContracts)

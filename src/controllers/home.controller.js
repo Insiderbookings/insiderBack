@@ -19,6 +19,24 @@ const asNumber = (value, fallback = null) => {
   return Number.isFinite(num) ? num : fallback;
 };
 
+const normalizeStringList = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const normalizeIdList = (value) =>
+  normalizeStringList(value)
+    .map((entry) => Number(entry))
+    .filter((entry) => Number.isFinite(entry) && entry > 0);
+
 const getUserId = (user) => user?.id || user?.sub;
 
 const AMENITY_ICON_BY_KEY = {
@@ -91,6 +109,53 @@ const resolveAmenityIcon = (amenity) => {
   const label = String(amenity.label || amenity.name || "").toLowerCase();
   const match = AMENITY_ICON_KEYWORDS.find((item) => label.includes(item.keyword));
   return match?.icon || "sparkles-outline";
+};
+
+const DEFAULT_BED_TYPE_KEY = "SINGLE_BED";
+const DEFAULT_BED_TYPE_LABEL = "Single bed";
+const DEFAULT_BED_TYPE_ICON = "bed-outline";
+let cachedDefaultBedType = null;
+
+const getDefaultBedType = async () => {
+  if (cachedDefaultBedType) return cachedDefaultBedType;
+  try {
+    const bedType = await models.HomeBedType.findOne({
+      where: { bed_type_key: DEFAULT_BED_TYPE_KEY },
+    });
+    if (bedType) {
+      cachedDefaultBedType = bedType.toJSON();
+      return cachedDefaultBedType;
+    }
+  } catch (err) {
+    console.warn("[getDefaultBedType] fallback", err?.message || err);
+  }
+  cachedDefaultBedType = {
+    id: null,
+    bed_type_key: DEFAULT_BED_TYPE_KEY,
+    label: DEFAULT_BED_TYPE_LABEL,
+    icon: DEFAULT_BED_TYPE_ICON,
+  };
+  return cachedDefaultBedType;
+};
+
+const ensureDefaultBedTypes = async (home) => {
+  if (!home) return [];
+  const existing = Array.isArray(home.bedTypes) ? home.bedTypes : [];
+  if (existing.length) return existing;
+  const defaultType = await getDefaultBedType();
+  if (!defaultType) return [];
+  const rawCount = Number(home.beds);
+  const count = Number.isFinite(rawCount) && rawCount > 0 ? rawCount : 1;
+  return [
+    {
+      id: null,
+      home_id: home.id,
+      bed_type_id: defaultType.id ?? null,
+      count,
+      bedType: defaultType,
+      isFallback: true,
+    },
+  ];
 };
 
 const defaultArrivalGuide = () => ({
@@ -187,6 +252,54 @@ const mapHomeToExploreCard = (home) => {
   return {
     ...base,
     ratingLabel,
+  };
+};
+
+const mapHomeToSimilarCard = (home, distanceKm = null) => {
+  if (!home) return null;
+  const address = home.address ?? {};
+  const pricing = home.pricing ?? {};
+  return {
+    id: home.id,
+    title: home.title ?? "Untitled stay",
+    city: address.city ?? null,
+    state: address.state ?? null,
+    country: address.country ?? null,
+    locationText: [address.city, address.state, address.country].filter(Boolean).join(", "),
+    price: pricing?.base_price != null ? Number(pricing.base_price) : null,
+    currency: pricing?.currency ?? "USD",
+    coverImage: getCoverImage(home),
+    distanceKm: distanceKm != null ? Number(distanceKm) : null,
+  };
+};
+
+const haversineKm = (lat1, lng1, lat2, lng2) => {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return 6371 * c;
+};
+
+const buildPriceStats = (prices = []) => {
+  const values = prices
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+  if (!values.length) return null;
+  const total = values.reduce((sum, value) => sum + value, 0);
+  const mid = Math.floor(values.length / 2);
+  const median =
+    values.length % 2 === 0 ? (values[mid - 1] + values[mid]) / 2 : values[mid];
+  return {
+    min: values[0],
+    max: values[values.length - 1],
+    avg: total / values.length,
+    median,
+    count: values.length,
   };
 };
 
@@ -385,11 +498,11 @@ export const listHomeDestinations = async (req, res) => {
     const sorted =
       lat != null && lng != null
         ? normalized.sort((a, b) => {
-            if (a.distance == null && b.distance == null) return b.stays - a.stays;
-            if (a.distance == null) return 1;
-            if (b.distance == null) return -1;
-            return a.distance - b.distance;
-          })
+          if (a.distance == null && b.distance == null) return b.stays - a.stays;
+          if (a.distance == null) return 1;
+          if (b.distance == null) return -1;
+          return a.distance - b.distance;
+        })
         : normalized;
 
     const destinations = [...sorted];
@@ -478,6 +591,11 @@ export const searchHomes = async (req, res) => {
     const lng = parseCoordinate(req.query?.lng);
     const limitParam = Number(req.query?.limit);
     const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 60) : 30;
+    const bedTypeKeys = normalizeStringList(
+      req.query?.bedTypeKeys ?? req.query?.bedTypes ?? req.query?.bed_type_keys
+    ).map((key) => key.toUpperCase());
+    const bedTypeIds = normalizeIdList(req.query?.bedTypeIds ?? req.query?.bed_type_ids);
+    const needsBedTypeJoin = Boolean(bedTypeKeys.length || bedTypeIds.length);
 
     const addressAttributes = ["address_line1", "city", "state", "country", "latitude", "longitude"];
     const baseWhere = { status: "PUBLISHED", is_visible: true };
@@ -487,15 +605,15 @@ export const searchHomes = async (req, res) => {
     const addressWhere =
       lat != null && lng != null
         ? {
-            latitude: { [Op.not]: null, [Op.between]: [lat - 1, lat + 1] },
-            longitude: { [Op.not]: null, [Op.between]: [lng - 1, lng + 1] },
-          }
+          latitude: { [Op.not]: null, [Op.between]: [lat - 1, lat + 1] },
+          longitude: { [Op.not]: null, [Op.between]: [lng - 1, lng + 1] },
+        }
         : rawCity || rawCountry
-        ? {
+          ? {
             ...(rawCity ? { city: { [iLikeOp]: rawCity } } : {}),
             ...(rawCountry ? { country: { [iLikeOp]: rawCountry } } : {}),
           }
-        : null;
+          : null;
 
     const include = [
       {
@@ -529,6 +647,20 @@ export const searchHomes = async (req, res) => {
         attributes: ["id", "name", "email", "avatar_url", "role"],
       },
     ];
+    if (needsBedTypeJoin) {
+      include.push({
+        model: models.HomeBedTypeLink,
+        as: "bedTypes",
+        required: false,
+        include: [
+          {
+            model: models.HomeBedType,
+            as: "bedType",
+            attributes: ["id", "bed_type_key", "label", "icon"],
+          },
+        ],
+      });
+    }
 
     const homes = await models.Home.findAll({
       where: baseWhere,
@@ -540,9 +672,46 @@ export const searchHomes = async (req, res) => {
       limit,
     });
 
-    const cards = homes
-      .map((home) => mapHomeToCard(home))
-      .filter(Boolean);
+    if (needsBedTypeJoin && (bedTypeKeys.includes(DEFAULT_BED_TYPE_KEY) || bedTypeIds.length)) {
+      await getDefaultBedType();
+    }
+
+    const filteredHomes = needsBedTypeJoin
+      ? (() => {
+        const defaultId = (() => {
+          const numeric = Number(cachedDefaultBedType?.id);
+          return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+        })();
+        return homes.filter((home) => {
+          const links = Array.isArray(home?.bedTypes) ? home.bedTypes : [];
+          if (!links.length) {
+            const matchesKey = bedTypeKeys.length
+              ? bedTypeKeys.includes(DEFAULT_BED_TYPE_KEY)
+              : true;
+            const matchesId = bedTypeIds.length
+              ? defaultId != null && bedTypeIds.includes(defaultId)
+              : true;
+            return matchesKey && matchesId;
+          }
+          const keys = new Set(
+            links
+              .map((link) => link?.bedType?.bed_type_key || link?.bedType?.key || link?.bed_type_key)
+              .filter(Boolean)
+              .map((key) => String(key).toUpperCase())
+          );
+          const ids = new Set(
+            links
+              .map((link) => Number(link?.bed_type_id ?? link?.bedType?.id))
+              .filter((value) => Number.isFinite(value) && value > 0)
+          );
+          const matchesKey = bedTypeKeys.length ? bedTypeKeys.some((key) => keys.has(key)) : true;
+          const matchesId = bedTypeIds.length ? bedTypeIds.some((id) => ids.has(id)) : true;
+          return matchesKey && matchesId;
+        });
+      })()
+      : homes;
+
+    const cards = filteredHomes.map((home) => mapHomeToCard(home)).filter(Boolean);
 
     return res.json({
       items: cards,
@@ -557,6 +726,153 @@ export const searchHomes = async (req, res) => {
   } catch (err) {
     console.error("[searchHomes]", err);
     return res.status(500).json({ error: "Failed to search homes" });
+  }
+};
+
+export const listSimilarHomes = async (req, res) => {
+  try {
+    const hostId = getUserId(req.user);
+    const listingId = Number(req.query?.listingId);
+    const limitParam = Number(req.query?.limit);
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 30) : 12;
+    const radiusParam = Number(req.query?.radiusKm ?? req.query?.radius);
+    const radiusKm = Number.isFinite(radiusParam) && radiusParam > 0 ? Math.min(radiusParam, 80) : 25;
+    let lat = parseCoordinate(req.query?.lat);
+    let lng = parseCoordinate(req.query?.lng);
+    let propertyType = req.query?.propertyType || req.query?.property_type || null;
+    let spaceType = req.query?.spaceType || req.query?.space_type || null;
+    let bedrooms = Number(req.query?.bedrooms);
+    let beds = Number(req.query?.beds);
+    let maxGuests = Number(req.query?.maxGuests ?? req.query?.max_guests);
+    let currency = typeof req.query?.currency === "string" ? req.query.currency.trim().toUpperCase() : null;
+
+    if (Number.isFinite(listingId) && listingId > 0) {
+      const home = await models.Home.findOne({
+        where: { id: listingId, host_id: hostId },
+        include: [{ model: models.HomeAddress, as: "address" }, { model: models.HomePricing, as: "pricing" }],
+      });
+      if (!home) return res.status(404).json({ error: "Listing not found" });
+
+      const address = home.address ?? {};
+      const addressLat = parseCoordinate(address.latitude ?? address.lat);
+      const addressLng = parseCoordinate(address.longitude ?? address.lng);
+      if (addressLat != null) lat = addressLat;
+      if (addressLng != null) lng = addressLng;
+      propertyType = home.property_type || propertyType;
+      spaceType = home.space_type || spaceType;
+      bedrooms = Number.isFinite(bedrooms) ? bedrooms : Number(home.bedrooms);
+      beds = Number.isFinite(beds) ? beds : Number(home.beds);
+      maxGuests = Number.isFinite(maxGuests) ? maxGuests : Number(home.max_guests);
+      currency = currency || home.pricing?.currency || null;
+    }
+
+    if (lat == null || lng == null) {
+      return res.status(400).json({ error: "Latitude and longitude are required" });
+    }
+
+    const normalizedPropertyType = typeof propertyType === "string" ? propertyType.toUpperCase() : null;
+    const normalizedSpaceType = typeof spaceType === "string" ? spaceType.toUpperCase() : null;
+    const bedroomValue = Number.isFinite(bedrooms) && bedrooms > 0 ? bedrooms : null;
+    const bedValue = Number.isFinite(beds) && beds > 0 ? beds : null;
+    const guestValue = Number.isFinite(maxGuests) && maxGuests > 0 ? maxGuests : null;
+
+    const latDelta = radiusKm / 111;
+    const lngDelta = radiusKm / 111;
+    const addressWhere = {
+      latitude: { [Op.not]: null, [Op.between]: [lat - latDelta, lat + latDelta] },
+      longitude: { [Op.not]: null, [Op.between]: [lng - lngDelta, lng + lngDelta] },
+    };
+
+    const baseWhere = { status: "PUBLISHED", is_visible: true };
+    if (normalizedPropertyType) baseWhere.property_type = normalizedPropertyType;
+    if (normalizedSpaceType) baseWhere.space_type = normalizedSpaceType;
+    if (bedroomValue) {
+      baseWhere.bedrooms = {
+        [Op.between]: [Math.max(1, bedroomValue - 1), bedroomValue + 1],
+      };
+    }
+    if (bedValue) {
+      baseWhere.beds = {
+        [Op.between]: [Math.max(1, bedValue - 1), bedValue + 1],
+      };
+    }
+    if (guestValue) {
+      baseWhere.max_guests = {
+        [Op.between]: [Math.max(1, guestValue - 2), guestValue + 2],
+      };
+    }
+    if (Number.isFinite(listingId) && listingId > 0) {
+      baseWhere.id = { [Op.ne]: listingId };
+    }
+
+    const fetchLimit = Math.min(Math.max(limit * 3, 20), 60);
+
+    const similarHomes = await models.Home.findAll({
+      where: baseWhere,
+      include: [
+        {
+          model: models.HomeAddress,
+          as: "address",
+          attributes: ["address_line1", "city", "state", "country", "latitude", "longitude"],
+          required: true,
+          where: addressWhere,
+        },
+        {
+          model: models.HomePricing,
+          as: "pricing",
+          attributes: ["currency", "base_price"],
+          required: Boolean(currency),
+          where: currency ? { currency } : undefined,
+        },
+        {
+          model: models.HomeMedia,
+          as: "media",
+          attributes: ["id", "url", "is_cover", "order"],
+          separate: true,
+          limit: 4,
+          order: [
+            ["is_cover", "DESC"],
+            ["order", "ASC"],
+            ["id", "ASC"],
+          ],
+        },
+      ],
+      order: [
+        ["updated_at", "DESC"],
+        ["id", "DESC"],
+      ],
+      limit: fetchLimit,
+    });
+
+    const filtered = similarHomes
+      .map((home) => {
+        const address = home.address ?? {};
+        const latValue = Number(address.latitude);
+        const lngValue = Number(address.longitude);
+        if (!Number.isFinite(latValue) || !Number.isFinite(lngValue)) return null;
+        const distance = haversineKm(lat, lng, latValue, lngValue);
+        if (!Number.isFinite(distance) || distance > radiusKm) return null;
+        return { home, distance };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.distance - b.distance);
+
+    const items = filtered.slice(0, limit).map(({ home, distance }) =>
+      mapHomeToSimilarCard(home, distance)
+    );
+
+    const priceStats = buildPriceStats(items.map((item) => item?.price));
+    const stats = priceStats ? { ...priceStats, currency: currency || items[0]?.currency || "USD" } : null;
+
+    return res.json({
+      items,
+      stats,
+      count: items.length,
+      radiusKm,
+    });
+  } catch (err) {
+    console.error("[listSimilarHomes]", err);
+    return res.status(500).json({ error: "Failed to load similar listings" });
   }
 };
 
@@ -620,18 +936,18 @@ export const getHomeRecommendations = async (req, res) => {
         where:
           lat != null && lng != null
             ? {
-                latitude: { [Op.not]: null },
-                longitude: { [Op.not]: null },
-                // simple bounding box to avoid returning far-away homes
-                latitude: { [Op.between]: [lat - 1, lat + 1] },
-                longitude: { [Op.between]: [lng - 1, lng + 1] },
-              }
+              latitude: { [Op.not]: null },
+              longitude: { [Op.not]: null },
+              // simple bounding box to avoid returning far-away homes
+              latitude: { [Op.between]: [lat - 1, lat + 1] },
+              longitude: { [Op.between]: [lng - 1, lng + 1] },
+            }
             : city || country
-            ? {
+              ? {
                 ...(city ? { city: { [iLikeOp]: city } } : {}),
                 ...(country ? { country: { [iLikeOp]: country } } : {}),
               }
-            : undefined,
+              : undefined,
       },
       {
         model: models.HomePricing,
@@ -674,11 +990,11 @@ export const getHomeRecommendations = async (req, res) => {
     const distanceLiteral =
       lat != null && lng != null
         ? sequelize.literal(
-            `ABS(COALESCE(${columnRef("address", "latitude")}, 0) - ${lat}) + ABS(COALESCE(${columnRef(
-              "address",
-              "longitude"
-            )}, 0) - ${lng})`
-          )
+          `ABS(COALESCE(${columnRef("address", "latitude")}, 0) - ${lat}) + ABS(COALESCE(${columnRef(
+            "address",
+            "longitude"
+          )}, 0) - ${lng})`
+        )
         : null;
 
     const nearbyPromise = models.Home.findAll({
@@ -808,23 +1124,23 @@ export const getHomeRecommendations = async (req, res) => {
         destinationRow.city != null
           ? { city: { [iLikeOp]: destinationRow.city } }
           : destinationRow.state != null
-          ? { state: { [iLikeOp]: destinationRow.state } }
-          : destinationRow.country != null
-          ? { country: { [iLikeOp]: destinationRow.country } }
-          : null;
+            ? { state: { [iLikeOp]: destinationRow.state } }
+            : destinationRow.country != null
+              ? { country: { [iLikeOp]: destinationRow.country } }
+              : null;
 
       if (!destinationWhere) return null;
 
       const [addressInclude, ...restIncludes] = includeBase;
       if (!addressInclude) return null;
       const destinationIncludes = [
-          {
-            ...addressInclude,
-            required: true,
-            where: destinationWhere,
-          },
-          ...restIncludes,
-        ];
+        {
+          ...addressInclude,
+          required: true,
+          where: destinationWhere,
+        },
+        ...restIncludes,
+      ];
 
       const rawHomes = await models.Home.findAll({
         where: baseWhere,
@@ -1183,6 +1499,11 @@ export const getPublicHome = async (req, res) => {
           include: [{ model: models.HomeAmenity, as: "amenity" }],
         },
         {
+          model: models.HomeBedTypeLink,
+          as: "bedTypes",
+          include: [{ model: models.HomeBedType, as: "bedType" }],
+        },
+        {
           model: models.HomeTagLink,
           as: "tags",
           include: [{ model: models.HomeTag, as: "tag" }],
@@ -1217,6 +1538,15 @@ export const getPublicHome = async (req, res) => {
       home: homeBadges,
       host: hostBadges,
     };
+    if (home.pricing) {
+      if (home.pricing.base_price != null) {
+        home.pricing.base_price = Number(home.pricing.base_price) * 1.1;
+      }
+      if (home.pricing.weekend_price != null) {
+        home.pricing.weekend_price = Number(home.pricing.weekend_price) * 1.1;
+      }
+    }
+    home.bedTypes = await ensureDefaultBedTypes(home);
 
     return res.json(home);
   } catch (err) {
@@ -1378,7 +1708,14 @@ export const updateHomeAmenities = async (req, res) => {
     const home = await models.Home.findOne({ where: { id, host_id: hostId } });
     if (!home) return res.status(404).json({ error: "Home not found" });
 
-    const amenityIds = Array.isArray(req.body?.amenityIds) ? req.body.amenityIds : [];
+    const rawPayload = req.body;
+    const amenityIds = Array.isArray(rawPayload)
+      ? rawPayload
+      : Array.isArray(rawPayload?.amenityIds)
+        ? rawPayload.amenityIds
+        : Array.isArray(rawPayload?.amenities)
+          ? rawPayload.amenities
+          : [];
     const transaction = await models.Home.sequelize.transaction();
     try {
       await models.HomeAmenityLink.destroy({ where: { home_id: home.id }, transaction });
@@ -1403,6 +1740,67 @@ export const updateHomeAmenities = async (req, res) => {
   } catch (err) {
     console.error("[updateHomeAmenities]", err);
     return res.status(500).json({ error: "Failed to update amenities" });
+  }
+};
+
+export const updateHomeBedTypes = async (req, res) => {
+  try {
+    const hostId = getUserId(req.user);
+    const { id } = req.params;
+    const home = await models.Home.findOne({ where: { id, host_id: hostId } });
+    if (!home) return res.status(404).json({ error: "Home not found" });
+
+    const rawPayload = req.body;
+    const bedTypeItems = Array.isArray(rawPayload)
+      ? rawPayload
+      : Array.isArray(rawPayload?.bedTypes)
+        ? rawPayload.bedTypes
+        : [];
+
+    const normalized = new Map();
+    bedTypeItems.forEach((item) => {
+      if (!item) return;
+      const bedTypeId = Number(
+        item?.bedTypeId ?? item?.bed_type_id ?? item?.id ?? item?.bedType?.id
+      );
+      if (!Number.isFinite(bedTypeId) || bedTypeId <= 0) return;
+      const rawCount = Number(item?.count ?? item?.qty ?? item?.quantity ?? 1);
+      if (!Number.isFinite(rawCount) || rawCount <= 0) return;
+      const count = Math.min(Math.max(Math.floor(rawCount), 1), 50);
+      const existing = normalized.get(bedTypeId) || 0;
+      normalized.set(bedTypeId, existing + count);
+    });
+
+    const rows = Array.from(normalized.entries()).map(([bedTypeId, count]) => ({
+      home_id: home.id,
+      bed_type_id: bedTypeId,
+      count,
+    }));
+
+    const transaction = await models.Home.sequelize.transaction();
+    try {
+      await models.HomeBedTypeLink.destroy({ where: { home_id: home.id }, transaction });
+      if (rows.length) {
+        await models.HomeBedTypeLink.bulkCreate(rows, { transaction });
+      }
+      await transaction.commit();
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+
+    await home.update({ draft_step: Math.max(home.draft_step, Number(req.body?.draftStep || 8)) });
+
+    const bedTypes = await models.HomeBedTypeLink.findAll({
+      where: { home_id: home.id },
+      include: [{ model: models.HomeBedType, as: "bedType" }],
+    });
+
+    const resolved = await ensureDefaultBedTypes({ ...home.toJSON(), bedTypes });
+    return res.json(resolved);
+  } catch (err) {
+    console.error("[updateHomeBedTypes]", err);
+    return res.status(500).json({ error: "Failed to update bed types" });
   }
 };
 
@@ -1618,6 +2016,13 @@ export const getHomeCatalogs = async (_req, res) => {
       ],
     });
 
+    const bedTypes = await models.HomeBedType.findAll({
+      order: [
+        ["sort_order", "ASC"],
+        ["label", "ASC"],
+      ],
+    });
+
     const amenityGroups = [];
     const groupMap = new Map();
     for (const amenity of amenities) {
@@ -1642,6 +2047,14 @@ export const getHomeCatalogs = async (_req, res) => {
       label: tag.label,
       category: tag.category,
       description: tag.description,
+    }));
+
+    const bedTypeOptions = bedTypes.map((bedType) => ({
+      id: bedType.id,
+      key: bedType.bed_type_key,
+      label: bedType.label,
+      description: bedType.description,
+      icon: bedType.icon,
     }));
 
     const discountTemplates = [
@@ -1693,6 +2106,7 @@ export const getHomeCatalogs = async (_req, res) => {
       propertyTypes: HOME_PROPERTY_TYPES,
       spaceTypes: HOME_SPACE_TYPES,
       amenityGroups,
+      bedTypes: bedTypeOptions,
       marketingTags,
       discountTemplates,
       safetyOptions,
@@ -1770,6 +2184,7 @@ export const getHomeById = async (req, res) => {
         { model: models.HomeSecurity, as: "security" },
         { model: models.HomeMedia, as: "media" },
         { model: models.HomeAmenityLink, as: "amenities", include: [{ model: models.HomeAmenity, as: "amenity" }] },
+        { model: models.HomeBedTypeLink, as: "bedTypes", include: [{ model: models.HomeBedType, as: "bedType" }] },
         { model: models.HomeTagLink, as: "tags", include: [{ model: models.HomeTag, as: "tag" }] },
         { model: models.HomeDiscountRule, as: "discounts" },
         {
@@ -1796,6 +2211,7 @@ export const getHomeById = async (req, res) => {
       home: homeBadges,
       host: hostBadges,
     };
+    home.bedTypes = await ensureDefaultBedTypes(home);
     return res.json(home);
   } catch (err) {
     console.error("[getHomeById]", err);
@@ -2086,11 +2502,11 @@ export const getHostCalendarDetail = async (req, res) => {
         guestAvatar: stay.User?.avatar_url || null,
         guestInitials: guestName
           ? guestName
-              .split(' ')
-              .filter(Boolean)
-              .map((part) => part[0]?.toUpperCase())
-              .join('')
-              .slice(0, 2)
+            .split(' ')
+            .filter(Boolean)
+            .map((part) => part[0]?.toUpperCase())
+            .join('')
+            .slice(0, 2)
           : 'G',
         checkIn: stay.check_in,
         checkOut: stay.check_out,
@@ -2324,11 +2740,11 @@ export const upsertHostCalendarDay = async (req, res) => {
           guestAvatar: stay.User?.avatar_url || null,
           guestInitials: guestName
             ? guestName
-                .split(' ')
-                .filter(Boolean)
-                .map((part) => part[0]?.toUpperCase())
-                .join('')
-                .slice(0, 2)
+              .split(' ')
+              .filter(Boolean)
+              .map((part) => part[0]?.toUpperCase())
+              .join('')
+              .slice(0, 2)
             : 'G',
           checkIn: stay.check_in,
           checkOut: stay.check_out,

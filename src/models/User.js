@@ -53,6 +53,28 @@ export default (sequelize) => {
         allowNull: true,
       },
 
+      /* Discount code onboarding */
+      last_login_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      discount_code_prompted_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      discount_code_reminder_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      discount_code_locked_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      discount_code_entered_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+
       /* ───────── Estado / rol ───────── */
       is_active: {
         type: DataTypes.BOOLEAN,

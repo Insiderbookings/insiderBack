@@ -6,6 +6,9 @@ const ensureArray = (value) => {
 }
 
 const DATE_FORMAT = (process.env.WEBBEDS_DATE_FORMAT || "YYYY-MM-DD").trim()
+const MAX_CHILD_AGE = 12
+const MAX_CHILDREN_PER_ADULT = 2
+const MAX_CHILDREN_PER_ROOM = 4
 
 const formatDateValue = (value) => {
   const parsed = dayjs(value)
@@ -47,6 +50,35 @@ const getSalutation = (p) => {
   return 1 // Default Mr
 }
 
+const validateRoomsOccupancy = (rooms = []) => {
+  const entries = ensureArray(rooms)
+  if (!entries.length) return
+
+  const issues = []
+  entries.forEach((room, idx) => {
+    const adults = Math.max(0, toNumber(room?.adults) || 0)
+    const childrenAges = ensureArray(room?.children || room?.childrenAges || room?.kids)
+      .map((age) => toNumber(age))
+      .filter((age) => Number.isFinite(age))
+    const tooOld = childrenAges.filter((age) => age > MAX_CHILD_AGE)
+    const maxByAdults = adults * MAX_CHILDREN_PER_ADULT
+    const maxChildren = Math.min(MAX_CHILDREN_PER_ROOM, maxByAdults)
+
+    if (childrenAges.length > maxChildren) {
+      issues.push(`room ${idx + 1}: max ${maxChildren} children for ${adults} adult(s)`)
+    }
+    if (tooOld.length) {
+      issues.push(`room ${idx + 1}: child age(s) ${tooOld.join(", ")} > ${MAX_CHILD_AGE}`)
+    }
+  })
+
+  if (issues.length) {
+    const err = new Error(`Invalid occupancy: ${issues.join("; ")}`)
+    err.status = 400
+    throw err
+  }
+}
+
 const buildPassengersDetails = (passengers = []) => {
   const entries = ensureArray(passengers)
   if (!entries.length) return null
@@ -75,6 +107,7 @@ const buildRoomsNode = ({
   if (!roomEntries.length) {
     throw new Error("WebBeds savebooking requires at least one room")
   }
+  validateRoomsOccupancy(roomEntries)
 
   // Distribuye pasajeros globales entre rooms cuando no vienen por-room.
   const globalPassengers = ensureArray(passengers)

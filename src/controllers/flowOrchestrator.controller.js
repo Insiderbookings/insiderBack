@@ -7,11 +7,21 @@ const wrap = (handler) => async (req, res, next) => {
     const result = await handler(req, res, next);
     return res.json(result);
   } catch (error) {
-    const status = error.status || 500;
+    const isWebbedsError = error?.name === "WebbedsError";
+    const status = error.status || (isWebbedsError ? 400 : 500);
     if (status >= 500) {
       console.error("[flows]", error);
     }
-    return res.status(status).json({ error: error.message || "Unexpected error" });
+    const payload = { error: error.message || "Unexpected error" };
+    if (isWebbedsError) {
+      payload.command = error.command ?? null;
+      payload.code = error.code ?? null;
+      payload.details = error.details ?? null;
+      payload.extraDetails = error.extraDetails ?? null;
+      payload.httpStatus = error.httpStatus ?? null;
+      payload.metadata = error.metadata ?? null;
+    }
+    return res.status(status).json(payload);
   }
 };
 

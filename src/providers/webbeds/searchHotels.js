@@ -17,6 +17,9 @@ const MAX_ADULTS = 10
 const DEFAULT_RATE_BASIS = "-1"
 const DEFAULT_CURRENCY = "520"
 const DEFAULT_CHILD_AGE = 8
+const MAX_CHILD_AGE = 12
+const MAX_CHILDREN_PER_ADULT = 2
+const MAX_CHILDREN_PER_ROOM = 4
 
 const normalizeBoolean = (value) => {
   if (typeof value === "boolean") return value
@@ -51,6 +54,8 @@ const parseChildrenSegment = (segment) => {
   if (segment.includes("-")) {
     return segment
       .split("-")
+      .map((age) => String(age).trim())
+      .filter((age) => age !== "")
       .map((age) => toNumber(age))
       .filter((age) => Number.isFinite(age))
   }
@@ -71,6 +76,33 @@ const parseOccupancies = (raw) => {
       const children = parseChildrenSegment(childrenStr)
       return { adults, children }
     })
+}
+
+const validateOccupancies = (rooms = []) => {
+  const entries = ensureArray(rooms)
+  if (!entries.length) return
+
+  const issues = []
+  entries.forEach((room, idx) => {
+    const adults = Number(room?.adults ?? 0) || 0
+    const children = ensureArray(room?.children)
+    const tooOld = children.filter((age) => Number.isFinite(age) && age > MAX_CHILD_AGE)
+    const maxByAdults = Math.max(0, adults) * MAX_CHILDREN_PER_ADULT
+    const maxChildren = Math.min(MAX_CHILDREN_PER_ROOM, maxByAdults)
+
+    if (children.length > maxChildren) {
+      issues.push(`room ${idx + 1}: max ${maxChildren} children for ${adults} adult(s)`)
+    }
+    if (tooOld.length) {
+      issues.push(`room ${idx + 1}: child age(s) ${tooOld.join(", ")} > ${MAX_CHILD_AGE}`)
+    }
+  })
+
+  if (issues.length) {
+    const err = new Error(`Invalid occupancy: ${issues.join("; ")}`)
+    err.status = 400
+    throw err
+  }
 }
 
 const buildRoomNode = ({
@@ -216,6 +248,7 @@ export const buildSearchHotelsPayload = ({
   }
 
   const parsedRooms = parseOccupancies(occupancies)
+  validateOccupancies(parsedRooms)
   const rooms = parsedRooms.map((room, idx) =>
     buildRoomNode({
       ...room,

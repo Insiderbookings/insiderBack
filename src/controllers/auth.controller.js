@@ -30,6 +30,11 @@ const USER_SAFE_ATTRIBUTES = [
   "referred_by_influencer_id",
   "referred_by_code",
   "referred_at",
+  "last_login_at",
+  "discount_code_prompted_at",
+  "discount_code_reminder_at",
+  "discount_code_locked_at",
+  "discount_code_entered_at",
   "user_code",
 ];
 const USER_INCLUDES = [
@@ -53,6 +58,11 @@ const presentUser = (user) => {
     referredByInfluencerId: plain.referred_by_influencer_id ?? null,
     referredByCode: plain.referred_by_code ?? null,
     referredAt: plain.referred_at ?? null,
+    lastLoginAt: plain.last_login_at ?? null,
+    discountCodePromptedAt: plain.discount_code_prompted_at ?? null,
+    discountCodeReminderAt: plain.discount_code_reminder_at ?? null,
+    discountCodeLockedAt: plain.discount_code_locked_at ?? null,
+    discountCodeEnteredAt: plain.discount_code_entered_at ?? null,
     user_code: plain.user_code ?? null,
     hostProfile: plain.hostProfile || null,
     guestProfile: plain.guestProfile || null,
@@ -301,6 +311,7 @@ export const registerUser = async (req, res) => {
       referred_by_influencer_id: referral.influencerId,
       referred_by_code: referral.code,
       referred_at: referral.at,
+      last_login_at: new Date(),
     });
 
     // Registrar bonus por signup referido
@@ -362,6 +373,7 @@ export const registerUser = async (req, res) => {
 
     // Emit a token + user to satisfy FE expectations; still send verify email above
     await ensureGuestProfile(user.id)
+    await user.update({ last_login_at: new Date() })
     const token = signToken({
       id: user.id,
       type: "user",
@@ -407,6 +419,7 @@ export const loginUser = async (req, res) => {
 
     /* 3 ▸ Emitir JWT */
     await ensureGuestProfile(user.id);
+    await user.update({ last_login_at: new Date() });
     const token = signToken({
       id: user.id,
       type: "user",
@@ -421,6 +434,9 @@ export const loginUser = async (req, res) => {
       console.log("[loginUser] issued token:", token);
     }
     const safeUser = await loadSafeUser(user.id);
+    if (process.env.NODE_ENV != "production") {
+      console.log("[loginUser] response user:", JSON.stringify(safeUser, null, 2));
+    }
     return res.json({ token, user: safeUser });
   } catch (err) {
     console.error(err);
@@ -763,6 +779,8 @@ export const googleExchange = async (req, res) => {
       }
     }
 
+    await user.update({ last_login_at: new Date() })
+
     // 4) Emitir JWT (mismo formato que login local)
     const token = signToken({
       id: user.id,
@@ -775,22 +793,8 @@ export const googleExchange = async (req, res) => {
       referredAt: user.referred_at ?? null,
     });
 
-    return res.json({
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        avatar_url: user.avatar_url,
-        countryCode: user.country_code ?? null,
-        countryOfResidenceCode: user.residence_country_code ?? null,
-        referredByInfluencerId: user.referred_by_influencer_id ?? null,
-        referredByCode: user.referred_by_code ?? null,
-        referredAt: user.referred_at ?? null,
-      },
-    });
+    const safeUser = await loadSafeUser(user.id)
+    return res.json({ token, user: safeUser });
   } catch (err) {
     console.error("googleExchange error:", err);
     return res.status(500).json({ error: "Internal error" });

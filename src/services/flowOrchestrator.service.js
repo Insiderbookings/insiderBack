@@ -115,7 +115,11 @@ const serializeRoomsParam = (rooms) => {
     .map((room) => {
       const adults = room?.adults ?? room?.adult ?? 2;
       const childrenAges = ensureArray(room?.children ?? room?.childrenAges ?? room?.kids);
-      const childSegment = childrenAges.length ? childrenAges.join("-") : "0";
+      let childSegment = childrenAges.length ? childrenAges.join("-") : "0";
+      // Preserve single child age vs. count when serializing.
+      if (childrenAges.length === 1 && !childSegment.includes("-")) {
+        childSegment = `${childSegment}-`;
+      }
       return `${adults}|${childSegment}`;
     })
     .join(",");
@@ -148,6 +152,14 @@ const normalizeCurrency = (value) => {
   if (upper === "EUR") return "978";
   if (upper === "GBP") return "826";
   return defaultCurrencyCode;
+};
+const normalizeRateBasis = (value) => {
+  if (value === undefined || value === null || value === "") return "-1";
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) return String(parsed);
+  const str = String(value).trim();
+  if (/^\d+$/.test(str) && Number(str) > 0) return str;
+  return "-1";
 };
 const ensureNumericCode = (value, fallback) => {
   if (value === undefined || value === null || value === "") {
@@ -360,6 +372,7 @@ export class FlowOrchestratorService {
       passengerNationality,
       passengerCountryOfResidence,
       cityCode,
+      rateBasis,
     } = body || {};
 
     const resolvedHotelCode = hotelId ?? productId;
@@ -375,7 +388,7 @@ export class FlowOrchestratorService {
       checkOut: toDate,
       currency: normalizeCurrency(currency),
       occupancies,
-      rateBasis: "-1",
+      rateBasis: normalizeRateBasis(rateBasis),
       nationality: ensureNumericCode(passengerNationality, defaultCountryCode),
       residence: ensureNumericCode(passengerCountryOfResidence, defaultCountryCode),
       hotelId: resolvedHotelCode,
@@ -473,6 +486,7 @@ export class FlowOrchestratorService {
         toDate,
         currency: normalizeCurrency(currency),
         rooms,
+        rateBasis: normalizeRateBasis(rateBasis),
         passengerNationality: ensureNumericCode(passengerNationality, defaultCountryCode),
         passengerCountryOfResidence: ensureNumericCode(passengerCountryOfResidence, defaultCountryCode),
         cityCode: cityCode ?? null,
@@ -758,11 +772,29 @@ export class FlowOrchestratorService {
       },
     ];
 
+    const communicationEmail =
+      body?.sendCommunicationTo ||
+      process.env.WEBBEDS_COMM_EMAIL ||
+      process.env.WEBBEDS_CC_EMAIL ||
+      undefined;
+
+    const avsDetails = {
+      avsFirstName: process.env.WEBBEDS_AVS_FIRSTNAME || process.env.WEBBEDS_CC_NAME || "Guest",
+      avsLastName: process.env.WEBBEDS_AVS_LASTNAME || process.env.WEBBEDS_CC_SURNAME || "User",
+      avsAddress:
+        process.env.WEBBEDS_AVS_ADDRESS || process.env.WEBBEDS_CC_ADDRESS || "Unknown address",
+      avsZip: process.env.WEBBEDS_AVS_ZIP || "00000",
+      avsCountry: process.env.WEBBEDS_AVS_COUNTRY || process.env.WEBBEDS_CC_COUNTRY || "US",
+      avsCity: process.env.WEBBEDS_AVS_CITY || "Unknown city",
+      avsEmail: process.env.WEBBEDS_AVS_EMAIL || process.env.WEBBEDS_CC_EMAIL || "unknown@example.com",
+      avsPhone: process.env.WEBBEDS_AVS_PHONE || "+10000000000",
+    };
+
     const payload = buildBookItineraryPayload({
       bookingCode: flow.itinerary_booking_code,
       bookingType: 2,
       confirm: "preauth",
-      sendCommunicationTo: process.env.WEBBEDS_COMM_EMAIL || undefined,
+      sendCommunicationTo: communicationEmail,
       payment: {
         paymentMethod,
         usedCredit: 0,
@@ -770,6 +802,7 @@ export class FlowOrchestratorService {
         token,
         cardHolderName: process.env.WEBBEDS_CC_NAME,
         creditCardType: process.env.WEBBEDS_CC_TYPE || 100,
+        avsDetails,
         authorisationId: paymentIntentId,
         devicePayload: process.env.WEBBEDS_DEVICE_PAYLOAD || "static-device",
         endUserIPAddress: process.env.WEBBEDS_DEFAULT_IP || "127.0.0.1",
@@ -968,10 +1001,15 @@ export class FlowOrchestratorService {
     const penalty =
       flow.cancel_quote_snapshot?.services?.[0]?.cancellationPenalties?.[0] ?? null;
     const penaltyApplied = penalty?.charge ?? penalty?.penaltyApplied ?? null;
+    const paidAmount =
+      flow.pricing_snapshot_confirmed?.price ??
+      flow.pricing_snapshot_preauth?.price ??
+      flow.pricing_snapshot_priced?.price ??
+      null;
     const paymentBalance =
-      penaltyApplied != null
-        ? penaltyApplied
-        : flow.pricing_snapshot_confirmed?.price ?? flow.pricing_snapshot_priced?.price ?? null;
+      penaltyApplied != null && paidAmount != null
+        ? Math.max(0, Number(paidAmount) - Number(penaltyApplied))
+        : paidAmount ?? null;
 
     const services = [
       {

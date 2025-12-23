@@ -49,6 +49,8 @@ export const autoSignupOrLogin = async (req, res) => {
       )
     }
 
+    await user.update({ last_login_at: new Date() })
+
     // 5. Generar JWT para el usuario
     const token = signToken({
       id: user.id,

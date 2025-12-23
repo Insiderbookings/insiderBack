@@ -37,9 +37,11 @@ export const buildCancelBookingPayload = ({ bookingId, bookingCode, bookingType,
     // Add testPricesAndAllocation if services with penaltyApplied are provided
     // This is used in the 2-step flow: confirm=no returns charge, then confirm=yes sends penaltyApplied
     if (Array.isArray(services) && services.length > 0) {
+        const referenceNumber = String(code)
+        // WebBeds cancelbooking expects referencenumber to match bookingCode.
         payload.bookingDetails.testPricesAndAllocation = {
             service: services.map((svc) => ({
-                "@referencenumber": svc.serviceCode ?? svc.referenceNumber ?? svc.code ?? code,
+                "@referencenumber": referenceNumber,
                 penaltyApplied: svc.penaltyApplied ?? svc.charge ?? undefined,
                 paymentBalance: svc.paymentBalance ?? undefined,
             }))

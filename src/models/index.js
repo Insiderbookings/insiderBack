@@ -46,6 +46,8 @@ import HomeModel from "./Home.js";
 import HomeAddressModel from "./HomeAddress.js";
 import HomeAmenityModel from "./HomeAmenity.js";
 import HomeAmenityLinkModel from "./HomeAmenityLink.js";
+import HomeBedTypeModel from "./HomeBedType.js";
+import HomeBedTypeLinkModel from "./HomeBedTypeLink.js";
 import HomeMediaModel from "./HomeMedia.js";
 import HomePricingModel from "./HomePricing.js";
 import HomeCalendarModel from "./HomeCalendar.js";
@@ -156,6 +158,8 @@ const models = {
   HomeAddress: HomeAddressModel(sequelize),
   HomeAmenity: HomeAmenityModel(sequelize),
   HomeAmenityLink: HomeAmenityLinkModel(sequelize),
+  HomeBedType: HomeBedTypeModel(sequelize),
+  HomeBedTypeLink: HomeBedTypeLinkModel(sequelize),
   HomeMedia: HomeMediaModel(sequelize),
   HomePricing: HomePricingModel(sequelize),
   HomeCalendar: HomeCalendarModel(sequelize),

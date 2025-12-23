@@ -5,6 +5,7 @@ import {
   updateHomeBasics,
   upsertHomeAddress,
   updateHomeAmenities,
+  updateHomeBedTypes,
   updateHomePricing,
   attachHomeMedia,
   updateHomePolicies,
@@ -20,6 +21,7 @@ import {
   listExploreHomes,
   getHomeRecommendations,
   listHomeDestinations,
+  listSimilarHomes,
   searchHomes,
 } from "../controllers/home.controller.js";
 import { loadHostHome } from "../middleware/ensureHomeOwner.js";
@@ -37,12 +39,14 @@ router.get("/public/:id/availability", getPublicHomeAvailability);
 router.use(authenticate);
 
 router.get("/catalogs", getHomeCatalogs);
+router.get("/similar", listSimilarHomes);
 router.post("/", createHomeDraft);
 router.get("/me", listHostHomes);
 router.get("/:id", getHomeById);
 router.patch("/:id/basics", updateHomeBasics);
 router.patch("/:id/address", upsertHomeAddress);
 router.patch("/:id/amenities", updateHomeAmenities);
+router.patch("/:id/bed-types", updateHomeBedTypes);
 router.patch("/:id/pricing", updateHomePricing);
 router.patch("/:id/policies", updateHomePolicies);
 router.patch("/:id/security", updateHomeSecurity);

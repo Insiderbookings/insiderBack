@@ -70,6 +70,7 @@ export default (sequelize) => {
     Home.hasOne(models.HomeSecurity, { foreignKey: "home_id", as: "security" });
     Home.hasMany(models.HomeMedia, { foreignKey: "home_id", as: "media" });
     Home.hasMany(models.HomeAmenityLink, { foreignKey: "home_id", as: "amenities" });
+    Home.hasMany(models.HomeBedTypeLink, { foreignKey: "home_id", as: "bedTypes" });
     Home.hasMany(models.HomeTagLink, { foreignKey: "home_id", as: "tags" });
     Home.hasMany(models.HomeCalendar, { foreignKey: "home_id", as: "calendar" });
     Home.hasMany(models.HomeDiscountRule, { foreignKey: "home_id", as: "discounts" });

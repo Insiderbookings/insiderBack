@@ -53,6 +53,8 @@ const parseChildrenSegment = (segment) => {
   if (segment.includes("-")) {
     return segment
       .split("-")
+      .map((age) => String(age).trim())
+      .filter((age) => age !== "")
       .map((age) => toNumber(age))
       .filter((age) => Number.isFinite(age))
   }
@@ -60,6 +62,10 @@ const parseChildrenSegment = (segment) => {
   if (!Number.isFinite(count) || count <= 0) return []
   return Array.from({ length: count }, () => 8)
 }
+
+const MAX_CHILD_AGE = 12
+const MAX_CHILDREN_PER_ADULT = 2
+const MAX_CHILDREN_PER_ROOM = 4
 
 const parseList = (value) => {
   if (!value) return []
@@ -91,6 +97,33 @@ const parseOccupancies = (raw) => {
     })
 }
 
+const validateOccupancies = (rooms = []) => {
+  const entries = ensureArray(rooms)
+  if (!entries.length) return
+
+  const issues = []
+  entries.forEach((room, idx) => {
+    const adults = Number(room?.adults ?? 0) || 0
+    const children = ensureArray(room?.children)
+    const tooOld = children.filter((age) => Number.isFinite(age) && age > MAX_CHILD_AGE)
+    const maxByAdults = Math.max(0, adults) * MAX_CHILDREN_PER_ADULT
+    const maxChildren = Math.min(MAX_CHILDREN_PER_ROOM, maxByAdults)
+
+    if (children.length > maxChildren) {
+      issues.push(`room ${idx + 1}: max ${maxChildren} children for ${adults} adult(s)`)
+    }
+    if (tooOld.length) {
+      issues.push(`room ${idx + 1}: child age(s) ${tooOld.join(", ")} > ${MAX_CHILD_AGE}`)
+    }
+  })
+
+  if (issues.length) {
+    const err = new Error(`Invalid occupancy: ${issues.join("; ")}`)
+    err.status = 400
+    throw err
+  }
+}
+
 export const buildGetRoomsPayload = ({
   checkIn,
   checkOut,
@@ -117,6 +150,7 @@ export const buildGetRoomsPayload = ({
   }
 
   const parsedRooms = parseOccupancies(occupancies)
+  validateOccupancies(parsedRooms)
 
   const sanitizeRoomTypeSelection = ({
     roomTypeCode,
@@ -269,6 +303,36 @@ const parsePropertyFees = (rateBasis) => {
   }))
 }
 
+const parseValidForOccupancy = (node) => {
+  if (!node) return null
+  const adults = toNumber(getText(node?.adults ?? node?.adult))
+  const children = toNumber(getText(node?.children ?? node?.child))
+  const infants = toNumber(getText(node?.infants ?? node?.infant))
+  const extraBed = toNumber(getText(node?.extraBed ?? node?.extraBeds ?? node?.extrabed))
+  const extraBedOccupant = getText(node?.extraBedOccupant ?? node?.extraBedOccupantType)
+  const maxOccupancy = toNumber(getText(node?.maxOccupancy ?? node?.maxPax))
+  const details = {
+    adults,
+    children,
+    infants,
+    extraBed,
+    extraBedOccupant,
+    maxOccupancy,
+  }
+  const cleaned = Object.fromEntries(
+    Object.entries(details).filter(([, value]) => value !== null && value !== undefined),
+  )
+  return Object.keys(cleaned).length ? cleaned : null
+}
+
+const resolveValidForOccupancyFlag = (node) => {
+  if (node == null) return false
+  if (typeof node === "boolean") return node
+  const text = getText(node)
+  if (text != null) return normalizeBoolean(text)
+  return true
+}
+
 const parseRateBases = (rateBasesNode, requestedCurrency) => {
   const rateBases = ensureArray(rateBasesNode?.rateBasis ?? rateBasesNode)
   return rateBases.map((rateBasis) => {
@@ -307,8 +371,10 @@ const parseRateBases = (rateBasesNode, requestedCurrency) => {
       dateApplyMinStay: rateBasis?.dateApplyMinStay ?? null,
       cancellationRules: parseCancellationRules(rateBasis?.cancellationRules),
       withinCancellationDeadline: normalizeBoolean(rateBasis?.withinCancellationDeadline),
-      validForOccupancy: normalizeBoolean(rateBasis?.validForOccupancy),
+      validForOccupancy: resolveValidForOccupancyFlag(rateBasis?.validForOccupancy),
+      validForOccupancyDetails: parseValidForOccupancy(rateBasis?.validForOccupancy),
       changedOccupancy: normalizeBoolean(rateBasis?.changedOccupancy),
+      changedOccupancyValue: getText(rateBasis?.changedOccupancy),
       changedOccupancyText: getText(rateBasis?.changedOccupancyText),
       isBookable: normalizeBoolean(rateBasis?.isBookable),
       onRequest: normalizeBoolean(rateBasis?.onRequest),

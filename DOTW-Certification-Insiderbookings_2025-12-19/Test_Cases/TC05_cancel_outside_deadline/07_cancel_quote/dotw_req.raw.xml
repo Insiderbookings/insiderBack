@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="UTF-8"?><customer><username>InsiderBookings</username><password>***redacted***</password><id>2266975</id><source>1</source><request command="cancelbooking"><bookingDetails><bookingType>1</bookingType><bookingCode>874890973</bookingCode><confirm>no</confirm></bookingDetails></request></customer>

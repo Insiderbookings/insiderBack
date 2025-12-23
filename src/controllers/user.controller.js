@@ -3,10 +3,39 @@ import models, { sequelize } from "../models/index.js"
 import { Op } from "sequelize" // â† Agregar esta importaciÃ³n
 import { sendMail } from "../helpers/mailer.js"
 
+const DISCOUNT_REMINDER_GRACE_DAYS = 1
+const LOGIN_TOUCH_INTERVAL_MS = 5 * 60 * 1000
+
+const normalizeDiscountCode = (value) => String(value || "").trim().toUpperCase()
+
+const shouldTouchLastLogin = (value) => {
+  if (!value) return true
+  const last = new Date(value).getTime()
+  return Number.isFinite(last) && Date.now() - last >= LOGIN_TOUCH_INTERVAL_MS
+}
+
+const ensureDiscountCodeLock = async (user) => {
+  if (!user) return user
+  if (user.discount_code_locked_at || user.discount_code_entered_at) return user
+  if (user.referred_by_influencer_id || user.referred_by_code) return user
+
+  const reminderAt = user.discount_code_reminder_at
+  if (!reminderAt) return user
+
+  const reminderTime = new Date(reminderAt).getTime()
+  if (!Number.isFinite(reminderTime)) return user
+
+  const graceMs = DISCOUNT_REMINDER_GRACE_DAYS * 24 * 60 * 60 * 1000
+  if (Date.now() <= reminderTime + graceMs) return user
+
+  await user.update({ discount_code_locked_at: new Date() })
+  return user
+}
+
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ GET /api/users/me â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const getCurrentUser = async (req, res) => {
   try {
-    const user = await models.User.findByPk(req.user.id, {
+    let user = await models.User.findByPk(req.user.id, {
       attributes: [
         "id",
         "name",
@@ -21,6 +50,11 @@ export const getCurrentUser = async (req, res) => {
         ["referred_by_influencer_id", "referredByInfluencerId"],
         ["referred_by_code", "referredByCode"],
         ["referred_at", "referredAt"],
+        ["last_login_at", "lastLoginAt"],
+        ["discount_code_prompted_at", "discountCodePromptedAt"],
+        ["discount_code_reminder_at", "discountCodeReminderAt"],
+        ["discount_code_locked_at", "discountCodeLockedAt"],
+        ["discount_code_entered_at", "discountCodeEnteredAt"],
         "user_code",
       ],
       include: [
@@ -29,6 +63,10 @@ export const getCurrentUser = async (req, res) => {
       ],
     })
     if (!user) return res.status(404).json({ error: "User not found" })
+    await ensureDiscountCodeLock(user)
+    if (shouldTouchLastLogin(user.last_login_at)) {
+      user = await user.update({ last_login_at: new Date() })
+    }
     return res.json(user.get({ plain: true }))
   } catch (err) {
     console.error("Error getting current user:", err)
@@ -123,6 +161,11 @@ export const updateUserProfile = async (req, res) => {
         ["is_active", "isActive"],
         ["country_code", "countryCode"],
         ["residence_country_code", "countryOfResidenceCode"],
+        ["last_login_at", "lastLoginAt"],
+        ["discount_code_prompted_at", "discountCodePromptedAt"],
+        ["discount_code_reminder_at", "discountCodeReminderAt"],
+        ["discount_code_locked_at", "discountCodeLockedAt"],
+        ["discount_code_entered_at", "discountCodeEnteredAt"],
         "user_code",
       ],
     })
@@ -158,14 +201,18 @@ export const changePassword = async (req, res) => {
       return res.status(404).json({ error: "User not found" })
     }
 
+    if (!user.password_hash) {
+      return res.status(400).json({ error: "Password not set for this account" })
+    }
+
     // Verificar contraseÃ±a actual
-    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash)
+    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password_hash)
     if (!isCurrentPasswordValid) {
       return res.status(400).json({ error: "Current password is incorrect" })
     }
 
     // Verificar que la nueva contraseÃ±a sea diferente
-    const isSamePassword = await bcrypt.compare(newPassword, user.passwordHash)
+    const isSamePassword = await bcrypt.compare(newPassword, user.password_hash)
     if (isSamePassword) {
       return res.status(400).json({ error: "New password must be different from current password" })
     }
@@ -175,7 +222,7 @@ export const changePassword = async (req, res) => {
     const newPasswordHash = await bcrypt.hash(newPassword, saltRounds)
 
     // Actualizar contraseÃ±a
-    await models.User.update({ passwordHash: newPasswordHash }, { where: { id: userId } })
+    await user.update({ password_hash: newPasswordHash })
 
     return res.json({ message: "Password changed successfully" })
   } catch (err) {
@@ -631,3 +678,107 @@ export const getInfluencerReferrals = async (req, res) => {
     return res.status(500).json({ error: "Server error" })
   }
 }
+
+// POST /api/users/me/discount-code/status
+export const recordDiscountCodeStatus = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id)
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+
+    const stage = String(req.body?.stage || "").trim().toLowerCase()
+    if (!stage || !["initial", "reminder"].includes(stage)) {
+      return res.status(400).json({ error: "Invalid discount code status" })
+    }
+
+    let user = await models.User.findByPk(userId)
+    if (!user) return res.status(404).json({ error: "User not found" })
+
+    user = await ensureDiscountCodeLock(user)
+    if (user.discount_code_locked_at) {
+      return res.status(403).json({ error: "Discount codes are no longer available" })
+    }
+    if (user.referred_by_influencer_id || user.referred_by_code || user.discount_code_entered_at) {
+      return res.status(409).json({ error: "Discount code already applied" })
+    }
+
+    const now = new Date()
+    if (stage == "initial") {
+      if (!user.discount_code_prompted_at) {
+        user = await user.update({ discount_code_prompted_at: now })
+      }
+    } else {
+      const updates = {}
+      if (!user.discount_code_prompted_at) updates.discount_code_prompted_at = now
+      if (!user.discount_code_reminder_at) updates.discount_code_reminder_at = now
+      if (Object.keys(updates).length) {
+        user = await user.update(updates)
+      }
+    }
+
+    return res.json({
+      discountCodePromptedAt: user.discount_code_prompted_at ?? null,
+      discountCodeReminderAt: user.discount_code_reminder_at ?? null,
+      discountCodeLockedAt: user.discount_code_locked_at ?? null,
+    })
+  } catch (err) {
+    console.error("recordDiscountCodeStatus error:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+// POST /api/users/me/discount-code
+export const applyDiscountCode = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id)
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+
+    const codeRaw = req.body?.code
+    const code = normalizeDiscountCode(codeRaw)
+    if (!code) return res.status(400).json({ error: "Discount code is required" })
+
+    let user = await models.User.findByPk(userId)
+    if (!user) return res.status(404).json({ error: "User not found" })
+
+    user = await ensureDiscountCodeLock(user)
+    if (user.discount_code_locked_at) {
+      return res.status(403).json({ error: "Discount codes are no longer available" })
+    }
+    if (user.referred_by_influencer_id || user.referred_by_code || user.discount_code_entered_at) {
+      return res.status(409).json({ error: "Discount code already applied" })
+    }
+
+    const influencer = await models.User.findOne({
+      where: {
+        role: 2,
+        user_code: { [Op.iLike]: code },
+      },
+      attributes: ["id", "user_code"],
+    })
+
+    if (!influencer) {
+      return res.status(404).json({ error: "Invalid discount code" })
+    }
+    if (Number(influencer.id) == userId) {
+      return res.status(400).json({ error: "Invalid discount code" })
+    }
+
+    const now = new Date()
+    user = await user.update({
+      referred_by_influencer_id: influencer.id,
+      referred_by_code: code,
+      referred_at: now,
+      discount_code_entered_at: now,
+    })
+
+    return res.json({
+      referredByInfluencerId: user.referred_by_influencer_id ?? null,
+      referredByCode: user.referred_by_code ?? null,
+      referredAt: user.referred_at ?? null,
+      discountCodeEnteredAt: user.discount_code_entered_at ?? null,
+    })
+  } catch (err) {
+    console.error("applyDiscountCode error:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+

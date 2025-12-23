@@ -160,8 +160,8 @@ const mapStay = (row, source) => {
   const location = isHomeStay
     ? homePayload?.locationText ?? null
     : mergedHotel
-    ? `${mergedHotel?.city || mergedHotel?.location || ""}, ${mergedHotel?.country || ""}`.trim().replace(/, $/, "")
-    : null
+      ? `${mergedHotel?.city || mergedHotel?.location || ""}, ${mergedHotel?.country || ""}`.trim().replace(/, $/, "")
+      : null
 
   const image = isHomeStay ? homePayload?.coverImage ?? null : mergedHotel?.image ?? null
   const listingName = isHomeStay ? homePayload?.title ?? null : mergedHotel?.name ?? null
@@ -474,11 +474,11 @@ export const createBooking = async (req, res) => {
             ...(typeof metaPayload === "object" && metaPayload ? metaPayload : {}),
             ...(referral.influencerId
               ? {
-                  referral: {
-                    influencerUserId: referral.influencerId,
-                    code: referral.code || null,
-                  },
-                }
+                referral: {
+                  influencerUserId: referral.influencerId,
+                  code: referral.code || null,
+                },
+              }
               : {}),
             source,
             hotel: hotel
@@ -642,11 +642,11 @@ export const createHomeBooking = async (req, res) => {
     if (maxStay && nights > maxStay)
       return res.status(400).json({ error: `Maximum stay is ${maxStay} nights` })
 
-    const basePrice = Number.parseFloat(pricing.base_price ?? 0)
+    const basePrice = Number.parseFloat(pricing.base_price ?? 0) * 1.1
     if (!Number.isFinite(basePrice) || basePrice <= 0)
       return res.status(400).json({ error: "Listing does not have a valid base price" })
     const weekendPrice =
-      pricing.weekend_price != null ? Number.parseFloat(pricing.weekend_price) : null
+      pricing.weekend_price != null ? Number.parseFloat(pricing.weekend_price) * 1.1 : null
     const cleaningFeeValue =
       pricing.cleaning_fee != null ? Number.parseFloat(pricing.cleaning_fee) : 0
     const securityDeposit =
@@ -658,7 +658,7 @@ export const createHomeBooking = async (req, res) => {
         ? Number(pricing.extra_guest_threshold)
         : capacity
     const taxRate =
-      pricing.tax_rate != null ? Number.parseFloat(pricing.tax_rate) : 0
+      (pricing.tax_rate != null && Number(pricing.tax_rate) > 0) ? Number.parseFloat(pricing.tax_rate) : 8
 
     const calendarEntries = await models.HomeCalendar.findAll({
       where: {
@@ -779,11 +779,11 @@ export const createHomeBooking = async (req, res) => {
             ...(typeof metaPayload === "object" && metaPayload ? metaPayload : {}),
             ...(referral.influencerId
               ? {
-                  referral: {
-                    influencerUserId: referral.influencerId,
-                    code: referral.code || null,
-                  },
-                }
+                referral: {
+                  influencerUserId: referral.influencerId,
+                  code: referral.code || null,
+                },
+              }
               : {}),
             source: "HOME",
             home: { id: home.id, title: home.title, hostId: home.host_id },
@@ -929,8 +929,8 @@ export const getBookingsUnified = async (req, res) => {
       inventoryQuery === "HOME"
         ? { inventory_type: "HOME" }
         : inventoryQuery === "HOTEL"
-        ? { inventory_type: { [Op.ne]: "HOME" } }
-        : {}
+          ? { inventory_type: { [Op.ne]: "HOME" } }
+          : {}
 
     const rows = await models.Booking.findAll({
       where: {
@@ -942,28 +942,28 @@ export const getBookingsUnified = async (req, res) => {
         ],
       },
       include: STAY_BASE_INCLUDE,
-      order : [["check_in","DESC"]],
-      limit : latest ? 1 : Number(limit),
+      order: [["check_in", "DESC"]],
+      limit: latest ? 1 : Number(limit),
       offset: latest ? 0 : Number(offset)
     })
 
     // 3. Mapear y unificar
-      const merged = rows
-        .map(r => {
-          const obj = r.toJSON()
-          const channel =
-            obj.inventory_type === "HOME" || obj.source === "HOME"
-              ? "home"
-              : obj.source === "TGX"
+    const merged = rows
+      .map(r => {
+        const obj = r.toJSON()
+        const channel =
+          obj.inventory_type === "HOME" || obj.source === "HOME"
+            ? "home"
+            : obj.source === "TGX"
               ? "tgx"
               : obj.source === "OUTSIDE"
-              ? "outside"
-              : obj.source === "VAULT"
-              ? "vault"
-              : "insider"
-          return mapStay(obj, channel)
-        })
-        .sort((a, b) => new Date(b.checkIn) - new Date(a.checkIn))
+                ? "outside"
+                : obj.source === "VAULT"
+                  ? "vault"
+                  : "insider"
+        return mapStay(obj, channel)
+      })
+      .sort((a, b) => new Date(b.checkIn) - new Date(a.checkIn))
 
     // 4. Devolver
     return res.json(latest ? merged[0] ?? null : merged)
@@ -1017,12 +1017,12 @@ export const lookupBookingPublic = async (req, res) => {
       obj.inventory_type === "HOME" || obj.source === "HOME"
         ? "home"
         : obj.source === "TGX"
-        ? "tgx"
-        : obj.source === "OUTSIDE"
-        ? "outside"
-        : obj.source === "VAULT"
-        ? "vault"
-        : "insider"
+          ? "tgx"
+          : obj.source === "OUTSIDE"
+            ? "outside"
+            : obj.source === "VAULT"
+              ? "vault"
+              : "insider"
     return res.json(mapStay(obj, channel))
   } catch (err) {
     console.error("lookupBookingPublic:", err)
@@ -1121,12 +1121,12 @@ export const listGuestBookings = async (req, res) => {
         obj.inventory_type === "HOME" || obj.source === "HOME"
           ? "home"
           : obj.source === "TGX"
-          ? "tgx"
-          : obj.source === "OUTSIDE"
-          ? "outside"
-          : obj.source === "VAULT"
-          ? "vault"
-          : "insider"
+            ? "tgx"
+            : obj.source === "OUTSIDE"
+              ? "outside"
+              : obj.source === "VAULT"
+                ? "vault"
+                : "insider"
       return mapStay(obj, channel)
     })
     return res.json(latest ? result[0] ?? null : result)
@@ -1149,7 +1149,7 @@ export const linkGuestBookingsToUser = async (req, res) => {
     if (payload.kind !== "guest") return res.status(400).json({ error: "Invalid token kind" })
 
     const email = String(payload.email).trim().toLowerCase()
-    const today = new Date().toISOString().slice(0,10)
+    const today = new Date().toISOString().slice(0, 10)
     const [count] = await models.Booking.update(
       { user_id: req.user.id },
       {
@@ -1179,49 +1179,49 @@ export const getBookingsForUser = async (req, res) => {
       where,
       include: [
         {
-          model      : models.Hotel,
-          attributes : ["id","name","location","image","address","city","country","rating"],
+          model: models.Hotel,
+          attributes: ["id", "name", "location", "image", "address", "city", "country", "rating"],
         },
         {
-          model      : models.Room,
-          attributes : ["id","name","image","price","beds","capacity"],
+          model: models.Room,
+          attributes: ["id", "name", "image", "price", "beds", "capacity"],
         },
         {
-          model      : models.DiscountCode,
-          attributes : ["id","code","percentage"],
-          required   : false,
+          model: models.DiscountCode,
+          attributes: ["id", "code", "percentage"],
+          required: false,
         },
       ],
-      order : [["createdAt","DESC"]],
-      limit : Number(limit),
+      order: [["createdAt", "DESC"]],
+      limit: Number(limit),
       offset: Number(offset),
     })
 
     const result = rows.map(r => ({
-      id            : r.id,
-      hotelName     : r.Hotel.name,
-      location      : `${r.Hotel.city || r.Hotel.location}, ${r.Hotel.country || ""}`.trim().replace(/,$/, ""),
-      checkIn       : r.check_in,
-      checkOut      : r.check_out,
-      guests        : r.adults + r.children,
-      adults        : r.adults,
-      children      : r.children,
-      status        : String(r.status).toLowerCase(),
-      paymentStatus : String(r.payment_status).toLowerCase(),
-      total         : Number.parseFloat(r.gross_price ?? 0),
-      nights        : diffDays(r.check_in, r.check_out),
-      rating        : r.Hotel.rating,
-      image         : r.Hotel.image || r.Room.image,
-      roomName      : r.Room.name,
-      roomPrice     : Number.parseFloat(r.Room.price),
-      beds          : r.Room.beds,
-      capacity      : r.Room.capacity,
-      guestName     : r.guest_name,
-      guestEmail    : r.guest_email,
-      guestPhone    : r.guest_phone,
-      discountCode  : r.DiscountCode ? { code: r.DiscountCode.code, percentage: r.DiscountCode.percentage } : null,
-      createdAt     : r.createdAt,
-      updatedAt     : r.updatedAt,
+      id: r.id,
+      hotelName: r.Hotel.name,
+      location: `${r.Hotel.city || r.Hotel.location}, ${r.Hotel.country || ""}`.trim().replace(/,$/, ""),
+      checkIn: r.check_in,
+      checkOut: r.check_out,
+      guests: r.adults + r.children,
+      adults: r.adults,
+      children: r.children,
+      status: String(r.status).toLowerCase(),
+      paymentStatus: String(r.payment_status).toLowerCase(),
+      total: Number.parseFloat(r.gross_price ?? 0),
+      nights: diffDays(r.check_in, r.check_out),
+      rating: r.Hotel.rating,
+      image: r.Hotel.image || r.Room.image,
+      roomName: r.Room.name,
+      roomPrice: Number.parseFloat(r.Room.price),
+      beds: r.Room.beds,
+      capacity: r.Room.capacity,
+      guestName: r.guest_name,
+      guestEmail: r.guest_email,
+      guestPhone: r.guest_phone,
+      discountCode: r.DiscountCode ? { code: r.DiscountCode.code, percentage: r.DiscountCode.percentage } : null,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
     }))
 
     return res.json(result)
@@ -1241,7 +1241,7 @@ export const getBookingsForStaff = async (req, res) => {
       include: [
         { model: models.DiscountCode, where: { staff_id: staffId } },
         { model: models.Hotel, attributes: ["name"] },
-        { model: models.Room,  attributes: ["name"] },
+        { model: models.Room, attributes: ["name"] },
       ],
     })
     return res.json(rows)
@@ -1310,20 +1310,20 @@ export const getBookingById = async (req, res) => {
       obj.inventory_type === "HOME" || obj.source === "HOME"
         ? "home"
         : obj.source === "TGX"
-        ? "tgx"
-        : obj.source === "OUTSIDE"
-        ? "outside"
-        : obj.source === "VAULT"
-        ? "vault"
-        : "insider"
+          ? "tgx"
+          : obj.source === "OUTSIDE"
+            ? "outside"
+            : obj.source === "VAULT"
+              ? "vault"
+              : "insider"
     const stayView = mapStay(obj, channel)
 
     const meta =
       booking.source === "OUTSIDE"
         ? booking.outsideMeta
         : booking.source === "TGX"
-        ? booking.tgxMeta
-        : null
+          ? booking.tgxMeta
+          : null
 
     return res.json({
       id: stayView.id,
@@ -1365,8 +1365,8 @@ export const getBookingById = async (req, res) => {
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const cancelBooking = async (req, res) => {
   try {
-    const { id }  = req.params
-    const userId  = req.user.id
+    const { id } = req.params
+    const userId = req.user.id
 
     const booking = await models.Booking.findOne({ where: { id, user_id: userId } })
     if (!booking) return res.status(404).json({ error: "Booking not found" })
@@ -1382,9 +1382,9 @@ export const cancelBooking = async (req, res) => {
       return res.status(400).json({ error: "Cannot cancel booking less than 24 hours before check-in" })
 
     await booking.update({
-      status         : "CANCELLED",
-      payment_status : booking.payment_status === "PAID" ? "REFUNDED" : "UNPAID",
-      cancelled_at   : new Date(),
+      status: "CANCELLED",
+      payment_status: booking.payment_status === "PAID" ? "REFUNDED" : "UNPAID",
+      cancelled_at: new Date(),
     })
 
     if (booking.inventory_type === "HOME") {
@@ -1499,9 +1499,9 @@ export const cancelBooking = async (req, res) => {
     return res.json({
       message: "Booking cancelled successfully",
       booking: {
-        id            : booking.id,
-        status        : String(booking.status).toLowerCase(),
-        paymentStatus : String(booking.payment_status).toLowerCase(),
+        id: booking.id,
+        status: String(booking.status).toLowerCase(),
+        paymentStatus: String(booking.payment_status).toLowerCase(),
       },
     })
   } catch (err) {
@@ -1541,33 +1541,33 @@ export const getOutsideBookingWithAddOns = async (req, res) => {
       where: { id, source: "OUTSIDE" },
       include: [
         {
-          model      : models.User,
-          attributes : ["id", "name", "email"],
+          model: models.User,
+          attributes: ["id", "name", "email"],
         },
         {
-          model      : models.Hotel,
-          attributes : [
-            "id","name","location","address","city","country","image","phone","price",
-            "rating","star_rating","category","amenities","lat","lng","description"
+          model: models.Hotel,
+          attributes: [
+            "id", "name", "location", "address", "city", "country", "image", "phone", "price",
+            "rating", "star_rating", "category", "amenities", "lat", "lng", "description"
           ],
         },
         {
-          model      : models.AddOn,
-          attributes : ["id","name","slug","description","price"],
-          through    : {
+          model: models.AddOn,
+          attributes: ["id", "name", "slug", "description", "price"],
+          through: {
             attributes: [
-              "id","quantity","unit_price","payment_status","add_on_option_id","status"
+              "id", "quantity", "unit_price", "payment_status", "add_on_option_id", "status"
             ],
           },
-          include    : [
-            { model: models.AddOnOption, attributes: ["id","name","price"] }
+          include: [
+            { model: models.AddOnOption, attributes: ["id", "name", "price"] }
           ],
         },
         {
-          model      : models.Room,
-          attributes : [
-            "id","room_number","name","description","image","price","capacity",
-            "beds","amenities","available"
+          model: models.Room,
+          attributes: [
+            "id", "room_number", "name", "description", "image", "price", "capacity",
+            "beds", "amenities", "available"
           ],
         }
       ]
@@ -1576,51 +1576,51 @@ export const getOutsideBookingWithAddOns = async (req, res) => {
 
     /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ 2. Map add-ons for FE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     const addons = bk.AddOns.map(addon => {
-      const pivot  = addon.BookingAddOn
+      const pivot = addon.BookingAddOn
       const option = addon.AddOnOptions?.find(o => o.id === pivot.add_on_option_id) || null
       return {
         bookingAddOnId: pivot.id,
-        addOnId       : addon.id,
-        addOnName     : addon.name,
-        addOnSlug     : addon.slug,
-        qty           : pivot.qty,
-        unitPrice     : Number(pivot.unit_price),
-        paymentStatus : pivot.payment_status,
-        status        : pivot.status,
-        optionId      : option?.id    ?? null,
-        optionName    : option?.name  ?? null,
-        optionPrice   : option?.price ?? null,
+        addOnId: addon.id,
+        addOnName: addon.name,
+        addOnSlug: addon.slug,
+        qty: pivot.qty,
+        unitPrice: Number(pivot.unit_price),
+        paymentStatus: pivot.payment_status,
+        status: pivot.status,
+        optionId: option?.id ?? null,
+        optionName: option?.name ?? null,
+        optionPrice: option?.price ?? null,
       }
     })
 
     /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ 3. Hotel + rooms plain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     const hotelPlain = bk.Hotel.get({ plain: true })
-    const roomRows   = await models.Room.findAll({
-      where      : { hotel_id: hotelPlain.id },
-      attributes : [
-        "id","room_number","name","description","image","price","capacity",
-        "beds","amenities","available"
+    const roomRows = await models.Room.findAll({
+      where: { hotel_id: hotelPlain.id },
+      attributes: [
+        "id", "room_number", "name", "description", "image", "price", "capacity",
+        "beds", "amenities", "available"
       ],
     })
     hotelPlain.rooms = roomRows.map(r => r.get({ plain: true }))
 
     /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ 4. Response â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     return res.json({
-      id                  : bk.id,
-      bookingConfirmation : bk.external_ref, // usamos external_ref
-      guestName           : bk.guest_name,
-      guestLastName       : bk.meta?.guest_last_name ?? null,
-      guestEmail          : bk.guest_email,
-      guestRoomType       : bk.Room?.name ?? null,
-      guestPhone          : bk.guest_phone,
-      checkIn             : bk.check_in,
-      checkOut            : bk.check_out,
-      status              : String(bk.status).toLowerCase(),
-      paymentStatus       : String(bk.payment_status).toLowerCase(),
-      user                : bk.User,
-      hotel               : hotelPlain,
+      id: bk.id,
+      bookingConfirmation: bk.external_ref, // usamos external_ref
+      guestName: bk.guest_name,
+      guestLastName: bk.meta?.guest_last_name ?? null,
+      guestEmail: bk.guest_email,
+      guestRoomType: bk.Room?.name ?? null,
+      guestPhone: bk.guest_phone,
+      checkIn: bk.check_in,
+      checkOut: bk.check_out,
+      status: String(bk.status).toLowerCase(),
+      paymentStatus: String(bk.payment_status).toLowerCase(),
+      user: bk.User,
+      hotel: hotelPlain,
       addons,
-      source              : "OUTSIDE"
+      source: "OUTSIDE"
     })
   } catch (err) {
     console.error(err)
@@ -1634,40 +1634,40 @@ export const downloadBookingCertificate = async (req, res) => {
 
     const booking = await models.Booking.findByPk(id, {
       include: [
-        { model: models.User,   as: "user",   attributes: ["name", "email", "phone", "country"] },
-        { model: models.Hotel,  as: "hotel",  attributes: ["name","hotelName","address","city","country","phone"] },
-        { model: models.Room,   as: "room",   attributes: ["name","description"] },
+        { model: models.User, as: "user", attributes: ["name", "email", "phone", "country"] },
+        { model: models.Hotel, as: "hotel", attributes: ["name", "hotelName", "address", "city", "country", "phone"] },
+        { model: models.Room, as: "room", attributes: ["name", "description"] },
       ],
     })
     if (!booking) return res.status(404).json({ error: "Booking not found" })
 
     const payload = {
-      id           : booking.id,
-      bookingCode  : booking.bookingCode || booking.reference || booking.id,
-      guestName    : booking.guestName || booking.user?.name,
-      guests       : { adults: booking.adults || 2, children: booking.children || 0 },
-      roomsCount   : booking.rooms || 1,
-      checkIn      : booking.checkIn || booking.check_in,
-      checkOut     : booking.checkOut || booking.check_out,
-      hotel        : {
-        name    : booking.hotel?.name || booking.hotel?.hotelName,
-        address : booking.hotel?.address,
-        city    : booking.hotel?.city,
-        country : booking.hotel?.country,
-        phone   : booking.hotel?.phone,
+      id: booking.id,
+      bookingCode: booking.bookingCode || booking.reference || booking.id,
+      guestName: booking.guestName || booking.user?.name,
+      guests: { adults: booking.adults || 2, children: booking.children || 0 },
+      roomsCount: booking.rooms || 1,
+      checkIn: booking.checkIn || booking.check_in,
+      checkOut: booking.checkOut || booking.check_out,
+      hotel: {
+        name: booking.hotel?.name || booking.hotel?.hotelName,
+        address: booking.hotel?.address,
+        city: booking.hotel?.city,
+        country: booking.hotel?.country,
+        phone: booking.hotel?.phone,
       },
-      country      : booking.user?.country || "",
+      country: booking.user?.country || "",
       propertyContact: booking.hotel?.phone,
-      currency     : (booking.currency || "USD").toUpperCase(),
-      totals       : {
-        nights       : booking.nights,
-        ratePerNight : booking.ratePerNight || booking.rate || 0,
-        taxes        : booking.taxes || 0,
-        total        : booking.totalAmount || booking.total || 0,
+      currency: (booking.currency || "USD").toUpperCase(),
+      totals: {
+        nights: booking.nights,
+        ratePerNight: booking.ratePerNight || booking.rate || 0,
+        taxes: booking.taxes || 0,
+        total: booking.totalAmount || booking.total || 0,
       },
       payment: {
-        method : booking.paymentMethod || booking.payment_type || "Credit Card",
-        last4  : booking.cardLast4 || null,
+        method: booking.paymentMethod || booking.payment_type || "Credit Card",
+        last4: booking.cardLast4 || null,
       },
     }
 
@@ -1782,7 +1782,7 @@ export const confirmBooking = async (req, res) => {
           const rates = JSON.parse(ratesStr);
           const r = Number(rates[(booking.currency || "USD").toUpperCase()]);
           if (Number.isFinite(r) && r > 0) capAmt = capUsd * r;
-        } catch {}
+        } catch { }
         const holdDaysEnv = Number(process.env.INFLUENCER_HOLD_DAYS);
         const holdDays = Number.isFinite(holdDaysEnv) && holdDaysEnv >= 0 ? holdDaysEnv : 3;
 
@@ -1804,7 +1804,7 @@ export const confirmBooking = async (req, res) => {
             co.setDate(co.getDate() + holdDays);
             holdUntil = co;
           }
-        } catch {}
+        } catch { }
         const useHold = String(process.env.INFLUENCER_USE_HOLD || "").toLowerCase() === "true";
         await models.InfluencerCommission.create({
           influencer_user_id: influencerId,
