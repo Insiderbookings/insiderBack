@@ -183,6 +183,12 @@ export const updateGuestProfile = async (req, res) => {
     }
 
     await profile.update(updates)
+    if (avatarUrl !== undefined) {
+      await models.User.update(
+        { avatar_url: avatarUrl || null },
+        { where: { id: userId } },
+      )
+    }
     return res.json({ message: "Profile updated", profile: profile.get({ plain: true }) })
   } catch (err) {
     console.error("updateGuestProfile error:", err)

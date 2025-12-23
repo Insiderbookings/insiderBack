@@ -6,7 +6,6 @@ const ensureArray = (value) => {
 }
 
 const DATE_FORMAT = (process.env.WEBBEDS_DATE_FORMAT || "YYYY-MM-DD").trim()
-const MAX_CHILD_AGE = 12
 const MAX_CHILDREN_PER_ADULT = 2
 const MAX_CHILDREN_PER_ROOM = 4
 
@@ -60,15 +59,11 @@ const validateRoomsOccupancy = (rooms = []) => {
     const childrenAges = ensureArray(room?.children || room?.childrenAges || room?.kids)
       .map((age) => toNumber(age))
       .filter((age) => Number.isFinite(age))
-    const tooOld = childrenAges.filter((age) => age > MAX_CHILD_AGE)
     const maxByAdults = adults * MAX_CHILDREN_PER_ADULT
     const maxChildren = Math.min(MAX_CHILDREN_PER_ROOM, maxByAdults)
 
     if (childrenAges.length > maxChildren) {
       issues.push(`room ${idx + 1}: max ${maxChildren} children for ${adults} adult(s)`)
-    }
-    if (tooOld.length) {
-      issues.push(`room ${idx + 1}: child age(s) ${tooOld.join(", ")} > ${MAX_CHILD_AGE}`)
     }
   })
 
@@ -152,6 +147,17 @@ const buildRoomsNode = ({
         age == null ? null : String(age),
       ).filter((age) => age !== null && age !== undefined && age !== "")
 
+      const actualChildrenAges = ensureArray(
+        room.actualChildren ||
+        room.actualChildrenAges ||
+        room.actualKids ||
+        room.actualChildrenAge ||
+        room.actualChildrenAges,
+      ).map((age) => (age == null ? null : String(age)))
+        .filter((age) => age !== null && age !== undefined && age !== "")
+
+      const actualChildrenResolved = actualChildrenAges.length ? actualChildrenAges : children
+
       const childrenNode = {
         "@no": String(children.length),
       }
@@ -161,10 +167,10 @@ const buildRoomsNode = ({
         ).join("")
       }
       const actualChildrenNode = {
-        "@no": String(children.length),
+        "@no": String(actualChildrenResolved.length),
       }
-      if (children.length) {
-        actualChildrenNode["#raw"] = children.map(
+      if (actualChildrenResolved.length) {
+        actualChildrenNode["#raw"] = actualChildrenResolved.map(
           (age, childIdx) => `<actualChild runno="${childIdx}">${String(age)}</actualChild>`,
         ).join("")
       }
@@ -178,7 +184,7 @@ const buildRoomsNode = ({
         allocationDetails: room.allocationDetails || "", // Mandatory
 
         adultsCode: String(Math.max(1, toNumber(room.adults) || 1)),
-        actualAdults: String(Math.max(1, toNumber(room.adults) || 1)), // Mandatory in confirmRoomOccupancy
+        actualAdults: String(Math.max(1, toNumber(room.actualAdults) || toNumber(room.adults) || 1)), // Mandatory in confirmRoomOccupancy
 
         children: childrenNode,
         actualChildren: actualChildrenNode, // Mandatory in confirmRoomOccupancy

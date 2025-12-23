@@ -63,7 +63,6 @@ const parseChildrenSegment = (segment) => {
   return Array.from({ length: count }, () => 8)
 }
 
-const MAX_CHILD_AGE = 12
 const MAX_CHILDREN_PER_ADULT = 2
 const MAX_CHILDREN_PER_ROOM = 4
 
@@ -105,15 +104,11 @@ const validateOccupancies = (rooms = []) => {
   entries.forEach((room, idx) => {
     const adults = Number(room?.adults ?? 0) || 0
     const children = ensureArray(room?.children)
-    const tooOld = children.filter((age) => Number.isFinite(age) && age > MAX_CHILD_AGE)
     const maxByAdults = Math.max(0, adults) * MAX_CHILDREN_PER_ADULT
     const maxChildren = Math.min(MAX_CHILDREN_PER_ROOM, maxByAdults)
 
     if (children.length > maxChildren) {
       issues.push(`room ${idx + 1}: max ${maxChildren} children for ${adults} adult(s)`)
-    }
-    if (tooOld.length) {
-      issues.push(`room ${idx + 1}: child age(s) ${tooOld.join(", ")} > ${MAX_CHILD_AGE}`)
     }
   })
 
@@ -303,10 +298,26 @@ const parsePropertyFees = (rateBasis) => {
   }))
 }
 
+const parseChildrenAges = (value) => {
+  if (!value) return null
+  if (Array.isArray(value)) {
+    const ages = value.map((age) => toNumber(age)).filter((age) => Number.isFinite(age))
+    return ages.length ? ages : null
+  }
+  const text = getText(value)
+  if (!text) return null
+  const ages = text
+    .split(",")
+    .map((token) => toNumber(String(token).trim()))
+    .filter((age) => Number.isFinite(age))
+  return ages.length ? ages : null
+}
+
 const parseValidForOccupancy = (node) => {
   if (!node) return null
   const adults = toNumber(getText(node?.adults ?? node?.adult))
   const children = toNumber(getText(node?.children ?? node?.child))
+  const childrenAges = parseChildrenAges(node?.childrenAges ?? node?.childrenAge)
   const infants = toNumber(getText(node?.infants ?? node?.infant))
   const extraBed = toNumber(getText(node?.extraBed ?? node?.extraBeds ?? node?.extrabed))
   const extraBedOccupant = getText(node?.extraBedOccupant ?? node?.extraBedOccupantType)
@@ -314,6 +325,7 @@ const parseValidForOccupancy = (node) => {
   const details = {
     adults,
     children,
+    childrenAges,
     infants,
     extraBed,
     extraBedOccupant,
@@ -337,6 +349,10 @@ const parseRateBases = (rateBasesNode, requestedCurrency) => {
   const rateBases = ensureArray(rateBasesNode?.rateBasis ?? rateBasesNode)
   return rateBases.map((rateBasis) => {
     const rateType = rateBasis?.rateType ?? {}
+    const changedOccupancyValue = getText(rateBasis?.changedOccupancy)
+    const changedOccupancyFlag =
+      changedOccupancyValue != null ? true : normalizeBoolean(rateBasis?.changedOccupancy)
+    const changedOccupancyText = getText(rateBasis?.changedOccupancyText)
     const resolvedTotal =
       toNumber(rateBasis?.totalInRequestedCurrency) ??
       toNumber(rateBasis?.total) ??
@@ -373,9 +389,9 @@ const parseRateBases = (rateBasesNode, requestedCurrency) => {
       withinCancellationDeadline: normalizeBoolean(rateBasis?.withinCancellationDeadline),
       validForOccupancy: resolveValidForOccupancyFlag(rateBasis?.validForOccupancy),
       validForOccupancyDetails: parseValidForOccupancy(rateBasis?.validForOccupancy),
-      changedOccupancy: normalizeBoolean(rateBasis?.changedOccupancy),
-      changedOccupancyValue: getText(rateBasis?.changedOccupancy),
-      changedOccupancyText: getText(rateBasis?.changedOccupancyText),
+      changedOccupancy: changedOccupancyFlag,
+      changedOccupancyValue,
+      changedOccupancyText,
       isBookable: normalizeBoolean(rateBasis?.isBookable),
       onRequest: normalizeBoolean(rateBasis?.onRequest),
       total: resolvedTotal,

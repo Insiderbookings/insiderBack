@@ -17,7 +17,6 @@ const MAX_ADULTS = 10
 const DEFAULT_RATE_BASIS = "-1"
 const DEFAULT_CURRENCY = "520"
 const DEFAULT_CHILD_AGE = 8
-const MAX_CHILD_AGE = 12
 const MAX_CHILDREN_PER_ADULT = 2
 const MAX_CHILDREN_PER_ROOM = 4
 
@@ -86,15 +85,11 @@ const validateOccupancies = (rooms = []) => {
   entries.forEach((room, idx) => {
     const adults = Number(room?.adults ?? 0) || 0
     const children = ensureArray(room?.children)
-    const tooOld = children.filter((age) => Number.isFinite(age) && age > MAX_CHILD_AGE)
     const maxByAdults = Math.max(0, adults) * MAX_CHILDREN_PER_ADULT
     const maxChildren = Math.min(MAX_CHILDREN_PER_ROOM, maxByAdults)
 
     if (children.length > maxChildren) {
       issues.push(`room ${idx + 1}: max ${maxChildren} children for ${adults} adult(s)`)
-    }
-    if (tooOld.length) {
-      issues.push(`room ${idx + 1}: child age(s) ${tooOld.join(", ")} > ${MAX_CHILD_AGE}`)
     }
   })
 

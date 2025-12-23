@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<result command="savebooking" tID="1766377258100007" ip="179.36.95.70" date="2025-12-22 04:20:59"
+    version="4.0" elapsedTime="0.45191407203674">
+    <returnedCode>1418526493</returnedCode>
+    <returnedServiceCodes count="1">
+        <returnedServiceCode runno='0'>1418526503</returnedServiceCode>
+    </returnedServiceCodes>
+    <successful>TRUE</successful>
+</result>

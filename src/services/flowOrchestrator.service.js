@@ -572,6 +572,19 @@ export class FlowOrchestratorService {
     const allocationIn = flow.allocation_current;
     const newAllocation = getText(rateBasis?.allocationDetails) || allocationIn;
 
+    const updatedOffer = {
+      ...flow.selected_offer,
+      validForOccupancy: rateBasis?.validForOccupancy ?? flow.selected_offer.validForOccupancy ?? null,
+      validForOccupancyDetails:
+        rateBasis?.validForOccupancyDetails ?? flow.selected_offer.validForOccupancyDetails ?? null,
+      changedOccupancy: rateBasis?.changedOccupancy ?? flow.selected_offer.changedOccupancy ?? null,
+      changedOccupancyValue:
+        rateBasis?.changedOccupancyValue ?? flow.selected_offer.changedOccupancyValue ?? null,
+      changedOccupancyText:
+        rateBasis?.changedOccupancyText ?? flow.selected_offer.changedOccupancyText ?? null,
+    };
+
+    flow.selected_offer = updatedOffer;
     flow.allocation_current = newAllocation;
     flow.status = FLOW_STATUSES.BLOCKED;
     await flow.save();
@@ -614,12 +627,57 @@ export class FlowOrchestratorService {
 
     const context = flow.search_context || {};
     const roomsPayload = parseRoomArray(roomsOverride || context.rooms);
-    const roomsForSave = roomsPayload.map((room) => ({
-      ...room,
-      roomTypeCode: flow.selected_offer.roomTypeCode,
-      selectedRateBasis: flow.selected_offer.rateBasisId,
-      allocationDetails: flow.allocation_current,
-    }));
+    const occupancyOverride = flow.selected_offer?.validForOccupancyDetails ?? null;
+    const hasChangedOccupancy =
+      Boolean(flow.selected_offer?.changedOccupancy) || Boolean(occupancyOverride);
+
+    const resolveChildrenAges = (roomChildren, override) => {
+      if (!override) return roomChildren;
+      if (Array.isArray(override.childrenAges) && override.childrenAges.length) {
+        return override.childrenAges;
+      }
+      if (Number.isFinite(override.children)) {
+        const targetCount = Math.max(0, override.children);
+        const slice = roomChildren.slice(0, targetCount);
+        if (slice.length < targetCount) {
+          const filler = Array.from({ length: targetCount - slice.length }, () => 8);
+          return [...slice, ...filler];
+        }
+        return slice;
+      }
+      return roomChildren;
+    };
+
+    const roomsForSave = roomsPayload.map((room) => {
+      const originalAdults = Math.max(1, Number(room.adults) || 1);
+      const originalChildren = ensureArray(room.children).map((age) => Number(age)).filter((age) => !Number.isNaN(age));
+
+      const adjustedAdults =
+        hasChangedOccupancy && Number.isFinite(occupancyOverride?.adults)
+          ? Math.max(1, Number(occupancyOverride.adults))
+          : originalAdults;
+      const adjustedChildren = hasChangedOccupancy
+        ? resolveChildrenAges(originalChildren, occupancyOverride)
+        : originalChildren;
+      const adjustedExtraBed =
+        hasChangedOccupancy && occupancyOverride?.extraBed != null
+          ? Number(occupancyOverride.extraBed) || 0
+          : room.extraBed;
+      const actualAdults = hasChangedOccupancy ? adjustedAdults : originalAdults;
+      const actualChildren = hasChangedOccupancy ? adjustedChildren : originalChildren;
+
+      return {
+        ...room,
+        roomTypeCode: flow.selected_offer.roomTypeCode,
+        selectedRateBasis: flow.selected_offer.rateBasisId,
+        allocationDetails: flow.allocation_current,
+        adults: adjustedAdults,
+        children: adjustedChildren,
+        extraBed: adjustedExtraBed,
+        actualAdults,
+        actualChildren,
+      };
+    });
 
     const payload = buildSaveBookingPayload({
       checkIn: context.fromDate,
