@@ -24,6 +24,7 @@ export default (sequelize) => {
       tableName: "home_bed_type_link",
       underscored: true,
       freezeTableName: true,
+      paranoid: false,
     }
   );
 
