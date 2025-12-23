@@ -80,6 +80,71 @@ const sanitizeStringList = (value, { uppercase = false } = {}) => {
   return Array.from(new Set(result));
 };
 
+const normalizeAmenityKeyValue = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+
+const expandAmenityKeys = (amenityKeys = [], { text = "" } = {}) => {
+  const expanded = [];
+  const seen = new Set();
+  const add = (key) => {
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    expanded.push(key);
+  };
+
+  let wantsParking = false;
+  let hasParkingSpecificKey = false;
+  const normalizedText = String(text || "").toLowerCase();
+  const freeCues = ["gratis", "gratuito", "sin cargo", "free", "no charge", "incluido"];
+  const paidCues = ["pago", "pagado", "con costo", "fee", "paid", "tarifa", "cargo"];
+  const parkingCues = ["parking", "cochera", "estacionamiento", "garage"];
+  const wantsFree = freeCues.some((cue) => normalizedText.includes(cue));
+  const wantsPaid = paidCues.some((cue) => normalizedText.includes(cue));
+  const wantsParkingByText = parkingCues.some((cue) => normalizedText.includes(cue));
+
+  amenityKeys.forEach((rawKey) => {
+    const key = String(rawKey || "").trim().toUpperCase();
+    if (!key) return;
+    const normalized = normalizeAmenityKeyValue(key);
+
+    if (normalized === "WIFI") {
+      add("WIFI");
+      return;
+    }
+    if (normalized === "PARKING" || normalized === "GARAGE") {
+      wantsParking = true;
+      return;
+    }
+    if (normalized.includes("FREEPARKING")) {
+      hasParkingSpecificKey = true;
+      add("FREE_PARKING_ON_PREMISES");
+      return;
+    }
+    if (normalized.includes("PAIDPARKING")) {
+      hasParkingSpecificKey = true;
+      add("PAID_PARKING_ON_PREMISES");
+      return;
+    }
+    add(key);
+  });
+
+  if (wantsParking || wantsParkingByText || wantsFree || wantsPaid || hasParkingSpecificKey) {
+    if (wantsFree && !wantsPaid) {
+      add("FREE_PARKING_ON_PREMISES");
+    } else if (wantsPaid && !wantsFree) {
+      add("PAID_PARKING_ON_PREMISES");
+    } else {
+      add("FREE_PARKING_ON_PREMISES");
+      add("PAID_PARKING_ON_PREMISES");
+    }
+  }
+
+  return expanded;
+};
+
 const numberOrNull = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const numeric = Number(value);
@@ -163,7 +228,8 @@ const buildPlannerPrompt = () => [
 
       "FILTERING & SORTING RULES:\n" +
       "- Fill location city/state/country and lat/lng when provided. If the user requests proximity (\"1km around Movistar Arena\"), set location.radiusKm and location.landmark.\n" +
-      "- Detect HOME filters: propertyTypes (HOUSE, APARTMENT, CABIN, etc.), spaceTypes (ENTIRE_PLACE, PRIVATE_ROOM, SHARED_ROOM), amenityKeys (POOL, PARKING, BBQ), and tagKeys (BEACHFRONT, LUXURY, FAMILY). Use uppercase keys.\n" +
+      "- Detect HOME filters: propertyTypes (HOUSE, APARTMENT, CABIN, etc.), spaceTypes (ENTIRE_PLACE, PRIVATE_ROOM, SHARED_ROOM), amenityKeys (e.g., WIFI, FREE_PARKING_ON_PREMISES, PAID_PARKING_ON_PREMISES), and tagKeys (BEACHFRONT, LUXURY, FAMILY). Use uppercase keys.\n" +
+      "- For parking requests, set homeFilters.amenityKeys (FREE_PARKING_ON_PREMISES and/or PAID_PARKING_ON_PREMISES).\n" +
       "- Detect HOTEL filters: amenityCodes from catalog names, amenityItemIds when numeric IDs are provided, preferredOnly flag, and minRating based on star ranks.\n" +
       "- Capture guest requirements (adults, children, pets) plus requested bedrooms, beds, bathrooms, or total guests for homes.\n" +
       "- Detect explicit budgets and ordering like 'cheapest', 'precios altos', or 'ordenar por precio'. Map to sortBy PRICE_ASC or PRICE_DESC. Respect requested limit counts when possible.\n\n" +
@@ -175,7 +241,6 @@ const buildPlannerPrompt = () => [
         "location": {"city": string|null, "state": string|null, "country": string|null, "lat": number|null, "lng": number|null, "radiusKm": number|null, "landmark": string|null},
         "dates": {"checkIn": "YYYY-MM-DD" | null, "checkOut": "YYYY-MM-DD" | null, "flexible": boolean},
         "guests": {"adults": number|null, "children": number|null, "infants": number|null, "pets": number|null, "total": number|null},
-        "amenities": {"parking": boolean, "workspace": boolean, "pool": boolean, "petFriendly": boolean},
         "homeFilters": {
           "propertyTypes": string[],
           "spaceTypes": string[],
@@ -207,7 +272,6 @@ const defaultPlan = {
   location: { city: null, state: null, country: null, lat: null, lng: null, radiusKm: null, landmark: null },
   dates: { checkIn: null, checkOut: null, flexible: true },
   guests: { adults: null, children: null, infants: null, pets: null, total: null },
-  amenities: { parking: false, workspace: false, pool: false, petFriendly: false },
   homeFilters: {
     propertyTypes: [],
     spaceTypes: [],
@@ -231,7 +295,7 @@ const defaultPlan = {
   notes: [],
 };
 
-const mergePlan = (raw) => {
+const mergePlan = (raw, { contextText = "" } = {}) => {
   if (!raw || typeof raw !== "object") return { ...defaultPlan };
   const locationInput = raw.location || {};
   const mergedLocation = {
@@ -258,7 +322,7 @@ const mergePlan = (raw) => {
     ...rawHomeFilters,
     propertyTypes: sanitizeStringList(rawHomeFilters.propertyTypes ?? [], { uppercase: true }),
     spaceTypes: sanitizeStringList(rawHomeFilters.spaceTypes ?? [], { uppercase: true }),
-    amenityKeys: sanitizeStringList(rawHomeFilters.amenityKeys ?? rawHomeFilters.amenities ?? [], { uppercase: true }),
+    amenityKeys: sanitizeStringList(rawHomeFilters.amenityKeys ?? [], { uppercase: true }),
     tagKeys: sanitizeStringList(rawHomeFilters.tagKeys ?? rawHomeFilters.tags ?? [], { uppercase: true }),
   };
   const resolvedMaxGuests =
@@ -277,6 +341,11 @@ const mergePlan = (raw) => {
   homeFilters.minBedrooms = resolvedBedrooms;
   homeFilters.minBeds = resolvedBeds;
   homeFilters.minBathrooms = resolvedBathrooms;
+  const noteText = Array.isArray(raw?.notes) ? raw.notes.join(" ") : "";
+  const combinedText = [contextText, noteText].filter(Boolean).join(" ");
+  homeFilters.amenityKeys = expandAmenityKeys(homeFilters.amenityKeys, {
+    text: combinedText,
+  });
 
   const rawHotelFilters = raw.hotelFilters || raw.hotel_filters || {};
   const hotelFilters = {
@@ -294,14 +363,14 @@ const mergePlan = (raw) => {
     defaultPlan.hotelFilters.minRating;
   hotelFilters.minRating = resolvedMinRating;
 
+  const { amenities, ...rawPlan } = raw;
   return {
     ...defaultPlan,
-    ...raw,
+    ...rawPlan,
     listingTypes: sanitizeListingTypes(raw.listingTypes),
     location: mergedLocation,
     dates: { ...defaultPlan.dates, ...(raw.dates || {}) },
     guests: { ...defaultPlan.guests, ...(raw.guests || {}) },
-    amenities: { ...defaultPlan.amenities, ...(raw.amenities || {}) },
     homeFilters,
     hotelFilters,
     budget: { ...defaultPlan.budget, ...(raw.budget || {}) },
@@ -314,8 +383,10 @@ const mergePlan = (raw) => {
 export const extractSearchPlan = async (messages = []) => {
   const client = ensureClient();
   const normalizedMessages = sanitizeMessages(messages);
+  const latestUserMessage =
+    [...normalizedMessages].reverse().find((msg) => msg.role === "user")?.content ?? "";
   if (!client || !normalizedMessages.length) {
-    return mergePlan(defaultPlan);
+    return mergePlan(defaultPlan, { contextText: latestUserMessage });
   }
   try {
     const completion = await client.chat.completions.create({
@@ -324,12 +395,12 @@ export const extractSearchPlan = async (messages = []) => {
       messages: [...buildPlannerPrompt(), ...normalizedMessages],
     });
     const payload = completion.choices?.[0]?.message?.content;
-    if (!payload) return mergePlan(defaultPlan);
+    if (!payload) return mergePlan(defaultPlan, { contextText: latestUserMessage });
     const parsed = JSON.parse(payload);
-    return mergePlan(parsed);
+    return mergePlan(parsed, { contextText: latestUserMessage });
   } catch (err) {
     console.error("[aiAssistant] extract plan failed", err?.message || err);
-    return mergePlan(defaultPlan);
+    return mergePlan(defaultPlan, { contextText: latestUserMessage });
   }
 };
 

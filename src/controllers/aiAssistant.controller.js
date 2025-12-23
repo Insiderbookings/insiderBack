@@ -38,7 +38,6 @@ const buildDebugInfo = (plan) => ({
   listingTypes: plan?.listingTypes ?? [],
   location: plan?.location ?? null,
   guests: plan?.guests ?? null,
-  amenities: plan?.amenities ?? null,
 });
 
 const getAuthenticatedUserId = (req) => {

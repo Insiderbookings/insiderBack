@@ -12,14 +12,38 @@ async function up(queryInterface) {
     }
   }
 
+  const getIndexNames = async (table) => {
+    try {
+      const [rows] = await queryInterface.sequelize.query(
+        `SHOW INDEX FROM \`${table}\``
+      )
+      return new Set(rows.map((row) => row.Key_name))
+    } catch {
+      return new Set()
+    }
+  }
+
+  const canAddIndex = async (table, name) => {
+    const indexNames = await getIndexNames(table)
+    if (indexNames.has(name)) {
+      return false
+    }
+    return indexNames.size < 64
+  }
+
   // user.referred_by_influencer_id / referred_by_code / referred_at
   if (!(await hasColumn("user", "referred_by_influencer_id"))) {
+    const canAddUserFk = await canAddIndex("user", "fk_user_referred_by_user")
     await queryInterface.addColumn("user", "referred_by_influencer_id", {
       type: Sequelize.INTEGER,
       allowNull: true,
-      references: { model: "user", key: "id" },
-      onDelete: "SET NULL",
-      onUpdate: "CASCADE",
+      ...(canAddUserFk
+        ? {
+            references: { model: "user", key: "id" },
+            onDelete: "SET NULL",
+            onUpdate: "CASCADE",
+          }
+        : {}),
     })
   }
   if (!(await hasColumn("user", "referred_by_code"))) {
@@ -34,30 +58,42 @@ async function up(queryInterface) {
       allowNull: true,
     })
   }
-  try {
-    await queryInterface.addIndex("user", ["referred_by_influencer_id"], {
-      name: "idx_user_referred_by_influencer",
-    })
-  } catch (_) {
-    /* ignore if exists */
+  if (await canAddIndex("user", "idx_user_referred_by_influencer")) {
+    try {
+      await queryInterface.addIndex("user", ["referred_by_influencer_id"], {
+        name: "idx_user_referred_by_influencer",
+      })
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   // booking.influencer_user_id (freeze attribution at booking time)
   if (!(await hasColumn("booking", "influencer_user_id"))) {
+    const canAddBookingFk = await canAddIndex(
+      "booking",
+      "fk_booking_influencer_user"
+    )
     await queryInterface.addColumn("booking", "influencer_user_id", {
       type: Sequelize.INTEGER,
       allowNull: true,
-      references: { model: "user", key: "id" },
-      onDelete: "SET NULL",
-      onUpdate: "CASCADE",
+      ...(canAddBookingFk
+        ? {
+            references: { model: "user", key: "id" },
+            onDelete: "SET NULL",
+            onUpdate: "CASCADE",
+          }
+        : {}),
     })
   }
-  try {
-    await queryInterface.addIndex("booking", ["influencer_user_id"], {
-      name: "idx_booking_influencer_user_id",
-    })
-  } catch (_) {
-    /* ignore if exists */
+  if (await canAddIndex("booking", "idx_booking_influencer_user_id")) {
+    try {
+      await queryInterface.addIndex("booking", ["influencer_user_id"], {
+        name: "idx_booking_influencer_user_id",
+      })
+    } catch (_) {
+      /* ignore */
+    }
   }
 }
 

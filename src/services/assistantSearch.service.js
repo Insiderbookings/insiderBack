@@ -34,6 +34,12 @@ const normalizeKeyList = (value) => {
   return Array.from(new Set(normalized));
 };
 
+const normalizeAmenityKeyValue = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+
 const normalizeBooleanFlag = (value, fallback = false) => {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") {
@@ -104,11 +110,15 @@ const hasRequiredAmenityKeys = (home, requiredKeys = []) => {
   if (!home?.amenities) return false;
   const available = new Set(
     home.amenities
-      .map((link) => link?.amenity?.amenity_key)
+      .map((link) => normalizeAmenityKeyValue(link?.amenity?.amenity_key))
       .filter(Boolean)
-      .map((key) => key.trim().toUpperCase())
   );
-  return requiredKeys.every((key) => available.has(key));
+  const normalizedRequired = requiredKeys.map(normalizeAmenityKeyValue).filter(Boolean);
+  const parkingKeys = normalizedRequired.filter((key) => key.includes("PARKING"));
+  const otherKeys = normalizedRequired.filter((key) => !key.includes("PARKING"));
+  const hasOtherKeys = otherKeys.every((key) => available.has(key));
+  const hasParkingKey = !parkingKeys.length || parkingKeys.some((key) => available.has(key));
+  return hasOtherKeys && hasParkingKey;
 };
 
 const buildCoordinateFilterUsingRadius = (location = {}) => {
@@ -188,16 +198,10 @@ const hasAmenityMatch = (home, matcher) => {
   return home.amenities.some((link) => {
     const label = String(link?.amenity?.label || "").toLowerCase();
     const key = String(link?.amenity?.amenity_key || "").toUpperCase();
-    return matcher({ label, key });
+    const normalizedKey = normalizeAmenityKeyValue(key);
+    return matcher({ label, key, normalizedKey });
   });
 };
-
-const matchParking = (home) =>
-  hasAmenityMatch(home, ({ label, key }) => {
-    if (!label && !key) return false;
-    if (key.includes("PARK") || key.includes("GARAGE")) return true;
-    return label.includes("parking") || label.includes("cochera");
-  });
 
 const collectAmenityKeywords = (plan = {}) => {
   const keywords = new Set();
@@ -205,13 +209,9 @@ const collectAmenityKeywords = (plan = {}) => {
 
   const pushAll = (arr) => arr.forEach((k) => keywords.add(k.toLowerCase()));
 
-  if (plan?.amenities?.workspace) pushAll(["workspace", "desk", "escritorio"]);
-  if (plan?.amenities?.pool) pushAll(["pool", "piscina", "pileta"]);
-  if (plan?.amenities?.petFriendly) pushAll(["pet", "mascota", "pet friendly"]);
-  if (plan?.amenities?.parking) pushAll(["parking", "garage", "cochera", "estacionamiento"]);
-
   // free-form detection from notes (common synonyms)
   const keywordMap = [
+    { cues: ["wifi", "wi-fi", "wi fi", "internet"], add: ["wifi", "internet"] },
     { cues: ["washer", "laundry", "washing machine", "lavadora", "lavarropas"], add: ["washer", "laundry"] },
     { cues: ["dryer", "secadora"], add: ["dryer"] },
     { cues: ["parking", "cochera", "garage", "estacionamiento"], add: ["parking", "cochera"] },
@@ -231,9 +231,15 @@ const collectAmenityKeywords = (plan = {}) => {
 const hasAmenityKeywords = (home, keywords = []) => {
   if (!keywords.length) return true;
   return keywords.some((kw) =>
-    hasAmenityMatch(home, ({ label, key }) => {
+    hasAmenityMatch(home, ({ label, key, normalizedKey }) => {
       const lowerKey = key.toLowerCase();
-      return label.includes(kw) || lowerKey.includes(kw);
+      const normalizedKeyword = String(kw || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const normalizedKeyLower = String(normalizedKey || "").toLowerCase();
+      return (
+        label.includes(kw) ||
+        lowerKey.includes(kw) ||
+        (normalizedKeyword && normalizedKeyLower.includes(normalizedKeyword))
+      );
     })
   );
 };
@@ -249,7 +255,9 @@ const buildHomeMatchReasons = ({ plan, home, card }) => {
   if (guests && Number(card?.maxGuests) >= guests) {
     reasons.push(`Apto para ${card.maxGuests} huéspedes`);
   }
-  if (plan?.amenities?.parking && matchParking(home)) {
+  const requiredAmenityKeys = Array.isArray(plan?.homeFilters?.amenityKeys) ? plan.homeFilters.amenityKeys : [];
+  const wantsParkingByKey = requiredAmenityKeys.some((key) => String(key || "").toUpperCase().includes("PARKING"));
+  if (wantsParkingByKey) {
     reasons.push("Incluye cochera/estacionamiento");
   }
   const budgetMax = resolveBudgetMax(plan);
@@ -389,7 +397,7 @@ const runHomeQuery = async ({
   }
 
   const amenityFilterKeys = Array.isArray(homeFilters.amenityKeys) ? homeFilters.amenityKeys : [];
-  const needsAmenityJoin = Boolean(plan?.amenities?.parking || (amenityKeywords && amenityKeywords.length) || amenityFilterKeys.length);
+  const needsAmenityJoin = Boolean((amenityKeywords && amenityKeywords.length) || amenityFilterKeys.length);
 
   console.log("[assistant] runHomeQuery executing with where:", JSON.stringify(where));
   console.log("[assistant] runHomeQuery address include where:", JSON.stringify(include[0].where));
@@ -526,7 +534,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
         if (requiredAmenityKeys.length && !hasRequiredAmenityKeys(home, requiredAmenityKeys)) {
           return null;
         }
-        if ((plan?.amenities?.parking && !matchParking(home)) || (amenityKeywords.length && !hasAmenityKeywords(home, amenityKeywords))) {
+        if (amenityKeywords.length && !hasAmenityKeywords(home, amenityKeywords)) {
           return null;
         }
         const card = mapHomeToCard(home);
