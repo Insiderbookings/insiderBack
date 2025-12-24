@@ -19,6 +19,35 @@ const asNumber = (value, fallback = null) => {
   return Number.isFinite(num) ? num : fallback;
 };
 
+const normalizeLocationCode = (value) => {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  return trimmed ? trimmed.toUpperCase() : null;
+};
+
+const resolveTaxRateFromLocation = async (country, state) => {
+  const countryCode = normalizeLocationCode(country);
+  if (!countryCode) return null;
+  const stateCode = normalizeLocationCode(state);
+  try {
+    let match = null;
+    if (stateCode) {
+      match = await models.TaxRate.findOne({
+        where: { country_code: countryCode, state_code: stateCode },
+      });
+    }
+    if (!match) {
+      match = await models.TaxRate.findOne({
+        where: { country_code: countryCode, state_code: null },
+      });
+    }
+    const rate = Number(match?.rate);
+    return Number.isFinite(rate) && rate > 0 ? rate : null;
+  } catch {
+    return null;
+  }
+};
+
 const normalizeStringList = (value) => {
   if (Array.isArray(value)) {
     return value.map((entry) => String(entry).trim()).filter(Boolean);
@@ -1808,7 +1837,13 @@ export const updateHomePricing = async (req, res) => {
   try {
     const hostId = getUserId(req.user);
     const { id } = req.params;
-    const home = await models.Home.findOne({ where: { id, host_id: hostId }, include: [{ model: models.HomePricing, as: "pricing" }] });
+    const home = await models.Home.findOne({
+      where: { id, host_id: hostId },
+      include: [
+        { model: models.HomePricing, as: "pricing" },
+        { model: models.HomeAddress, as: "address" },
+      ],
+    });
     if (!home) return res.status(404).json({ error: "Home not found" });
 
     const payload = {
@@ -1823,6 +1858,14 @@ export const updateHomePricing = async (req, res) => {
       tax_rate: req.body?.taxRate != null ? Number(req.body.taxRate) : home.pricing?.tax_rate,
       pricing_strategy: req.body?.pricingStrategy || home.pricing?.pricing_strategy || null,
     };
+
+    if (payload.tax_rate == null) {
+      const resolvedTaxRate = await resolveTaxRateFromLocation(
+        home.address?.country,
+        home.address?.state
+      );
+      if (resolvedTaxRate != null) payload.tax_rate = resolvedTaxRate;
+    }
 
     if (home.pricing) {
       await home.pricing.update(payload);
