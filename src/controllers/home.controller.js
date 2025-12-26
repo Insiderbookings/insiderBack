@@ -948,6 +948,12 @@ export const getHomeRecommendations = async (req, res) => {
 
     console.log("[getHomeRecommendations] inferred location", { city, country, lat, lng, region, limit });
 
+    // Define dialect/ops BEFORE using them in include/where clauses
+    const dialect = typeof sequelize.getDialect === "function" ? sequelize.getDialect() : "mysql";
+    const iLikeOp = dialect === "mysql" ? Op.like : Op.iLike;
+    const quote = (name) => (dialect === "mysql" ? `\`${name}\`` : `"${name}"`);
+    const columnRef = (alias, column) => `${quote(alias)}.${quote(column)}`;
+
     const baseWhere = {
       status: "PUBLISHED",
       is_visible: true,
@@ -1010,11 +1016,6 @@ export const getHomeRecommendations = async (req, res) => {
         ],
       },
     ];
-
-    const dialect = typeof sequelize.getDialect === "function" ? sequelize.getDialect() : "mysql";
-    const iLikeOp = dialect === "mysql" ? Op.like : Op.iLike;
-    const quote = (name) => (dialect === "mysql" ? `\`${name}\`` : `"${name}"`);
-    const columnRef = (alias, column) => `${quote(alias)}.${quote(column)}`;
 
     const distanceLiteral =
       lat != null && lng != null
@@ -1202,8 +1203,8 @@ export const getHomeRecommendations = async (req, res) => {
       if (lat == null || lng == null) return null;
 
       const bookingWhere = {
-        booking_latitude: { [Op.between]: [lat - TRAVELER_COORDINATE_DELTA, lat + TRAVELER_COORDINATE_DELTA] },
-        booking_longitude: { [Op.between]: [lng - TRAVELER_COORDINATE_DELTA, lng + TRAVELER_COORDINATE_DELTA] },
+        "$homeStay.home.address.latitude$": { [Op.between]: [lat - TRAVELER_COORDINATE_DELTA, lat + TRAVELER_COORDINATE_DELTA] },
+        "$homeStay.home.address.longitude$": { [Op.between]: [lng - TRAVELER_COORDINATE_DELTA, lng + TRAVELER_COORDINATE_DELTA] },
         inventory_type: "HOME",
         status: { [Op.in]: TRAVELER_STATUS_SCOPE },
       };
