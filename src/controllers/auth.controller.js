@@ -11,6 +11,7 @@ import transporter from "../services/transporter.js";
 import sendPasswordResetEmail from "../services/sendPasswordResetEmail.js";
 import { OAuth2Client } from "google-auth-library"; // ← para Google Sign-In
 import { getBaseEmailTemplate } from "../emailTemplates/base-template.js";
+import { ReferralError, linkReferralCodeForUser } from "../services/referralRewards.service.js";
 
 dotenv.config();
 
@@ -279,27 +280,6 @@ export const registerUser = async (req, res) => {
     const exists = await models.User.findOne({ where: { email } });
     if (exists) return res.status(409).json({ error: "Email taken" });
 
-    /* ───────── Validar código referido (opcional) ───────── */
-    const normalizedReferral = referralCode ? String(referralCode).trim().toUpperCase() : "";
-    let referral = { influencerId: null, code: null, at: null };
-    if (normalizedReferral) {
-      const influencer = await models.User.findOne({
-        where: {
-          role: 2,
-          user_code: { [Op.iLike]: normalizedReferral },
-        },
-        attributes: ["id", "user_code"],
-      });
-      if (!influencer) {
-        return res.status(400).json({ error: "Invalid referral code" });
-      }
-      referral = {
-        influencerId: influencer.id,
-        code: normalizedReferral,
-        at: new Date(),
-      };
-    }
-
     const hash = await bcrypt.hash(password, 10);
 
     const user = await models.User.create({
@@ -308,32 +288,25 @@ export const registerUser = async (req, res) => {
       password_hash: hash,
       country_code: countryCode ? String(countryCode).trim() : null,
       residence_country_code: countryOfResidenceCode ? String(countryOfResidenceCode).trim() : null,
-      referred_by_influencer_id: referral.influencerId,
-      referred_by_code: referral.code,
-      referred_at: referral.at,
       last_login_at: new Date(),
     });
 
-    // Registrar bonus por signup referido
-    if (referral.influencerId && models.InfluencerEventCommission) {
+    let referral = { influencerId: null, code: null, at: null };
+    const normalizedReferral = referralCode ? String(referralCode).trim().toUpperCase() : "";
+    if (normalizedReferral) {
       try {
-        const bonusEnv = Number(process.env.INFLUENCER_SIGNUP_BONUS_USD);
-        const amount = Number.isFinite(bonusEnv) && bonusEnv > 0 ? bonusEnv : 0.25;
-        if (amount > 0) {
-          await models.InfluencerEventCommission.findOrCreate({
-            where: { event_type: "signup", signup_user_id: user.id },
-            defaults: {
-              influencer_user_id: referral.influencerId,
-              signup_user_id: user.id,
-              event_type: "signup",
-              amount,
-              currency: "USD",
-              status: "eligible",
-            },
-          });
+        await linkReferralCodeForUser({ userId: user.id, referralCode: normalizedReferral });
+        await user.reload();
+        referral = {
+          influencerId: user.referred_by_influencer_id ?? null,
+          code: user.referred_by_code ?? normalizedReferral,
+          at: user.referred_at ?? new Date(),
+        };
+      } catch (err) {
+        if (err instanceof ReferralError) {
+          return res.status(err.status).json({ error: err.message });
         }
-      } catch (e) {
-        console.warn("(INF) No se pudo registrar bonus de signup:", e?.message || e);
+        throw err;
       }
     }
     // generate verification token valid for 1 day

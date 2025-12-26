@@ -1,6 +1,7 @@
 import { Router } from "express"
 import {
   createBooking,
+  quoteHomeBooking,
   createHomeBooking,
   /* unified handlers */
   getBookingsUnified,
@@ -27,6 +28,7 @@ const router = Router()
 
 /* ---- Create ---- */
 router.post("/", authenticate, createBooking)
+router.post("/homes/quote", authenticate, quoteHomeBooking)
 router.post("/homes", authenticate, createHomeBooking)
 router.get("/homes/me", authenticate, getHomeBookingsForUser)
 

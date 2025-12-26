@@ -2,6 +2,7 @@
 import models, { sequelize } from "../models/index.js"
 import { Op } from "sequelize" // â† Agregar esta importaciÃ³n
 import { sendMail } from "../helpers/mailer.js"
+import { ReferralError, linkReferralCodeForUser, loadInfluencerIncentives, recordInfluencerEvent } from "../services/referralRewards.service.js"
 
 const DISCOUNT_REMINDER_GRACE_DAYS = 1
 const LOGIN_TOUCH_INTERVAL_MS = 5 * 60 * 1000
@@ -383,6 +384,34 @@ export const getInfluencerStats = async (req, res) => {
     })
     const referredUserIds = referredUsers.map(u => u.id)
 
+    // 3b) Asegurar comisión de signup para cada referido (idempotente)
+    if (referredUserIds.length && models.InfluencerEventCommission) {
+      const existingSignupEvents = await models.InfluencerEventCommission.findAll({
+        where: {
+          influencer_user_id: userId,
+          event_type: "signup",
+          signup_user_id: { [Op.in]: referredUserIds },
+        },
+        attributes: ["signup_user_id"],
+      })
+      const existingSignupIds = new Set(existingSignupEvents.map((row) => Number(row.signup_user_id)))
+      const missingSignupIds = referredUserIds.filter((id) => !existingSignupIds.has(Number(id)))
+      if (missingSignupIds.length) {
+        for (const signupId of missingSignupIds) {
+          try {
+            await recordInfluencerEvent({
+              eventType: "signup",
+              influencerUserId: userId,
+              signupUserId: signupId,
+              currency: "USD",
+            })
+          } catch (err) {
+            console.warn("Failed to backfill signup commission", { influencerUserId: userId, signupId, err: err?.message })
+          }
+        }
+      }
+    }
+
     // a) bookings enlazadas explicitamente por DiscountCode.stay_id
     const bookingIdsFromCodes = codes
       .map(c => c.stay_id)
@@ -420,20 +449,7 @@ export const getInfluencerStats = async (req, res) => {
       targetMap[currency] = (targetMap[currency] || 0) + amount
     }
 
-    // a) Comisiones por booking (influencer_commission)
-    if (models.InfluencerCommission) {
-      const commissionRows = await models.InfluencerCommission.findAll({
-        where: {
-          influencer_user_id: userId,
-          status: { [Op.in]: ["eligible", "hold", "paid"] },
-        },
-        attributes: ["commission_amount", "commission_currency", "status"],
-        limit: 1000,
-      })
-      commissionRows.forEach((row) => addEarning(row.commission_currency, row.commission_amount, row.status))
-    }
-
-    // b) Eventos signup/booking (influencer_event_commission)
+    // Eventos signup/booking (bonos planos)
     if (models.InfluencerEventCommission) {
       const eventRows = await models.InfluencerEventCommission.findAll({
         where: {
@@ -445,6 +461,8 @@ export const getInfluencerStats = async (req, res) => {
       })
       eventRows.forEach((row) => addEarning(row.currency, row.amount, row.status))
     }
+
+    const incentives = await loadInfluencerIncentives(userId)
 
     // 6) Normalizar ultimas reservas
     const recentBookings = bookings.slice(0, 20).map((b) => ({
@@ -476,9 +494,30 @@ export const getInfluencerStats = async (req, res) => {
         paidEarnings: paidByCurrency,
       },
       recentBookings,
+      incentives,
     })
   } catch (err) {
     console.error("Error loading influencer stats:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+// GET /api/users/me/influencer/goals
+export const getInfluencerGoals = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id)
+    const role = Number(req.user?.role)
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+    if (role !== 2) return res.status(403).json({ error: "Only influencers can access this endpoint" })
+
+    const incentives = await loadInfluencerIncentives(userId)
+    return res.json({
+      goals: incentives.goals ?? [],
+      wallet: incentives.wallet ?? null,
+      redemptions: incentives.redemptions ?? {},
+    })
+  } catch (err) {
+    console.error("Error loading influencer goals:", err)
     return res.status(500).json({ error: "Server error" })
   }
 }
@@ -747,38 +786,26 @@ export const applyDiscountCode = async (req, res) => {
       return res.status(409).json({ error: "Discount code already applied" })
     }
 
-    const influencer = await models.User.findOne({
-      where: {
-        role: 2,
-        user_code: { [Op.iLike]: code },
-      },
-      attributes: ["id", "user_code"],
-    })
-
-    if (!influencer) {
-      return res.status(404).json({ error: "Invalid discount code" })
+    try {
+      await linkReferralCodeForUser({ userId, referralCode: code })
+      user = await models.User.findByPk(userId)
+    } catch (err) {
+      if (err instanceof ReferralError) {
+        return res.status(err.status).json({ error: err.message })
+      }
+      throw err
     }
-    if (Number(influencer.id) == userId) {
-      return res.status(400).json({ error: "Invalid discount code" })
-    }
-
-    const now = new Date()
-    user = await user.update({
-      referred_by_influencer_id: influencer.id,
-      referred_by_code: code,
-      referred_at: now,
-      discount_code_entered_at: now,
-    })
 
     return res.json({
-      referredByInfluencerId: user.referred_by_influencer_id ?? null,
-      referredByCode: user.referred_by_code ?? null,
-      referredAt: user.referred_at ?? null,
-      discountCodeEnteredAt: user.discount_code_entered_at ?? null,
+      referredByInfluencerId: user?.referred_by_influencer_id ?? null,
+      referredByCode: user?.referred_by_code ?? null,
+      referredAt: user?.referred_at ?? null,
+      discountCodeEnteredAt: user?.discount_code_entered_at ?? null,
     })
   } catch (err) {
     console.error("applyDiscountCode error:", err)
     return res.status(500).json({ error: "Server error" })
   }
 }
+
 

@@ -13,6 +13,7 @@ import {
   becomeHost,
   recordDiscountCodeStatus,
   applyDiscountCode,
+  getInfluencerGoals,
 } from "../controllers/user.controller.js"
 import { authenticate, authorizeRoles } from "../middleware/auth.js"
 import {
@@ -30,6 +31,7 @@ const router = Router()
 
 // Partner stats (auth required)
 router.get("/me/influencer/stats", authenticate, authorizeRoles(2), getInfluencerStats)
+router.get("/me/influencer/goals", authenticate, authorizeRoles(2), getInfluencerGoals)
 router.get("/me/influencer/commissions", authenticate, authorizeRoles(2), getInfluencerCommissions)
 router.get("/", authenticate, authorizeRoles(2), getInfluencerReferrals)
 router.post("/admin/influencer/payouts/create", authenticate, authorizeRoles(100), adminCreateInfluencerPayoutBatch)
