@@ -8,6 +8,7 @@ import models, { sequelize } from "../models/index.js"
 import { bookTGX, quoteTGX } from "../providers/travelgate/services/booking.service.js"
 import { normalizeTGXBookingID } from "../utils/normalizeBookingId.tgx.js"
 import { getMarkup } from "../utils/markup.js"
+import { finalizeReferralRedemption, recordInfluencerEvent } from "../services/referralRewards.service.js"
 
 dotenv.config()
 
@@ -829,40 +830,6 @@ export const confirmPaymentAndBook = async (req, res) => {
       }
     }
 
-    const ensureInfluencerEventCommission = async (influencerUserId, eventType, payload = {}) => {
-      if (!models.InfluencerEventCommission) return
-      const influencerId = Number(influencerUserId) || null
-      if (!influencerId) return
-      const { signup_user_id = null, stay_id = null } = payload
-      try {
-        const where = { event_type: eventType }
-        if (eventType === "signup") where.signup_user_id = signup_user_id
-        if (eventType === "booking") where.stay_id = stay_id
-        const bonusEnv =
-          eventType === "signup"
-            ? Number(process.env.INFLUENCER_SIGNUP_BONUS_USD)
-            : Number(process.env.INFLUENCER_BOOKING_BONUS_USD)
-        const defaultAmount = eventType === "signup" ? 0.25 : 2
-        const amount = Number.isFinite(bonusEnv) && bonusEnv > 0 ? bonusEnv : defaultAmount
-        if (!amount) return
-
-        await models.InfluencerEventCommission.findOrCreate({
-          where,
-          defaults: {
-            influencer_user_id: influencerId,
-            event_type: eventType,
-            signup_user_id: signup_user_id || null,
-            stay_id: stay_id || null,
-            amount,
-            currency: (booking.currency || "USD").toUpperCase(),
-            status: "eligible",
-          },
-        })
-      } catch (e) {
-        console.warn("(INF) No se pudo registrar bonus de evento:", e?.message || e)
-      }
-    }
-
     const ensureInfluencerCommission = async (influencerUserId, discountCodeId = null) => {
       const influencerId = Number(influencerUserId) || null
       if (!influencerId) return
@@ -984,7 +951,12 @@ export const confirmPaymentAndBook = async (req, res) => {
         if (dc.user_id) {
           try {
             await ensureInfluencerCommission(dc.user_id, dc.id)
-            await ensureInfluencerEventCommission(dc.user_id, "booking", { stay_id: booking.id })
+            await recordInfluencerEvent({
+              eventType: "booking",
+              influencerUserId: dc.user_id,
+              stayId: booking.id,
+              currency: booking.currency || "USD",
+            })
           } catch (e) {
             console.warn("(INF) No se pudo crear InfluencerCommission:", e?.message || e)
           }
@@ -997,10 +969,28 @@ export const confirmPaymentAndBook = async (req, res) => {
     if (booking.influencer_user_id) {
       try {
         await ensureInfluencerCommission(booking.influencer_user_id, booking.discount_code_id || null)
-        await ensureInfluencerEventCommission(booking.influencer_user_id, "booking", { stay_id: booking.id })
+        await recordInfluencerEvent({
+          eventType: "booking",
+          influencerUserId: booking.influencer_user_id,
+          stayId: booking.id,
+          currency: booking.currency || "USD",
+        })
       } catch (e) {
         console.warn("(INF) No se pudo crear InfluencerCommission (referral):", e?.message || e)
       }
+    }
+
+    try {
+      const redemption = await sequelize.transaction((tx) => finalizeReferralRedemption(booking.id, tx))
+      if (redemption) {
+        const meta = booking.meta || {}
+        const snapshot = booking.pricing_snapshot || {}
+        if (snapshot.referralCoupon) snapshot.referralCoupon.status = redemption.status
+        if (meta.referralCoupon) meta.referralCoupon.status = redemption.status
+        await booking.update({ meta, pricing_snapshot: snapshot })
+      }
+    } catch (e) {
+      console.warn("(INF) No se pudo cerrar redención de cupón referido:", e?.message || e)
     }
 
     /* ─────────────────────────────────────────────────────────────

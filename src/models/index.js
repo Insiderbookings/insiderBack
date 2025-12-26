@@ -26,6 +26,11 @@ import PayoutAccountModel from "./PayoutAccount.js";
 import PayoutBatchModel from "./PayoutBatch.js";
 import PayoutItemModel from "./PayoutItem.js";
 import InfluencerEventCommissionModel from "./InfluencerEventCommission.js";
+import InfluencerGoalModel from "./InfluencerGoal.js";
+import InfluencerGoalProgressModel from "./InfluencerGoalProgress.js";
+import InfluencerGoalEventModel from "./InfluencerGoalEvent.js";
+import CouponWalletModel from "./CouponWallet.js";
+import CouponRedemptionModel from "./CouponRedemption.js";
 
 import AddOnModel from "./AddOn.js";
 import AddOnOptionModel from "./AddonOption.js";
@@ -128,6 +133,11 @@ const models = {
   Commission: CommissionModel(sequelize),
   InfluencerCommission: InfluencerCommissionModel(sequelize),
   InfluencerEventCommission: InfluencerEventCommissionModel(sequelize),
+  InfluencerGoal: InfluencerGoalModel(sequelize),
+  InfluencerGoalProgress: InfluencerGoalProgressModel(sequelize),
+  InfluencerGoalEvent: InfluencerGoalEventModel(sequelize),
+  CouponWallet: CouponWalletModel(sequelize),
+  CouponRedemption: CouponRedemptionModel(sequelize),
   OutsideMeta: OutsideMetaModel(sequelize),
   TGXMeta: TGXMetaModel(sequelize),
   PayoutAccount: PayoutAccountModel(sequelize),

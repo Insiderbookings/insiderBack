@@ -10,6 +10,13 @@ import models, { sequelize } from "../models/index.js"
 import { streamCertificatePDF } from "../helpers/bookingCertificate.js"
 import { sendCancellationEmail } from "../emailTemplates/cancel-email.js"
 import { PROMPT_TRIGGERS, triggerBookingAutoPrompts } from "../services/chat.service.js"
+import {
+  planReferralCoupon,
+  createPendingRedemption,
+  finalizeReferralRedemption,
+  reverseReferralRedemption,
+  recordInfluencerEvent,
+} from "../services/referralRewards.service.js"
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Helper â€“ count nights â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const diffDays = (from, to) =>
   Math.ceil((new Date(to) - new Date(from)) / 86_400_000)
@@ -165,6 +172,20 @@ const mapStay = (row, source) => {
 
   const image = isHomeStay ? homePayload?.coverImage ?? null : mergedHotel?.image ?? null
   const listingName = isHomeStay ? homePayload?.title ?? null : mergedHotel?.name ?? null
+  const referralCouponRaw =
+    row.pricing_snapshot?.referralCoupon ??
+    row.pricing_snapshot?.referral_coupon ??
+    row.meta?.referralCoupon ??
+    null
+  const referralCoupon =
+    referralCouponRaw && typeof referralCouponRaw === "object"
+      ? {
+        amount: Number(referralCouponRaw.amount ?? referralCouponRaw.discountAmount ?? 0),
+        currency: referralCouponRaw.currency ?? row.currency ?? null,
+        status: referralCouponRaw.status ?? null,
+        walletId: referralCouponRaw.walletId ?? referralCouponRaw.wallet_id ?? null,
+      }
+      : null
 
   return {
     id: row.id,
@@ -193,6 +214,7 @@ const mapStay = (row, source) => {
 
     guests: (row.adults ?? 0) + (row.children ?? 0),
     total: Number.parseFloat(row.gross_price ?? row.total ?? 0),
+    referralCoupon,
 
     guestName: row.guest_name ?? row.guestName ?? null,
     guestLastName: row.guest_last_name ?? row.guestLastName ?? null,
@@ -404,7 +426,9 @@ export const createBooking = async (req, res) => {
     }
 
     const discountAmount = discountPct ? (totalBeforeDiscount * discountPct) / 100 : 0
-    const grossTotal = Number.parseFloat((totalBeforeDiscount - discountAmount).toFixed(2))
+    let referralCouponPlan = null
+    let referralDiscountAmount = 0
+    let referralCouponApplied = false
 
     const user = req.user || {}
     const guestNameFinal = (guestName ?? user.name ?? "").trim()
@@ -426,6 +450,21 @@ export const createBooking = async (req, res) => {
       if (discountRecord) {
         await discountRecord.increment("times_used", { by: 1, transaction: tx })
       }
+
+      if (!discountRecord && referral.influencerId) {
+        referralCouponPlan = await planReferralCoupon({
+          influencerUserId: referral.influencerId,
+          userId,
+          totalBeforeDiscount,
+          currency: currencyCode,
+          transaction: tx,
+        })
+        referralDiscountAmount = referralCouponPlan?.apply ? referralCouponPlan.discountAmount : 0
+        referralCouponApplied = referralCouponPlan?.apply || false
+      }
+
+      const totalDiscountAmount = discountAmount + referralDiscountAmount
+      const grossTotal = Number.parseFloat(Math.max(0, totalBeforeDiscount - totalDiscountAmount).toFixed(2))
 
       const stay = await models.Booking.create(
         {
@@ -460,7 +499,18 @@ export const createBooking = async (req, res) => {
             nights,
             discountPct,
             discountAmount: Number.parseFloat(discountAmount.toFixed(2)),
+            referralCoupon: referralCouponPlan?.apply
+              ? {
+                amount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
+                currency: referralCouponPlan.currency,
+                walletId: referralCouponPlan.wallet?.id ?? null,
+                status: "pending",
+                applied: referralCouponApplied,
+              }
+              : null,
+            referralDiscountAmount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
             totalBeforeDiscount: Number.parseFloat(totalBeforeDiscount.toFixed(2)),
+            totalDiscountAmount: Number.parseFloat(totalDiscountAmount.toFixed(2)),
             total: grossTotal,
           },
           guest_snapshot: {
@@ -477,6 +527,16 @@ export const createBooking = async (req, res) => {
                 referral: {
                   influencerUserId: referral.influencerId,
                   code: referral.code || null,
+                },
+              }
+              : {}),
+            ...(referralCouponPlan?.apply
+              ? {
+                referralCoupon: {
+                  amount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
+                  currency: referralCouponPlan.currency,
+                  walletId: referralCouponPlan.wallet?.id ?? null,
+                  status: "pending",
                 },
               }
               : {}),
@@ -530,6 +590,10 @@ export const createBooking = async (req, res) => {
         await discountRecord.update({ booking_id: stay.id }, { transaction: tx })
       }
 
+      if (referralCouponPlan?.apply) {
+        await createPendingRedemption({ plan: referralCouponPlan, stayId: stay.id, transaction: tx })
+      }
+
       return stay
     })
 
@@ -544,6 +608,200 @@ export const createBooking = async (req, res) => {
   }
 }
 
+
+export const quoteHomeBooking = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id ?? 0)
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+
+    const referral = {
+      influencerId: Number(req.user?.referredByInfluencerId) || null,
+      code: req.user?.referredByCode || null,
+    }
+
+    const {
+      homeId,
+      checkIn,
+      checkOut,
+      adults = 1,
+      children = 0,
+      infants = 0,
+    } = req.body || {}
+
+    const homeIdValue = Number(homeId ?? 0) || null
+    if (!homeIdValue || !checkIn || !checkOut)
+      return res.status(400).json({ error: "Missing required fields" })
+
+    const checkInDate = new Date(checkIn)
+    const checkOutDate = new Date(checkOut)
+    if (Number.isNaN(checkInDate.valueOf()) || Number.isNaN(checkOutDate.valueOf()))
+      return res.status(400).json({ error: "Invalid dates" })
+    if (checkOutDate <= checkInDate)
+      return res.status(400).json({ error: "Check-out must be after check-in" })
+
+    checkInDate.setHours(0, 0, 0, 0)
+    checkOutDate.setHours(0, 0, 0, 0)
+
+    const normalizedCheckIn = checkInDate.toISOString().slice(0, 10)
+    const normalizedCheckOut = checkOutDate.toISOString().slice(0, 10)
+
+    const nights = diffDays(normalizedCheckIn, normalizedCheckOut)
+    if (nights <= 0)
+      return res.status(400).json({ error: "Stay must be at least one night" })
+
+    const adultsCount = Number(adults ?? 0) || 0
+    const childrenCount = Number(children ?? 0) || 0
+    const totalGuests = adultsCount + childrenCount
+    if (totalGuests <= 0)
+      return res.status(400).json({ error: "A booking must include at least one guest" })
+
+    const home = await models.Home.findOne({
+      where: { id: homeIdValue, status: "PUBLISHED" },
+      include: [{ model: models.HomePricing, as: "pricing" }],
+    })
+    if (!home) return res.status(404).json({ error: "Listing not found or unavailable" })
+
+    const pricing = home.pricing ?? {}
+    const minStay = Number(pricing.minimum_stay ?? 0) || 1
+    const maxStay = Number(pricing.maximum_stay ?? 0) || null
+    if (nights < minStay)
+      return res.status(400).json({ error: `Minimum stay is ${minStay} nights` })
+    if (maxStay && nights > maxStay)
+      return res.status(400).json({ error: `Maximum stay is ${maxStay} nights` })
+
+    const basePrice = Number.parseFloat(pricing.base_price ?? 0) * 1.1
+    if (!Number.isFinite(basePrice) || basePrice <= 0)
+      return res.status(400).json({ error: "Listing does not have a valid base price" })
+    const weekendPrice =
+      pricing.weekend_price != null ? Number.parseFloat(pricing.weekend_price) * 1.1 : null
+    const securityDeposit =
+      pricing.security_deposit != null ? Number.parseFloat(pricing.security_deposit) : 0
+    const extraGuestFee =
+      pricing.extra_guest_fee != null ? Number.parseFloat(pricing.extra_guest_fee) : 0
+    const extraGuestThreshold =
+      pricing.extra_guest_threshold != null ? Number(pricing.extra_guest_threshold) : null
+    const taxRate =
+      (pricing.tax_rate != null && Number(pricing.tax_rate) > 0) ? Number.parseFloat(pricing.tax_rate) : 8
+
+    let baseSubtotal = 0
+    let cursor = new Date(checkInDate)
+    const endDate = new Date(checkOutDate)
+    while (cursor < endDate) {
+      const day = cursor.getUTCDay()
+      const isWeekend = day === 5 || day === 6
+      const nightlyRate = isWeekend && Number.isFinite(weekendPrice) ? weekendPrice : basePrice
+      baseSubtotal += Number.parseFloat(Number(nightlyRate).toFixed(2))
+      cursor.setUTCDate(cursor.getUTCDate() + 1)
+    }
+
+    let extraGuestSubtotal = 0
+    if (extraGuestFee > 0 && extraGuestThreshold != null && totalGuests > extraGuestThreshold) {
+      const extraGuests = totalGuests - extraGuestThreshold
+      extraGuestSubtotal = extraGuests * extraGuestFee * nights
+    }
+
+    const subtotalBeforeTax = Number.parseFloat((baseSubtotal + extraGuestSubtotal).toFixed(2))
+    const taxAmount = taxRate > 0 ? Number.parseFloat(((subtotalBeforeTax * taxRate) / 100).toFixed(2)) : 0
+    const totalBeforeDiscount = Number.parseFloat((subtotalBeforeTax + taxAmount).toFixed(2))
+
+    let referralCouponPlan = null
+    let referralDiscountAmount = 0
+    if (referral.influencerId) {
+      referralCouponPlan = await planReferralCoupon({
+        influencerUserId: referral.influencerId,
+        userId,
+        totalBeforeDiscount,
+        currency: (pricing.currency ?? process.env.DEFAULT_CURRENCY ?? "USD").toUpperCase(),
+      })
+      referralDiscountAmount = referralCouponPlan?.apply ? referralCouponPlan.discountAmount : 0
+    }
+
+    const total = Number.parseFloat(Math.max(0, totalBeforeDiscount - referralDiscountAmount).toFixed(2))
+
+    const currencyCode = String(
+      pricing.currency ?? process.env.DEFAULT_CURRENCY ?? "USD"
+    )
+      .trim()
+      .toUpperCase()
+
+    const items = [
+      {
+        key: "nights",
+        label: `${currencyCode} ${basePrice.toFixed(2)} x ${nights} night${nights === 1 ? "" : "s"}`,
+        amount: Number.parseFloat(baseSubtotal.toFixed(2)),
+      },
+    ]
+    if (extraGuestSubtotal > 0) {
+      items.push({
+        key: "extraGuests",
+        label: "Extra guests",
+        amount: Number.parseFloat(extraGuestSubtotal.toFixed(2)),
+      })
+    }
+    if (taxAmount > 0) {
+      items.push({
+        key: "tax",
+        label: `Taxes (${taxRate.toFixed(2)}%)`,
+        amount: taxAmount,
+      })
+    }
+    if (referralCouponPlan?.apply && referralDiscountAmount > 0) {
+      items.push({
+        key: "referralCoupon",
+        label: "Referral discount",
+        amount: -Number.parseFloat(referralDiscountAmount.toFixed(2)),
+      })
+    }
+
+    const referralCoupon =
+      referralCouponPlan?.apply
+        ? {
+          amount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
+          currency: referralCouponPlan.currency,
+          walletId: referralCouponPlan.wallet?.id ?? null,
+          status: "pending",
+          applied: true,
+        }
+        : null
+
+    return res.json({
+      quote: {
+        homeId: home.id,
+        checkIn: normalizedCheckIn,
+        checkOut: normalizedCheckOut,
+        nights,
+        guests: { adults: adultsCount, children: childrenCount, infants },
+        currency: currencyCode,
+        items,
+        subtotalBeforeTax,
+        taxRate,
+        taxAmount,
+        totalBeforeDiscount,
+        discountAmount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
+        total,
+        referralCoupon,
+        pricingSnapshot: {
+          nightlyBreakdown: null,
+          baseSubtotal: Number.parseFloat(baseSubtotal.toFixed(2)),
+          extraGuestSubtotal: Number.parseFloat(extraGuestSubtotal.toFixed(2)),
+          cleaningFee: null,
+          taxRate,
+          taxAmount,
+          securityDeposit,
+          subtotalBeforeTax: Number.parseFloat(subtotalBeforeTax.toFixed(2)),
+          totalBeforeDiscount,
+          referralCoupon,
+          referralDiscountAmount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
+          total,
+          currency: currencyCode,
+        },
+      },
+    })
+  } catch (err) {
+    console.error("quoteHomeBooking:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
 
 export const createHomeBooking = async (req, res) => {
   try {
@@ -647,8 +905,7 @@ export const createHomeBooking = async (req, res) => {
       return res.status(400).json({ error: "Listing does not have a valid base price" })
     const weekendPrice =
       pricing.weekend_price != null ? Number.parseFloat(pricing.weekend_price) * 1.1 : null
-    const cleaningFeeValue =
-      pricing.cleaning_fee != null ? Number.parseFloat(pricing.cleaning_fee) : 0
+    const cleaningFeeValue = 0
     const securityDeposit =
       pricing.security_deposit != null ? Number.parseFloat(pricing.security_deposit) : 0
     const extraGuestFee =
@@ -712,10 +969,13 @@ export const createHomeBooking = async (req, res) => {
       const extraGuests = totalGuests - extraGuestThreshold
       extraGuestSubtotal = extraGuests * extraGuestFee * nights
     }
-    const cleaningFeeTotal = Number.parseFloat(cleaningFeeValue.toFixed(2))
-    const subtotalBeforeTax = baseSubtotal + extraGuestSubtotal + cleaningFeeTotal
+    const cleaningFeeTotal = 0
+    const subtotalBeforeTax = baseSubtotal + extraGuestSubtotal
     const taxAmount = taxRate > 0 ? Number.parseFloat(((subtotalBeforeTax * taxRate) / 100).toFixed(2)) : 0
     const totalAmount = Number.parseFloat((subtotalBeforeTax + taxAmount).toFixed(2))
+    let referralCouponPlan = null
+    let referralDiscountAmount = 0
+    let referralCouponApplied = false
 
     const user = req.user || {}
     const guestNameFinal = (guestName ?? user.name ?? "").trim()
@@ -731,6 +991,32 @@ export const createHomeBooking = async (req, res) => {
       .toUpperCase()
 
     const stay = await sequelize.transaction(async (tx) => {
+      if (referral.influencerId) {
+        console.log("[HOME BOOKING] referral lookup", {
+          influencerId: referral.influencerId,
+          referralCode: referral.code || null,
+          totalBeforeDiscount: totalAmount,
+          currency: currencyCode,
+        })
+        referralCouponPlan = await planReferralCoupon({
+          influencerUserId: referral.influencerId,
+          userId,
+          totalBeforeDiscount: totalAmount,
+          currency: currencyCode,
+          transaction: tx,
+        })
+        console.log("[HOME BOOKING] referral coupon plan", {
+          apply: referralCouponPlan?.apply || false,
+          discountAmount: referralCouponPlan?.discountAmount || 0,
+          walletId: referralCouponPlan?.wallet?.id || null,
+          walletAvailable: referralCouponPlan?.wallet?.available ?? null,
+          reason: referralCouponPlan?.reason || null,
+        })
+        referralDiscountAmount = referralCouponPlan?.apply ? referralCouponPlan.discountAmount : 0
+        referralCouponApplied = referralCouponPlan?.apply || false
+      }
+      const grossTotal = Number.parseFloat(Math.max(0, totalAmount - referralDiscountAmount).toFixed(2))
+
       const created = await models.Booking.create(
         {
           user_id: userId,
@@ -746,7 +1032,7 @@ export const createHomeBooking = async (req, res) => {
           guest_name: guestNameFinal,
           guest_email: guestEmailFinal,
           guest_phone: guestPhoneFinal,
-          gross_price: totalAmount,
+          gross_price: grossTotal,
           net_cost: null,
           currency: currencyCode,
           payment_provider: "NONE",
@@ -759,12 +1045,23 @@ export const createHomeBooking = async (req, res) => {
             nightlyBreakdown,
             baseSubtotal: Number.parseFloat(baseSubtotal.toFixed(2)),
             extraGuestSubtotal: Number.parseFloat(extraGuestSubtotal.toFixed(2)),
-            cleaningFee: cleaningFeeTotal,
+            cleaningFee: null,
             taxRate,
             taxAmount,
             securityDeposit,
             subtotalBeforeTax: Number.parseFloat(subtotalBeforeTax.toFixed(2)),
-            total: totalAmount,
+            totalBeforeDiscount: Number.parseFloat(totalAmount.toFixed(2)),
+            referralCoupon: referralCouponPlan?.apply
+              ? {
+                amount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
+                currency: referralCouponPlan.currency,
+                walletId: referralCouponPlan.wallet?.id ?? null,
+                status: "pending",
+                applied: referralCouponApplied,
+              }
+              : null,
+            referralDiscountAmount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
+            total: grossTotal,
             currency: currencyCode,
           },
           guest_snapshot: {
@@ -782,6 +1079,17 @@ export const createHomeBooking = async (req, res) => {
                 referral: {
                   influencerUserId: referral.influencerId,
                   code: referral.code || null,
+                },
+              }
+              : {}),
+            ...(referralCouponPlan?.apply
+              ? {
+                referralCoupon: {
+                  amount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
+                  currency: referralCouponPlan.currency,
+                  walletId: referralCouponPlan.wallet?.id ?? null,
+                  status: "pending",
+                  applied: referralCouponApplied,
                 },
               }
               : {}),
@@ -827,7 +1135,7 @@ export const createHomeBooking = async (req, res) => {
           stay_id: created.id,
           home_id: home.id,
           host_id: home.host_id,
-          cleaning_fee: cleaningFeeTotal || null,
+          cleaning_fee: null,
           security_deposit: securityDeposit || null,
           fees_snapshot: {
             extraGuestFee: extraGuestFee || null,
@@ -838,13 +1146,16 @@ export const createHomeBooking = async (req, res) => {
         { transaction: tx }
       )
 
+      if (referralCouponPlan?.apply) {
+        await createPendingRedemption({ plan: referralCouponPlan, stayId: created.id, transaction: tx })
+      }
+
       console.log("[HOME BOOKING] created stay", {
         id: created.id,
-        status: created.status,
-        payment_status: created.payment_status,
-        influencer_user_id: created.influencer_user_id,
         gross_price: created.gross_price,
-        currency: created.currency,
+        referralCouponApplied,
+        referralDiscountAmount,
+        pricing_snapshot: created.pricing_snapshot,
       })
 
       for (const date of stayDates) {
@@ -880,6 +1191,22 @@ export const createHomeBooking = async (req, res) => {
     })
 
     const bookingView = mapStay(fresh.toJSON(), "home")
+    const responsePayload = {
+      ...bookingView,
+      pricingSnapshot: fresh.pricing_snapshot ?? null,
+      referralCoupon:
+        fresh.pricing_snapshot?.referralCoupon ??
+        fresh.pricing_snapshot?.referral_coupon ??
+        fresh.meta?.referralCoupon ??
+        fresh.meta?.referral_coupon ??
+        null,
+    }
+    console.log("[HOME BOOKING] response payload", {
+      id: bookingView.id,
+      total: bookingView.total,
+      referralCoupon: responsePayload.referralCoupon,
+      pricingSnapshot: responsePayload.pricingSnapshot,
+    })
 
     const coverImageUrl = pickCoverImage(home.media ?? [])
     triggerBookingAutoPrompts({
@@ -895,12 +1222,12 @@ export const createHomeBooking = async (req, res) => {
     }).catch((err) => console.error("booking auto prompt dispatch error:", err))
 
     return res.status(201).json({
-      booking: bookingView,
+      booking: responsePayload,
       payment: {
         required: true,
         provider: "stripe",
-        amount: totalAmount,
-        currency: currencyCode,
+        amount: Number(fresh.gross_price ?? totalAmount),
+        currency: fresh.currency || currencyCode,
       },
     })
   } catch (err) {
@@ -1475,6 +1802,19 @@ export const cancelBooking = async (req, res) => {
       }
     }
 
+    try {
+      const redemption = await sequelize.transaction((tx) => reverseReferralRedemption(booking.id, tx))
+      if (redemption) {
+        const meta = booking.meta || {}
+        const snapshot = booking.pricing_snapshot || {}
+        if (snapshot.referralCoupon) snapshot.referralCoupon.status = redemption.status
+        if (meta.referralCoupon) meta.referralCoupon.status = redemption.status
+        await booking.update({ meta, pricing_snapshot: snapshot })
+      }
+    } catch (e) {
+      console.warn("cancelBooking: could not reverse referral coupon:", e?.message || e)
+    }
+
     // Enviar email de cancelaciÃ³n (best-effort)
     try {
       const bookingForEmail = {
@@ -1725,46 +2065,6 @@ export const confirmBooking = async (req, res) => {
       console.log("[CONFIRM BOOKING] updated to CONFIRMED/PAID", { id: booking.id });
     }
 
-    const ensureInfluencerEventCommission = async (influencerUserId, eventType, payload = {}) => {
-      if (!models.InfluencerEventCommission) return;
-      const influencerId = Number(influencerUserId) || null;
-      if (!influencerId) return;
-      const { signup_user_id = null, stay_id = null } = payload;
-      const where = { event_type: eventType };
-      if (eventType === "signup") where.signup_user_id = signup_user_id;
-      if (eventType === "booking") where.stay_id = stay_id;
-      const bonusEnv =
-        eventType === "signup"
-          ? Number(process.env.INFLUENCER_SIGNUP_BONUS_USD)
-          : Number(process.env.INFLUENCER_BOOKING_BONUS_USD);
-      const defaultAmount = eventType === "signup" ? 0.25 : 2;
-      const amount = Number.isFinite(bonusEnv) && bonusEnv > 0 ? bonusEnv : defaultAmount;
-      if (!amount) return;
-
-      try {
-        await models.InfluencerEventCommission.findOrCreate({
-          where,
-          defaults: {
-            influencer_user_id: influencerId,
-            event_type: eventType,
-            signup_user_id: signup_user_id || null,
-            stay_id: stay_id || null,
-            amount,
-            currency: (booking.currency || "USD").toUpperCase(),
-            status: "eligible",
-          },
-        });
-        console.log("[CONFIRM BOOKING] influencer_event_commission created", {
-          influencer_user_id: influencerId,
-          stay_id: stay_id || null,
-          event_type: eventType,
-          amount,
-        });
-      } catch (e) {
-        console.warn("(INF) No se pudo registrar bonus de evento:", e?.message || e);
-      }
-    };
-
     const ensureInfluencerCommission = async (influencerUserId) => {
       const influencerId = Number(influencerUserId) || null;
       if (!influencerId) return;
@@ -1835,7 +2135,28 @@ export const confirmBooking = async (req, res) => {
     if (influencerId) {
       console.log("[CONFIRM BOOKING] processing influencer", { influencer_user_id: influencerId });
       await ensureInfluencerCommission(influencerId);
-      await ensureInfluencerEventCommission(influencerId, "booking", { stay_id: booking.id });
+    }
+
+    let redemption = null;
+    await sequelize.transaction(async (tx) => {
+      redemption = await finalizeReferralRedemption(booking.id, tx);
+      if (influencerId) {
+        await recordInfluencerEvent({
+          eventType: "booking",
+          influencerUserId: influencerId,
+          stayId: booking.id,
+          currency: booking.currency || "USD",
+          transaction: tx,
+        });
+      }
+    });
+
+    if (redemption) {
+      const meta = booking.meta || {};
+      const snapshot = booking.pricing_snapshot || {};
+      if (snapshot.referralCoupon) snapshot.referralCoupon.status = redemption.status;
+      if (meta.referralCoupon) meta.referralCoupon.status = redemption.status;
+      await booking.update({ meta, pricing_snapshot: snapshot });
     }
 
     const fresh =
@@ -1843,7 +2164,19 @@ export const confirmBooking = async (req, res) => {
         ? booking
         : await models.Booking.findByPk(id, { include: STAY_BASE_INCLUDE });
 
-    return res.json(mapStay(fresh.toJSON(), fresh.source || "insider"));
+    const mapped = mapStay(fresh.toJSON(), fresh.source || "insider");
+    const responsePayload = {
+      ...mapped,
+      pricingSnapshot: fresh.pricing_snapshot ?? null,
+      referralCoupon:
+        fresh.pricing_snapshot?.referralCoupon ??
+        fresh.pricing_snapshot?.referral_coupon ??
+        fresh.meta?.referralCoupon ??
+        fresh.meta?.referral_coupon ??
+        null,
+    };
+
+    return res.json(responsePayload);
   } catch (err) {
     console.error("confirmBooking:", err);
     return res.status(500).json({ error: "Server error" });
