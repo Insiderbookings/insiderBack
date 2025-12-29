@@ -1,0 +1,119 @@
+3) Cards “Explain & Compare” (IA dentro del resultado, no afuera)
+
+En cada card (o en el detail screen) agregás un botón:
+
+“Why this?” / “¿Por qué te lo recomiendo?”
+
+“Compare” (seleccionás 2–3 opciones)
+
+La IA te devuelve:
+
+3 bullets de por qué encaja con tu búsqueda
+
+2 trade-offs honestos (ej: “más lejos, pero más grande”)
+
+Esto hace que el user confíe y decida rápido.
+
+4) “Smart Shortlist” (la IA arma 3 listas)
+
+En lugar de 1 lista, presentás tres carriles tipo Netflix:
+
+“Best value for your trip”
+
+“Cheapest that still looks good”
+
+“Closest to what you want (beach/nightlife/family)”
+
+No es IA mágica: es ranking + explicación. Pero el UX parece de producto top.
+
+5) “Trip Brief” automático (resumen antes de pagar)
+
+Antes del checkout, la IA genera una tarjeta:
+
+Fechas, barrio, tipo de estadía
+
+Políticas clave (lo que importa)
+
+Recomendación final: “Si priorizás X, este es el mejor”
+
+Y abajo:
+
+botón “Editar preferencias”
+
+botón “Continuar”
+
+Esto reduce abandono porque aclara todo.
+
+6) “One-tap refinement” después de ver resultados
+
+Tras mostrar cards, la IA sugiere 3 refinamientos con botones:
+
+“Bajar precio ~15%”
+
+“Más cerca de la playa”
+
+“Mejor cancelación”
+
+El user toca y listo. Cero fricción.
+
+7) “Context Drawer” (clima + POIs como panel lateral)
+
+Tu idea del clima/POIs es buena, pero no lo metas en el chat principal.
+Hacé un drawer que aparece en Explore/Detail:
+
+“About your trip”
+
+pronóstico (estimado)
+
+top 5 food
+
+top 5 attractions
+
+“set search near this” (aplica filtro)
+
+Esto suma valor sin contaminar booking.
+
+8) Post-booking: “Travel Companion” (donde más se nota)
+
+Después de reservar, aparece un “assistant thread” pegado a la reserva:
+
+check-in instructions (si las tenés)
+
+recordatorios
+
+cambios/cancelación
+
+recomendaciones cerca del stay
+
+“quiero late checkout” → te guía
+
+Es donde la IA se vuelve útil de verdad y baja tickets.
+
+9) Modo “Plan in 30 seconds” (onboarding killer)
+
+Un flujo ultra corto:
+
+“¿A dónde vas?”
+
+“¿Qué fechas?”
+
+“¿Qué te importa más? (precio / ubicación / comodidad)”
+
+“Listo, te armé 6 opciones”
+
+El user siente que la app “lo entiende” sin aprender la UI.
+
+10) Detalle muy moderno: “UI generado por el backend”
+
+Tu backend ya va a devolver cards + chips + inputs.
+En frontend, implementás un “AIResponseRenderer” genérico:
+
+renderiza chips
+
+renderiza inputs (fecha, rooms, budget)
+
+renderiza carriles de cards
+
+renderiza warnings/policies
+
+Eso te permite iterar rápido sin re-publicar la app por cada cambio de UX.

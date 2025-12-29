@@ -2208,6 +2208,7 @@ export const publishHome = async (req, res) => {
 export const respondUploadedMedia = (req, res) => {
   try {
     const uploaded = Array.isArray(req.uploadedImages) ? req.uploadedImages : [];
+    console.log("[respondUploadedMedia] urls:", uploaded.map((item) => item.url));
     return res.json({ uploaded });
   } catch (err) {
     console.error("[respondUploadedMedia]", err);

@@ -14,6 +14,18 @@ if (!BUCKET) throw new Error("AWS bucket is missing. Set AWS_BUCKET_NAME or S3_B
 let cachedRegion = null;
 let cachedS3 = null;
 let baseClient = null;
+let s3EnvLogged = false;
+
+const logS3EnvOnce = (context) => {
+  if (s3EnvLogged) return;
+  s3EnvLogged = true;
+  const key = process.env.AWS_ACCESS_KEY_ID || "";
+  console.log(`[${context}] CWD:`, process.cwd());
+  console.log(`[${context}] AWS_ACCESS_KEY_ID set:`, Boolean(key));
+  console.log(`[${context}] AWS_ACCESS_KEY_ID last4:`, key ? key.slice(-4) : "");
+  console.log(`[${context}] AWS_REGION:`, process.env.AWS_REGION);
+  console.log(`[${context}] AWS_BUCKET:`, process.env.AWS_BUCKET_NAME || process.env.S3_BUCKET);
+};
 
 const memoryUpload = multer({
   storage: multer.memoryStorage(),
@@ -45,6 +57,7 @@ const resolveBucketRegion = async () => {
 };
 
 const ensureS3 = async () => {
+  logS3EnvOnce("s3UploadArray");
   const region = await resolveBucketRegion();
   if (cachedS3 && cachedS3.config.region() === region) return cachedS3;
   cachedS3 = newClient(region);

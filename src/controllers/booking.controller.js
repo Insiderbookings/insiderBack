@@ -674,6 +674,7 @@ export const quoteHomeBooking = async (req, res) => {
       return res.status(400).json({ error: "Listing does not have a valid base price" })
     const weekendPrice =
       pricing.weekend_price != null ? Number.parseFloat(pricing.weekend_price) * 1.1 : null
+    const hasWeekendPrice = Number.isFinite(weekendPrice) && weekendPrice > 0
     const securityDeposit =
       pricing.security_deposit != null ? Number.parseFloat(pricing.security_deposit) : 0
     const extraGuestFee =
@@ -683,14 +684,28 @@ export const quoteHomeBooking = async (req, res) => {
     const taxRate =
       (pricing.tax_rate != null && Number(pricing.tax_rate) > 0) ? Number.parseFloat(pricing.tax_rate) : 8
 
+    const currencyCode = String(
+      pricing.currency ?? process.env.DEFAULT_CURRENCY ?? "USD"
+    )
+      .trim()
+      .toUpperCase()
+
     let baseSubtotal = 0
+    const nightlyBreakdown = []
     let cursor = new Date(checkInDate)
     const endDate = new Date(checkOutDate)
     while (cursor < endDate) {
       const day = cursor.getUTCDay()
       const isWeekend = day === 5 || day === 6
-      const nightlyRate = isWeekend && Number.isFinite(weekendPrice) ? weekendPrice : basePrice
-      baseSubtotal += Number.parseFloat(Number(nightlyRate).toFixed(2))
+      const useWeekendRate = isWeekend && hasWeekendPrice
+      const nightlyRate = useWeekendRate ? weekendPrice : basePrice
+      const roundedRate = Number.parseFloat(Number(nightlyRate).toFixed(2))
+      nightlyBreakdown.push({
+        date: cursor.toISOString().slice(0, 10),
+        rate: roundedRate,
+        reason: useWeekendRate ? "weekend" : "standard",
+      })
+      baseSubtotal += roundedRate
       cursor.setUTCDate(cursor.getUTCDate() + 1)
     }
 
@@ -718,19 +733,32 @@ export const quoteHomeBooking = async (req, res) => {
 
     const total = Number.parseFloat(Math.max(0, totalBeforeDiscount - referralDiscountAmount).toFixed(2))
 
-    const currencyCode = String(
-      pricing.currency ?? process.env.DEFAULT_CURRENCY ?? "USD"
-    )
-      .trim()
-      .toUpperCase()
+    const nightlyGroups = new Map()
+    nightlyBreakdown.forEach((night) => {
+      const key = `${night.reason}-${night.rate}`
+      const existing = nightlyGroups.get(key)
+      if (existing) {
+        existing.count += 1
+        existing.amount += night.rate
+      } else {
+        nightlyGroups.set(key, {
+          rate: night.rate,
+          reason: night.reason,
+          count: 1,
+          amount: night.rate,
+        })
+      }
+    })
 
-    const items = [
-      {
-        key: "nights",
-        label: `${currencyCode} ${basePrice.toFixed(2)} x ${nights} night${nights === 1 ? "" : "s"}`,
-        amount: Number.parseFloat(baseSubtotal.toFixed(2)),
-      },
-    ]
+    const items = Array.from(nightlyGroups.values()).map((group, index) => {
+      const reasonLabel = group.reason === "weekend" ? "weekend night" : "standard night"
+      const amount = Number.parseFloat(group.amount.toFixed(2))
+      return {
+        key: `nights-${index}`,
+        label: `${currencyCode} ${group.rate.toFixed(2)} x ${group.count} ${reasonLabel}${group.count === 1 ? "" : "s"}`,
+        amount,
+      }
+    })
     if (extraGuestSubtotal > 0) {
       items.push({
         key: "extraGuests",
@@ -781,7 +809,7 @@ export const quoteHomeBooking = async (req, res) => {
         total,
         referralCoupon,
         pricingSnapshot: {
-          nightlyBreakdown: null,
+          nightlyBreakdown,
           baseSubtotal: Number.parseFloat(baseSubtotal.toFixed(2)),
           extraGuestSubtotal: Number.parseFloat(extraGuestSubtotal.toFixed(2)),
           cleaningFee: null,

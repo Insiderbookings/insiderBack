@@ -18,6 +18,18 @@ if (!BUCKET) throw new Error('AWS bucket is missing. Set AWS_BUCKET_NAME or S3_B
 let _bucketRegion = null
 let _s3 = null
 let _baseS3 = null
+let _s3EnvLogged = false
+
+function logS3EnvOnce(context) {
+    if (_s3EnvLogged) return
+    _s3EnvLogged = true
+    const key = process.env.AWS_ACCESS_KEY_ID || ''
+    console.log(`[${context}] CWD:`, process.cwd())
+    console.log(`[${context}] AWS_ACCESS_KEY_ID set:`, Boolean(key))
+    console.log(`[${context}] AWS_ACCESS_KEY_ID last4:`, key ? key.slice(-4) : '')
+    console.log(`[${context}] AWS_REGION:`, process.env.AWS_REGION)
+    console.log(`[${context}] AWS_BUCKET:`, process.env.AWS_BUCKET_NAME || process.env.S3_BUCKET)
+}
 
 function newS3(region) {
     return new S3Client({
@@ -42,6 +54,7 @@ async function getBucketRegion() {
 }
 
 async function getS3() {
+    logS3EnvOnce('s3UploadFields')
     const region = await getBucketRegion()
     if (_s3 && _s3.config.region() === region) return _s3
     _s3 = newS3(region)
