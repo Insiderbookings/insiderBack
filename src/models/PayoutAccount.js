@@ -15,7 +15,7 @@ export default (sequelize) => {
         references: { model: "user", key: "id" },
       },
       provider: {
-        type: DataTypes.ENUM("BANK", "STRIPE", "PAYPAL"),
+        type: DataTypes.ENUM("BANK", "STRIPE", "PAYPAL", "PAYONEER"),
         allowNull: false,
         defaultValue: "BANK",
       },

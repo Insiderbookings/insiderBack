@@ -10,8 +10,15 @@ import {
   updatePayoutMethod,
 } from "../controllers/host.controller.js";
 import { getHostCalendarDetail, upsertHostCalendarDay, getArrivalGuide, updateArrivalGuide } from "../controllers/home.controller.js";
-import { getPayoutAccount, upsertPayoutAccount, listHostPayouts } from "../controllers/payout.controller.js";
-import { createStripeOnboardingLink } from "../controllers/payout.controller.js";
+import {
+  getPayoutAccount,
+  upsertPayoutAccount,
+  listHostPayouts,
+  createStripeOnboardingLink,
+  createStripeAccountUpdateLink,
+  refreshStripeAccountStatus,
+  createPayoneerOnboardingLink,
+} from "../controllers/payout.controller.js";
 
 const router = Router();
 
@@ -32,5 +39,8 @@ router.get("/payout-account", getPayoutAccount);
 router.put("/payout-account", upsertPayoutAccount);
 router.get("/payouts", listHostPayouts);
 router.post("/payout-account/stripe/link", createStripeOnboardingLink);
+router.post("/payout-account/stripe/update-link", createStripeAccountUpdateLink);
+router.post("/payout-account/stripe/refresh", refreshStripeAccountStatus);
+router.post("/payout-account/payoneer/link", createPayoneerOnboardingLink);
 
 export default router;

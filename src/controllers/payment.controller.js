@@ -144,9 +144,20 @@ export const handleWebhook = async (req, res) => {
       process.env.STRIPE_WEBHOOK_SECRET
     )
   } catch (err) {
-    console.error("⚠️  Webhook signature failed:", err.message)
-    return res.status(400).send(`Webhook Error: ${err.message}`)
+    const altSecret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET || ""
+    if (altSecret) {
+      try {
+        event = stripe.webhooks.constructEvent(req.body, sig, altSecret)
+      } catch (altErr) {
+        console.error("Webhook signature failed:", altErr.message)
+        return res.status(400).send(`Webhook Error: ${altErr.message}`)
+      }
+    } else {
+      console.error("Webhook signature failed:", err.message)
+      return res.status(400).send(`Webhook Error: ${err.message}`)
+    }
   }
+
   console.log("[payments] handleWebhook:event", {
     id: event.id,
     type: event.type,
@@ -252,16 +263,73 @@ export const handleWebhook = async (req, res) => {
     } catch (e) { console.error("DB error (UpsellCode):", e) }
   }
 
-  const markBookingAddOnsAsPaid = async ({ bookingId }) => {
-    try {
-      console.log("[payments] markBookingAddOnsAsPaid:start", { bookingId });
-      await models.BookingAddOn.update(
-        { payment_status: "PAID" },
-        { where: { stay_id: bookingId } }
-      )
-      console.log("[payments] markBookingAddOnsAsPaid:done", { bookingId });
-    } catch (e) { console.error("DB error (BookingAddOn):", e) }
-  }
+    const markBookingAddOnsAsPaid = async ({ bookingId }) => {
+      try {
+        console.log("[payments] markBookingAddOnsAsPaid:start", { bookingId });
+        await models.BookingAddOn.update(
+          { payment_status: "PAID" },
+          { where: { stay_id: bookingId } }
+        )
+        console.log("[payments] markBookingAddOnsAsPaid:done", { bookingId });
+      } catch (e) { console.error("DB error (BookingAddOn):", e) }
+    }
+
+    const resolveStripeAccountStatus = (account) => {
+      const transfersActive = account?.capabilities?.transfers === "active";
+      const payoutsEnabled = Boolean(account?.payouts_enabled);
+      const chargesEnabled = Boolean(account?.charges_enabled);
+      if (transfersActive && payoutsEnabled && chargesEnabled) return "VERIFIED";
+      if (transfersActive) return "READY";
+      if (account?.details_submitted) return "PENDING";
+      return "INCOMPLETE";
+    };
+
+    const buildStripeAccountMetadata = (account) => ({
+      stripe: {
+        accountId: account?.id || null,
+        chargesEnabled: account?.charges_enabled || false,
+        payoutsEnabled: account?.payouts_enabled || false,
+        detailsSubmitted: account?.details_submitted || false,
+        capabilities: account?.capabilities || null,
+        requirements: account?.requirements || null,
+        disabledReason: account?.requirements?.disabled_reason || account?.disabled_reason || null,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+
+    const updateStripeConnectAccount = async (stripeAccount) => {
+      if (!stripeAccount?.id) return;
+      try {
+        const payoutAccount = await models.PayoutAccount.findOne({
+          where: { provider: "STRIPE", external_customer_id: stripeAccount.id },
+        });
+        if (!payoutAccount) return;
+        const status = resolveStripeAccountStatus(stripeAccount);
+        const metadata = {
+          ...(payoutAccount.metadata || {}),
+          ...buildStripeAccountMetadata(stripeAccount),
+        };
+        await payoutAccount.update({ status, metadata });
+      } catch (err) {
+        console.error("[payments] updateStripeConnectAccount error:", err?.message || err);
+      }
+    };
+
+    const findPayoutItemByTransfer = async (transferId) => {
+      if (!transferId) return null;
+      return models.PayoutItem.findOne({
+        where: sequelize.where(sequelize.json("metadata.provider_payout_id"), transferId),
+      });
+    };
+
+    const updatePayoutItemFromTransfer = async ({ transferId, status, failureReason, paidAt }) => {
+      const item = await findPayoutItemByTransfer(transferId);
+      if (!item) return;
+      const patch = { status };
+      if (paidAt) patch.paid_at = paidAt;
+      if (failureReason) patch.failure_reason = failureReason;
+      await item.update(patch);
+    };
 
   /* ─── Procesar eventos ─── */
   if (event.type === "checkout.session.completed") {
@@ -347,18 +415,44 @@ export const handleWebhook = async (req, res) => {
     if (bookingId) await markBookingPaymentFailed({ bookingId });
   }
 
-  if (event.type === "payment_intent.payment_failed") {
-    const pi        = event.data.object;
-    const bookingId = getStayIdFromMeta(pi.metadata);
-    console.log("[payments] webhook payment_intent.payment_failed", {
-      intentId: pi.id,
-      bookingId,
-    });
-    if (bookingId) await markBookingPaymentFailed({ bookingId });
-  }
+    if (event.type === "payment_intent.payment_failed") {
+      const pi        = event.data.object;
+      const bookingId = getStayIdFromMeta(pi.metadata);
+      console.log("[payments] webhook payment_intent.payment_failed", {
+        intentId: pi.id,
+        bookingId,
+      });
+      if (bookingId) await markBookingPaymentFailed({ bookingId });
+    }
 
-  res.json({ received: true })
-}
+    if (event.type === "account.updated") {
+      const account = event.data.object;
+      console.log("[payments] webhook account.updated", { accountId: account.id });
+      await updateStripeConnectAccount(account);
+    }
+
+    if (event.type === "transfer.created") {
+      const transfer = event.data.object;
+      console.log("[payments] webhook transfer.created", { transferId: transfer.id });
+      await updatePayoutItemFromTransfer({
+        transferId: transfer.id,
+        status: "PAID",
+        paidAt: new Date(),
+      });
+    }
+
+    if (event.type === "transfer.reversed") {
+      const transfer = event.data.object;
+      console.log("[payments] webhook transfer.reversed", { transferId: transfer.id });
+      await updatePayoutItemFromTransfer({
+        transferId: transfer.id,
+        status: "FAILED",
+        failureReason: "Transfer reversed",
+      });
+    }
+
+    res.json({ received: true })
+  }
 
 /* ============================================================================
    3. VALIDAR MERCHANT (Apple Pay dominio)

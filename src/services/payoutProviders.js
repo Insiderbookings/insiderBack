@@ -16,12 +16,11 @@ export const getStripeClient = async () => {
   return stripeClientPromise;
 };
 
-const payWithStripe = async ({ account, amount, currency }) => {
+const payWithStripe = async ({ account, amount, currency, metadata }) => {
   const stripe = await getStripeClient();
   if (!stripe) throw new Error("Stripe secret key not configured");
 
   const connectedAccountId = account.external_customer_id || account.externalAccountId || account.external_account_id;
-  const externalAccountId = account.external_account_id || account.externalAccountId;
   if (!connectedAccountId) {
     throw new Error("Missing Stripe connected account id (externalCustomerId)");
   }
@@ -29,25 +28,29 @@ const payWithStripe = async ({ account, amount, currency }) => {
   const cents = Math.max(0, Math.round(Number(amount || 0) * 100));
   if (!cents) throw new Error("Invalid amount for Stripe payout");
 
-  // Create payout on the connected account; assumes the account has balance in test mode.
-  const payout = await stripe.payouts.create(
-    {
-      amount: cents,
-      currency: String(currency || "usd").toLowerCase(),
-      description: "Host payout",
-      ...(externalAccountId ? { destination: externalAccountId } : {}),
-    },
-    { stripeAccount: connectedAccountId }
-  );
+  const transfer = await stripe.transfers.create({
+    amount: cents,
+    currency: String(currency || "usd").toLowerCase(),
+    destination: connectedAccountId,
+    description: "Host payout",
+    metadata: metadata || undefined,
+  });
 
-  const status = payout.status && payout.status.toUpperCase() === "PAID" ? "PAID" : "PROCESSING";
-  const paidAt = payout.arrival_date ? new Date(payout.arrival_date * 1000) : null;
+  const status = transfer.reversed ? "FAILED" : "PROCESSING";
   return {
     status,
-    providerPayoutId: payout.id,
-    paidAt,
-    raw: payout,
+    providerPayoutId: transfer.id,
+    paidAt: null,
+    raw: transfer,
   };
+};
+
+const payWithPayoneer = async ({ account }) => {
+  const payeeId = account.external_account_id || account.externalAccountId || account.external_customer_id;
+  if (!payeeId) {
+    throw new Error("Missing Payoneer payee id (externalAccountId)");
+  }
+  throw new Error("Payoneer payouts not configured. Set up Payoneer API credentials and implementation.");
 };
 
 export const sendPayout = async ({ provider, account, item, stay, amount }) => {
@@ -69,7 +72,16 @@ export const sendPayout = async ({ provider, account, item, stay, amount }) => {
       account,
       amount,
       currency: stay?.currency || item?.currency || "USD",
+      metadata: {
+        payoutItemId: String(item?.id || ""),
+        stayId: String(stay?.id || item?.stay_id || ""),
+        hostId: String(account?.user_id || ""),
+      },
     });
+  }
+
+  if (providerNorm === "PAYONEER") {
+    return payWithPayoneer({ account, amount, item, stay });
   }
 
   throw new Error(`Provider ${providerNorm} not integrated. Enable PAYOUT_TEST_MODE=true for sandbox or configure provider.`);

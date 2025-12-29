@@ -3,8 +3,60 @@ import models from "../models/index.js";
 import { Op } from "sequelize";
 import { sendPayout, getStripeClient } from "../services/payoutProviders.js";
 
+const PLATFORM_FEE_PCT = 0.03;
+const DEFAULT_GRACE_HOURS = 72;
+const DEFAULT_STRIPE_COUNTRY = "US";
+
 const hashValue = (value) =>
   crypto.createHash("sha256").update(String(value || "")).digest("hex");
+
+const getGraceHours = () => {
+  const raw = Number(process.env.PAYOUT_GRACE_HOURS || DEFAULT_GRACE_HOURS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_GRACE_HOURS;
+};
+
+const resolveEligibleDate = (now = new Date()) => {
+  const graceHours = getGraceHours();
+  const eligible = new Date(now.getTime() - graceHours * 60 * 60 * 1000);
+  return eligible.toISOString().slice(0, 10);
+};
+
+const isValidDateOnly = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const [year, month, day] = raw.split("-").map(Number);
+  const date = new Date(`${raw}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+};
+
+const resolveStripeStatus = (account) => {
+  if (!account) return "INCOMPLETE";
+  const transfersActive = account.capabilities?.transfers === "active";
+  const payoutsEnabled = Boolean(account.payouts_enabled);
+  const chargesEnabled = Boolean(account.charges_enabled);
+  if (transfersActive && payoutsEnabled && chargesEnabled) return "VERIFIED";
+  if (transfersActive) return "READY";
+  if (account.details_submitted) return "PENDING";
+  return "INCOMPLETE";
+};
+
+const buildStripeMetadata = (account) => {
+  if (!account) return {};
+  return {
+    stripe: {
+      accountId: account.id,
+      chargesEnabled: account.charges_enabled,
+      payoutsEnabled: account.payouts_enabled,
+      detailsSubmitted: account.details_submitted,
+      capabilities: account.capabilities || null,
+      requirements: account.requirements || null,
+      disabledReason: account.requirements?.disabled_reason || account.disabled_reason || null,
+      updatedAt: new Date().toISOString(),
+    },
+  };
+};
 
 const maskAccount = (account) => {
   if (!account) return null;
@@ -20,7 +72,32 @@ const maskAccount = (account) => {
     walletEmail: account.wallet_email || null,
     brand: account.brand || null,
     updatedAt: account.updatedAt || account.updated_at || null,
+    stripe: account.provider === "STRIPE" ? account.metadata?.stripe || null : null,
   };
+};
+
+const computeNetForStay = (stay) => {
+  const gross = Number(stay.gross_price ?? 0);
+  const fee = Math.max(0, gross * PLATFORM_FEE_PCT);
+  const net = Math.max(0, gross - fee);
+  return { gross, net, fee };
+};
+
+const syncStripeAccount = async (account) => {
+  if (!account || account.provider !== "STRIPE") return account;
+  const stripeAccountId = account.external_customer_id || account.external_account_id;
+  if (!stripeAccountId) return account;
+  const stripe = await getStripeClient();
+  if (!stripe) return account;
+
+  const stripeAccount = await stripe.accounts.retrieve(stripeAccountId);
+  const status = resolveStripeStatus(stripeAccount);
+  const metadata = {
+    ...(account.metadata || {}),
+    ...buildStripeMetadata(stripeAccount),
+  };
+  await account.update({ status, metadata });
+  return account;
 };
 
 const ensurePayoutItemsForHost = async (hostId) => {
@@ -36,7 +113,7 @@ const ensurePayoutItemsForHost = async (hostId) => {
     where: {
       inventory_type: "HOME",
       status: "COMPLETED",
-      payment_status: { [Op.in]: ["PAID", "REFUNDED"] },
+      payment_status: "PAID",
       id: { [Op.notIn]: Array.from(existingIds) },
     },
     include: [
@@ -50,21 +127,23 @@ const ensurePayoutItemsForHost = async (hostId) => {
   });
 
   for (const stay of stays) {
-    const amount = Number(stay.gross_price ?? 0);
+    const { net, gross, fee } = computeNetForStay(stay);
     const currency = stay.currency || "USD";
     const scheduled_for = stay.check_out || stay.check_in || null;
     try {
       await models.PayoutItem.create({
         stay_id: stay.id,
         user_id: hostId,
-        amount,
+        amount: net,
         currency,
         status: "PENDING",
         scheduled_for,
         metadata: {
           source: "auto-backfill",
           createdAt: new Date(),
-          gross_price: stay.gross_price,
+          gross_price: gross,
+          platform_fee_pct: PLATFORM_FEE_PCT,
+          fee_amount: fee,
         },
       });
     } catch (_) {
@@ -73,11 +152,73 @@ const ensurePayoutItemsForHost = async (hostId) => {
   }
 };
 
+const backfillPayoutItems = async (cutoffDate) => {
+  if (!cutoffDate) return;
+  const stays = await models.Stay.findAll({
+    where: {
+      inventory_type: "HOME",
+      status: "COMPLETED",
+      payment_status: "PAID",
+      check_out: { [Op.lte]: cutoffDate },
+    },
+    include: [
+      {
+        model: models.StayHome,
+        as: "homeStay",
+        required: true,
+        attributes: ["host_id"],
+      },
+    ],
+  });
+
+  const payload = stays
+    .map((stay) => {
+      const hostId = stay.homeStay?.host_id;
+      if (!hostId) return null;
+      const { net, gross, fee } = computeNetForStay(stay);
+      return {
+        stay_id: stay.id,
+        user_id: hostId,
+        amount: net,
+        currency: stay.currency || "USD",
+        status: "PENDING",
+        scheduled_for: stay.check_out || stay.check_in || null,
+        metadata: {
+          source: "batch-backfill",
+          createdAt: new Date(),
+          gross_price: gross,
+          platform_fee_pct: PLATFORM_FEE_PCT,
+          fee_amount: fee,
+        },
+      };
+    })
+    .filter(Boolean);
+
+  if (!payload.length) return;
+  try {
+    await models.PayoutItem.bulkCreate(payload, { ignoreDuplicates: true });
+  } catch (_) {
+    for (const item of payload) {
+      try {
+        await models.PayoutItem.create(item);
+      } catch (err) {
+        if (!String(err?.name || "").includes("SequelizeUniqueConstraintError")) {
+          console.warn("[payout-backfill] create failed", err?.message || err);
+        }
+      }
+    }
+  }
+};
+
 export const getPayoutAccount = async (req, res) => {
   const userId = Number(req.user?.id);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-  const account = await models.PayoutAccount.findOne({ where: { user_id: userId } });
+  let account = await models.PayoutAccount.findOne({ where: { user_id: userId } });
+  const syncStripeOnRead = String(process.env.STRIPE_CONNECT_SYNC_ON_READ || "false").toLowerCase() === "true";
+  if (account && account.provider === "STRIPE" && syncStripeOnRead) {
+    account = await syncStripeAccount(account);
+  }
   if (!account) return res.json({ status: "INCOMPLETE" });
   return res.json(maskAccount(account));
 };
@@ -101,7 +242,7 @@ export const upsertPayoutAccount = async (req, res) => {
   } = req.body || {};
 
   const providerNorm = String(provider || "BANK").toUpperCase();
-  if (!["BANK", "STRIPE", "PAYPAL"].includes(providerNorm)) {
+  if (!["BANK", "STRIPE", "PAYPAL", "PAYONEER"].includes(providerNorm)) {
     return res.status(400).json({ error: "Invalid provider" });
   }
 
@@ -138,6 +279,12 @@ export const upsertPayoutAccount = async (req, res) => {
     }
     payload.wallet_email = walletEmail.toLowerCase();
     payload.external_account_id = externalAccountId || payload.wallet_email;
+  } else if (providerNorm === "PAYONEER") {
+    if (!externalAccountId && !walletEmail) {
+      return res.status(400).json({ error: "externalAccountId or walletEmail is required for Payoneer" });
+    }
+    if (walletEmail) payload.wallet_email = walletEmail.toLowerCase();
+    if (externalAccountId) payload.external_account_id = externalAccountId;
   }
 
   const [record] = await models.PayoutAccount.upsert(payload, { returning: true });
@@ -204,15 +351,6 @@ export const listHostPayouts = async (req, res) => {
   return res.json({ upcoming, paid });
 };
 
-const PLATFORM_FEE_PCT = 0.03;
-
-const computeNetForStay = (stay) => {
-  const gross = Number(stay.gross_price ?? 0);
-  const fee = Math.max(0, gross * PLATFORM_FEE_PCT);
-  const net = Math.max(0, gross - fee);
-  return { gross, net, fee };
-};
-
 export const runMockPayouts = async (_req, res) => {
   const eligibleStays = await models.Stay.findAll({
     where: {
@@ -264,16 +402,26 @@ export const runMockPayouts = async (_req, res) => {
   return res.json({ processed, totalNet, totalEligible: eligibleStays.length });
 };
 
-export const runPayoutBatch = async (req, res) => {
-  const { limit = 100 } = req.body || {};
+export const processPayoutBatch = async ({ limit = 100, cutoffDate } = {}) => {
+  const cutoff = cutoffDate || resolveEligibleDate();
+
+  await backfillPayoutItems(cutoff);
 
   const items = await models.PayoutItem.findAll({
-    where: { status: { [Op.in]: ["PENDING", "QUEUED"] } },
+    where: {
+      status: { [Op.in]: ["PENDING", "QUEUED"] },
+      scheduled_for: { [Op.lte]: cutoff },
+    },
     include: [
       {
         model: models.Stay,
         as: "stay",
         required: true,
+        where: {
+          inventory_type: "HOME",
+          status: "COMPLETED",
+          payment_status: "PAID",
+        },
         include: [{ model: models.StayHome, as: "homeStay", required: true }],
       },
     ],
@@ -282,7 +430,7 @@ export const runPayoutBatch = async (req, res) => {
   });
 
   if (!items.length) {
-    return res.json({ message: "No pending items", processed: 0, batchId: null });
+    return { message: "No pending items", processed: 0, batchId: null };
   }
 
   const batch = await models.PayoutBatch.create({
@@ -357,13 +505,23 @@ export const runPayoutBatch = async (req, res) => {
     processed_at: new Date(),
   });
 
-  return res.json({
+  return {
     batchId: batch.id,
     processed,
     failed,
     totalAmount: total,
     totalItemsFetched: items.length,
-  });
+  };
+};
+
+export const runPayoutBatch = async (req, res) => {
+  const { limit = 100, cutoffDate } = req.body || {};
+  const rawCutoff = cutoffDate ? String(cutoffDate).trim() : "";
+  if (rawCutoff && !isValidDateOnly(rawCutoff)) {
+    return res.status(400).json({ error: "cutoffDate must be YYYY-MM-DD" });
+  }
+  const result = await processPayoutBatch({ limit, cutoffDate: rawCutoff || undefined });
+  return res.json(result);
 };
 
 export const createStripeOnboardingLink = async (req, res) => {
@@ -375,28 +533,34 @@ export const createStripeOnboardingLink = async (req, res) => {
 
   const refreshUrl = process.env.STRIPE_CONNECT_REFRESH_URL || process.env.CLIENT_URL || "https://example.com/reauth";
   const returnUrl = process.env.STRIPE_CONNECT_RETURN_URL || process.env.CLIENT_URL || "https://example.com/return";
+  const country = String(req.body?.country || process.env.STRIPE_CONNECT_DEFAULT_COUNTRY || DEFAULT_STRIPE_COUNTRY).toUpperCase();
 
   let account = await models.PayoutAccount.findOne({ where: { user_id: userId, provider: "STRIPE" } });
 
   if (!account || !account.external_customer_id) {
     const stripeAccount = await stripe.accounts.create({
       type: "express",
-      country: "US",
+      country,
       capabilities: { transfers: { requested: true } },
       business_type: "individual",
     });
 
+    const status = resolveStripeStatus(stripeAccount);
+    const metadata = buildStripeMetadata(stripeAccount);
     [account] = await models.PayoutAccount.upsert(
       {
         user_id: userId,
         provider: "STRIPE",
-        status: "PENDING",
+        status,
         external_customer_id: stripeAccount.id,
         currency: "USD",
-        country: "US",
+        country,
+        metadata,
       },
       { returning: true }
     );
+  } else {
+    account = await syncStripeAccount(account);
   }
 
   const acctId = account.external_customer_id;
@@ -408,4 +572,45 @@ export const createStripeOnboardingLink = async (req, res) => {
   });
 
   return res.json({ url: link.url, accountId: acctId });
+};
+
+export const createStripeAccountUpdateLink = async (req, res) => {
+  const userId = Number(req.user?.id);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const stripe = await getStripeClient();
+  if (!stripe) return res.status(500).json({ error: "Stripe not configured" });
+
+  let account = await models.PayoutAccount.findOne({ where: { user_id: userId, provider: "STRIPE" } });
+  if (!account || !account.external_customer_id) {
+    return res.status(404).json({ error: "Stripe payout account not found" });
+  }
+
+  account = await syncStripeAccount(account);
+  const refreshUrl = process.env.STRIPE_CONNECT_REFRESH_URL || process.env.CLIENT_URL || "https://example.com/reauth";
+  const returnUrl = process.env.STRIPE_CONNECT_RETURN_URL || process.env.CLIENT_URL || "https://example.com/return";
+
+  const link = await stripe.accountLinks.create({
+    account: account.external_customer_id,
+    refresh_url: refreshUrl,
+    return_url: returnUrl,
+    type: "account_update",
+  });
+
+  return res.json({ url: link.url, accountId: account.external_customer_id });
+};
+
+export const refreshStripeAccountStatus = async (req, res) => {
+  const userId = Number(req.user?.id);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const account = await models.PayoutAccount.findOne({ where: { user_id: userId, provider: "STRIPE" } });
+  if (!account) return res.status(404).json({ error: "Stripe payout account not found" });
+
+  const updated = await syncStripeAccount(account);
+  return res.json(maskAccount(updated));
+};
+
+export const createPayoneerOnboardingLink = async (_req, res) => {
+  return res.status(501).json({ error: "Payoneer onboarding not configured yet." });
 };
