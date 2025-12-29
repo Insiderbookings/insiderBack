@@ -1,6 +1,8 @@
 import { Op } from "sequelize";
 import models from "../models/index.js";
 
+const PLATFORM_FEE_PCT = 0.03;
+
 // Format YYYY-MM-DD using local time to avoid timezone off-by-one errors
 const formatDate = (date) => {
   const d = new Date(date);
@@ -31,10 +33,84 @@ const getHomeSnapshot = (home) => {
   };
 };
 
+const computeNetForStay = (stay) => {
+  const gross = Number(stay.gross_price ?? 0);
+  const fee = Math.max(0, gross * PLATFORM_FEE_PCT);
+  const net = Math.max(0, gross - fee);
+  return { gross, fee, net };
+};
+
+const ensurePayoutItemsForHost = async (hostId) => {
+  if (!hostId) return;
+  const existing = await models.PayoutItem.findAll({
+    attributes: ["stay_id"],
+    where: { user_id: hostId },
+  });
+  const existingIds = new Set(existing.map((row) => row.stay_id));
+
+  const stays = await models.Stay.findAll({
+    where: {
+      inventory_type: "HOME",
+      status: "COMPLETED",
+      payment_status: "PAID",
+      id: { [Op.notIn]: Array.from(existingIds) },
+    },
+    include: [
+      {
+        model: models.StayHome,
+        as: "homeStay",
+        required: true,
+        where: buildStayHomeFilter(hostId),
+      },
+    ],
+  });
+
+  if (!stays.length) return;
+  const payload = stays.map((stay) => {
+    const { gross, fee, net } = computeNetForStay(stay);
+    return {
+      stay_id: stay.id,
+      user_id: hostId,
+      amount: net,
+      currency: stay.currency || "USD",
+      status: "PENDING",
+      scheduled_for: stay.check_out || stay.check_in || null,
+      metadata: {
+        source: "earnings-backfill",
+        createdAt: new Date(),
+        gross_price: gross,
+        platform_fee_pct: PLATFORM_FEE_PCT,
+        fee_amount: fee,
+      },
+    };
+  });
+
+  try {
+    await models.PayoutItem.bulkCreate(payload, { ignoreDuplicates: true });
+  } catch {
+    for (const item of payload) {
+      try {
+        await models.PayoutItem.create(item);
+      } catch (err) {
+        if (!String(err?.name || "").includes("SequelizeUniqueConstraintError")) {
+          console.warn("[host-earnings] payout item create failed", err?.message || err);
+        }
+      }
+    }
+  }
+};
+
 const parseDateOnly = (value) => {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.valueOf()) ? null : parsed;
+};
+
+const toMillis = (value) => {
+  if (!value) return 0;
+  const parsed = new Date(value);
+  const time = parsed.getTime();
+  return Number.isNaN(time) ? 0 : time;
 };
 
 export const getHostBookingsList = async (req, res) => {
@@ -328,21 +404,64 @@ export const getHostDashboard = async (req, res) => {
   }
 };
 
-export const getHostEarnings = async (req, res) => {
-  const hostId = Number(req.user?.id);
-  if (!hostId) return res.status(400).json({ error: "Invalid host ID" });
+  export const getHostEarnings = async (req, res) => {
+    const hostId = Number(req.user?.id);
+    if (!hostId) return res.status(400).json({ error: "Invalid host ID" });
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const oneYearAgo = new Date(today);
-  oneYearAgo.setUTCFullYear(oneYearAgo.getUTCFullYear() - 1);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const oneYearAgo = new Date(today);
+    oneYearAgo.setUTCFullYear(oneYearAgo.getUTCFullYear() - 1);
 
-  try {
-    const stays = await models.Stay.findAll({
-      where: {
-        inventory_type: "HOME",
-        status: { [Op.in]: ["PENDING", "CONFIRMED", "COMPLETED"] },
-        check_in: { [Op.gte]: formatDate(oneYearAgo) },
+    try {
+      await ensurePayoutItemsForHost(hostId);
+      const payoutItems = await models.PayoutItem.findAll({
+        where: { user_id: hostId },
+        include: [
+          {
+            model: models.Stay,
+            as: "stay",
+            required: true,
+            where: { inventory_type: "HOME" },
+            include: [
+              {
+                model: models.StayHome,
+                as: "homeStay",
+                required: true,
+                where: buildStayHomeFilter(hostId),
+                include: [
+                  {
+                    model: models.Home,
+                    as: "home",
+                    attributes: ["id", "title", "host_id"],
+                    include: [
+                      { model: models.HomeAddress, as: "address", attributes: ["city", "country"] },
+                      {
+                        model: models.HomeMedia,
+                        as: "media",
+                        attributes: ["id", "url", "is_cover", "order"],
+                        separate: true,
+                        limit: 1,
+                        order: [
+                          ["is_cover", "DESC"],
+                          ["order", "ASC"],
+                          ["id", "ASC"],
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      const stays = await models.Stay.findAll({
+        where: {
+          inventory_type: "HOME",
+          status: { [Op.in]: ["PENDING", "CONFIRMED", "COMPLETED"] },
+          check_in: { [Op.gte]: formatDate(oneYearAgo) },
       },
       include: [
         {
@@ -376,79 +495,94 @@ export const getHostEarnings = async (req, res) => {
       ],
     });
 
-    const monthTotals = new Map();
-    const reports = new Map();
-    const listingTotals = new Map();
-    let nightsReserved = 0;
-    let totalStaysCount = 0;
-    const upcoming = [];
-    const paid = [];
-    const staysByMonth = new Map();
+      const monthTotals = new Map();
+      const reports = new Map();
+      const listingTotals = new Map();
+      let nightsReserved = 0;
+      let totalStaysCount = 0;
+      const upcoming = [];
+      const paid = [];
+      const staysByMonth = new Map();
 
-    for (const stay of stays) {
-      const home = stay.homeStay?.home;
-      if (!home || home.host_id !== hostId) continue;
-      const checkOutDate = parseDateOnly(stay.check_out) ?? parseDateOnly(stay.check_in);
-      const keyDate = checkOutDate || today;
-      const monthKey = `${keyDate.getUTCFullYear()}-${String(keyDate.getUTCMonth() + 1).padStart(2, "0")}`;
-      const amount = Number(stay.gross_price ?? 0);
-      const stayPayload = {
-        id: stay.id,
-        checkIn: stay.check_in,
-        checkOut: stay.check_out,
-        nights: stay.nights ?? null,
-        amount,
-        status: stay.status,
-        paymentStatus: stay.payment_status || null,
-        home: getHomeSnapshot(home),
-      };
+      for (const item of payoutItems) {
+        const stay = item.stay;
+        const stayHostId = stay?.homeStay?.host_id;
+        const home = stay?.homeStay?.home;
+        if (!home || stayHostId !== hostId) continue;
+        const keyDate =
+          parseDateOnly(item.scheduled_for) ||
+          parseDateOnly(stay.check_out) ||
+          parseDateOnly(stay.check_in) ||
+          today;
+        if (keyDate < oneYearAgo) continue;
+        const monthKey = `${keyDate.getUTCFullYear()}-${String(keyDate.getUTCMonth() + 1).padStart(2, "0")}`;
+        const netAmount = Number(item.amount ?? 0);
+        const grossAmount = Number(item.metadata?.gross_price ?? stay.gross_price ?? netAmount);
+        const feeAmount = Number(item.metadata?.fee_amount ?? Math.max(0, grossAmount - netAmount));
+        const taxAmount = Number(stay.taxes_total ?? 0);
+        const stayPayload = {
+          id: stay.id,
+          checkIn: stay.check_in,
+          checkOut: stay.check_out,
+          nights: stay.nights ?? null,
+          amount: netAmount,
+          status: stay.status,
+          paymentStatus: stay.payment_status || null,
+          home: getHomeSnapshot(home),
+        };
 
-      monthTotals.set(monthKey, (monthTotals.get(monthKey) || 0) + amount);
-      reports.set(monthKey, {
-        gross: (reports.get(monthKey)?.gross || 0) + amount,
-        adjustments: 0,
-        serviceFees: 0,
-        taxes: 0,
-      });
-      if (!staysByMonth.has(monthKey)) staysByMonth.set(monthKey, []);
-      staysByMonth.get(monthKey).push(stayPayload);
+        monthTotals.set(monthKey, (monthTotals.get(monthKey) || 0) + netAmount);
+        reports.set(monthKey, {
+          gross: (reports.get(monthKey)?.gross || 0) + grossAmount,
+          adjustments: 0,
+          serviceFees: (reports.get(monthKey)?.serviceFees || 0) + feeAmount,
+          taxes: (reports.get(monthKey)?.taxes || 0) + taxAmount,
+        });
+        if (!staysByMonth.has(monthKey)) staysByMonth.set(monthKey, []);
+        staysByMonth.get(monthKey).push(stayPayload);
 
-      const listingKey = home.id;
-      listingTotals.set(listingKey, {
-        home: getHomeSnapshot(home),
-        total: (listingTotals.get(listingKey)?.total || 0) + amount,
-      });
+        const scheduledFor = item.scheduled_for || stay.check_out || stay.check_in || null;
+        const paidAt = item.paid_at || null;
+        const payout = {
+          id: item.id,
+          date: paidAt || scheduledFor,
+          scheduledFor,
+          paidAt,
+          amount: netAmount,
+          status: item.status,
+          home: getHomeSnapshot(home),
+        };
 
-      const nights = Number(stay.nights ?? 0);
-      if (Number.isFinite(nights) && nights > 0) {
-        nightsReserved += nights;
-        totalStaysCount += 1;
+        if (item.status === "PAID") {
+          paid.push(payout);
+        } else if (["PENDING", "QUEUED", "PROCESSING", "ON_HOLD"].includes(item.status)) {
+          upcoming.push(payout);
+        }
       }
 
-      const payout = {
-        id: stay.id,
-        date: stay.check_out,
-        amount,
-        status: stay.payment_status || "PENDING",
-        home: getHomeSnapshot(home),
-      };
+      for (const stay of stays) {
+        const stayHostId = stay.homeStay?.host_id;
+        const home = stay.homeStay?.home;
+        if (!home || stayHostId !== hostId) continue;
+        const listingKey = home.id;
+        const amount = Number(stay.gross_price ?? 0);
+        listingTotals.set(listingKey, {
+          home: getHomeSnapshot(home),
+          total: (listingTotals.get(listingKey)?.total || 0) + amount,
+        });
 
-      const isPaid = String(stay.payment_status || "").toUpperCase() === "PAID";
-      const isUpcoming =
-        (parseDateOnly(stay.check_out) ?? today) >= today && !isPaid;
-
-      if (isPaid) {
-        paid.push(payout);
-      } else if (isUpcoming) {
-        upcoming.push(payout);
+        const nights = Number(stay.nights ?? 0);
+        if (Number.isFinite(nights) && nights > 0) {
+          nightsReserved += nights;
+          totalStaysCount += 1;
+        }
       }
-    }
 
-    const sortedMonths = Array.from(monthTotals.entries()).sort(([a], [b]) => (a > b ? 1 : -1));
-    const monthlyBars = sortedMonths.map(([key, total]) => {
-      const [year, month] = key.split("-");
-      return { key, year: Number(year), month: Number(month), total };
-    });
+      const sortedMonths = Array.from(monthTotals.entries()).sort(([a], [b]) => (a > b ? 1 : -1));
+      const monthlyBars = sortedMonths.map(([key, total]) => {
+        const [year, month] = key.split("-");
+        return { key, year: Number(year), month: Number(month), total };
+      });
 
     const currentMonthKey = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, "0")}`;
     const currentMonthTotal = monthTotals.get(currentMonthKey) || 0;
@@ -481,8 +615,16 @@ export const getHostEarnings = async (req, res) => {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10);
 
-    upcoming.sort((a, b) => (a.date > b.date ? 1 : -1));
-    paid.sort((a, b) => (a.date > b.date ? -1 : 1));
+      upcoming.sort(
+        (a, b) =>
+          toMillis(a.scheduledFor || a.date) -
+          toMillis(b.scheduledFor || b.date)
+      );
+      paid.sort(
+        (a, b) =>
+          toMillis(b.paidAt || b.scheduledFor || b.date) -
+          toMillis(a.paidAt || a.scheduledFor || a.date)
+      );
 
     return res.json({
       currency: "USD",

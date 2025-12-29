@@ -15,6 +15,16 @@ import {
   applyDiscountCode,
   getInfluencerGoals,
 } from "../controllers/user.controller.js"
+import {
+  getPayoutAccount,
+  createStripeOnboardingLink,
+  createStripeAccountUpdateLink,
+  refreshStripeAccountStatus,
+} from "../controllers/payout.controller.js"
+import {
+  getInfluencerPayouts,
+  runInfluencerPayoutBatch,
+} from "../controllers/influencerPayout.controller.js"
 import { authenticate, authorizeRoles } from "../middleware/auth.js"
 import {
   createUserRoleRequest,
@@ -33,8 +43,14 @@ const router = Router()
 router.get("/me/influencer/stats", authenticate, authorizeRoles(2), getInfluencerStats)
 router.get("/me/influencer/goals", authenticate, authorizeRoles(2), getInfluencerGoals)
 router.get("/me/influencer/commissions", authenticate, authorizeRoles(2), getInfluencerCommissions)
+router.get("/me/influencer/payouts", authenticate, authorizeRoles(2), getInfluencerPayouts)
+router.get("/me/influencer/payout-account", authenticate, authorizeRoles(2), getPayoutAccount)
+router.post("/me/influencer/payout-account/stripe/link", authenticate, authorizeRoles(2), createStripeOnboardingLink)
+router.post("/me/influencer/payout-account/stripe/update-link", authenticate, authorizeRoles(2), createStripeAccountUpdateLink)
+router.post("/me/influencer/payout-account/stripe/refresh", authenticate, authorizeRoles(2), refreshStripeAccountStatus)
 router.get("/", authenticate, authorizeRoles(2), getInfluencerReferrals)
 router.post("/admin/influencer/payouts/create", authenticate, authorizeRoles(100), adminCreateInfluencerPayoutBatch)
+router.post("/admin/influencer/payouts/batch", authenticate, authorizeRoles(100), runInfluencerPayoutBatch)
 
 router.post("/request-info", requestPartnerInfo)
 

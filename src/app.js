@@ -20,6 +20,7 @@ import { handleWebhook } from "./controllers/payment.controller.js";
 import { setGlobalDispatcher, Agent } from "undici";
 import { ensureDefaultPlatforms } from "./services/platform.service.js";
 import { startPayoutScheduler } from "./services/payoutScheduler.js";
+import { startInfluencerPayoutScheduler } from "./services/influencerPayoutScheduler.js";
 import ensureHomeFavoriteIndexes from "./utils/ensureHomeFavoriteIndexes.js";
 import { initSocketServer } from "./websocket/index.js";
 import diagnoseForeignKeyError from "./utils/diagnoseForeignKeyError.js";
@@ -142,6 +143,7 @@ const PORT = process.env.PORT || 3000;
     await ensureDefaultPlatforms();
     initSocketServer(server);
     startPayoutScheduler();
+    startInfluencerPayoutScheduler();
     server.listen(PORT, () =>
       console.log(`Server listening on port ${PORT}`)
     );

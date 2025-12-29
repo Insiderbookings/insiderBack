@@ -462,6 +462,20 @@ export const getInfluencerStats = async (req, res) => {
       eventRows.forEach((row) => addEarning(row.currency, row.amount, row.status))
     }
 
+    if (models.InfluencerCommission) {
+      const commissionRows = await models.InfluencerCommission.findAll({
+        where: {
+          influencer_user_id: userId,
+          status: { [Op.in]: ["eligible", "hold", "paid"] },
+        },
+        attributes: ["commission_amount", "commission_currency", "status"],
+        limit: 1000,
+      })
+      commissionRows.forEach((row) =>
+        addEarning(row.commission_currency, row.commission_amount, row.status)
+      )
+    }
+
     const incentives = await loadInfluencerIncentives(userId)
 
     // 6) Normalizar ultimas reservas
