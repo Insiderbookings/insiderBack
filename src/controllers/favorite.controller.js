@@ -328,7 +328,7 @@ export const addFavoriteToList = async (req, res) => {
       `
         INSERT INTO home_favorite (user_id, home_id, list_id, created_at, updated_at, deleted_at)
         VALUES (:userId, :homeId, :listId, NOW(), NOW(), NULL)
-        ON CONFLICT ON CONSTRAINT home_favorite_user_home_list_unique
+        ON CONFLICT (user_id, home_id, list_id) WHERE deleted_at IS NULL
         DO UPDATE SET
           deleted_at = NULL,
           updated_at = EXCLUDED.updated_at
