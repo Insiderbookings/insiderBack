@@ -3,22 +3,23 @@
 // 100 % COMPLETO — TODAS LAS LÍNEAS, SIN OMISIONES
 // Maneja pagos de Bookings y de Add-Ons (UpsellCode & BookingAddOn)
 // ─────────────────────────────────────────────────────────────────────────────
-import Stripe  from "stripe"
-import dotenv  from "dotenv"
+import Stripe from "stripe"
+import dotenv from "dotenv"
 import models, { sequelize } from "../models/index.js";
 import { sendBookingEmail } from "../emailTemplates/booking-email.js";
 import { sendMail } from "../helpers/mailer.js";
 import { resolveVaultBranding } from "../helpers/vaultBranding.js";
+import { emitAdminActivity } from "../websocket/emitter.js";
 
 dotenv.config()
 
 /* ─────────── Validación de credenciales ─────────── */
-if (!process.env.STRIPE_SECRET_KEY)     throw new Error("\U0001f6d1 Falta STRIPE_SECRET_KEY en .env");
+if (!process.env.STRIPE_SECRET_KEY) throw new Error("\U0001f6d1 Falta STRIPE_SECRET_KEY en .env");
 if (!process.env.STRIPE_WEBHOOK_SECRET) throw new Error("\U0001f6d1 Falta STRIPE_WEBHOOK_SECRET en .env");
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" });
 
-const safeURL   = (maybe, fallback) => { try { return new URL(maybe).toString() } catch { return fallback } }
+const safeURL = (maybe, fallback) => { try { return new URL(maybe).toString() } catch { return fallback } }
 const YOUR_DOMAIN = safeURL(process.env.CLIENT_URL, "http://localhost:5173")
 const getStayIdFromMeta = (meta = {}) =>
   Number(meta.stayId || meta.stay_id || meta.bookingId || meta.booking_id) || 0;
@@ -35,12 +36,12 @@ export const createCheckoutSession = async (req, res) => {
       payment_method_types: ["card"],
       line_items: [{
         price_data: { currency, product_data: { name: `Booking #${bookingId}` }, unit_amount: amount },
-        quantity  : 1,
+        quantity: 1,
       }],
-      mode       : "payment",
+      mode: "payment",
       success_url: `${YOUR_DOMAIN}payment/success?bookingId=${bookingId}`,
-      cancel_url : `${YOUR_DOMAIN}payment/fail?bookingId=${bookingId}`,
-      metadata   : { bookingId },
+      cancel_url: `${YOUR_DOMAIN}payment/fail?bookingId=${bookingId}`,
+      metadata: { bookingId },
       payment_intent_data: { metadata: { bookingId } },
     })
 
@@ -60,28 +61,28 @@ export const createAddOnSession = async (req, res) => {
   if (!addOnId) return res.status(400).json({ error: "addOnId requerido" })
 
   const upsell = await models.UpsellCode.findOne({
-    where  : { id: addOnId, status: "PENDING" },
+    where: { id: addOnId, status: "PENDING" },
     include: { model: models.AddOn, attributes: ["name", "price"] },
   })
   if (!upsell) return res.status(404).json({ error: "Upsell code invalid or used" })
 
   try {
-    const amount  = Math.round(Number(upsell.AddOn.price) * 100)
+    const amount = Math.round(Number(upsell.AddOn.price) * 100)
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: [{
         price_data: {
-          currency    : "usd",
+          currency: "usd",
           product_data: { name: `Add-On: ${upsell.AddOn.name}` },
-          unit_amount : amount,
+          unit_amount: amount,
         },
         quantity: 1,
       }],
-      mode       : "payment",
+      mode: "payment",
       success_url: `${YOUR_DOMAIN}payment/addon-success?codeId=${upsell.id}`,
-      cancel_url : `${YOUR_DOMAIN}payment/addon-fail?codeId=${upsell.id}`,
-      metadata   : { upsellCodeId: upsell.id },
+      cancel_url: `${YOUR_DOMAIN}payment/addon-fail?codeId=${upsell.id}`,
+      metadata: { upsellCodeId: upsell.id },
       payment_intent_data: { metadata: { upsellCodeId: upsell.id } },
     })
 
@@ -112,14 +113,14 @@ export const createOutsideAddOnsSession = async (req, res) => {
         price_data: {
           currency,
           product_data: { name: `Add-Ons Outside #${bookingId}` },
-          unit_amount : amount,
+          unit_amount: amount,
         },
         quantity: 1,
       }],
-      mode       : "payment",
+      mode: "payment",
       success_url: `${YOUR_DOMAIN}payment/outside-addons-success?bookingId=${bookingId}`,
-      cancel_url : `${YOUR_DOMAIN}payment/outside-addons-fail?bookingId=${bookingId}`,
-      metadata   : { outsideBookingId: bookingId },
+      cancel_url: `${YOUR_DOMAIN}payment/outside-addons-fail?bookingId=${bookingId}`,
+      metadata: { outsideBookingId: bookingId },
       payment_intent_data: { metadata: { outsideBookingId: bookingId } },
     })
 
@@ -214,6 +215,17 @@ export const handleWebhook = async (req, res) => {
         status: booking.status,
         paymentStatus: booking.payment_status,
       });
+
+      // Emit real-time activity to Admin Dashboard
+      emitAdminActivity({
+        type: 'booking',
+        user: { name: booking.guest_name || 'Guest' },
+        action: 'confirmed booking at',
+        location: booking.meta?.hotel?.name || 'Hotel',
+        amount: booking.gross_price,
+        status: 'PAID',
+        timestamp: new Date()
+      });
     }
   };
 
@@ -263,79 +275,79 @@ export const handleWebhook = async (req, res) => {
     } catch (e) { console.error("DB error (UpsellCode):", e) }
   }
 
-    const markBookingAddOnsAsPaid = async ({ bookingId }) => {
-      try {
-        console.log("[payments] markBookingAddOnsAsPaid:start", { bookingId });
-        await models.BookingAddOn.update(
-          { payment_status: "PAID" },
-          { where: { stay_id: bookingId } }
-        )
-        console.log("[payments] markBookingAddOnsAsPaid:done", { bookingId });
-      } catch (e) { console.error("DB error (BookingAddOn):", e) }
-    }
+  const markBookingAddOnsAsPaid = async ({ bookingId }) => {
+    try {
+      console.log("[payments] markBookingAddOnsAsPaid:start", { bookingId });
+      await models.BookingAddOn.update(
+        { payment_status: "PAID" },
+        { where: { stay_id: bookingId } }
+      )
+      console.log("[payments] markBookingAddOnsAsPaid:done", { bookingId });
+    } catch (e) { console.error("DB error (BookingAddOn):", e) }
+  }
 
-    const resolveStripeAccountStatus = (account) => {
-      const transfersActive = account?.capabilities?.transfers === "active";
-      const payoutsEnabled = Boolean(account?.payouts_enabled);
-      const chargesEnabled = Boolean(account?.charges_enabled);
-      if (transfersActive && payoutsEnabled && chargesEnabled) return "VERIFIED";
-      if (transfersActive) return "READY";
-      if (account?.details_submitted) return "PENDING";
-      return "INCOMPLETE";
-    };
+  const resolveStripeAccountStatus = (account) => {
+    const transfersActive = account?.capabilities?.transfers === "active";
+    const payoutsEnabled = Boolean(account?.payouts_enabled);
+    const chargesEnabled = Boolean(account?.charges_enabled);
+    if (transfersActive && payoutsEnabled && chargesEnabled) return "VERIFIED";
+    if (transfersActive) return "READY";
+    if (account?.details_submitted) return "PENDING";
+    return "INCOMPLETE";
+  };
 
-    const buildStripeAccountMetadata = (account) => ({
-      stripe: {
-        accountId: account?.id || null,
-        chargesEnabled: account?.charges_enabled || false,
-        payoutsEnabled: account?.payouts_enabled || false,
-        detailsSubmitted: account?.details_submitted || false,
-        capabilities: account?.capabilities || null,
-        requirements: account?.requirements || null,
-        disabledReason: account?.requirements?.disabled_reason || account?.disabled_reason || null,
-        updatedAt: new Date().toISOString(),
-      },
-    });
+  const buildStripeAccountMetadata = (account) => ({
+    stripe: {
+      accountId: account?.id || null,
+      chargesEnabled: account?.charges_enabled || false,
+      payoutsEnabled: account?.payouts_enabled || false,
+      detailsSubmitted: account?.details_submitted || false,
+      capabilities: account?.capabilities || null,
+      requirements: account?.requirements || null,
+      disabledReason: account?.requirements?.disabled_reason || account?.disabled_reason || null,
+      updatedAt: new Date().toISOString(),
+    },
+  });
 
-    const updateStripeConnectAccount = async (stripeAccount) => {
-      if (!stripeAccount?.id) return;
-      try {
-        const payoutAccount = await models.PayoutAccount.findOne({
-          where: { provider: "STRIPE", external_customer_id: stripeAccount.id },
-        });
-        if (!payoutAccount) return;
-        const status = resolveStripeAccountStatus(stripeAccount);
-        const metadata = {
-          ...(payoutAccount.metadata || {}),
-          ...buildStripeAccountMetadata(stripeAccount),
-        };
-        await payoutAccount.update({ status, metadata });
-      } catch (err) {
-        console.error("[payments] updateStripeConnectAccount error:", err?.message || err);
-      }
-    };
-
-    const findPayoutItemByTransfer = async (transferId) => {
-      if (!transferId) return null;
-      return models.PayoutItem.findOne({
-        where: sequelize.where(sequelize.json("metadata.provider_payout_id"), transferId),
+  const updateStripeConnectAccount = async (stripeAccount) => {
+    if (!stripeAccount?.id) return;
+    try {
+      const payoutAccount = await models.PayoutAccount.findOne({
+        where: { provider: "STRIPE", external_customer_id: stripeAccount.id },
       });
-    };
+      if (!payoutAccount) return;
+      const status = resolveStripeAccountStatus(stripeAccount);
+      const metadata = {
+        ...(payoutAccount.metadata || {}),
+        ...buildStripeAccountMetadata(stripeAccount),
+      };
+      await payoutAccount.update({ status, metadata });
+    } catch (err) {
+      console.error("[payments] updateStripeConnectAccount error:", err?.message || err);
+    }
+  };
 
-    const updatePayoutItemFromTransfer = async ({ transferId, status, failureReason, paidAt }) => {
-      const item = await findPayoutItemByTransfer(transferId);
-      if (!item) return;
-      const patch = { status };
-      if (paidAt) patch.paid_at = paidAt;
-      if (failureReason) patch.failure_reason = failureReason;
-      await item.update(patch);
-    };
+  const findPayoutItemByTransfer = async (transferId) => {
+    if (!transferId) return null;
+    return models.PayoutItem.findOne({
+      where: sequelize.where(sequelize.json("metadata.provider_payout_id"), transferId),
+    });
+  };
+
+  const updatePayoutItemFromTransfer = async ({ transferId, status, failureReason, paidAt }) => {
+    const item = await findPayoutItemByTransfer(transferId);
+    if (!item) return;
+    const patch = { status };
+    if (paidAt) patch.paid_at = paidAt;
+    if (failureReason) patch.failure_reason = failureReason;
+    await item.update(patch);
+  };
 
   /* ─── Procesar eventos ─── */
   if (event.type === "checkout.session.completed") {
-    const s              = event.data.object
-    const bookingId      = getStayIdFromMeta(s.metadata)
-    const upsellCodeId   = Number(s.metadata?.upsellCodeId)     || 0
+    const s = event.data.object
+    const bookingId = getStayIdFromMeta(s.metadata)
+    const upsellCodeId = Number(s.metadata?.upsellCodeId) || 0
     const outsideBooking = Number(s.metadata?.outsideBookingId) || 0
     console.log("[payments] webhook checkout.session.completed", {
       sessionId: s.id,
@@ -344,17 +356,17 @@ export const handleWebhook = async (req, res) => {
       outsideBooking,
     });
 
-    if (bookingId)      await markBookingAsPaid     ({ bookingId, paymentId: s.payment_intent || s.id })
-    if (upsellCodeId)   await markUpsellAsPaid      ({ upsellCodeId,        paymentId: s.payment_intent || s.id })
+    if (bookingId) await markBookingAsPaid({ bookingId, paymentId: s.payment_intent || s.id })
+    if (upsellCodeId) await markUpsellAsPaid({ upsellCodeId, paymentId: s.payment_intent || s.id })
     if (outsideBooking) await markBookingAddOnsAsPaid({ bookingId: outsideBooking })
   }
 
   if (event.type === "payment_intent.succeeded") {
-    const pi             = event.data.object
-    const bookingId      = getStayIdFromMeta(pi.metadata)
-    const upsellCodeId   = Number(pi.metadata?.upsellCodeId)     || 0
+    const pi = event.data.object
+    const bookingId = getStayIdFromMeta(pi.metadata)
+    const upsellCodeId = Number(pi.metadata?.upsellCodeId) || 0
     const outsideBooking = Number(pi.metadata?.outsideBookingId) || 0
-    const vccCardId      = Number(pi.metadata?.vccCardId)        || 0
+    const vccCardId = Number(pi.metadata?.vccCardId) || 0
     console.log("[payments] webhook payment_intent.succeeded", {
       intentId: pi.id,
       bookingId,
@@ -365,8 +377,8 @@ export const handleWebhook = async (req, res) => {
       currency: pi.currency,
     });
 
-    if (bookingId)      await markBookingAsPaid     ({ bookingId, paymentId: pi.id })
-    if (upsellCodeId)   await markUpsellAsPaid      ({ upsellCodeId,        paymentId: pi.id })
+    if (bookingId) await markBookingAsPaid({ bookingId, paymentId: pi.id })
+    if (upsellCodeId) await markUpsellAsPaid({ upsellCodeId, paymentId: pi.id })
     if (outsideBooking) await markBookingAddOnsAsPaid({ bookingId: outsideBooking })
     if (vccCardId) {
       try {
@@ -378,7 +390,7 @@ export const handleWebhook = async (req, res) => {
             at: new Date().toISOString(),
             method: 'stripe',
             reference: pi.id,
-            amount: (pi.amount_received ?? pi.amount) ? Number((pi.amount_received ?? pi.amount)/100) : (prevMeta.payment?.amount ?? card.amount ?? null),
+            amount: (pi.amount_received ?? pi.amount) ? Number((pi.amount_received ?? pi.amount) / 100) : (prevMeta.payment?.amount ?? card.amount ?? null),
             currency: (pi.currency || card.currency || 'USD').toUpperCase(),
             origin: 'operator',
           })
@@ -395,7 +407,7 @@ export const handleWebhook = async (req, res) => {
   }
 
   if (event.type === "payment_intent.amount_capturable_updated") {
-    const pi        = event.data.object;
+    const pi = event.data.object;
     const bookingId = getStayIdFromMeta(pi.metadata);
     console.log("[payments] webhook amount_capturable_updated", {
       intentId: pi.id,
@@ -406,7 +418,7 @@ export const handleWebhook = async (req, res) => {
   }
 
   if (event.type === "payment_intent.canceled") {
-    const pi        = event.data.object;
+    const pi = event.data.object;
     const bookingId = getStayIdFromMeta(pi.metadata);
     console.log("[payments] webhook payment_intent.canceled", {
       intentId: pi.id,
@@ -415,44 +427,44 @@ export const handleWebhook = async (req, res) => {
     if (bookingId) await markBookingPaymentFailed({ bookingId });
   }
 
-    if (event.type === "payment_intent.payment_failed") {
-      const pi        = event.data.object;
-      const bookingId = getStayIdFromMeta(pi.metadata);
-      console.log("[payments] webhook payment_intent.payment_failed", {
-        intentId: pi.id,
-        bookingId,
-      });
-      if (bookingId) await markBookingPaymentFailed({ bookingId });
-    }
-
-    if (event.type === "account.updated") {
-      const account = event.data.object;
-      console.log("[payments] webhook account.updated", { accountId: account.id });
-      await updateStripeConnectAccount(account);
-    }
-
-    if (event.type === "transfer.created") {
-      const transfer = event.data.object;
-      console.log("[payments] webhook transfer.created", { transferId: transfer.id });
-      await updatePayoutItemFromTransfer({
-        transferId: transfer.id,
-        status: "PAID",
-        paidAt: new Date(),
-      });
-    }
-
-    if (event.type === "transfer.reversed") {
-      const transfer = event.data.object;
-      console.log("[payments] webhook transfer.reversed", { transferId: transfer.id });
-      await updatePayoutItemFromTransfer({
-        transferId: transfer.id,
-        status: "FAILED",
-        failureReason: "Transfer reversed",
-      });
-    }
-
-    res.json({ received: true })
+  if (event.type === "payment_intent.payment_failed") {
+    const pi = event.data.object;
+    const bookingId = getStayIdFromMeta(pi.metadata);
+    console.log("[payments] webhook payment_intent.payment_failed", {
+      intentId: pi.id,
+      bookingId,
+    });
+    if (bookingId) await markBookingPaymentFailed({ bookingId });
   }
+
+  if (event.type === "account.updated") {
+    const account = event.data.object;
+    console.log("[payments] webhook account.updated", { accountId: account.id });
+    await updateStripeConnectAccount(account);
+  }
+
+  if (event.type === "transfer.created") {
+    const transfer = event.data.object;
+    console.log("[payments] webhook transfer.created", { transferId: transfer.id });
+    await updatePayoutItemFromTransfer({
+      transferId: transfer.id,
+      status: "PAID",
+      paidAt: new Date(),
+    });
+  }
+
+  if (event.type === "transfer.reversed") {
+    const transfer = event.data.object;
+    console.log("[payments] webhook transfer.reversed", { transferId: transfer.id });
+    await updatePayoutItemFromTransfer({
+      transferId: transfer.id,
+      status: "FAILED",
+      failureReason: "Transfer reversed",
+    });
+  }
+
+  res.json({ received: true })
+}
 
 /* ============================================================================
    3. VALIDAR MERCHANT (Apple Pay dominio)
@@ -461,8 +473,8 @@ export const validateMerchant = async (req, res) => {
   try {
     const { validationURL } = req.body
     const session = await stripe.applePayDomains.create({
-      domain_name        : new URL(validationURL).hostname,
-      validation_url     : validationURL,
+      domain_name: new URL(validationURL).hostname,
+      validation_url: validationURL,
       merchant_identifier: process.env.APPLE_MERCHANT_ID,
     })
     res.json(session)
@@ -482,12 +494,12 @@ export const processApplePay = async (req, res) => {
       return res.status(400).json({ error: "token, bookingId y amount son obligatorios" })
 
     const intent = await stripe.paymentIntents.create({
-      amount             : Math.round(amount * 100),
+      amount: Math.round(amount * 100),
       currency,
       payment_method_data: { type: "card", card: { token } },
       confirmation_method: "automatic",
-      confirm            : true,
-      metadata           : { bookingId },
+      confirm: true,
+      metadata: { bookingId },
     })
 
     await models.Booking.update({ payment_id: intent.id }, { where: { id: bookingId } })
@@ -500,9 +512,9 @@ export const processApplePay = async (req, res) => {
     }
 
     res.json({
-      clientSecret   : intent.client_secret,
-      requiresAction : intent.status !== "succeeded",
-      paymentStatus  : intent.status,
+      clientSecret: intent.client_secret,
+      requiresAction: intent.status !== "succeeded",
+      paymentStatus: intent.status,
     })
   } catch (err) {
     console.error(err)
@@ -511,16 +523,16 @@ export const processApplePay = async (req, res) => {
 }
 
 const trim500 = (v) => (v == null ? "" : String(v).slice(0, 500));
-const genRef  = () => `IB-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-const isNum   = (v) => /^\d+$/.test(String(v || ""));
+const genRef = () => `IB-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+const isNum = (v) => /^\d+$/.test(String(v || ""));
 
 const toDateOnly = (s) => {
   if (!s) return null;
   const d = new Date(s);
   if (isNaN(d)) return null;
   const yyyy = d.getUTCFullYear();
-  const mm   = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const dd   = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 };
 
@@ -567,20 +579,20 @@ export const createPartnerPaymentIntent = async (req, res) => {
       return res.status(400).json({ error: "amount debe ser numérico y mayor a 0" });
     }
 
-    const checkInDO  = toDateOnly(bookingData.checkIn);
+    const checkInDO = toDateOnly(bookingData.checkIn);
     const checkOutDO = toDateOnly(bookingData.checkOut);
     if (!checkInDO || !checkOutDO) {
       return res.status(400).json({ error: "bookingData.checkIn y bookingData.checkOut son obligatorios/válidos" });
     }
 
     const hotelIdRaw = bookingData.localHotelId ?? bookingData.hotelId;
-    const roomIdRaw  = bookingData.roomId ?? bookingData.localRoomId;
+    const roomIdRaw = bookingData.roomId ?? bookingData.localRoomId;
 
     if (!isVault && (!isNum(hotelIdRaw) || !isNum(roomIdRaw))) {
       return res.status(400).json({ error: "hotelId y roomId numéricos son obligatorios para PARTNER" });
     }
     const hotel_id = isNum(hotelIdRaw) ? Number(hotelIdRaw) : null;
-    const room_id  = isNum(roomIdRaw) ? Number(roomIdRaw) : null;
+    const room_id = isNum(roomIdRaw) ? Number(roomIdRaw) : null;
 
     if (!isVault && room_id != null) {
       const room = await models.Room.findOne({ where: { id: room_id, hotel_id } });
@@ -633,11 +645,11 @@ export const createPartnerPaymentIntent = async (req, res) => {
       ...(req.body.discount ? { discount: req.body.discount } : {}),
       ...(referral.influencerId
         ? {
-            referral: {
-              influencerUserId: referral.influencerId,
-              code: referral.code || null,
-            },
-          }
+          referral: {
+            influencerUserId: referral.influencerId,
+            code: referral.code || null,
+          },
+        }
         : {}),
     };
     if (Object.prototype.hasOwnProperty.call(meta, "vault")) delete meta.vault;
@@ -685,25 +697,25 @@ export const createPartnerPaymentIntent = async (req, res) => {
       inventory_id: hotel_id ? `hotel:${hotel_id}` : null,
       external_ref: isVault ? booking_ref : null,
 
-      check_in:  checkInDO,
+      check_in: checkInDO,
       check_out: checkOutDO,
-      nights:    nightsValue,
-      adults:    adultsCount,
-      children:  childrenCount,
+      nights: nightsValue,
+      adults: adultsCount,
+      children: childrenCount,
       influencer_user_id: referral.influencerId,
 
-      guest_name:  String(guestInfo.fullName || "").slice(0, 120),
+      guest_name: String(guestInfo.fullName || "").slice(0, 120),
       guest_email: String(guestInfo.email || "").slice(0, 150),
       guest_phone: String(guestInfo.phone || "").slice(0, 50),
 
-      status:          "PENDING",
-      payment_status:  "UNPAID",
-      gross_price:     amountNumber,
-      net_cost:        net_cost != null ? Number(net_cost) : null,
-      currency:        currency3,
-      privacy_level:   bookingData.privacyLevel || "ENTIRE_PLACE",
+      status: "PENDING",
+      payment_status: "UNPAID",
+      gross_price: amountNumber,
+      net_cost: net_cost != null ? Number(net_cost) : null,
+      currency: currency3,
+      privacy_level: bookingData.privacyLevel || "ENTIRE_PLACE",
 
-      payment_provider:  "STRIPE",
+      payment_provider: "STRIPE",
       payment_intent_id: null,
 
       rate_expires_at: bookingData.rateExpiresAt || null,
@@ -783,6 +795,17 @@ export const createPartnerPaymentIntent = async (req, res) => {
 
     await tx.commit(); tx = null;
 
+    // Emit real-time activity to Admin Dashboard
+    emitAdminActivity({
+      type: 'booking',
+      user: { name: guestInfo.fullName || 'Guest' },
+      action: 'started a new reservation for',
+      location: booking.inventory_snapshot?.hotelName || 'Property',
+      amount: amountNumber,
+      status: 'PENDING',
+      timestamp: new Date()
+    });
+
     return res.json({
       clientSecret: pi.client_secret,
       paymentIntentId: pi.id,
@@ -795,7 +818,7 @@ export const createPartnerPaymentIntent = async (req, res) => {
     });
   } catch (err) {
     if (tx) {
-      try { await tx.rollback(); } catch (_) {}
+      try { await tx.rollback(); } catch (_) { }
     }
     console.error("createPaymentIntent error:", err);
     return res.status(500).json({ error: err.message });
@@ -970,7 +993,7 @@ export const confirmPartnerPayment = async (req, res) => {
           const rates = JSON.parse(ratesStr)
           const r = Number(rates[(booking.currency || "USD").toUpperCase()])
           if (Number.isFinite(r) && r > 0) capAmt = capUsd * r
-        } catch {}
+        } catch { }
         const holdDaysEnv = Number(process.env.INFLUENCER_HOLD_DAYS)
         const holdDays = Number.isFinite(holdDaysEnv) && holdDaysEnv >= 0 ? holdDaysEnv : 3
 
@@ -992,7 +1015,7 @@ export const confirmPartnerPayment = async (req, res) => {
             co.setDate(co.getDate() + holdDays)
             holdUntil = co
           }
-        } catch {}
+        } catch { }
         const useHold = String(process.env.INFLUENCER_USE_HOLD || "").toLowerCase() === "true"
         await models.InfluencerCommission.create({
           influencer_user_id: influencerId,
@@ -1016,7 +1039,7 @@ export const confirmPartnerPayment = async (req, res) => {
     if (discount?.active) {
       try {
         const raw = (discount.code || "").toString().trim().toUpperCase();
-        const vb  = discount.validatedBy || {}; // { staff_id?, user_id? }
+        const vb = discount.validatedBy || {}; // { staff_id?, user_id? }
         const isStaffCode = /^\d{4}$/.test(raw);
 
         const [dc, created] = await models.DiscountCode.findOrCreate({
@@ -1030,8 +1053,8 @@ export const confirmPartnerPayment = async (req, res) => {
             staff_id: isStaffCode
               ? (Number.isFinite(Number(vb.staff_id)) ? Number(vb.staff_id) : null)
               : null,
-            user_id : !isStaffCode
-              ? (Number.isFinite(Number(vb.user_id))  ? Number(vb.user_id)  : null)
+            user_id: !isStaffCode
+              ? (Number.isFinite(Number(vb.user_id)) ? Number(vb.user_id) : null)
               : null,
             stay_id: booking.id,
             starts_at: null,
@@ -1049,7 +1072,7 @@ export const confirmPartnerPayment = async (req, res) => {
           }
           if (!dc.stay_id) updates.stay_id = booking.id;
           if (!dc.staff_id && vb.staff_id) updates.staff_id = Number(vb.staff_id);
-          if (!dc.user_id && vb.user_id)   updates.user_id  = Number(vb.user_id);
+          if (!dc.user_id && vb.user_id) updates.user_id = Number(vb.user_id);
 
           await dc.update(updates);
           await dc.increment("times_used", { by: 1 });
@@ -1327,8 +1350,8 @@ export const createHomePaymentIntent = async (req, res) => {
       captureMode === "manual"
         ? "manual"
         : depositCents > 0
-        ? "manual"
-        : "automatic";
+          ? "manual"
+          : "automatic";
 
     const metadata = {
       type: "home_booking",

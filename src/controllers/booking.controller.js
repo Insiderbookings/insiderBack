@@ -17,7 +17,8 @@ import {
   reverseReferralRedemption,
   recordInfluencerEvent,
 } from "../services/referralRewards.service.js"
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Helper â€“ count nights â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+import { emitAdminActivity } from "../websocket/emitter.js"
+/* ──────────────── Helper – count nights ───────────── */
 const diffDays = (from, to) =>
   Math.ceil((new Date(to) - new Date(from)) / 86_400_000)
 
@@ -44,7 +45,7 @@ const codeHash = (email, code) =>
     .update(`${String(email).trim().toLowerCase()}|${String(code)}|${process.env.JWT_SECRET || "secret"}`)
     .digest("hex")
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Helper â€“ flattener â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ──────────────── Helper – flattener ──────────────────
    Recibe una fila de Booking (snake_case en DB) y la
    convierte al formato camelCase que usa el FE.       */
 const toPlain = (value) => {
@@ -319,10 +320,10 @@ const STAY_BASE_INCLUDE = [
 ]
 
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ────────────────────────────────────────────────────────────
    POST  /api/bookings
    (flujo legacy "insider/outside"; no TGX)
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+────────────────────────────────────────────────────────────── */
 export const createBooking = async (req, res) => {
   try {
     const userId = Number(req.user?.id ?? 0)
@@ -601,7 +602,20 @@ export const createBooking = async (req, res) => {
       include: STAY_BASE_INCLUDE,
     })
 
-    return res.status(201).json(mapStay(fresh.toJSON(), outside ? "outside" : "insider"))
+    const payload = mapStay(fresh.toJSON(), outside ? "outside" : "insider");
+
+    // Emit real-time activity to Admin Dashboard
+    emitAdminActivity({
+      type: 'booking',
+      user: { name: payload.guestName || 'Guest' },
+      action: 'requested a new booking at',
+      location: payload.hotel_name || payload.location || 'somewhere',
+      amount: payload.total,
+      status: 'PENDING',
+      timestamp: new Date()
+    });
+
+    return res.status(201).json(payload)
   } catch (err) {
     console.error(err)
     return res.status(500).json({ error: "Server error" })

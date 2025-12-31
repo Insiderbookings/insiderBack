@@ -1,490 +1,3705 @@
 openapi: 3.0.1
 info:
-  title: Insider API - DOTW/Webbeds Booking Flow
-  version: "1.0.1"
+  title: Insider API
+  version: "1.0.0"
   description: >
-    Documentacion basada en la coleccion "DOTW Booking Flow - CC/VCC". Incluye todas
-    las requests y parametros (query/body) que aparecen en la coleccion y agrega la
-    request de login para obtener el token JWT usado en el resto de endpoints.
+    Full API documentation for the Insider backend. All routes are mounted under /api.
 servers:
-  - url: http://localhost:3006
-    description: Desarrollo local (todas las rutas incluyen prefijo /api)
+  - url: http://localhost:3000
+    description: Local development
 tags:
+  - name: System
+    description: Health and docs
   - name: Auth
-    description: Login y obtencion de token JWT
+    description: Authentication and account access
+  - name: Users
+    description: User profile, roles, and influencer flows
+  - name: Hotels
+    description: Hotels and rooms
+  - name: Rooms
+    description: Rooms under hotels
+  - name: Discounts
+    description: Discount codes
+  - name: Bookings
+    description: Booking flows
+  - name: Commissions
+    description: Staff commissions
+  - name: Payments
+    description: Payment sessions and webhooks
+  - name: Upsell
+    description: Upsell codes
+  - name: Addons
+    description: Hotel add-ons
+  - name: StaffAddons
+    description: Staff add-on assignments
   - name: Webbeds
-    description: Flujo de reservas DOTW/Webbeds
+    description: Webbeds/DOTW integration
+  - name: Homes
+    description: Homes catalog and hosting
+  - name: Hosts
+    description: Host dashboard
+  - name: Chats
+    description: User chats and host prompts
+  - name: Favorites
+    description: Favorites lists and recent views
+  - name: Reviews
+    description: Reviews and ratings
+  - name: Guests
+    description: Guest profiles
+  - name: Assistant
+    description: AI assistant chats
+  - name: Flows
+    description: Booking flow orchestrator
+  - name: Webconstructor
+    description: Tenant webconstructor panel
+  - name: VCC
+    description: Virtual cards
+  - name: Operator
+    description: Operator panel
+  - name: Admin
+    description: Admin operations
+  - name: Email
+    description: Email utilities
+  - name: Subscribers
+    description: Newsletter subscriptions
 paths:
-  /api/auth/user/login:
+  /:
+    get:
+      tags: [System]
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/docs:
+    get:
+      tags: [System]
+      summary: Swagger UI
+      description: May require Basic auth if SWAGGER_USER/PASSWORD is set.
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Html"
+  /api/docs.json:
+    get:
+      tags: [System]
+      summary: Swagger JSON
+      description: May require Basic auth if SWAGGER_USER/PASSWORD is set.
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/auth/staff/register:
     post:
-      tags:
-        - Auth
-      summary: Inicia sesion y devuelve el token JWT
-      description: Endpoint publico para autenticarse. Usar el token en el boton Authorize.
-      security: [] # login no requiere token previo
+      tags: [Auth]
+      summary: Register staff
+      security: []
       requestBody:
         required: true
         content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterStaffRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/auth/staff/login:
+    post:
+      tags: [Auth]
+      summary: Staff login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
           application/x-www-form-urlencoded:
             schema:
               $ref: "#/components/schemas/LoginRequest"
-            example:
-              email: john.doe@example.com
-              password: superSecret123
       responses:
         "200":
-          description: Login exitoso
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LoginResponse"
-              example:
-                token: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-        "401":
-          description: Credenciales invalidas
+          $ref: "#/components/responses/Ok"
+  /api/auth/user/register:
+    post:
+      tags: [Auth]
+      summary: Register user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterUserRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/auth/user/login:
+    post:
+      tags: [Auth]
+      summary: User login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/auth/user/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/auth/google/exchange:
+    post:
+      tags: [Auth]
+      summary: Google auth code exchange
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleExchangeRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/auth/auto-signup:
+    post:
+      tags: [Auth]
+      summary: Auto signup/login for outside bookings
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutoSignupRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/auth/set-password:
+    post:
+      tags: [Auth]
+      summary: Set password with token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPasswordRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/auth/validate-token/{token}:
+    get:
+      tags: [Auth]
+      summary: Validate magic token
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/auth/verify-email/{token}:
+    get:
+      tags: [Auth]
+      summary: Verify email
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/auth/hire:
+    post:
+      tags: [Auth]
+      summary: Hire staff
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HireStaffRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/auth/by-hotel/{hotelId}:
+    get:
+      tags: [Auth]
+      summary: List staff by hotel
+      security: []
+      parameters:
+        - name: hotelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/users:
+    get:
+      tags: [Users]
+      summary: List influencer referrals
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me/influencer/stats:
+    get:
+      tags: [Users]
+      summary: Get influencer stats
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me/influencer/goals:
+    get:
+      tags: [Users]
+      summary: Get influencer goals
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me/influencer/commissions:
+    get:
+      tags: [Users]
+      summary: Get influencer commissions
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me/influencer/payouts:
+    get:
+      tags: [Users]
+      summary: Get influencer payouts
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me/influencer/payout-account:
+    get:
+      tags: [Users]
+      summary: Get influencer payout account
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me/influencer/payout-account/stripe/link:
+    post:
+      tags: [Users]
+      summary: Create Stripe onboarding link
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me/influencer/payout-account/stripe/update-link:
+    post:
+      tags: [Users]
+      summary: Create Stripe update link
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me/influencer/payout-account/stripe/refresh:
+    post:
+      tags: [Users]
+      summary: Refresh Stripe account status
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/admin/influencer/payouts/create:
+    post:
+      tags: [Users]
+      summary: Admin create influencer payout batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/admin/influencer/payouts/batch:
+    post:
+      tags: [Users]
+      summary: Run influencer payout batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/request-info:
+    post:
+      tags: [Users]
+      summary: Request partner info
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/role-requests:
+    post:
+      tags: [Users]
+      summary: Create role request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/role-requests/my-latest:
+    get:
+      tags: [Users]
+      summary: Get my latest role request
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/role-requests/{id}/submit-info:
+    post:
+      tags: [Users]
+      summary: Submit role request info
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/role-requests/vault-operator/names:
+    get:
+      tags: [Users]
+      summary: List vault operator names
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/role-requests/upload-id:
+    post:
+      tags: [Users]
+      summary: Upload KYC ID documents
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/RoleRequestUploadId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/role-requests/upload-business:
+    post:
+      tags: [Users]
+      summary: Upload KYC business documents
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/RoleRequestUploadBusiness"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me/discount-code/status:
+    post:
+      tags: [Users]
+      summary: Record discount code status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me/discount-code:
+    post:
+      tags: [Users]
+      summary: Apply discount code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/contracts:
+    get:
+      tags: [Users]
+      summary: List user contracts
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/contracts/summary:
+    get:
+      tags: [Users]
+      summary: Get contracts summary
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/contracts/{id}/accept:
+    post:
+      tags: [Users]
+      summary: Accept contract
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me:
+    get:
+      tags: [Users]
+      summary: Get current user
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    put:
+      tags: [Users]
+      summary: Update user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    delete:
+      tags: [Users]
+      summary: Delete account
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me/password:
+    put:
+      tags: [Users]
+      summary: Change password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/users/me/become-host:
+    post:
+      tags: [Users]
+      summary: Become host
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/hotels:
+    get:
+      tags: [Hotels]
+      summary: List hotels
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    post:
+      tags: [Hotels]
+      summary: Create hotel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hotels/hotelsAndRooms:
+    get:
+      tags: [Hotels]
+      summary: List hotels with rooms
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hotels/{id}:
+    get:
+      tags: [Hotels]
+      summary: Get hotel by id
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hotels/{id}/images:
+    get:
+      tags: [Hotels]
+      summary: Get hotel images
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/hotels/{hotelId}/rooms:
+    get:
+      tags: [Rooms]
+      summary: List rooms by hotel
+      security: []
+      parameters:
+        - name: hotelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    post:
+      tags: [Rooms]
+      summary: Create room
+      parameters:
+        - name: hotelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/discounts/validate:
+    post:
+      tags: [Discounts]
+      summary: Validate discount code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/discounts/createCustom:
+    post:
+      tags: [Discounts]
+      summary: Create custom discount code (staff)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/bookings:
+    post:
+      tags: [Bookings]
+      summary: Create booking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/homes/quote:
+    post:
+      tags: [Bookings]
+      summary: Quote home booking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/homes:
+    post:
+      tags: [Bookings]
+      summary: Create home booking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/homes/me:
+    get:
+      tags: [Bookings]
+      summary: List home bookings for current user
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/lookup:
+    get:
+      tags: [Bookings]
+      summary: Public booking lookup
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/guest/start:
+    post:
+      tags: [Bookings]
+      summary: Start guest access
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/guest/verify:
+    post:
+      tags: [Bookings]
+      summary: Verify guest access
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/guest:
+    get:
+      tags: [Bookings]
+      summary: List bookings for guest token
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/link:
+    post:
+      tags: [Bookings]
+      summary: Link guest bookings to user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/me:
+    get:
+      tags: [Bookings]
+      summary: List bookings for current user
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/me/latest:
+    get:
+      tags: [Bookings]
+      summary: Get latest stay for current user
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/legacy/me:
+    get:
+      tags: [Bookings]
+      summary: Legacy booking list
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/staff/me:
+    get:
+      tags: [Bookings]
+      summary: List bookings for staff
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/confirmation/{confirmation}:
+    get:
+      tags: [Bookings]
+      summary: Get outside booking by confirmation
+      security: []
+      parameters:
+        - name: confirmation
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/outside/id/{id}:
+    get:
+      tags: [Bookings]
+      summary: Get outside booking with add-ons
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/{id}:
+    get:
+      tags: [Bookings]
+      summary: Get booking by id
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/{id}/cancel:
+    put:
+      tags: [Bookings]
+      summary: Cancel booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/{id}/confirm:
+    put:
+      tags: [Bookings]
+      summary: Confirm booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/bookings/{id}/certificate.pdf:
+    get:
+      tags: [Bookings]
+      summary: Download booking certificate PDF
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Pdf"
+
+  /api/commissions/me:
+    get:
+      tags: [Commissions]
+      summary: Get my commissions (staff)
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/payments/stripe/create-session:
+    post:
+      tags: [Payments]
+      summary: Create Stripe checkout session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/payments/apple-pay/process:
+    post:
+      tags: [Payments]
+      summary: Process Apple Pay
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/payments/booking-addons/create-session:
+    post:
+      tags: [Payments]
+      summary: Create add-ons checkout session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/payments/homes/create-payment-intent:
+    post:
+      tags: [Payments]
+      summary: Create home payment intent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/payments/homes/test/create-payment-intent:
+    post:
+      tags: [Payments]
+      summary: Create home payment intent (app test)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/payments/upsell/create-session:
+    post:
+      tags: [Payments]
+      summary: Create upsell checkout session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/payments/stripe/webhook:
+    post:
+      tags: [Payments]
+      summary: Stripe webhook
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/payments/stripe/validate-merchant:
+    post:
+      tags: [Payments]
+      summary: Validate Apple Pay merchant
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/payments/create-payment-intent:
+    post:
+      tags: [Payments]
+      summary: Create partner payment intent
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/payments/confirm-and-book:
+    post:
+      tags: [Payments]
+      summary: Confirm partner payment and book
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/payments/webhook:
+    post:
+      tags: [Payments]
+      summary: Partner webhook
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/upsell-code:
+    post:
+      tags: [Upsell]
+      summary: Generate upsell code (staff)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/upsell-code/validate:
+    post:
+      tags: [Upsell]
+      summary: Validate upsell code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/upsell-code/my-codes:
+    get:
+      tags: [Upsell]
+      summary: List my upsell codes
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/upsell-code/{id}:
+    get:
+      tags: [Upsell]
+      summary: Get upsell code by id
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/addons/{hotelId}/hotel-addons:
+    get:
+      tags: [Addons]
+      summary: List hotel add-ons (public)
+      security: []
+      parameters:
+        - name: hotelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/addons/bookings/{id}:
+    post:
+      tags: [Addons]
+      summary: Save booking add-ons
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/addons/request:
+    post:
+      tags: [Addons]
+      summary: Request add-on
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/addons/request/{id}/confirm:
+    put:
+      tags: [Addons]
+      summary: Confirm add-on request (staff)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/addons/requests:
+    get:
+      tags: [Addons]
+      summary: List add-on requests (staff)
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/addons/bookings/ready/{id}:
+    put:
+      tags: [Addons]
+      summary: Mark booking add-on ready
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/addons/staff-requests:
+    get:
+      tags: [Addons]
+      summary: List add-on requests by staff
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/addons/{hotelId}/manage-addons:
+    get:
+      tags: [Addons]
+      summary: List add-ons for edit
+      parameters:
+        - name: hotelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/addons/{hotelId}/manage-addons/{addOnId}:
+    put:
+      tags: [Addons]
+      summary: Update hotel add-on
+      parameters:
+        - name: hotelId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: addOnId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/addons/{hotelId}/manage-addons/{addOnId}/options/{optionId}:
+    put:
+      tags: [Addons]
+      summary: Update hotel add-on option
+      parameters:
+        - name: hotelId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: addOnId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: optionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/addons/{hotelId}/hotel-addons/{id}:
+    put:
+      tags: [Addons]
+      summary: Update hotel add-on override
+      parameters:
+        - name: hotelId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/api/staff-addon/hotel/{hotelId}/staff:
+    get:
+      tags: [StaffAddons]
+      summary: List staff by hotel
+      security: []
+      parameters:
+        - name: hotelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/api/staff-addon/hotel-addon/{hotelAddOnId}/staff:
+    get:
+      tags: [StaffAddons]
+      summary: List staff assignments for add-on
+      security: []
+      parameters:
+        - name: hotelAddOnId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    put:
+      tags: [StaffAddons]
+      summary: Update add-on staff assignments
+      security: []
+      parameters:
+        - name: hotelAddOnId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffAddonAssignmentRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
 
   /api/webbeds/search:
     get:
-      tags:
-        - Webbeds
-      summary: searchhotels (disponibilidad)
-      description: >
-        Equivalente a la request searchHotels del Postman. Requiere cityCode o
-        hotelIds (csv). Devuelve opciones agrupadas por hotel. Usa los filtros/fields
-        del archivo DOTW.
-      security:
-        - bearerAuth: []
+      tags: [Webbeds]
+      summary: Search hotels
       parameters:
-        - in: query
-          name: checkIn
+        - name: checkIn
+          in: query
           required: true
           schema:
             type: string
             format: date
-          description: Fecha de entrada (YYYY-MM-DD).
-        - in: query
-          name: checkOut
+        - name: checkOut
+          in: query
           required: true
           schema:
             type: string
             format: date
-          description: Fecha de salida (YYYY-MM-DD).
-        - in: query
-          name: occupancies
+        - name: occupancies
+          in: query
           required: true
           schema:
             type: string
-          description: Cadena adults|childAges,adults2|childAges (ej 2|5-7,1|-). Si falta, se asume 2 adultos.
-        - in: query
-          name: currency
+        - name: currency
+          in: query
           required: true
           schema:
             type: string
-          description: Codigo numerico de moneda (ej 520 = USD).
-        - in: query
-          name: cityCode
+        - name: cityCode
+          in: query
+          required: false
           schema:
             type: string
-          description: Codigo de ciudad DOTW. Obligatorio si no se envian hotelIds.
-        - in: query
-          name: countryCode
+        - name: hotelIds
+          in: query
+          required: false
           schema:
             type: string
-          description: Codigo de pais DOTW (solo si no se envia cityCode).
-        - in: query
-          name: hotelIds
-          schema:
-            type: string
-          description: Lista de hotelIds separados por coma. Si se envia, cityCode deja de ser obligatorio.
-        - in: query
-          name: passengerNationality
-          schema:
-            type: string
-          description: Nacionalidad numerica del pasajero (por defecto WEBBEDS_DEFAULT_COUNTRY_CODE).
-        - in: query
-          name: passengerCountryOfResidence
-          schema:
-            type: string
-          description: Pais de residencia numerico del pasajero.
-        - in: query
-          name: rateBasis
-          schema:
-            type: string
-          description: Codigo de rate basis (por defecto "-1").
-        - in: query
-          name: fields
-          schema:
-            type: string
-          description: Campos extra para hotel (csv), ej images,amenities,descriptions.
-        - in: query
-          name: roomFields
-          schema:
-            type: string
-          description: Campos extra para habitaciones (csv).
-        - in: query
-          name: merge
-          schema:
-            type: boolean
-          description: Si es true, mezcla detalles estaticos locales.
-        - in: query
-          name: priceMin
-          schema:
-            type: number
-          description: Filtro de precio minimo (opcional).
-        - in: query
-          name: priceMax
-          schema:
-            type: number
-          description: Filtro de precio maximo (opcional).
-        - in: query
-          name: ratingMin
-          schema:
-            type: number
-          description: Rating minimo (opcional).
-        - in: query
-          name: ratingMax
-          schema:
-            type: number
-          description: Rating maximo (opcional).
-        - in: query
-          name: preferred
-          schema:
-            type: boolean
-          description: Solo hoteles preferidos si es true (opcional).
-        - in: query
-          name: availability
-          schema:
-            type: boolean
-          description: Filtra por disponibilidad (opcional).
-        - in: query
-          name: hotelNameLike
-          schema:
-            type: string
-          description: Filtro por nombre de hotel (like).
-        - in: query
-          name: roomNameLike
-          schema:
-            type: string
-          description: Filtro por nombre de habitacion (like).
-        - in: query
-          name: roomNameRegex
-          schema:
-            type: string
-          description: Filtro regex para nombre de habitacion.
       responses:
         "200":
-          description: Hoteles encontrados
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WebbedsSearchResponse"
-        "400":
-          description: Parametros faltantes o invalidos
-
+          $ref: "#/components/responses/Ok"
   /api/webbeds/rooms:
     get:
-      tags:
-        - Webbeds
-      summary: getrooms (detalles y rate basis de hotel)
-      description: >
-        Equivalente a la request GetRooms del Postman. Requiere hotelId/productId,
-        fechas y ocupaciones. Permite enviar seleccion de roomType/rateBasis/allocation.
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: query
-          name: checkIn
-          required: true
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: checkOut
-          required: true
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: occupancies
-          required: true
-          schema:
-            type: string
-          description: Cadena adults|childAges,adults2|childAges (ej 2|5-7).
-        - in: query
-          name: currency
-          required: true
-          schema:
-            type: string
-          description: Codigo de moneda (numerico o ISO, ej 520/USD).
-        - in: query
-          name: hotelId
-          required: true
-          schema:
-            type: string
-          description: Codigo numerico del hotel (productId).
-        - in: query
-          name: rateBasis
-          schema:
-            type: string
-          description: Rate basis solicitado (default "-1").
-        - in: query
-          name: passengerNationality
-          schema:
-            type: string
-        - in: query
-          name: passengerCountryOfResidence
-          schema:
-            type: string
-        - in: query
-          name: roomTypeCode
-          schema:
-            type: string
-          description: Codigo de roomType seleccionado.
-        - in: query
-          name: selectedRateBasis
-          schema:
-            type: string
-          description: Rate basis seleccionado para el roomType.
-        - in: query
-          name: allocationDetails
-          schema:
-            type: string
-          description: Allocation devuelto en search (para lock de tarifa).
+      tags: [Webbeds]
+      summary: Get rooms
       responses:
         "200":
-          description: Tarifas y rooms del hotel
-          content:
-            application/json:
-              schema:
-                type: object
-                description: Respuesta mapeada de DOTW getrooms.
-        "400":
-          description: Parametros faltantes o invalidos
-
+          $ref: "#/components/responses/Ok"
+  /api/webbeds/create-payment-intent:
+    post:
+      tags: [Webbeds]
+      summary: Create payment intent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
   /api/webbeds/savebooking:
     post:
-      tags:
-        - Webbeds
-      summary: savebooking (reserva preliminar)
-      description: >
-        Request Savebooking del Postman. Recibe seleccion de rooms con rateBasis y allocation.
-        Retorna returnedServiceCode para usarlos en bookitinerary.
-      security:
-        - bearerAuth: []
+      tags: [Webbeds]
+      summary: Save booking
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SaveBookingRequest"
-            example:
-              checkIn: "2024-12-13"
-              checkOut: "2024-12-15"
-              currency: "520"
-              hotelId: "2058445"
-              customerReference: "PB-09X6JR_01JE9943BBQJGQNBMTNS6H4KXH-ZVJN"
-              rooms:
-                - roomTypeCode: "251722735"
-                  selectedRateBasis: "1331"
-                  allocationDetails: "1733328904006211B2025B1"
-                  adults: 2
-                  children: []
-                  extraBed: 0
-                  nationality: "102"
-                  residence: "102"
-                  passengers:
-                    - salutation: 3801
-                      firstName: Carol
-                      lastName: Pala
-                      leading: true
-                    - salutation: 3801
-                      firstName: Carolbrfen
-                      lastName: Pala
+              $ref: "#/components/schemas/GenericRequest"
       responses:
         "200":
-          description: Reserva guardada (returnedServiceCode)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SaveBookingResponse"
-
+          $ref: "#/components/responses/Ok"
   /api/webbeds/bookitinerary:
     post:
-      tags:
-        - Webbeds
-      summary: bookitinerary (confirmar con pago)
-      description: >
-        Variante Bookitinerary(yes) del Postman. Usa returnedServiceCode de savebooking y
-        datos de pago (orderCode/authorisationId) para confirmar.
-      security:
-        - bearerAuth: []
+      tags: [Webbeds]
+      summary: Book itinerary
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BookItineraryRequest"
-            example:
-              bookingCode: "1326786013"
-              bookingType: 2
-              confirm: "yes"
-              services:
-                - serviceCode: "1326786023"
-                  testPrice: 722.4165
-                  allocationDetails: "1733337315000001B2023B1"
-              payment:
-                paymentMethod: "CC_PAYMENT_NET"
-                creditCardCharge: 722.4165
-                orderCode: "20376563"
-                authorisationId: "DOTW20376563-3608fe57f56b"
+              $ref: "#/components/schemas/GenericRequest"
       responses:
         "200":
-          description: Itinerario confirmado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BookItineraryResponse"
-
+          $ref: "#/components/responses/Ok"
   /api/webbeds/bookitinerary/recheck:
     post:
-      tags:
-        - Webbeds
-      summary: bookitinerary (recheck sin pago, confirm=no)
-      description: >
-        Variante Bookitinerary(no) del Postman. No envia pago, solo revalida precios antes
-        de pasar a preauth/yes.
-      security:
-        - bearerAuth: []
+      tags: [Webbeds]
+      summary: Recheck itinerary
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BookItineraryRecheckRequest"
-            example:
-              bookingCode: "1326765515"
-              bookingType: 2
-              confirm: "no"
-              sendCommunicationTo: "confirmations@reservationcounter.com"
+              $ref: "#/components/schemas/GenericRequest"
       responses:
         "200":
-          description: Recheck ejecutado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BookItineraryResponse"
-
+          $ref: "#/components/responses/Ok"
   /api/webbeds/bookitinerary/preauth:
     post:
-      tags:
-        - Webbeds
-      summary: bookitinerary (preauth con token CC)
-      description: >
-        Variante Bookitinerary(preauth) del Postman. Requiere token de tarjeta (RezToken),
-        datos AVS y devicePayload/endUserIPv4Address.
-      security:
-        - bearerAuth: []
+      tags: [Webbeds]
+      summary: Preauth itinerary
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BookItineraryPreauthRequest"
-            example:
-              bookingCode: "1326765515"
-              bookingType: 2
-              confirm: "preauth"
-              services:
-                - serviceCode: "1326765525"
-                  testPrice: 571.0124
-                  allocationDetails: "1713289359000655B2023B3"
-              payment:
-                paymentMethod: "CC_PAYMENT_COMMISSIONABLE"
-                creditCardCharge: 571.01
-                usedCredit: 0
-                token: "99B524366K7PP4PH9H9B2SZ8KKL256275"
-                avsDetails:
-                  avsFirstName: Carol
-                  avsLastName: Pala
-                  avsAddress: "518 East Cape Shores Drive, Lewes, DE, USA"
-                  avsZip: "19958"
-                  avsCountry: "US"
-                  avsCity: "Lewes"
-                  avsEmail: "capala518@gmail.com"
-                  avsPhone: "+13023121794"
-                devicePayload: "None"
-                endUserIPv4Address: "192.168.1.1"
+              $ref: "#/components/schemas/GenericRequest"
       responses:
         "200":
-          description: Preautorizacion ejecutada
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BookItineraryResponse"
-
+          $ref: "#/components/responses/Ok"
+  /api/webbeds/confirmbooking:
+    post:
+      tags: [Webbeds]
+      summary: Confirm booking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
   /api/webbeds/cancelbooking:
     post:
-      tags:
-        - Webbeds
-      summary: cancelbooking (paso no/yes)
-      description: >
-        Requests CancelBooking(No) y CancelBooking(Yes) del Postman. En el primer paso
-        envia confirm=no para obtener cargos; en el segundo se reenvia con confirm=yes
-        y services[].penaltyApplied.
-      security:
-        - bearerAuth: []
+      tags: [Webbeds]
+      summary: Cancel booking
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CancelBookingRequest"
-            examples:
-              step1:
-                summary: Paso 1 (confirm=no)
-                value:
-                  bookingCode: "636657073"
-                  bookingType: 1
-                  confirm: "no"
-              step2:
-                summary: Paso 2 (confirm=yes con penalties)
-                value:
-                  bookingCode: "636657073"
-                  bookingType: 1
-                  confirm: "yes"
-                  services:
-                    - serviceCode: "636657073"
-                      penaltyApplied: 0
+              $ref: "#/components/schemas/GenericRequest"
       responses:
         "200":
-          description: Cancelacion procesada
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CancelBookingResponse"
-
+          $ref: "#/components/responses/Ok"
+  /api/webbeds/deleteitinerary:
+    post:
+      tags: [Webbeds]
+      summary: Delete itinerary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
   /api/webbeds/booking:
     get:
-      tags:
-        - Webbeds
-      summary: getbookingdetails
-      description: Request GetBookingDetails del Postman.
-      security:
-        - bearerAuth: []
+      tags: [Webbeds]
+      summary: Get booking details
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/webbeds/static/hotels:
+    get:
+      tags: [Webbeds]
+      summary: List static hotels
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/webbeds/countries:
+    get:
+      tags: [Webbeds]
+      summary: List countries
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/webbeds/cities:
+    get:
+      tags: [Webbeds]
+      summary: List cities
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/webbeds/ratebasis:
+    get:
+      tags: [Webbeds]
+      summary: List rate basis
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/webbeds/amenities:
+    get:
+      tags: [Webbeds]
+      summary: List hotel amenities
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/webbeds/room-amenities:
+    get:
+      tags: [Webbeds]
+      summary: List room amenities
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/webbeds/chains:
+    get:
+      tags: [Webbeds]
+      summary: List hotel chains
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/webbeds/classifications:
+    get:
+      tags: [Webbeds]
+      summary: List hotel classifications
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/homes/explore:
+    get:
+      tags: [Homes]
+      summary: List explore homes
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/recommendations:
+    get:
+      tags: [Homes]
+      summary: Get home recommendations
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/destinations:
+    get:
+      tags: [Homes]
+      summary: List home destinations
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/search:
+    get:
+      tags: [Homes]
+      summary: Search homes
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/public/{id}:
+    get:
+      tags: [Homes]
+      summary: Get public home
+      security: []
       parameters:
-        - in: query
-          name: bookingId
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/public/{id}/availability:
+    get:
+      tags: [Homes]
+      summary: Get public home availability
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/catalogs:
+    get:
+      tags: [Homes]
+      summary: Get home catalogs
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/similar:
+    get:
+      tags: [Homes]
+      summary: List similar homes
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes:
+    post:
+      tags: [Homes]
+      summary: Create home draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/me:
+    get:
+      tags: [Homes]
+      summary: List host homes
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/{id}:
+    get:
+      tags: [Homes]
+      summary: Get home by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/{id}/basics:
+    patch:
+      tags: [Homes]
+      summary: Update home basics
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/{id}/address:
+    patch:
+      tags: [Homes]
+      summary: Update home address
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/{id}/amenities:
+    patch:
+      tags: [Homes]
+      summary: Update home amenities
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/{id}/bed-types:
+    patch:
+      tags: [Homes]
+      summary: Update home bed types
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/{id}/pricing:
+    patch:
+      tags: [Homes]
+      summary: Update home pricing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/{id}/policies:
+    patch:
+      tags: [Homes]
+      summary: Update home policies
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/{id}/security:
+    patch:
+      tags: [Homes]
+      summary: Update home security
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/{id}/discounts:
+    put:
+      tags: [Homes]
+      summary: Update home discounts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/{id}/media/upload:
+    post:
+      tags: [Homes]
+      summary: Upload home media
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/HomeMediaUpload"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/{id}/media:
+    put:
+      tags: [Homes]
+      summary: Attach home media
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/homes/{id}/publish:
+    post:
+      tags: [Homes]
+      summary: Publish home
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/hosts/dashboard:
+    get:
+      tags: [Hosts]
+      summary: Host dashboard
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/bookings/{stayId}:
+    get:
+      tags: [Hosts]
+      summary: Host booking detail
+      parameters:
+        - name: stayId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/earnings:
+    get:
+      tags: [Hosts]
+      summary: Host earnings
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/listings:
+    get:
+      tags: [Hosts]
+      summary: Host listings
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/calendar:
+    get:
+      tags: [Hosts]
+      summary: Host calendar
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/calendar/{homeId}:
+    get:
+      tags: [Hosts]
+      summary: Host calendar detail
+      parameters:
+        - name: homeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/calendar/{homeId}/day:
+    patch:
+      tags: [Hosts]
+      summary: Update host calendar day
+      parameters:
+        - name: homeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/listings/{homeId}/arrival-guide:
+    get:
+      tags: [Hosts]
+      summary: Get arrival guide
+      parameters:
+        - name: homeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    put:
+      tags: [Hosts]
+      summary: Update arrival guide
+      parameters:
+        - name: homeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/bookings:
+    get:
+      tags: [Hosts]
+      summary: Host bookings list
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/payout-methods:
+    put:
+      tags: [Hosts]
+      summary: Update payout methods
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/payout-account:
+    get:
+      tags: [Hosts]
+      summary: Get payout account
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    put:
+      tags: [Hosts]
+      summary: Upsert payout account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/payouts:
+    get:
+      tags: [Hosts]
+      summary: List host payouts
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/payout-account/stripe/link:
+    post:
+      tags: [Hosts]
+      summary: Create Stripe onboarding link
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/payout-account/stripe/update-link:
+    post:
+      tags: [Hosts]
+      summary: Create Stripe update link
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/payout-account/stripe/refresh:
+    post:
+      tags: [Hosts]
+      summary: Refresh Stripe account
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/hosts/payout-account/payoneer/link:
+    post:
+      tags: [Hosts]
+      summary: Create Payoneer onboarding link
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/chats:
+    get:
+      tags: [Chats]
+      summary: List user threads
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    post:
+      tags: [Chats]
+      summary: Create user thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/chats/{chatId}:
+    get:
+      tags: [Chats]
+      summary: Get user thread
+      parameters:
+        - name: chatId
+          in: path
           required: true
           schema:
             type: string
-          description: bookingId/bookingCode DOTW a consultar.
       responses:
         "200":
-          description: Detalle de la reserva
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BookingDetailsResponse"
+          $ref: "#/components/responses/Ok"
+  /api/chats/{chatId}/messages:
+    get:
+      tags: [Chats]
+      summary: List thread messages
+      parameters:
+        - name: chatId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    post:
+      tags: [Chats]
+      summary: Send user message
+      parameters:
+        - name: chatId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/chats/{chatId}/read:
+    post:
+      tags: [Chats]
+      summary: Mark thread read
+      parameters:
+        - name: chatId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/chats/host/auto-prompts:
+    get:
+      tags: [Chats]
+      summary: List host auto prompts
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    post:
+      tags: [Chats]
+      summary: Save host auto prompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/chats/host/auto-prompts/{promptId}:
+    delete:
+      tags: [Chats]
+      summary: Delete host auto prompt
+      parameters:
+        - name: promptId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/favorites/lists:
+    get:
+      tags: [Favorites]
+      summary: List favorite lists
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    post:
+      tags: [Favorites]
+      summary: Create favorite list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/favorites/lists/{listId}:
+    get:
+      tags: [Favorites]
+      summary: Get favorite list detail
+      parameters:
+        - name: listId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/favorites/lists/{listId}/items:
+    post:
+      tags: [Favorites]
+      summary: Add favorite to list
+      parameters:
+        - name: listId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/favorites/lists/{listId}/items/{homeId}:
+    delete:
+      tags: [Favorites]
+      summary: Remove favorite from list
+      parameters:
+        - name: listId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: homeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/favorites/recent:
+    get:
+      tags: [Favorites]
+      summary: Get recent views
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/favorites/recent/{homeId}:
+    post:
+      tags: [Favorites]
+      summary: Record recent view
+      parameters:
+        - name: homeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/reviews/home/{homeId}:
+    get:
+      tags: [Reviews]
+      summary: List home reviews
+      security: []
+      parameters:
+        - name: homeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/reviews/host/{hostId}:
+    get:
+      tags: [Reviews]
+      summary: List host reviews
+      security: []
+      parameters:
+        - name: hostId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/reviews/guest/{guestId}:
+    get:
+      tags: [Reviews]
+      summary: List guest reviews
+      security: []
+      parameters:
+        - name: guestId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/reviews/pending:
+    get:
+      tags: [Reviews]
+      summary: List pending reviews
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/reviews/home:
+    post:
+      tags: [Reviews]
+      summary: Create home review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/reviews/guest:
+    post:
+      tags: [Reviews]
+      summary: Create guest review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/guests/{guestId}/profile:
+    get:
+      tags: [Guests]
+      summary: Get guest profile
+      security: []
+      parameters:
+        - name: guestId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/guests/me/profile:
+    put:
+      tags: [Guests]
+      summary: Update guest profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/guests/me/profile/avatar:
+    post:
+      tags: [Guests]
+      summary: Upload guest avatar
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/GuestAvatarUpload"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/assistant/search:
+    post:
+      tags: [Assistant]
+      summary: Assistant search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/assistant/chats:
+    post:
+      tags: [Assistant]
+      summary: Create assistant chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    get:
+      tags: [Assistant]
+      summary: List assistant chats
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/assistant/chats/{sessionId}:
+    get:
+      tags: [Assistant]
+      summary: Get assistant chat
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    delete:
+      tags: [Assistant]
+      summary: Delete assistant chat
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/flows/start:
+    post:
+      tags: [Flows]
+      summary: Start flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/flows/select:
+    post:
+      tags: [Flows]
+      summary: Select flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/flows/block:
+    post:
+      tags: [Flows]
+      summary: Block flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/flows/savebooking:
+    post:
+      tags: [Flows]
+      summary: Save booking flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/flows/price:
+    post:
+      tags: [Flows]
+      summary: Price flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/flows/preauth:
+    post:
+      tags: [Flows]
+      summary: Preauth flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/flows/confirm:
+    post:
+      tags: [Flows]
+      summary: Confirm flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/flows/cancel/quote:
+    post:
+      tags: [Flows]
+      summary: Cancel quote flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/flows/cancel:
+    post:
+      tags: [Flows]
+      summary: Cancel flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/flows/{flowId}/steps:
+    get:
+      tags: [Flows]
+      summary: Get flow steps
+      parameters:
+        - name: flowId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/flows/{flowId}:
+    get:
+      tags: [Flows]
+      summary: Get flow
+      parameters:
+        - name: flowId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/tenants/webconstructor/login:
+    post:
+      tags: [Webconstructor]
+      summary: Webconstructor login
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/me:
+    get:
+      tags: [Webconstructor]
+      summary: Webconstructor profile
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/templates:
+    get:
+      tags: [Webconstructor]
+      summary: List webconstructor templates
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/site-config:
+    get:
+      tags: [Webconstructor]
+      summary: Get site config (private)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    put:
+      tags: [Webconstructor]
+      summary: Update site config (private)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      requestBody:
+        required: false
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/SiteConfigUpload"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/site/config:
+    get:
+      tags: [Webconstructor]
+      summary: Get site config (public)
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/hotel:
+    get:
+      tags: [Webconstructor]
+      summary: Get hotel info (public)
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/search:
+    get:
+      tags: [Webconstructor]
+      summary: Public search
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/vcc/queue/count:
+    get:
+      tags: [VCC]
+      summary: VCC queue count (webconstructor)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/vcc/queue/claim:
+    post:
+      tags: [VCC]
+      summary: Claim next VCC (webconstructor)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/vcc/{id}/deliver:
+    post:
+      tags: [VCC]
+      summary: Mark VCC delivered (webconstructor)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/vcc/active:
+    get:
+      tags: [VCC]
+      summary: List active VCC (webconstructor)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/vcc/{id}/reveal:
+    get:
+      tags: [VCC]
+      summary: Reveal VCC (webconstructor)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/vcc/history:
+    get:
+      tags: [VCC]
+      summary: VCC history (webconstructor)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/vcc/{id}/mark-paid:
+    post:
+      tags: [VCC]
+      summary: Mark VCC paid (webconstructor)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/vcc/{id}/create-checkout:
+    post:
+      tags: [VCC]
+      summary: Create VCC checkout (webconstructor)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/tenants/webconstructor/vcc/{id}/create-intent:
+    post:
+      tags: [VCC]
+      summary: Create VCC intent (webconstructor)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/vcc/queue/count:
+    get:
+      tags: [Operator]
+      summary: VCC queue count (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/vcc/queue/claim:
+    post:
+      tags: [Operator]
+      summary: Claim next VCC (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/vcc/{id}/deliver:
+    post:
+      tags: [Operator]
+      summary: Mark VCC delivered (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/vcc/active:
+    get:
+      tags: [Operator]
+      summary: List active VCC (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/vcc/{id}/reveal:
+    get:
+      tags: [Operator]
+      summary: Reveal VCC (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/vcc/history:
+    get:
+      tags: [Operator]
+      summary: VCC history (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/vcc/{id}/mark-paid:
+    post:
+      tags: [Operator]
+      summary: Mark VCC paid (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/vcc/{id}/create-checkout:
+    post:
+      tags: [Operator]
+      summary: Create VCC checkout (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/vcc/{id}/create-intent:
+    post:
+      tags: [Operator]
+      summary: Create VCC intent (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/vcc/checkout/verify:
+    get:
+      tags: [Operator]
+      summary: Verify VCC checkout (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/transfers/stats:
+    get:
+      tags: [Operator]
+      summary: Transfer stats (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/transfers/claim:
+    post:
+      tags: [Operator]
+      summary: Claim transfer (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/transfers/active:
+    get:
+      tags: [Operator]
+      summary: Active transfer (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/transfers/{id}/create-intent:
+    post:
+      tags: [Operator]
+      summary: Create transfer intent (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/transfers/{id}/checkout/verify:
+    get:
+      tags: [Operator]
+      summary: Verify transfer checkout (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/transfers/{id}/complete:
+    post:
+      tags: [Operator]
+      summary: Complete transfer (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/transfers:
+    get:
+      tags: [Operator]
+      summary: List transfers (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    post:
+      tags: [Operator]
+      summary: Create transfer (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/transfers/history:
+    get:
+      tags: [Operator]
+      summary: Transfer history (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/platforms:
+    get:
+      tags: [Operator]
+      summary: Get tenant platforms (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/tenants:
+    get:
+      tags: [Operator]
+      summary: List my tenants
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/site-config:
+    get:
+      tags: [Operator]
+      summary: Get site config (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    put:
+      tags: [Operator]
+      summary: Update site config (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      requestBody:
+        required: false
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/SiteConfigUpload"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/hotel:
+    get:
+      tags: [Operator]
+      summary: Get hotel info (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/site-config/private:
+    get:
+      tags: [Operator]
+      summary: Get site config private (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/operator/templates:
+    get:
+      tags: [Operator]
+      summary: List templates (operator)
+      parameters:
+        - $ref: "#/components/parameters/TenantDomainHeader"
+        - $ref: "#/components/parameters/TenantHostQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/admin/tenants:
+    get:
+      tags: [Admin]
+      summary: List tenants
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    post:
+      tags: [Admin]
+      summary: Create tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/tenants/{id}:
+    put:
+      tags: [Admin]
+      summary: Update tenant
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    delete:
+      tags: [Admin]
+      summary: Delete tenant
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/tenants/{id}/unpause:
+    post:
+      tags: [Admin]
+      summary: Unpause tenant
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/platforms:
+    get:
+      tags: [Admin]
+      summary: List platforms
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/tenants/{id}/platforms:
+    get:
+      tags: [Admin]
+      summary: Get tenant platforms
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/tenants/{tenantId}/platforms/{platformId}:
+    put:
+      tags: [Admin]
+      summary: Upsert tenant platform
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: platformId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/accounts:
+    get:
+      tags: [Admin]
+      summary: List accounts
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/accounts/{accountId}/tenants/{tenantId}:
+    post:
+      tags: [Admin]
+      summary: Link account to tenant
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    delete:
+      tags: [Admin]
+      summary: Unlink account from tenant
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/users/{userId}/tenants/{tenantId}:
+    post:
+      tags: [Admin]
+      summary: Link user to tenant
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    delete:
+      tags: [Admin]
+      summary: Unlink user from tenant
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/transfers:
+    get:
+      tags: [Admin]
+      summary: List transfers
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    post:
+      tags: [Admin]
+      summary: Create transfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/transfers/{id}/cancel:
+    post:
+      tags: [Admin]
+      summary: Cancel transfer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/admin/vcc/cards:
+    get:
+      tags: [Admin]
+      summary: List VCC cards
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    post:
+      tags: [Admin]
+      summary: Create VCC cards
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/vcc/cards/{id}/approve:
+    post:
+      tags: [Admin]
+      summary: Approve VCC card
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/vcc/cards/{id}/reject:
+    post:
+      tags: [Admin]
+      summary: Reject VCC card
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/vcc/cards/{id}/mark-paid:
+    post:
+      tags: [Admin]
+      summary: Mark VCC card as paid
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/webbeds/countries/sync:
+    post:
+      tags: [Admin]
+      summary: Sync Webbeds countries
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/webbeds/cities/sync:
+    post:
+      tags: [Admin]
+      summary: Sync Webbeds cities
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/webbeds/hotels/sync:
+    post:
+      tags: [Admin]
+      summary: Sync Webbeds hotels
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/users:
+    get:
+      tags: [Admin]
+      summary: List users
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/role-requests:
+    get:
+      tags: [Admin]
+      summary: List role requests
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/role-requests/{id}/approve-initial:
+    post:
+      tags: [Admin]
+      summary: Approve role request (initial)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/role-requests/{id}/approve-kyc:
+    post:
+      tags: [Admin]
+      summary: Approve role request (KYC)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/role-requests/{id}/approve-final:
+    post:
+      tags: [Admin]
+      summary: Approve role request (final)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/role-requests/{id}/reject:
+    post:
+      tags: [Admin]
+      summary: Reject role request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/subscribers:
+    get:
+      tags: [Admin]
+      summary: List subscribers
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/subscribers/broadcast:
+    post:
+      tags: [Admin]
+      summary: Broadcast email to subscribers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/contracts:
+    get:
+      tags: [Admin]
+      summary: List contracts
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    post:
+      tags: [Admin]
+      summary: Create contract
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/contracts/{id}:
+    put:
+      tags: [Admin]
+      summary: Update contract
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    delete:
+      tags: [Admin]
+      summary: Delete contract
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/payouts/mock:
+    post:
+      tags: [Admin]
+      summary: Run mock payouts
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/admin/payouts/batch:
+    post:
+      tags: [Admin]
+      summary: Run payout batch
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/email/reservation:
+    post:
+      tags: [Email]
+      summary: Send reservation email
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/subscribers:
+    post:
+      tags: [Subscribers]
+      summary: Create newsletter subscription
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
 
 components:
   securitySchemes:
@@ -492,413 +3707,220 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  parameters:
+    TenantDomainHeader:
+      name: x-tenant-domain
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Tenant domain header used to resolve the tenant context.
+    TenantHostQuery:
+      name: host
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Optional host override for tenant resolution.
+  responses:
+    Ok:
+      description: OK
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/GenericResponse"
+    Html:
+      description: HTML response
+      content:
+        text/html:
+          schema:
+            type: string
+    Pdf:
+      description: PDF document
+      content:
+        application/pdf:
+          schema:
+            type: string
+            format: binary
   schemas:
+    GenericRequest:
+      type: object
+      description: Generic request payload.
+      additionalProperties: true
+    GenericResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
     LoginRequest:
       type: object
-      required:
-        - email
-        - password
+      required: [email, password]
       properties:
         email:
           type: string
           format: email
         password:
           type: string
-          format: password
-    LoginResponse:
+    RegisterStaffRequest:
       type: object
-      description: En la doc solo mostramos el token aunque la API incluya campos adicionales.
+      required: [name, email, password, staff_role_id]
       properties:
-        token:
+        name:
           type: string
-          description: Incluye el prefijo Bearer  para copiarlo directamente en Authorize
-
-    SaveBookingPassenger:
-      type: object
-      properties:
-        salutation:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        staff_role_id:
           type: integer
-          description: Codigo de titulo (ej 3801)
+    RegisterUserRequest:
+      type: object
+      required: [name, email, password, countryCode, countryOfResidenceCode]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        countryCode:
+          type: integer
+        countryOfResidenceCode:
+          type: integer
+        referralCode:
+          type: string
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    GoogleExchangeRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+    AutoSignupRequest:
+      type: object
+      required: [email, firstName, lastName]
+      properties:
+        email:
+          type: string
+          format: email
         firstName:
           type: string
         lastName:
           type: string
-        leading:
-          type: boolean
-          description: Debe haber al menos un leading=true por habitacion.
-
-    SaveBookingRoom:
+        phone:
+          type: string
+        outsideBookingId:
+          type: integer
+    SetPasswordRequest:
       type: object
-      required:
-        - roomTypeCode
-        - selectedRateBasis
-        - allocationDetails
-        - adults
+      required: [token, password]
       properties:
-        roomTypeCode:
+        token:
           type: string
-        selectedRateBasis:
+        password:
           type: string
-        allocationDetails:
+    HireStaffRequest:
+      type: object
+      required: [firstName, lastName, email, staff_role_id, hotelId]
+      properties:
+        firstName:
           type: string
-        adults:
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        staff_role_id:
           type: integer
-        children:
-          type: array
-          items:
-            type: integer
-          description: Edades de ninos.
-        nationality:
-          type: string
-        residence:
-          type: string
-        extraBed:
+        hotelId:
           type: integer
-        passengers:
-          type: array
-          items:
-            $ref: "#/components/schemas/SaveBookingPassenger"
-        specialRequests:
+    RoleRequestUploadId:
+      type: object
+      properties:
+        gov_id:
+          type: string
+          format: binary
+        gov_id_front:
+          type: string
+          format: binary
+        gov_id_back:
+          type: string
+          format: binary
+        selfie:
+          type: string
+          format: binary
+    RoleRequestUploadBusiness:
+      type: object
+      properties:
+        llc_articles:
+          type: string
+          format: binary
+        ein_letter:
+          type: string
+          format: binary
+        bank_doc:
+          type: string
+          format: binary
+    GuestAvatarUpload:
+      type: object
+      properties:
+        avatar:
+          type: string
+          format: binary
+    HomeMediaUpload:
+      type: object
+      properties:
+        photos:
           type: array
           items:
             type: string
-        beddingPreference:
-          type: integer
-
-    SaveBookingRequest:
+            format: binary
+    SiteConfigUpload:
       type: object
-      required:
-        - checkIn
-        - checkOut
-        - currency
-        - hotelId
-        - rooms
       properties:
-        checkIn:
+        logo:
           type: string
-          format: date
-        checkOut:
+          format: binary
+        favicon:
           type: string
-          format: date
-        currency:
+          format: binary
+        name:
           type: string
-        hotelId:
+        domain:
           type: string
-          description: productId/hotelId DOTW.
-        rateBasis:
-          type: string
-          description: Rate basis usado para la seleccion.
-        nationality:
-          type: string
-        residence:
-          type: string
-        customerReference:
-          type: string
-        rooms:
+    StaffAddonAssignmentRequest:
+      type: object
+      required: [staffIds]
+      properties:
+        staffIds:
           type: array
           items:
-            $ref: "#/components/schemas/SaveBookingRoom"
+            type: integer
 
-    SaveBookingResponse:
-      type: object
-      properties:
-        returnedCode:
-          type: string
-        services:
-          type: array
-          items:
-            type: object
-            properties:
-              code:
-                type: string
-              returnedServiceCode:
-                type: string
-        successful:
-          type: boolean
-        bookingId:
-          type: string
-        metadata:
-          type: object
-          properties:
-            command:
-              type: string
-            date:
-              type: string
-            ip:
-              type: string
-
-    BookItineraryService:
-      type: object
-      properties:
-        serviceCode:
-          type: string
-          description: returnedServiceCode devuelto en savebooking.
-        testPrice:
-          type: number
-        allocationDetails:
-          type: string
-        penaltyApplied:
-          type: number
-        paymentBalance:
-          type: number
-
-    BookItineraryPayment:
-      type: object
-      properties:
-        paymentMethod:
-          type: string
-          description: CC_PAYMENT_COMMISSIONABLE | CC_PAYMENT_NET
-        usedCredit:
-          type: number
-        creditCardCharge:
-          type: number
-        token:
-          type: string
-          description: RezToken (para preauth).
-        cardHolderName:
-          type: string
-        creditCardType:
-          type: integer
-        avsDetails:
-          type: object
-          properties:
-            avsFirstName:
-              type: string
-            avsLastName:
-              type: string
-            avsAddress:
-              type: string
-            avsZip:
-              type: string
-            avsCountry:
-              type: string
-            avsCity:
-              type: string
-            avsEmail:
-              type: string
-            avsPhone:
-              type: string
-        devicePayload:
-          type: string
-        endUserIPv4Address:
-          type: string
-        orderCode:
-          type: string
-          description: Usado en confirm=yes (pago ya autorizado).
-        authorisationId:
-          type: string
-
-    BookItineraryRequest:
-      type: object
-      required:
-        - bookingCode
-      properties:
-        bookingCode:
-          type: string
-        bookingType:
-          type: integer
-          description: 1=Confirmed, 2=Saved (default 2).
-        confirm:
-          type: string
-          enum: [no, preauth, yes]
-          description: Estado de confirmacion a enviar.
-        sendCommunicationTo:
-          type: string
-          format: email
-        services:
-          type: array
-          items:
-            $ref: "#/components/schemas/BookItineraryService"
-        payment:
-          $ref: "#/components/schemas/BookItineraryPayment"
-
-    BookItineraryRecheckRequest:
-      allOf:
-        - $ref: "#/components/schemas/BookItineraryRequest"
-        - type: object
-          description: Confirm siempre no, sin pago.
-
-    BookItineraryPreauthRequest:
-      allOf:
-        - $ref: "#/components/schemas/BookItineraryRequest"
-        - type: object
-          required: [bookingCode, services, payment]
-          description: Confirm preauth, requiere payment.token, avsDetails y devicePayload/IP.
-
-    BookItineraryResponse:
-      type: object
-      properties:
-        currencyShort:
-          type: string
-        confirmationText:
-          type: string
-        returnedCode:
-          type: string
-        services:
-          type: array
-          items:
-            type: object
-            properties:
-              code:
-                type: string
-              returnedServiceCode:
-                type: string
-        orderCode:
-          type: string
-        authorizationId:
-          type: string
-        successful:
-          type: boolean
-        threeDSData:
-          type: object
-          properties:
-            initiate3DS:
-              type: string
-            token:
-              type: string
-            status:
-              type: string
-            orderCode:
-              type: string
-            authorizationId:
-              type: string
-        bookings:
-          type: array
-          items:
-            type: object
-            properties:
-              bookingCode:
-                type: string
-              bookingReferenceNumber:
-                type: string
-              bookingStatus:
-                type: string
-              price:
-                type: string
-              currency:
-                type: string
-        metadata:
-          type: object
-          properties:
-            command:
-              type: string
-            transactionId:
-              type: string
-            ip:
-              type: string
-            date:
-              type: string
-
-    CancelBookingRequest:
-      type: object
-      required:
-        - bookingCode
-      properties:
-        bookingCode:
-          type: string
-        bookingType:
-          type: integer
-          description: 1=Confirmed, 2=Saved (default 1).
-        confirm:
-          type: string
-          enum: [yes, no]
-        reason:
-          type: string
-        services:
-          type: array
-          items:
-            type: object
-            properties:
-              serviceCode:
-                type: string
-              penaltyApplied:
-                type: number
-              paymentBalance:
-                type: number
-
-    CancelBookingResponse:
-      type: object
-      properties:
-        successful:
-          type: boolean
-        productsLeftOnItinerary:
-          type: integer
-        services:
-          type: array
-          items:
-            type: object
-            properties:
-              code:
-                type: string
-              cancellationPenalties:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    charge:
-                      type: string
-                    chargeFormatted:
-                      type: string
-                    currency:
-                      type: string
-                    currencyShort:
-                      type: string
-
-    BookingDetailsResponse:
-      type: object
-      properties:
-        successful:
-          type: boolean
-        metadata:
-          type: object
-          properties:
-            command:
-              type: string
-            date:
-              type: string
-            ip:
-              type: string
-        product:
-          type: object
-          properties:
-            bookingReference:
-              type: string
-            bookingReferenceNumber:
-              type: string
-            status:
-              type: object
-            service:
-              type: object
-            dates:
-              type: object
-            room:
-              type: object
-            pax:
-              type: object
-            policies:
-              type: object
-            contact:
-              type: object
-            totals:
-              type: object
-
-    WebbedsSearchResponse:
-      type: object
-      properties:
-        total:
-          type: integer
-        hotels:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-              name:
-                type: string
-              rating:
-                type: number
-              city:
-                type: string
 security:
   - bearerAuth: []

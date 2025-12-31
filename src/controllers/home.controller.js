@@ -631,26 +631,26 @@ export const searchHomes = async (req, res) => {
     const dialect = typeof sequelize.getDialect === "function" ? sequelize.getDialect() : "mysql";
     const iLikeOp = dialect === "mysql" ? Op.like : Op.iLike;
 
-    const addressWhere =
-      lat != null && lng != null
-        ? {
-          latitude: { [Op.not]: null, [Op.between]: [lat - 1, lat + 1] },
-          longitude: { [Op.not]: null, [Op.between]: [lng - 1, lng + 1] },
-        }
-        : rawCity || rawCountry
-          ? {
-            ...(rawCity ? { city: { [iLikeOp]: rawCity } } : {}),
-            ...(rawCountry ? { country: { [iLikeOp]: rawCountry } } : {}),
-          }
-          : null;
+    const addressWhere = {};
+    if (lat != null && lng != null) {
+      addressWhere.latitude = { [Op.not]: null, [Op.between]: [lat - 1, lat + 1] };
+      addressWhere.longitude = { [Op.not]: null, [Op.between]: [lng - 1, lng + 1] };
+    }
+    if (rawCity) {
+      addressWhere.city = { [iLikeOp]: rawCity };
+    }
+    if (rawCountry) {
+      addressWhere.country = { [iLikeOp]: rawCountry };
+    }
+    const hasAddressWhere = Object.keys(addressWhere).length > 0;
 
     const include = [
       {
         model: models.HomeAddress,
         as: "address",
         attributes: addressAttributes,
-        required: Boolean(addressWhere),
-        where: addressWhere || undefined,
+        required: hasAddressWhere,
+        where: hasAddressWhere ? addressWhere : undefined,
       },
       {
         model: models.HomePricing,

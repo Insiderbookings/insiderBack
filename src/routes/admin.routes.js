@@ -1,7 +1,7 @@
 import { Router } from "express"
 import { authenticate, authorizeRoles } from "../middleware/auth.js"
-import { createTenant, listTenants, updateTenant, deleteTenant, listAccounts, linkAccountToTenant, unlinkAccountFromTenant, linkUserToTenant, unlinkUserFromTenant, unpauseTenant } from "../controllers/admin.controller.js"
-import { adminCreateCards, adminApprove, adminListCards , adminMarkPaid} from "../controllers/vcc.controller.js"
+import { createTenant, listTenants, updateTenant, deleteTenant, listAccounts, linkAccountToTenant, unlinkAccountFromTenant, linkUserToTenant, unlinkUserFromTenant, unpauseTenant, getStatsOverview, getHealthStatus } from "../controllers/admin.controller.js"
+import { adminCreateCards, adminApprove, adminListCards, adminMarkPaid } from "../controllers/vcc.controller.js"
 import { adminListPlatforms, adminGetTenantPlatforms, adminUpsertTenantPlatform } from "../controllers/platform.controller.js"
 import {
   adminListRoleRequests,
@@ -18,6 +18,9 @@ import { adminListContracts, adminCreateContract, adminUpdateContract, adminDele
 import { runMockPayouts, runPayoutBatch } from "../controllers/payout.controller.js"
 
 const router = Router()
+
+router.get("/stats/overview", authenticate, authorizeRoles(100), getStatsOverview)
+router.get("/health-status", authenticate, authorizeRoles(100), getHealthStatus)
 
 router.get("/tenants", authenticate, authorizeRoles(100), listTenants)
 router.post("/tenants", authenticate, authorizeRoles(100), createTenant)

@@ -34,3 +34,9 @@ export const leaveChatRoom = (socket, chatId) => {
   socket.leave(`chat:${chatId}`);
 };
 
+export const emitAdminActivity = (payload) => {
+  const io = getIO();
+  if (!io) return;
+  io.emit('admin:activity', payload);
+};
+

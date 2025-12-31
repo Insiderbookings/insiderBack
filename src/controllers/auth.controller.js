@@ -12,6 +12,7 @@ import sendPasswordResetEmail from "../services/sendPasswordResetEmail.js";
 import { OAuth2Client } from "google-auth-library"; // ← para Google Sign-In
 import { getBaseEmailTemplate } from "../emailTemplates/base-template.js";
 import { ReferralError, linkReferralCodeForUser } from "../services/referralRewards.service.js";
+import { emitAdminActivity } from "../websocket/emitter.js";
 
 dotenv.config();
 
@@ -358,6 +359,17 @@ export const registerUser = async (req, res) => {
       referredAt: referral.at ? referral.at.toISOString?.() ?? referral.at : null,
     })
     const safeUser = await loadSafeUser(user.id)
+
+    // Emit real-time activity to Admin Dashboard
+    emitAdminActivity({
+      type: 'user',
+      user: { name: safeUser.name || 'New User' },
+      action: 'joined Insider',
+      location: safeUser.countryCode || 'Global',
+      status: 'SUCCESS',
+      timestamp: new Date()
+    });
+
     return res.status(201).json({ token, user: safeUser })
   } catch (err) {
     console.error(err);
@@ -725,6 +737,7 @@ export const googleExchange = async (req, res) => {
       where: { auth_provider: "google", provider_sub: sub },
     });
 
+    const isNew = !user;
     if (!user) {
       // 3b) ¿existe por email? (posible cuenta local previa)
       user = await models.User.findOne({ where: { email } });
@@ -767,6 +780,18 @@ export const googleExchange = async (req, res) => {
     });
 
     const safeUser = await loadSafeUser(user.id)
+
+    if (isNew) {
+      emitAdminActivity({
+        type: 'user',
+        user: { name: safeUser.name || 'New Google User' },
+        action: 'joined via Google',
+        location: safeUser.countryCode || 'Global',
+        status: 'SUCCESS',
+        timestamp: new Date()
+      });
+    }
+
     return res.json({ token, user: safeUser });
   } catch (err) {
     console.error("googleExchange error:", err);
