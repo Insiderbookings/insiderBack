@@ -1939,6 +1939,7 @@ export const updateHomePolicies = async (req, res) => {
       checkout_time: req.body?.checkOutTime || null,
       quiet_hours_start: req.body?.quietHoursStart || null,
       quiet_hours_end: req.body?.quietHoursEnd || null,
+      cancellation_policy: req.body?.cancellationPolicy || req.body?.cancellation_policy || null,
       smoking_allowed: asBool(req.body?.smokingAllowed, false),
       pets_allowed: asBool(req.body?.petsAllowed, false),
       events_allowed: asBool(req.body?.eventsAllowed, false),

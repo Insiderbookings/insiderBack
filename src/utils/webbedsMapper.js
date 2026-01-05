@@ -41,6 +41,34 @@ const extractShortDescription = (descriptions) => {
   return languageNode?.["#text"] ?? languageNode?.text ?? null;
 };
 
+const extractGeoLocations = (geoPayload) => {
+  if (!geoPayload) return [];
+  const raw = geoPayload?.geoLocation ?? geoPayload?.geoLocations ?? geoPayload;
+  const locations = ensureArray(raw);
+  return locations
+    .map((geo) => {
+      if (!geo) return null;
+      const distanceNode = geo?.distance ?? null;
+      const distanceValue =
+        typeof distanceNode === "object"
+          ? distanceNode?.["#text"] ?? distanceNode?.text ?? distanceNode?.value
+          : distanceNode;
+      const parsedDistance =
+        distanceValue == null ? null : Number(String(distanceValue).replace(/[^0-9.\-]/g, ""));
+      return {
+        id: geo?.["@_id"] ?? geo?.id ?? null,
+        name: geo?.name ?? geo?.["@_name"] ?? geo?.text ?? null,
+        type: geo?.type ?? geo?.["@_type"] ?? null,
+        distance: Number.isFinite(parsedDistance) ? parsedDistance : null,
+        distanceUnit:
+          typeof distanceNode === "object"
+            ? distanceNode?.["@_attr"] ?? distanceNode?.attr ?? null
+            : geo?.distanceAttr ?? null,
+      };
+    })
+    .filter((geo) => geo?.name);
+};
+
 export const formatStaticHotel = (hotel) => {
   if (!hotel) return null;
   const plain = hotel.get ? hotel.get({ plain: true }) : hotel;
@@ -48,6 +76,11 @@ export const formatStaticHotel = (hotel) => {
   const amenityList = extractTextList(plain.amenities, "amenitieItem").slice(0, 6);
   const leisureList = extractTextList(plain.leisure, "leisureItem").slice(0, 4);
   const businessList = extractTextList(plain.business, "businessItem").slice(0, 4);
+  const transportationList = extractTextList(plain.transportation, "transportationItem");
+  const geoLocations = extractGeoLocations(plain.geo_locations);
+  const extraLocations = [plain.location1, plain.location2, plain.location3]
+    .map((item) => (item ? String(item).trim() : null))
+    .filter(Boolean);
   const roomTypesRaw =
     plain.room_static?.roomTypes ||
     plain.room_static ||
@@ -62,16 +95,34 @@ export const formatStaticHotel = (hotel) => {
     cityCode: plain.city_code != null ? String(plain.city_code) : null,
     country: plain.country_name,
     countryCode: plain.country_code != null ? String(plain.country_code) : null,
+    region: plain.region_name ?? null,
+    regionCode: plain.region_code ?? null,
     rating: plain.rating,
     address:
       plain.full_address?.hotelStreetAddress ??
       plain.address ??
       [plain.city_name, plain.country_name].filter(Boolean).join(", "),
+    zipCode: plain.zip_code ?? null,
+    fullAddress: plain.full_address ?? null,
     geoPoint:
       plain.lat != null && plain.lng != null ? { lat: Number(plain.lat), lng: Number(plain.lng) } : null,
+    geoLocations,
     priority: plain.priority,
     preferred: Boolean(plain.preferred),
     exclusive: Boolean(plain.exclusive),
+    contact: {
+      phone: plain.hotel_phone ?? null,
+      checkIn: plain.hotel_check_in ?? null,
+      checkOut: plain.hotel_check_out ?? null,
+      minAge: plain.min_age ?? null,
+    },
+    propertyInfo: {
+      roomsCount: plain.no_of_rooms ?? null,
+      floors: plain.floors ?? null,
+      builtYear: plain.built_year ?? null,
+      renovationYear: plain.renovation_year ?? null,
+    },
+    locations: extraLocations,
     chain: plain.chainCatalog
       ? { code: String(plain.chainCatalog.code), name: plain.chainCatalog.name }
       : plain.chain
@@ -87,6 +138,7 @@ export const formatStaticHotel = (hotel) => {
       Number(plain.images?.hotelImages?.["@_count"] ?? plain.images?.["@count"]) ||
       (plain.images?.hotelImages?.image?.length ?? null),
     shortDescription: extractShortDescription(plain.descriptions),
+    transportation: transportationList,
     amenities: amenityList,
     leisure: leisureList,
     business: businessList,

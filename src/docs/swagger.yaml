@@ -180,6 +180,20 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/Ok"
+  /api/auth/apple/exchange:
+    post:
+      tags: [Auth]
+      summary: Apple auth token exchange
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppleExchangeRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
   /api/auth/auto-signup:
     post:
       tags: [Auth]
@@ -3821,6 +3835,24 @@ components:
       properties:
         code:
           type: string
+    AppleExchangeRequest:
+      type: object
+      required: [identityToken]
+      properties:
+        identityToken:
+          type: string
+        fullName:
+          type: object
+          properties:
+            givenName:
+              type: string
+            middleName:
+              type: string
+            familyName:
+              type: string
+        email:
+          type: string
+          format: email
     AutoSignupRequest:
       type: object
       required: [email, firstName, lastName]

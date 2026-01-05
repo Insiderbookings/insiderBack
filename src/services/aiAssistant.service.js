@@ -404,7 +404,13 @@ export const extractSearchPlan = async (messages = []) => {
   }
 };
 
-export const generateAssistantReply = async ({ plan, messages = [], inventory = {} }) => {
+export const generateAssistantReply = async ({
+  plan,
+  messages = [],
+  inventory = {},
+  trip = null,
+  tripContext = null,
+} = {}) => {
   const client = ensureClient();
   const normalized = sanitizeMessages(messages);
   const latestUserMessage = [...normalized].reverse().find((msg) => msg.role === "user")?.content ?? "";
@@ -440,10 +446,57 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
       preferred: hotel.preferred,
     })),
   };
+  const tripSummary = trip
+    ? {
+        location: trip.location ?? null,
+        stayName: tripContext?.stayName ?? null,
+        dates: tripContext?.dates ?? null,
+        suggestions: (trip.suggestions || []).map((category) => ({
+          id: category.id,
+          label: category.label,
+          places: (category.places || []).slice(0, 4).map((place) => ({
+            id: place.id,
+            name: place.name,
+            rating: place.rating,
+            distanceKm: place.distanceKm,
+            priceLevel: place.priceLevel,
+            address: place.address,
+          })),
+        })),
+        itinerary: Array.isArray(trip.itinerary) ? trip.itinerary : [],
+      }
+    : null;
 
   if (!client) {
     // Fallback without OpenAI
-    if (intent === "SEARCH") {
+    if (intent === "TRIP") {
+      const hasSuggestions = tripSummary?.suggestions?.length;
+      const hasItinerary = tripSummary?.itinerary?.length;
+      const reply = hasSuggestions
+        ? hasItinerary
+          ? pickLanguageText(
+              targetLanguage,
+              "I pulled nearby options and drafted a short itinerary. Want me to adjust the plan or focus on a specific category?",
+              "Encontre opciones cercanas y arme un itinerario corto. Queres que ajuste el plan o que me enfoque en alguna categoria?"
+            )
+          : pickLanguageText(
+              targetLanguage,
+              "I found nearby options based on your stay. Want a day-by-day itinerary too?",
+              "Encontre opciones cercanas segun tu estadia. Queres que arme un itinerario dia por dia?"
+            )
+        : pickLanguageText(
+            targetLanguage,
+            "Tell me what kind of places you want nearby and I will build suggestions.",
+            "Decime que tipo de lugares queres cerca y te armo sugerencias."
+          );
+      return {
+        reply,
+        followUps:
+          targetLanguage === "es"
+            ? ["Ver restaurantes cercanos", "Armar itinerario", "Lugares interesantes"]
+            : ["Nearby restaurants", "Build itinerary", "Interesting places"],
+      };
+    } else if (intent === "SEARCH") {
       const reply =
         inventory.homes?.length || inventory.hotels?.length
           ? isSimilarOnly
@@ -500,7 +553,17 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
     let systemPrompt = "";
     const langLine = languageInstruction(targetLanguage);
 
-    if (intent === "SEARCH") {
+    if (intent === "TRIP") {
+      systemPrompt =
+        "You are a travel planner helping a guest who already booked a stay.\n" +
+        `${langLine}\n` +
+        "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
+        "- Use the provided trip context and suggestions to summarize nearby options.\n" +
+        "- If an itinerary is provided, mention that a day-by-day plan is ready.\n" +
+        "- Keep the reply concise and helpful, highlighting top-rated or closest options.\n" +
+        "- followUps: Ask what category or day to refine.\n" +
+        (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
+    } else if (intent === "SEARCH") {
       systemPrompt =
         "You are a friendly and professional travel assistant. The user is looking for accommodation.\n" +
         `${langLine}\n` +
@@ -532,9 +595,16 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     }
 
-    const userContent = intent === "SEARCH"
-      ? JSON.stringify({ latestUserMessage, plan, inventory: summary })
-      : JSON.stringify({ latestUserMessage, conversationHistory: normalized.slice(-4) });
+    const userContent =
+      intent === "SEARCH"
+        ? JSON.stringify({ latestUserMessage, plan, inventory: summary })
+        : intent === "TRIP"
+          ? JSON.stringify({
+              latestUserMessage,
+              tripContext,
+              trip: tripSummary,
+            })
+          : JSON.stringify({ latestUserMessage, conversationHistory: normalized.slice(-4) });
 
     const completion = await client.chat.completions.create({
       model: DEFAULT_MODEL,
@@ -558,7 +628,20 @@ export const generateAssistantReply = async ({ plan, messages = [], inventory = 
     console.error("[aiAssistant] generate reply failed", err?.message || err);
 
     // Fallback based on intent
-    if (intent === "SEARCH") {
+    if (intent === "TRIP") {
+      const reply = pickLanguageText(
+        targetLanguage,
+        "I can recommend nearby places and build a short itinerary. Tell me what you want to focus on.",
+        "Puedo recomendar lugares cercanos y armar un itinerario corto. Decime en que queres enfocarte."
+      );
+      return {
+        reply,
+        followUps:
+          targetLanguage === "es"
+            ? ["Restaurantes cercanos", "Armar itinerario", "Compras cerca"]
+            : ["Nearby restaurants", "Build itinerary", "Shopping nearby"],
+      };
+    } else if (intent === "SEARCH") {
       const reply =
         inventory.homes?.length || inventory.hotels?.length
           ? isSimilarOnly

@@ -338,11 +338,11 @@ const parseValidForOccupancy = (node) => {
 }
 
 const resolveValidForOccupancyFlag = (node) => {
-  if (node == null) return false
+  if (node == null) return null
   if (typeof node === "boolean") return node
   const text = getText(node)
   if (text != null) return normalizeBoolean(text)
-  return true
+  return null
 }
 
 const parseRateBases = (rateBasesNode, requestedCurrency) => {

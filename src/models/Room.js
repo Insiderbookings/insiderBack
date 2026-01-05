@@ -54,8 +54,10 @@ export default (sequelize) => {
 
   Room.associate = (models) => {
     Room.belongsTo(models.Hotel, { foreignKey: "hotel_id" });
-    Room.hasMany(models.Booking, { foreignKey: "room_id" });
     Room.hasMany(models.BookingAddOn, { foreignKey: "room_id" });
+    if (models.StayHotel) {
+      Room.hasMany(models.StayHotel, { foreignKey: "room_id", as: "stayHotels" });
+    }
   };
 
   return Room;

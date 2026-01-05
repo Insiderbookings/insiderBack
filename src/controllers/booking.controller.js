@@ -9,7 +9,12 @@ import { sendMail } from "../helpers/mailer.js"
 import models, { sequelize } from "../models/index.js"
 import { streamCertificatePDF } from "../helpers/bookingCertificate.js"
 import { sendCancellationEmail } from "../emailTemplates/cancel-email.js"
-import { PROMPT_TRIGGERS, triggerBookingAutoPrompts } from "../services/chat.service.js"
+import {
+  PROMPT_TRIGGERS,
+  createThread,
+  postMessage,
+  triggerBookingAutoPrompts,
+} from "../services/chat.service.js"
 import {
   planReferralCoupon,
   createPendingRedemption,
@@ -36,6 +41,144 @@ const enumerateStayDates = (from, to) => {
     cursor.setUTCDate(cursor.getUTCDate() + 1)
   }
   return dates
+}
+
+const CANCELLATION_POLICY_CODES = {
+  FLEXIBLE: "FLEXIBLE",
+  MODERATE: "MODERATE",
+  FIRM: "FIRM",
+  STRICT: "STRICT",
+  NON_REFUNDABLE: "NON_REFUNDABLE",
+}
+
+const normalizeCancellationPolicy = (value) => {
+  if (!value) return null
+  const normalized = String(value).trim().toLowerCase()
+  if (!normalized) return null
+  if (normalized.includes("flex")) return CANCELLATION_POLICY_CODES.FLEXIBLE
+  if (normalized.includes("moder")) return CANCELLATION_POLICY_CODES.MODERATE
+  if (normalized.includes("firm") || normalized.includes("firme"))
+    return CANCELLATION_POLICY_CODES.FIRM
+  if (normalized.includes("strict") || normalized.includes("estrict"))
+    return CANCELLATION_POLICY_CODES.STRICT
+  if (
+    normalized.includes("non") ||
+    normalized.includes("no reembolsable") ||
+    normalized.includes("no-reembolsable")
+  )
+    return CANCELLATION_POLICY_CODES.NON_REFUNDABLE
+  if (Object.values(CANCELLATION_POLICY_CODES).includes(String(value).toUpperCase())) {
+    return String(value).toUpperCase()
+  }
+  return null
+}
+
+const roundCurrency = (value) => {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 0
+  return Math.round((numeric + Number.EPSILON) * 100) / 100
+}
+
+const buildHomeCancellationQuote = ({
+  policyRaw,
+  checkIn,
+  bookedAt,
+  nights,
+  total,
+  now = new Date(),
+}) => {
+  const policyCode = normalizeCancellationPolicy(policyRaw) || CANCELLATION_POLICY_CODES.FLEXIBLE
+  if (policyCode === CANCELLATION_POLICY_CODES.NON_REFUNDABLE) {
+    return {
+      policyCode,
+      refundPercent: 0,
+      refundAmount: 0,
+      cancellable: false,
+      reason: "This reservation is non-refundable.",
+      timeline: null,
+    }
+  }
+
+  const checkInDate = checkIn ? new Date(`${String(checkIn).slice(0, 10)}T00:00:00Z`) : null
+  const bookedDate =
+    bookedAt instanceof Date
+      ? bookedAt
+      : bookedAt
+        ? new Date(bookedAt)
+        : null
+
+  if (!checkInDate || Number.isNaN(checkInDate.valueOf())) {
+    return {
+      policyCode,
+      refundPercent: 0,
+      refundAmount: 0,
+      cancellable: true,
+      reason: "Missing check-in date for cancellation policy.",
+      timeline: null,
+    }
+  }
+
+  const hoursUntilCheckIn = (checkInDate - now) / 36e5
+  const daysUntilCheckIn = hoursUntilCheckIn / 24
+  const hoursSinceBooking = bookedDate ? (now - bookedDate) / 36e5 : null
+
+  let refundPercent = 0
+  const nightsCount = Number(nights) || 0
+  if (nightsCount >= 28) {
+    const refundAmount = roundCurrency((Number(total) || 0) * (daysUntilCheckIn >= 30 ? 1 : 0))
+    return {
+      policyCode,
+      refundPercent: daysUntilCheckIn >= 30 ? 100 : 0,
+      refundAmount,
+      cancellable: true,
+      reason: null,
+      timeline: {
+        hoursUntilCheckIn,
+        daysUntilCheckIn,
+        hoursSinceBooking,
+        nights: nightsCount || null,
+      },
+    }
+  }
+  if (policyCode === CANCELLATION_POLICY_CODES.FLEXIBLE) {
+    refundPercent = hoursUntilCheckIn >= 24 ? 100 : 0
+  } else if (policyCode === CANCELLATION_POLICY_CODES.MODERATE) {
+    refundPercent = daysUntilCheckIn >= 5 ? 100 : 0
+  } else if (policyCode === CANCELLATION_POLICY_CODES.FIRM) {
+    refundPercent = daysUntilCheckIn >= 30 ? 100 : daysUntilCheckIn >= 7 ? 50 : 0
+  } else if (policyCode === CANCELLATION_POLICY_CODES.STRICT) {
+    const within48h = hoursSinceBooking != null ? hoursSinceBooking <= 48 : false
+    if (within48h && daysUntilCheckIn >= 14) {
+      refundPercent = 100
+    } else {
+      refundPercent = daysUntilCheckIn >= 7 ? 50 : 0
+    }
+  }
+
+  const refundAmount = roundCurrency((Number(total) || 0) * (refundPercent / 100))
+  return {
+    policyCode,
+    refundPercent,
+    refundAmount,
+    cancellable: true,
+    reason: null,
+    timeline: {
+      hoursUntilCheckIn,
+      daysUntilCheckIn,
+      hoursSinceBooking,
+      nights: Number(nights) || null,
+    },
+  }
+}
+
+let stripeClient = null
+const getStripeClient = async () => {
+  if (stripeClient) return stripeClient
+  const key = process.env.STRIPE_SECRET_KEY
+  if (!key) return null
+  const { default: Stripe } = await import("stripe")
+  stripeClient = new Stripe(key, { apiVersion: "2022-11-15" })
+  return stripeClient
 }
 
 // OTP + token helpers (stateless challenge)
@@ -134,23 +277,64 @@ const buildHomePayload = (homeStay) => {
   }
 }
 
+const mergeValues = (base, updates) => {
+  if (!base && !updates) return null
+  const result = base ? { ...base } : {}
+  if (!updates) return Object.keys(result).length ? result : null
+  Object.entries(updates).forEach(([key, value]) => {
+    if (value == null || value === "") return
+    result[key] = value
+  })
+  return Object.keys(result).length ? result : null
+}
+
 const mapStay = (row, source) => {
   const stayHotel = toPlain(row.hotelStay ?? row.StayHotel ?? row.stayHotel) ?? null
   const hotelFromStay = toPlain(stayHotel?.hotel) ?? null
   const roomFromStay = toPlain(stayHotel?.room) ?? toPlain(stayHotel?.room_snapshot) ?? null
+  const inventorySnapshot = toPlain(row.inventory_snapshot ?? row.inventorySnapshot) ?? null
+  const inventoryHotel = toPlain(inventorySnapshot?.hotel) ?? null
+  const inventoryRoom = toPlain(inventorySnapshot?.room) ?? null
+  const inventoryHotelFallback = inventorySnapshot
+    ? {
+        id: inventorySnapshot.hotelId ?? inventoryHotel?.id ?? null,
+        name: inventorySnapshot.hotelName ?? inventoryHotel?.name ?? null,
+        image:
+          inventorySnapshot.hotelImage ??
+          inventoryHotel?.image ??
+          inventoryHotel?.coverImage ??
+          null,
+        city: inventorySnapshot.city ?? inventoryHotel?.city ?? null,
+        country: inventorySnapshot.country ?? inventoryHotel?.country ?? null,
+        rating: inventorySnapshot.rating ?? inventoryHotel?.rating ?? null,
+        address: inventorySnapshot.address ?? inventoryHotel?.address ?? null,
+        location: inventorySnapshot.location ?? null,
+      }
+    : null
+  const inventoryRoomFallback = inventorySnapshot
+    ? {
+        name: inventorySnapshot.roomName ?? inventoryRoom?.name ?? null,
+      }
+    : null
   const hotel = toPlain(row.Hotel ?? row.hotel ?? hotelFromStay) ?? null
   const room = toPlain(row.Room ?? row.room ?? roomFromStay) ?? null
   const tgxMeta = toPlain(row.tgxMeta) ?? null
   const stayHome = toPlain(row.homeStay ?? row.StayHome ?? row.stayHome) ?? null
   const homePayload = stayHome ? buildHomePayload(stayHome) : null
+  const cancellationPolicy =
+    row.meta?.cancellationPolicy ??
+    row.meta?.cancellation_policy ??
+    stayHome?.house_rules_snapshot?.cancellation_policy ??
+    stayHome?.house_rules_snapshot?.cancellationPolicy ??
+    null
 
-  let mergedHotel = hotel
-  let mergedRoom = room
+  let mergedHotel = mergeValues(inventoryHotelFallback, hotel)
+  let mergedRoom = mergeValues(inventoryRoomFallback, room)
   if (source === "tgx" && tgxMeta) {
     const tgxHotel = tgxMeta?.hotel ?? {}
     const tgxRoom = tgxMeta?.rooms?.[0] ?? {}
-    mergedHotel = { ...mergedHotel, ...tgxHotel }
-    mergedRoom = { ...mergedRoom, ...tgxRoom }
+    mergedHotel = mergeValues(mergedHotel, tgxHotel)
+    mergedRoom = mergeValues(mergedRoom, tgxRoom)
   }
 
   const checkIn = row.check_in ?? row.checkIn ?? null
@@ -202,6 +386,7 @@ const mapStay = (row, source) => {
     checkIn,
     checkOut,
     nights,
+    bookedAt: row.booked_at ?? row.bookedAt ?? row.created_at ?? row.createdAt ?? null,
 
     status,
     paymentStatus,
@@ -226,6 +411,9 @@ const mapStay = (row, source) => {
     room: isHomeStay ? null : mergedRoom,
     home: homePayload,
     inventoryType,
+    policies: cancellationPolicy
+      ? { cancellation: cancellationPolicy, cancellation_policy: cancellationPolicy }
+      : null,
 
     outside: Boolean(row.outside),
     active: row.active ?? true,
@@ -523,6 +711,7 @@ export const createBooking = async (req, res) => {
           },
           meta: {
             ...(typeof metaPayload === "object" && metaPayload ? metaPayload : {}),
+            ...(cancellationPolicy ? { cancellationPolicy } : {}),
             ...(referral.influencerId
               ? {
                 referral: {
@@ -676,6 +865,7 @@ export const quoteHomeBooking = async (req, res) => {
     if (!home) return res.status(404).json({ error: "Listing not found or unavailable" })
 
     const pricing = home.pricing ?? {}
+    const cancellationPolicy = home.policies?.cancellation_policy ?? null
     const minStay = Number(pricing.minimum_stay ?? 0) || 1
     const maxStay = Number(pricing.maximum_stay ?? 0) || null
     if (nights < minStay)
@@ -914,6 +1104,7 @@ export const createHomeBooking = async (req, res) => {
       include: [
         { model: models.HomePricing, as: "pricing" },
         { model: models.HomeAddress, as: "address" },
+        { model: models.HomePolicies, as: "policies" },
         {
           model: models.HomeMedia,
           as: "media",
@@ -1179,6 +1370,9 @@ export const createHomeBooking = async (req, res) => {
           host_id: home.host_id,
           cleaning_fee: null,
           security_deposit: securityDeposit || null,
+          house_rules_snapshot: cancellationPolicy
+            ? { cancellation_policy: cancellationPolicy }
+            : null,
           fees_snapshot: {
             extraGuestFee: extraGuestFee || null,
             extraGuestThreshold,
@@ -1737,7 +1931,10 @@ export const cancelBooking = async (req, res) => {
     const { id } = req.params
     const userId = req.user.id
 
-    const booking = await models.Booking.findOne({ where: { id, user_id: userId } })
+    const booking = await models.Booking.findOne({
+      where: { id, user_id: userId },
+      include: [{ model: models.StayHome, as: "homeStay", required: false }],
+    })
     if (!booking) return res.status(404).json({ error: "Booking not found" })
 
     const statusLc = String(booking.status).toLowerCase()
@@ -1746,14 +1943,134 @@ export const cancelBooking = async (req, res) => {
     if (statusLc === "completed")
       return res.status(400).json({ error: "Cannot cancel completed booking" })
 
-    const hoursUntilCI = (new Date(booking.check_in) - new Date()) / 36e5
-    if (hoursUntilCI < 24)
-      return res.status(400).json({ error: "Cannot cancel booking less than 24 hours before check-in" })
+    const isHomeBooking =
+      String(booking.inventory_type || "").toUpperCase() === "HOME" ||
+      String(booking.source || "").toUpperCase() === "HOME"
+    const wasPaid = String(booking.payment_status || "").toUpperCase() === "PAID"
+    const refundCurrency = booking.currency || "USD"
+    let cancellationMeta = null
+    let refundAmount = 0
+    let refundPercent = 0
+    let nextPaymentStatus = wasPaid ? "PAID" : "UNPAID"
+
+    if (isHomeBooking) {
+      let policyRaw =
+        booking.meta?.cancellationPolicy ??
+        booking.meta?.cancellation_policy ??
+        booking.homeStay?.house_rules_snapshot?.cancellation_policy ??
+        booking.homeStay?.house_rules_snapshot?.cancellationPolicy ??
+        null
+
+      if (!policyRaw) {
+        const homeIdValue =
+          booking.homeStay?.home_id ??
+          (booking.inventory_id ? Number.parseInt(booking.inventory_id, 10) : null)
+        if (homeIdValue) {
+          const homePolicies = await models.HomePolicies.findOne({
+            where: { home_id: homeIdValue },
+            attributes: ["cancellation_policy"],
+          })
+          policyRaw = homePolicies?.cancellation_policy ?? null
+        }
+      }
+
+      const quote = buildHomeCancellationQuote({
+        policyRaw,
+        checkIn: booking.check_in,
+        bookedAt: booking.booked_at ?? booking.created_at ?? booking.createdAt ?? null,
+        nights: booking.nights,
+        total: booking.gross_price,
+      })
+
+      if (!quote.cancellable) {
+        return res.status(400).json({ error: quote.reason || "Cancellation not allowed" })
+      }
+
+      refundPercent = quote.refundPercent
+      refundAmount = wasPaid ? quote.refundAmount : 0
+
+      let stripeRefundId = null
+      let stripeRefundStatus = null
+      let paymentIntentStatus = null
+      let paymentIntentCanceled = false
+
+      if (booking.payment_intent_id && (refundAmount > 0 || wasPaid)) {
+        const stripe = await getStripeClient()
+        if (!stripe) {
+          return res.status(500).json({ error: "Stripe is not configured for refunds" })
+        }
+
+        const refundCents = Math.round(refundAmount * 100)
+        const paymentIntent = await stripe.paymentIntents.retrieve(booking.payment_intent_id)
+        paymentIntentStatus = paymentIntent?.status || null
+
+        if (refundCents > 0 && paymentIntent?.status === "succeeded") {
+          const refund = await stripe.refunds.create({
+            payment_intent: booking.payment_intent_id,
+            amount: refundCents,
+            metadata: {
+              stayId: String(booking.id),
+              policy: quote.policyCode,
+              reason: "guest_cancel",
+            },
+          })
+          stripeRefundId = refund.id
+          stripeRefundStatus = refund.status
+        } else if (paymentIntent?.status === "requires_capture") {
+          await stripe.paymentIntents.cancel(booking.payment_intent_id)
+          paymentIntentCanceled = true
+        }
+      } else if (refundAmount > 0 && !booking.payment_intent_id) {
+        return res.status(500).json({ error: "Missing payment intent for refund" })
+      }
+
+      nextPaymentStatus =
+        refundAmount > 0 || stripeRefundId
+          ? "REFUNDED"
+          : !wasPaid && booking.payment_intent_id
+            ? "UNPAID"
+            : paymentIntentCanceled
+              ? "REFUNDED"
+              : wasPaid
+                ? "PAID"
+                : "UNPAID"
+
+      cancellationMeta = {
+        policy: quote.policyCode,
+        refundPercent,
+        refundAmount,
+        currency: refundCurrency,
+        timeline: quote.timeline,
+        paymentIntentStatus,
+        refundId: stripeRefundId,
+        refundStatus: stripeRefundStatus,
+        paymentIntentCanceled,
+        cancelledAt: new Date().toISOString(),
+      }
+    } else {
+      const hoursUntilCI = (new Date(booking.check_in) - new Date()) / 36e5
+      if (hoursUntilCI < 24)
+        return res.status(400).json({ error: "Cannot cancel booking less than 24 hours before check-in" })
+      nextPaymentStatus = wasPaid ? "REFUNDED" : "UNPAID"
+    }
+
+    const metaPayload = cancellationMeta
+      ? {
+        ...(booking.meta || {}),
+        cancellationPolicy:
+          booking.meta?.cancellationPolicy ??
+          booking.meta?.cancellation_policy ??
+          cancellationMeta.policy ??
+          null,
+        cancellation: cancellationMeta,
+      }
+      : booking.meta
 
     await booking.update({
       status: "CANCELLED",
-      payment_status: booking.payment_status === "PAID" ? "REFUNDED" : "UNPAID",
+      payment_status: nextPaymentStatus,
       cancelled_at: new Date(),
+      ...(metaPayload ? { meta: metaPayload } : {}),
     })
 
     if (booking.inventory_type === "HOME") {
@@ -1833,7 +2150,7 @@ export const cancelBooking = async (req, res) => {
     }
 
     // Si quedÃ³ REFUNDED, revertir comisiÃ³n influencer asociada (si no fue pagada)
-    if (String(booking.payment_status).toUpperCase() === 'PAID') {
+    if (wasPaid) {
       try {
         const ic = await models.InfluencerCommission.findOne({ where: { booking_id: booking.id } })
         if (ic && ic.status !== 'paid') {
@@ -1873,7 +2190,14 @@ export const cancelBooking = async (req, res) => {
       }
       const lang = (booking.meta?.language || process.env.DEFAULT_LANG || 'en')
       const policy = null
-      await sendCancellationEmail({ booking: bookingForEmail, toEmail: booking.guest_email, lang, policy, refund: {} })
+      const refund = cancellationMeta
+        ? {
+          amount: refundAmount,
+          currency: refundCurrency,
+          method: cancellationMeta.refundId ? "Stripe" : "Original payment method",
+        }
+        : {}
+      await sendCancellationEmail({ booking: bookingForEmail, toEmail: booking.guest_email, lang, policy, refund })
     } catch (e) {
       console.warn('cancelBooking: could not send cancellation email:', e?.message || e)
     }
@@ -1885,6 +2209,14 @@ export const cancelBooking = async (req, res) => {
         status: String(booking.status).toLowerCase(),
         paymentStatus: String(booking.payment_status).toLowerCase(),
       },
+      refund: cancellationMeta
+        ? {
+          amount: refundAmount,
+          percent: refundPercent,
+          currency: refundCurrency,
+          policy: cancellationMeta.policy,
+        }
+        : null,
     })
   } catch (err) {
     console.error(err)
@@ -2217,6 +2549,103 @@ export const confirmBooking = async (req, res) => {
         fresh.meta?.referral_coupon ??
         null,
     };
+
+    if (!alreadyFinal) {
+      try {
+        const guestUserId = userId;
+        const hostUserId =
+          responsePayload?.home?.hostId ??
+          fresh?.homeStay?.host_id ??
+          fresh?.StayHome?.host_id ??
+          fresh?.meta?.home?.hostId ??
+          null;
+        if (guestUserId && hostUserId) {
+          const listingName =
+            responsePayload?.home?.title ??
+            responsePayload?.hotel_name ??
+            null;
+          const listingLabel = listingName || "your listing";
+          const checkInValue = fresh.check_in ?? responsePayload.checkIn ?? null;
+          const checkOutValue = fresh.check_out ?? responsePayload.checkOut ?? null;
+          const guestNameRaw =
+            fresh.guest_name ??
+            fresh.guest_snapshot?.name ??
+            fresh.guestSnapshot?.name ??
+            req.user?.name ??
+            "Guest";
+          const guestName = String(guestNameRaw).trim() || "Guest";
+          const adultsCount = Number(fresh.adults ?? 0) || 0;
+          const childrenCount = Number(fresh.children ?? 0) || 0;
+          const infantsCount = Number(fresh.infants ?? 0) || 0;
+          const guestParts = [];
+          if (adultsCount) guestParts.push(`${adultsCount} ${adultsCount === 1 ? "adult" : "adults"}`);
+          if (childrenCount) guestParts.push(`${childrenCount} ${childrenCount === 1 ? "child" : "children"}`);
+          if (infantsCount) guestParts.push(`${infantsCount} ${infantsCount === 1 ? "infant" : "infants"}`);
+          const guestLine = guestParts.length ? guestParts.join(", ") : null;
+
+          const detailLines = [
+            listingLabel ? `Listing: ${listingLabel}` : null,
+            checkInValue ? `Check-in: ${checkInValue}` : null,
+            checkOutValue ? `Check-out: ${checkOutValue}` : null,
+            guestLine ? `Guests: ${guestLine}` : null,
+            fresh.id ? `Booking ID: ${fresh.id}` : null,
+          ].filter(Boolean);
+
+          const baseMetadata = {
+            notificationTitle: "Booking confirmation",
+            notificationSender: "BookingGPT",
+            notificationType: "BOOKING_CONFIRMATION",
+          };
+
+          const thread = await createThread({
+            guestUserId,
+            hostUserId,
+            homeId: responsePayload?.home?.id ?? null,
+            reserveId: fresh.id,
+            checkIn: checkInValue,
+            checkOut: checkOutValue,
+            homeSnapshotName: listingName,
+            homeSnapshotImage: responsePayload?.image ?? null,
+          });
+
+          const guestMessage = [
+            "Your reservation is confirmed.",
+            ...detailLines,
+            "You can find all the details in your Trips tab.",
+          ].join("\n");
+
+          const hostMessage = [
+            `${guestName} has booked your listing${listingName ? ` ${listingName}` : ""}.`,
+            ...detailLines,
+            "Review the reservation details in your Host dashboard.",
+          ].join("\n");
+
+          await Promise.allSettled([
+            postMessage({
+              chatId: thread.id,
+              senderId: null,
+              senderRole: "SYSTEM",
+              type: "SYSTEM",
+              body: guestMessage,
+              metadata: { ...baseMetadata, audience: "GUEST" },
+            }),
+            postMessage({
+              chatId: thread.id,
+              senderId: null,
+              senderRole: "SYSTEM",
+              type: "SYSTEM",
+              body: hostMessage,
+              metadata: { ...baseMetadata, audience: "HOST" },
+            }),
+          ]);
+        }
+      } catch (notifyErr) {
+        console.warn(
+          "[CONFIRM BOOKING] notification dispatch failed:",
+          notifyErr?.message || notifyErr
+        );
+      }
+    }
 
     return res.json(responsePayload);
   } catch (err) {

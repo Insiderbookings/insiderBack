@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<customer>
+    <username>InsiderBookings</username>
+    <password>***redacted***</password>
+    <id>2266975</id>
+    <source>1</source>
+    <request command="bookitinerary">
+        <bookingDetails>
+            <bookingType>1</bookingType>
+            <bookingCode>1418526493</bookingCode>
+            <confirm>yes</confirm>
+            <testPricesAndAllocation>
+                <service referencenumber="1418526503">
+                    <testPrice>373.8819</testPrice>
+                    <allocationDetails>1766377301000018B2028B0</allocationDetails>
+                </service>
+            </testPricesAndAllocation>
+            <creditCardPaymentDetails>
+                <paymentMethod>CC_PAYMENT_NET</paymentMethod>
+                <usedCredit>0</usedCredit>
+                <creditCardCharge>373.8819</creditCardCharge>
+                <creditCardDetails>
+                    <orderCode>32100983</orderCode>
+                    <authorisationId>pi_3Sh0cyFtgBUD77He00x2GDPE</authorisationId>
+                </creditCardDetails>
+            </creditCardPaymentDetails>
+        </bookingDetails>
+    </request>
+</customer>

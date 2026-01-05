@@ -44,6 +44,7 @@ const DEFAULT_STATE = {
     bookingFlowLocked: false,
   },
   searchPlan: null,
+  tripContext: null,
 };
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -128,6 +129,12 @@ const normalizeState = (state) => {
     next.searchPlan = state.searchPlan;
   } else {
     next.searchPlan = null;
+  }
+
+  if (state.tripContext && typeof state.tripContext === "object") {
+    next.tripContext = state.tripContext;
+  } else {
+    next.tripContext = null;
   }
 
   if (typeof next.stage !== "string" || !next.stage.trim()) {

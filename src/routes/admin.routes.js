@@ -16,9 +16,14 @@ import { adminListTransfers, adminCreateTransfer, adminCancelTransfer } from "..
 import { syncWebbedsCountriesController, syncWebbedsCitiesController, syncWebbedsHotelsController } from "../controllers/webbedsStatic.controller.js"
 import { adminListContracts, adminCreateContract, adminUpdateContract, adminDeleteContract } from "../controllers/contract.controller.js"
 import { runMockPayouts, runPayoutBatch } from "../controllers/payout.controller.js"
+import { adminUpdateUserStatus, adminGetUserListings, adminSendUserAction } from "../controllers/adminUser.controller.js"
+import { adminUpdateListingStatus } from "../controllers/adminListing.controller.js"
+import { adminListStays, adminGetStayDetail } from "../controllers/adminStay.controller.js"
+import { getKPIDashboard } from "../controllers/adminKPI.controller.js"
 
 const router = Router()
 
+router.get("/stats/kpi", authenticate, authorizeRoles(100), getKPIDashboard)
 router.get("/stats/overview", authenticate, authorizeRoles(100), getStatsOverview)
 router.get("/health-status", authenticate, authorizeRoles(100), getHealthStatus)
 
@@ -52,13 +57,25 @@ router.post("/webbeds/countries/sync", syncWebbedsCountriesController)
 router.post("/webbeds/cities/sync", syncWebbedsCitiesController)
 router.post("/webbeds/hotels/sync", syncWebbedsHotelsController)
 
+// Stays / Bookings admin
+router.get("/stays", authenticate, authorizeRoles(100), adminListStays)
+router.get("/stays/:id", authenticate, authorizeRoles(100), adminGetStayDetail)
+
 // Users and role requests
+router.get("/users/:id/listings", authenticate, authorizeRoles(100), adminGetUserListings)
 router.get("/users", authenticate, authorizeRoles(100), adminListUsers)
 router.get("/role-requests", authenticate, authorizeRoles(100), adminListRoleRequests)
 router.post("/role-requests/:id/approve-initial", authenticate, authorizeRoles(100), adminApproveInitial)
 router.post("/role-requests/:id/approve-kyc", authenticate, authorizeRoles(100), adminApproveKyc)
 router.post("/role-requests/:id/approve-final", authenticate, authorizeRoles(100), adminApproveFinal)
 router.post("/role-requests/:id/reject", authenticate, authorizeRoles(100), adminRejectRequest)
+
+// User Management Actions
+router.put("/users/:id/status", authenticate, authorizeRoles(100), adminUpdateUserStatus)
+router.post("/users/:id/action", authenticate, authorizeRoles(100), adminSendUserAction)
+
+// Listing Management Actions
+router.put("/listings/:id/status", authenticate, authorizeRoles(100), adminUpdateListingStatus)
 
 // Subscribers
 router.get("/subscribers", authenticate, authorizeRoles(100), adminListSubscribers)

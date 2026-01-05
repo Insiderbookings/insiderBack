@@ -1,0 +1,447 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<result command="getrooms" tID="1766504340100001" ip="179.36.95.70" date="2025-12-23 15:39:01"
+    version="4.0" elapsedTime="0.29105305671692">
+    <currencyShort>USD</currencyShort>
+    <hotel id="31294" name="One&amp;Only Royal Mirage">
+        <allowBook>yes</allowBook>
+        <rooms count="1">
+            <room runno="0" count="2" adults="3" children="1" childrenages="18" extrabeds="0">
+                <roomType runno="0" roomtypecode="153234945">
+                    <name>PALACE TWO BEDROOM EXECUTIVE SUITE</name>
+                    <twin>no</twin>
+                    <roomInfo>
+                        <maxOccupancy>5</maxOccupancy>
+                        <maxAdultWithChildren>4</maxAdultWithChildren>
+                        <minChildAge>0</minChildAge>
+                        <maxChildAge>16</maxChildAge>
+                        <maxAdult>4</maxAdult>
+                        <maxExtraBed>0</maxExtraBed>
+                        <maxChildren>2</maxChildren>
+                    </roomInfo>
+                    <specials count="0"></specials>
+                    <rateBases count="2">
+                        <rateBasis runno="0" id="1331" description="Breakfast">
+                            <validForOccupancy>
+                                <adults>4</adults>
+                                <extraBed>0</extraBed>
+                                <extraBedOccupant>child</extraBedOccupant>
+                            </validForOccupancy>
+                            <changedOccupancy>4,0,,0</changedOccupancy>
+                            <status>unchecked</status>
+                            <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+                            <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+                            <allowsExtraMeals>true</allowsExtraMeals>
+                            <allowsSpecialRequests>true</allowsSpecialRequests>
+                            <allowsBeddingPreference>true</allowsBeddingPreference>
+                            <allocationDetails>1766504340000001B1000B0</allocationDetails>
+                            <minStay></minStay>
+                            <dateApplyMinStay></dateApplyMinStay>
+                            <cancellationRules count="2">
+                                <rule runno="0">
+                                    <fromDate>2025-11-30 06:00:00</fromDate>
+                                    <fromDateDetails>Sun, 30 Nov 2025 06:00:00</fromDateDetails>
+                                    <amendCharge>8458.4499<formatted>8,458.45</formatted></amendCharge>
+                                    <cancelCharge>8458.4499<formatted>8,458.45</formatted></cancelCharge>
+                                    <charge>8458.4499<formatted>8,458.45</formatted></charge>
+                                </rule>
+                                <rule runno="1">
+                                    <fromDate>2026-01-02 15:00:00</fromDate>
+                                    <fromDateDetails>Fri, 02 Jan 2026 15:00:00</fromDateDetails>
+                                    <noShowPolicy>true</noShowPolicy>
+                                    <charge>8458.4499<formatted>8,458.45</formatted></charge>
+                                </rule>
+                            </cancellationRules>
+                            <withinCancellationDeadline>yes</withinCancellationDeadline>
+                            <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to hotel per room per night. No show &amp; early departure is subject to 100% charge. No date ,name &amp; room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated.
+
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion
+
+
+
+NOTE: Children 14 years old and above if not booked as an adult during booking time will not be allowed to check in at the hotel. Children under 5 years old must only swim in dedicated children’s swimming zones under parental supervision.
+
+
+
+The meal plan booked can be enjoyed in select restaurants, and please note that a supplement will be charged for other restaurants.
+
+
+
+Guests on Half Board will receive a 25% discount on the food bill during dinner at Drift Beach Club.
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+
+
+Please note that some of the above facilities may be closed due to weather / seasonal conditions.
+
+
+
+Compulsory New Year’s Eve Dinner Supplement is applicable per person per stay for guests staying over 31 Dec. Includes New Year’s Eve Festive dinner, Week Festivities, Fireworks and Cocktail parties.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality Bookings including children will be based on sharing parents bedding and no separate bed for children is provided unless otherwise stated]]></tariffNotes>
+                            <isBookable>yes</isBookable>
+                            <onRequest>0</onRequest>
+                            <extraBedOnRequest>0</extraBedOnRequest>
+                            <total>8458.4499<formatted>8,458.45</formatted></total>
+                            <dates count="2">
+                                <date runno="0" datetime="2026-01-02" day="Jan, 02 2026"
+                                    wday="Friday">
+                                    <price>4229.2249<formatted>4,229.22</formatted></price>
+                                    <freeStay>no</freeStay>
+                                    <dayOnRequest>0</dayOnRequest>
+                                    <dayExtraBedOnRequest>0</dayExtraBedOnRequest>
+                                    <including count="1">
+                                        <includedMeal runno="0">
+                                            <mealName>Buffet</mealName>
+                                            <mealType code="1331">Breakfast</mealType>
+                                        </includedMeal>
+                                    </including>
+                                </date>
+                                <date runno="1" datetime="2026-01-03" day="Jan, 03 2026"
+                                    wday="Saturday">
+                                    <price>4229.2249<formatted>4,229.22</formatted></price>
+                                    <freeStay>no</freeStay>
+                                    <dayOnRequest>0</dayOnRequest>
+                                    <dayExtraBedOnRequest>0</dayExtraBedOnRequest>
+                                    <including count="1">
+                                        <includedMeal runno="0">
+                                            <mealName>Buffet</mealName>
+                                            <mealType code="1331">Breakfast</mealType>
+                                        </includedMeal>
+                                    </including>
+                                </date>
+                            </dates>
+                            <leftToSell>9999</leftToSell>
+                        </rateBasis>
+                        <rateBasis runno="1" id="1334" description="Half Board">
+                            <validForOccupancy>
+                                <adults>4</adults>
+                                <extraBed>0</extraBed>
+                                <extraBedOccupant>child</extraBedOccupant>
+                            </validForOccupancy>
+                            <changedOccupancy>4,0,,0</changedOccupancy>
+                            <status>unchecked</status>
+                            <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+                            <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+                            <allowsExtraMeals>true</allowsExtraMeals>
+                            <allowsSpecialRequests>true</allowsSpecialRequests>
+                            <allowsBeddingPreference>true</allowsBeddingPreference>
+                            <allocationDetails>1766504340000001B1000B1</allocationDetails>
+                            <minStay></minStay>
+                            <dateApplyMinStay></dateApplyMinStay>
+                            <cancellationRules count="2">
+                                <rule runno="0">
+                                    <fromDate>2025-11-30 06:00:00</fromDate>
+                                    <fromDateDetails>Sun, 30 Nov 2025 06:00:00</fromDateDetails>
+                                    <amendCharge>9181.3943<formatted>9,181.39</formatted></amendCharge>
+                                    <cancelCharge>9181.3943<formatted>9,181.39</formatted></cancelCharge>
+                                    <charge>9181.3943<formatted>9,181.39</formatted></charge>
+                                </rule>
+                                <rule runno="1">
+                                    <fromDate>2026-01-02 15:00:00</fromDate>
+                                    <fromDateDetails>Fri, 02 Jan 2026 15:00:00</fromDateDetails>
+                                    <noShowPolicy>true</noShowPolicy>
+                                    <charge>9181.3943<formatted>9,181.39</formatted></charge>
+                                </rule>
+                            </cancellationRules>
+                            <withinCancellationDeadline>yes</withinCancellationDeadline>
+                            <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to hotel per room per night. No show &amp; early departure is subject to 100% charge. No date ,name &amp; room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated.
+
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion
+
+
+
+NOTE: Children 14 years old and above if not booked as an adult during booking time will not be allowed to check in at the hotel. Children under 5 years old must only swim in dedicated children’s swimming zones under parental supervision.
+
+
+
+The meal plan booked can be enjoyed in select restaurants, and please note that a supplement will be charged for other restaurants.
+
+
+
+Guests on Half Board will receive a 25% discount on the food bill during dinner at Drift Beach Club.
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+
+
+Please note that some of the above facilities may be closed due to weather / seasonal conditions.
+
+
+
+Compulsory New Year’s Eve Dinner Supplement is applicable per person per stay for guests staying over 31 Dec. Includes New Year’s Eve Festive dinner, Week Festivities, Fireworks and Cocktail parties.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality Bookings including children will be based on sharing parents bedding and no separate bed for children is provided unless otherwise stated]]></tariffNotes>
+                            <isBookable>yes</isBookable>
+                            <onRequest>0</onRequest>
+                            <extraBedOnRequest>0</extraBedOnRequest>
+                            <total>9181.3943<formatted>9,181.39</formatted></total>
+                            <dates count="2">
+                                <date runno="0" datetime="2026-01-02" day="Jan, 02 2026"
+                                    wday="Friday">
+                                    <price>4590.6971<formatted>4,590.70</formatted></price>
+                                    <freeStay>no</freeStay>
+                                    <dayOnRequest>0</dayOnRequest>
+                                    <dayExtraBedOnRequest>0</dayExtraBedOnRequest>
+                                    <including count="1">
+                                        <includedMeal runno="0">
+                                            <mealName>Breakfast + Dinner</mealName>
+                                            <mealType code="1334">Half Board</mealType>
+                                        </includedMeal>
+                                    </including>
+                                </date>
+                                <date runno="1" datetime="2026-01-03" day="Jan, 03 2026"
+                                    wday="Saturday">
+                                    <price>4590.6971<formatted>4,590.70</formatted></price>
+                                    <freeStay>no</freeStay>
+                                    <dayOnRequest>0</dayOnRequest>
+                                    <dayExtraBedOnRequest>0</dayExtraBedOnRequest>
+                                    <including count="1">
+                                        <includedMeal runno="0">
+                                            <mealName>Breakfast + Dinner</mealName>
+                                            <mealType code="1334">Half Board</mealType>
+                                        </includedMeal>
+                                    </including>
+                                </date>
+                            </dates>
+                            <leftToSell>9999</leftToSell>
+                        </rateBasis>
+                    </rateBases>
+                </roomType>
+                <roomType runno="1" roomtypecode="153235115">
+                    <name>Palace Manzil Two Bedroom Suite</name>
+                    <twin>no</twin>
+                    <roomInfo>
+                        <maxOccupancy>5</maxOccupancy>
+                        <maxAdultWithChildren>4</maxAdultWithChildren>
+                        <minChildAge>0</minChildAge>
+                        <maxChildAge>16</maxChildAge>
+                        <maxAdult>4</maxAdult>
+                        <maxExtraBed>0</maxExtraBed>
+                        <maxChildren>2</maxChildren>
+                    </roomInfo>
+                    <specials count="0"></specials>
+                    <rateBases count="2">
+                        <rateBasis runno="0" id="1331" description="Breakfast">
+                            <validForOccupancy>
+                                <adults>4</adults>
+                                <extraBed>0</extraBed>
+                                <extraBedOccupant>child</extraBedOccupant>
+                            </validForOccupancy>
+                            <changedOccupancy>4,0,,0</changedOccupancy>
+                            <status>unchecked</status>
+                            <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+                            <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+                            <allowsExtraMeals>true</allowsExtraMeals>
+                            <allowsSpecialRequests>true</allowsSpecialRequests>
+                            <allowsBeddingPreference>true</allowsBeddingPreference>
+                            <allocationDetails>1766504340000001B1000B2</allocationDetails>
+                            <minStay></minStay>
+                            <dateApplyMinStay></dateApplyMinStay>
+                            <cancellationRules count="2">
+                                <rule runno="0">
+                                    <fromDate>2025-11-30 06:00:00</fromDate>
+                                    <fromDateDetails>Sun, 30 Nov 2025 06:00:00</fromDateDetails>
+                                    <amendCharge>9597.0873<formatted>9,597.09</formatted></amendCharge>
+                                    <cancelCharge>9597.0873<formatted>9,597.09</formatted></cancelCharge>
+                                    <charge>9597.0873<formatted>9,597.09</formatted></charge>
+                                </rule>
+                                <rule runno="1">
+                                    <fromDate>2026-01-02 15:00:00</fromDate>
+                                    <fromDateDetails>Fri, 02 Jan 2026 15:00:00</fromDateDetails>
+                                    <noShowPolicy>true</noShowPolicy>
+                                    <charge>9597.0873<formatted>9,597.09</formatted></charge>
+                                </rule>
+                            </cancellationRules>
+                            <withinCancellationDeadline>yes</withinCancellationDeadline>
+                            <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to hotel per room per night. No show &amp; early departure is subject to 100% charge. No date ,name &amp; room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated.
+
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion
+
+
+
+NOTE: Children 14 years old and above if not booked as an adult during booking time will not be allowed to check in at the hotel. Children under 5 years old must only swim in dedicated children’s swimming zones under parental supervision.
+
+
+
+The meal plan booked can be enjoyed in select restaurants, and please note that a supplement will be charged for other restaurants.
+
+
+
+Guests on Half Board will receive a 25% discount on the food bill during dinner at Drift Beach Club.
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+
+
+Please note that some of the above facilities may be closed due to weather / seasonal conditions.
+
+
+
+Compulsory New Year’s Eve Dinner Supplement is applicable per person per stay for guests staying over 31 Dec. Includes New Year’s Eve Festive dinner, Week Festivities, Fireworks and Cocktail parties.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality Bookings including children will be based on sharing parents bedding and no separate bed for children is provided unless otherwise stated]]></tariffNotes>
+                            <isBookable>yes</isBookable>
+                            <onRequest>0</onRequest>
+                            <extraBedOnRequest>0</extraBedOnRequest>
+                            <total>9597.0873<formatted>9,597.09</formatted></total>
+                            <dates count="2">
+                                <date runno="0" datetime="2026-01-02" day="Jan, 02 2026"
+                                    wday="Friday">
+                                    <price>4798.5437<formatted>4,798.54</formatted></price>
+                                    <freeStay>no</freeStay>
+                                    <dayOnRequest>0</dayOnRequest>
+                                    <dayExtraBedOnRequest>0</dayExtraBedOnRequest>
+                                    <including count="1">
+                                        <includedMeal runno="0">
+                                            <mealName>Buffet</mealName>
+                                            <mealType code="1331">Breakfast</mealType>
+                                        </includedMeal>
+                                    </including>
+                                </date>
+                                <date runno="1" datetime="2026-01-03" day="Jan, 03 2026"
+                                    wday="Saturday">
+                                    <price>4798.5437<formatted>4,798.54</formatted></price>
+                                    <freeStay>no</freeStay>
+                                    <dayOnRequest>0</dayOnRequest>
+                                    <dayExtraBedOnRequest>0</dayExtraBedOnRequest>
+                                    <including count="1">
+                                        <includedMeal runno="0">
+                                            <mealName>Buffet</mealName>
+                                            <mealType code="1331">Breakfast</mealType>
+                                        </includedMeal>
+                                    </including>
+                                </date>
+                            </dates>
+                            <leftToSell>9999</leftToSell>
+                        </rateBasis>
+                        <rateBasis runno="1" id="1334" description="Half Board">
+                            <validForOccupancy>
+                                <adults>4</adults>
+                                <extraBed>0</extraBed>
+                                <extraBedOccupant>child</extraBedOccupant>
+                            </validForOccupancy>
+                            <changedOccupancy>4,0,,0</changedOccupancy>
+                            <status>unchecked</status>
+                            <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+                            <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+                            <allowsExtraMeals>true</allowsExtraMeals>
+                            <allowsSpecialRequests>true</allowsSpecialRequests>
+                            <allowsBeddingPreference>true</allowsBeddingPreference>
+                            <allocationDetails>1766504340000001B1000B3</allocationDetails>
+                            <minStay></minStay>
+                            <dateApplyMinStay></dateApplyMinStay>
+                            <cancellationRules count="2">
+                                <rule runno="0">
+                                    <fromDate>2025-11-30 06:00:00</fromDate>
+                                    <fromDateDetails>Sun, 30 Nov 2025 06:00:00</fromDateDetails>
+                                    <amendCharge>10320.0318<formatted>10,320.03</formatted></amendCharge>
+                                    <cancelCharge>10320.0318<formatted>10,320.03</formatted></cancelCharge>
+                                    <charge>10320.0318<formatted>10,320.03</formatted></charge>
+                                </rule>
+                                <rule runno="1">
+                                    <fromDate>2026-01-02 15:00:00</fromDate>
+                                    <fromDateDetails>Fri, 02 Jan 2026 15:00:00</fromDateDetails>
+                                    <noShowPolicy>true</noShowPolicy>
+                                    <charge>10320.0318<formatted>10,320.03</formatted></charge>
+                                </rule>
+                            </cancellationRules>
+                            <withinCancellationDeadline>yes</withinCancellationDeadline>
+                            <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to hotel per room per night. No show &amp; early departure is subject to 100% charge. No date ,name &amp; room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated.
+
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion
+
+
+
+NOTE: Children 14 years old and above if not booked as an adult during booking time will not be allowed to check in at the hotel. Children under 5 years old must only swim in dedicated children’s swimming zones under parental supervision.
+
+
+
+The meal plan booked can be enjoyed in select restaurants, and please note that a supplement will be charged for other restaurants.
+
+
+
+Guests on Half Board will receive a 25% discount on the food bill during dinner at Drift Beach Club.
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+
+
+Please note that some of the above facilities may be closed due to weather / seasonal conditions.
+
+
+
+Compulsory New Year’s Eve Dinner Supplement is applicable per person per stay for guests staying over 31 Dec. Includes New Year’s Eve Festive dinner, Week Festivities, Fireworks and Cocktail parties.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality Bookings including children will be based on sharing parents bedding and no separate bed for children is provided unless otherwise stated]]></tariffNotes>
+                            <isBookable>yes</isBookable>
+                            <onRequest>0</onRequest>
+                            <extraBedOnRequest>0</extraBedOnRequest>
+                            <total>10320.0318<formatted>10,320.03</formatted></total>
+                            <dates count="2">
+                                <date runno="0" datetime="2026-01-02" day="Jan, 02 2026"
+                                    wday="Friday">
+                                    <price>5160.0159<formatted>5,160.02</formatted></price>
+                                    <freeStay>no</freeStay>
+                                    <dayOnRequest>0</dayOnRequest>
+                                    <dayExtraBedOnRequest>0</dayExtraBedOnRequest>
+                                    <including count="1">
+                                        <includedMeal runno="0">
+                                            <mealName>Breakfast + Dinner</mealName>
+                                            <mealType code="1334">Half Board</mealType>
+                                        </includedMeal>
+                                    </including>
+                                </date>
+                                <date runno="1" datetime="2026-01-03" day="Jan, 03 2026"
+                                    wday="Saturday">
+                                    <price>5160.0159<formatted>5,160.02</formatted></price>
+                                    <freeStay>no</freeStay>
+                                    <dayOnRequest>0</dayOnRequest>
+                                    <dayExtraBedOnRequest>0</dayExtraBedOnRequest>
+                                    <including count="1">
+                                        <includedMeal runno="0">
+                                            <mealName>Breakfast + Dinner</mealName>
+                                            <mealType code="1334">Half Board</mealType>
+                                        </includedMeal>
+                                    </including>
+                                </date>
+                            </dates>
+                            <leftToSell>9999</leftToSell>
+                        </rateBasis>
+                    </rateBases>
+                </roomType>
+                <lookedForText>Room Number 1: 3 adult/s and 1 child</lookedForText>
+            </room>
+        </rooms>
+        <extraMeals count="0"></extraMeals>
+    </hotel>
+    <successful>TRUE</successful>
+</result>

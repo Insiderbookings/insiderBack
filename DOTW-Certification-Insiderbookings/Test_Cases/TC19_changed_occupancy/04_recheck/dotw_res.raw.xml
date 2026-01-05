@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<result command="bookitinerary" tID="1766504416100007" ip="179.36.95.70" date="2025-12-23 15:40:16"
+    version="4.0" elapsedTime="0.16626405715942">
+    <currencyShort>USD</currencyShort>
+    <isMaqamSupplier>0</isMaqamSupplier>
+    <product runno="0" code="1418878283" type="hotel" servicename="One&amp;Only Royal Mirage">
+        <cancellationRules count="2">
+            <rule runno="0">
+                <fromDate>2025-11-30 06:00:00</fromDate>
+                <fromDateDetails>Sun, 30 Nov 2025 06:00:00</fromDateDetails>
+                <amendCharge>8458.4499<formatted>8,458.45</formatted></amendCharge>
+                <cancelCharge>8458.4499<formatted>8,458.45</formatted></cancelCharge>
+                <charge>8458.4499<formatted>8,458.45</formatted></charge>
+            </rule>
+            <rule runno="1">
+                <fromDate>2026-01-02 15:00:00</fromDate>
+                <fromDateDetails>Fri, 02 Jan 2026 15:00:00</fromDateDetails>
+                <noShowPolicy>true</noShowPolicy>
+                <charge>8458.4499<formatted>8,458.45</formatted></charge>
+            </rule>
+        </cancellationRules>
+        <withinCancellationDeadline>yes</withinCancellationDeadline>
+        <available>TRUE</available>
+        <servicePrice>8458.4499<formatted>8,458.45</formatted></servicePrice>
+        <mealsPrice>0<formatted>0.00</formatted></mealsPrice>
+        <allocationDetails>1766504416000001B1000B0</allocationDetails>
+        <dates count="2">
+            <date runno="0" datetime="2026-01-02" day="Jan, 02 2026" wday="Friday">
+                <price>4229.2249<formatted>4,229.22</formatted></price>
+                <dayOnRequest>0</dayOnRequest>
+                <freeStay>no</freeStay>
+                <including>
+                    <includedMeal runno="0">
+                        <mealName>Buffet</mealName>
+                        <type code="1331">1331</type>
+                    </includedMeal>
+                </including>
+            </date>
+            <date runno="1" datetime="2026-01-03" day="Jan, 03 2026" wday="Saturday">
+                <price>4229.2249<formatted>4,229.22</formatted></price>
+                <dayOnRequest>0</dayOnRequest>
+                <freeStay>no</freeStay>
+                <including>
+                    <includedMeal runno="0">
+                        <mealName>Buffet</mealName>
+                        <type code="1331">1331</type>
+                    </includedMeal>
+                </including>
+            </date>
+        </dates>
+        <price>8458.4499<formatted>8,458.45</formatted></price>
+        <currencyShort>USD</currencyShort>
+        <fromShort>Fri, 02 Jan 2026</fromShort>
+        <toShort>Sun, 04 Jan 2026</toShort>
+        <onRequest>0</onRequest>
+    </product>
+    <successful>TRUE</successful>
+</result>

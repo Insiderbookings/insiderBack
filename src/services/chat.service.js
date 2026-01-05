@@ -55,6 +55,47 @@ const mapMessage = (message) => ({
   updatedAt: message.updatedAt,
 });
 
+const normalizeAudience = (audience) => {
+  if (!audience) return null;
+  return String(audience).trim().toUpperCase();
+};
+
+const buildAudienceFilter = (audience) => {
+  const normalized = normalizeAudience(audience);
+  if (!normalized) return null;
+  return {
+    [Op.or]: [
+      { metadata: null },
+      sequelize.where(sequelize.json("metadata.audience"), { [Op.is]: null }),
+      sequelize.where(sequelize.json("metadata.audience"), "ALL"),
+      sequelize.where(sequelize.json("metadata.audience"), "BOTH"),
+      sequelize.where(sequelize.json("metadata.audience"), normalized),
+    ],
+  };
+};
+
+const addAndCondition = (where, condition) => {
+  if (!condition) return where;
+  const next = { ...where };
+  const existing = next[Op.and];
+  if (Array.isArray(existing)) {
+    next[Op.and] = [...existing, condition];
+  } else if (existing) {
+    next[Op.and] = [existing, condition];
+  } else {
+    next[Op.and] = [condition];
+  }
+  return next;
+};
+
+const resolveAudienceForUser = ({ thread, userId, participant }) => {
+  if (participant?.role) return normalizeAudience(participant.role);
+  if (!thread || !userId) return null;
+  if (thread.guest_user_id === userId) return "GUEST";
+  if (thread.host_user_id === userId) return "HOST";
+  return null;
+};
+
 const ensureSnapshot = async ({
   homeId,
   snapshotName,
@@ -448,7 +489,7 @@ export const postMessage = async ({
     ],
   });
 
-  emitToRoom(CHAT_ROOM(chatId), "chat:message", mapMessage(message));
+  const messagePayload = mapMessage(message);
   const thread = await ChatThread.findByPk(chatId, {
     // include home_id so prompt filtering by HOME works
     attributes: [
@@ -461,6 +502,17 @@ export const postMessage = async ({
     ],
   });
 
+  const audience = normalizeAudience(messagePayload?.metadata?.audience);
+  if (audience === "HOST" || audience === "GUEST") {
+    const targetId =
+      audience === "HOST" ? thread?.host_user_id : thread?.guest_user_id;
+    if (targetId) {
+      emitToUser(targetId, "chat:message", messagePayload);
+    }
+  } else {
+    emitToRoom(CHAT_ROOM(chatId), "chat:message", messagePayload);
+  }
+
   if (thread) {
     emitUnreadCounters(thread);
   }
@@ -470,7 +522,7 @@ export const postMessage = async ({
     await enqueueNextPromptIfNeeded({ thread });
   }
 
-  return mapMessage(message);
+  return messagePayload;
 };
 
 const enqueueNextPromptIfNeeded = async ({ thread }) => {
@@ -514,6 +566,16 @@ const enqueueNextPromptIfNeeded = async ({ thread }) => {
   }
 };
 
+const getLastVisibleMessageAt = async ({ chatId, audience }) => {
+  const where = addAndCondition({ chat_id: chatId }, buildAudienceFilter(audience));
+  const message = await ChatMessage.findOne({
+    where,
+    order: [["createdAt", "DESC"]],
+    attributes: ["createdAt"],
+  });
+  return message?.createdAt ?? null;
+};
+
 const emitUnreadCounters = async (thread) => {
   const participants = await ChatParticipant.findAll({
     where: { chat_id: thread.id },
@@ -524,33 +586,39 @@ const emitUnreadCounters = async (thread) => {
       chatId: thread.id,
       userId: participant.user_id,
       lastReadAt: participant.last_read_at,
+      audience: participant.role,
+    });
+
+    const lastMessageAt = await getLastVisibleMessageAt({
+      chatId: thread.id,
+      audience: participant.role,
     });
 
     emitToUser(participant.user_id, "chat:unread", {
       chatId: thread.id,
       unread,
-      lastMessageAt: thread.last_message_at,
+      lastMessageAt: lastMessageAt ?? thread.last_message_at,
     });
   }
 };
 
-const countUnreadForUser = async ({ chatId, userId, lastReadAt }) => {
-  const where = {
+const countUnreadForUser = async ({
+  chatId,
+  userId,
+  lastReadAt,
+  audience,
+}) => {
+  let where = {
     chat_id: chatId,
-    sender_role: { [Op.ne]: "SYSTEM" },
   };
   if (lastReadAt) {
-    where.createdAt = { [Op.gt]: lastReadAt };
+    where = { ...where, createdAt: { [Op.gt]: lastReadAt } };
   }
-  return ChatMessage.count({
-    where: {
-      ...where,
-      [Op.or]: [
-        { sender_id: { [Op.ne]: userId } },
-        { sender_id: null },
-      ],
-    },
+  where = addAndCondition(where, buildAudienceFilter(audience));
+  where = addAndCondition(where, {
+    [Op.or]: [{ sender_id: { [Op.ne]: userId } }, { sender_id: null }],
   });
+  return ChatMessage.count({ where });
 };
 
 export const markThreadRead = async ({ chatId, userId }) => {
@@ -636,8 +704,9 @@ export const getThreadForUser = async ({ userId, chatId }) => {
 };
 
 const mapThreadForUser = async ({ thread, userId }) => {
+  const audience = resolveAudienceForUser({ thread, userId });
   const lastMessage = await ChatMessage.findOne({
-    where: { chat_id: thread.id },
+    where: addAndCondition({ chat_id: thread.id }, buildAudienceFilter(audience)),
     order: [["createdAt", "DESC"]],
   });
 
@@ -649,6 +718,7 @@ const mapThreadForUser = async ({ thread, userId }) => {
     chatId: thread.id,
     userId,
     lastReadAt: participant?.last_read_at,
+    audience,
   });
 
   const guest =
@@ -673,7 +743,7 @@ const mapThreadForUser = async ({ thread, userId }) => {
     },
     checkIn: thread.check_in,
     checkOut: thread.check_out,
-    lastMessageAt: thread.last_message_at,
+    lastMessageAt: lastMessage?.createdAt ?? thread.last_message_at,
     unreadCount: unread,
     guest: mapUserSummary(guest),
     host: mapUserSummary(host),
@@ -687,13 +757,18 @@ export const listMessagesForUser = async ({
   limit = 50,
   before = null,
 }) => {
-  await fetchParticipant({ chatId, userId });
+  const participant = await fetchParticipant({ chatId, userId });
+  const audience = participant?.role ?? null;
 
   // If this is the first load (no paging cursor) and the
   // thread has no messages yet, enqueue auto-prompts so that
   // a freshly started chat shows initial questions.
   if (!before) {
-    const existingCount = await ChatMessage.count({ where: { chat_id: chatId } });
+    const visibleWhere = addAndCondition(
+      { chat_id: chatId },
+      buildAudienceFilter(audience)
+    );
+    const existingCount = await ChatMessage.count({ where: visibleWhere });
     if (existingCount === 0) {
       const thread = await ChatThread.findByPk(chatId);
       if (thread && thread.status === "OPEN") {
@@ -702,10 +777,12 @@ export const listMessagesForUser = async ({
     }
   }
 
-  const where = { chat_id: chatId };
+  let where = { chat_id: chatId };
   if (before) {
-    where.id = { [Op.lt]: before };
+    where = { ...where, id: { [Op.lt]: before } };
   }
+
+  where = addAndCondition(where, buildAudienceFilter(audience));
 
   const messages = await ChatMessage.findAll({
     where,

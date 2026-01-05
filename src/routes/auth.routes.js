@@ -24,6 +24,7 @@ import {
 
   /* Google (GIS popup + code exchange) */
   googleExchange,
+  appleExchange,
 } from "../controllers/auth.controller.js";
 
 import { autoSignupOrLogin } from "../controllers/auth.auto.controller.js";
@@ -77,6 +78,12 @@ router.post(
   "/google/exchange",
   [ body("code").notEmpty() ],
   googleExchange,
+);
+
+router.post(
+  "/apple/exchange",
+  [ body("identityToken").notEmpty() ],
+  appleExchange,
 );
 
 /* ════════════════════════════════════════════════════════════════

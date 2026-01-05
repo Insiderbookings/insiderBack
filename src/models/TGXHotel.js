@@ -39,9 +39,7 @@ export default (sequelize) => {
     }
   )
 
-  TGXHotel.associate = (models) => {
-    TGXHotel.hasMany(models.Booking, { foreignKey: 'tgx_hotel_id' })
-  }
+  TGXHotel.associate = () => {}
 
   return TGXHotel
 }

@@ -4,6 +4,7 @@ export const INTENTS = {
   SEARCH: "SEARCH",
   HELP: "HELP",
   SMALL_TALK: "SMALL_TALK",
+  TRIP: "TRIP",
 };
 
 export const NEXT_ACTIONS = {
@@ -11,6 +12,7 @@ export const NEXT_ACTIONS = {
   ASK_FOR_DATES: "ASK_FOR_DATES",
   ASK_FOR_GUESTS: "ASK_FOR_GUESTS",
   RUN_SEARCH: "RUN_SEARCH",
+  RUN_TRIP: "RUN_TRIP",
   HELP: "HELP",
   SMALL_TALK: "SMALL_TALK",
 };
@@ -24,6 +26,7 @@ export const STAGES = {
   QUOTE: "QUOTE",
   READY_TO_BOOK: "READY_TO_BOOK",
   BOOKED: "BOOKED",
+  TRIP_ASSIST: "TRIP_ASSIST",
 };
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -179,6 +182,8 @@ export const updateStageFromAction = (state, nextAction) => {
     next.stage = STAGES.NEED_GUESTS;
   } else if (nextAction === NEXT_ACTIONS.RUN_SEARCH) {
     next.stage = STAGES.SHOW_RESULTS;
+  } else if (nextAction === NEXT_ACTIONS.RUN_TRIP) {
+    next.stage = STAGES.TRIP_ASSIST;
   }
   return next;
 };

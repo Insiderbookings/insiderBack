@@ -3,15 +3,15 @@ import {
   createAssistantChat,
   deleteAssistantChat,
   getAssistantChat,
-  handleAssistantSearch,
   listAssistantChats,
 } from "../controllers/aiAssistant.controller.js";
+import { handleAiChat } from "../controllers/ai.controller.js";
 import { authenticate } from "../middleware/auth.js";
 
 const router = Router();
 
 router.use(authenticate);
-router.post("/search", handleAssistantSearch);
+router.post("/search", handleAiChat);
 router.post("/chats", createAssistantChat);
 router.get("/chats", listAssistantChats);
 router.get("/chats/:sessionId", getAssistantChat);

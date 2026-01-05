@@ -9,7 +9,8 @@ import { sequelize } from "../models/index.js";
 import { random4 } from "../utils/random4.js";
 import transporter from "../services/transporter.js";
 import sendPasswordResetEmail from "../services/sendPasswordResetEmail.js";
-import { OAuth2Client } from "google-auth-library"; // ← para Google Sign-In
+import { OAuth2Client } from "google-auth-library";
+import { createRemoteJWKSet, jwtVerify } from "jose"; // ← para Google Sign-In
 import { getBaseEmailTemplate } from "../emailTemplates/base-template.js";
 import { ReferralError, linkReferralCodeForUser } from "../services/referralRewards.service.js";
 import { emitAdminActivity } from "../websocket/emitter.js";
@@ -18,6 +19,9 @@ dotenv.config();
 
 const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+const APPLE_ISSUER = "https://appleid.apple.com";
+const APPLE_CLIENT_ID = process.env.APPLE_CLIENT_ID || process.env.APPLE_BUNDLE_ID;
+const appleJwks = createRemoteJWKSet(new URL("https://appleid.apple.com/auth/keys"));
 
 const USER_SAFE_ATTRIBUTES = [
   "id",
@@ -69,6 +73,21 @@ const presentUser = (user) => {
     hostProfile: plain.hostProfile || null,
     guestProfile: plain.guestProfile || null,
   };
+};
+
+const normalizeAppleBool = (value) => value === true || value === "true";
+
+const resolveAppleName = (fullName, fallbackEmail) => {
+  if (typeof fullName === "string" && fullName.trim()) return fullName.trim();
+  if (fullName && typeof fullName === "object") {
+    const parts = [fullName.givenName, fullName.middleName, fullName.familyName]
+      .filter(Boolean)
+      .map((part) => String(part).trim())
+      .filter(Boolean);
+    if (parts.length) return parts.join(" ");
+  }
+  if (fallbackEmail) return String(fallbackEmail).split("@")[0];
+  return "Apple User";
 };
 
 const loadSafeUser = async (id) => {
@@ -389,9 +408,19 @@ export const loginUser = async (req, res) => {
 
     /* 2 ▸ Comparar contraseña (usa la columna correcta password_hash) */
     // Guard: if account is Google-linked or has no local password, block local login
-    if (user.auth_provider === "google" || !user.password_hash) {
+    if (user.auth_provider === "google") {
       return res.status(409).json({
         error: "This account was created with Google Sign-In. Please log in with Google.",
+      });
+    }
+    if (user.auth_provider === "apple") {
+      return res.status(409).json({
+        error: "This account was created with Apple Sign-In. Please log in with Apple.",
+      });
+    }
+    if (!user.password_hash) {
+      return res.status(409).json({
+        error: "This account does not have a local password. Please use social login.",
       });
     }
 
@@ -795,6 +824,120 @@ export const googleExchange = async (req, res) => {
     return res.json({ token, user: safeUser });
   } catch (err) {
     console.error("googleExchange error:", err);
+    return res.status(500).json({ error: "Internal error" });
+  }
+};
+
+/*
+  APPLE SIGN-IN: Exchange identity token -> user
+  Route: POST /auth/apple/exchange
+  Body: { identityToken, fullName?, email? }
+*/
+export const appleExchange = async (req, res) => {
+  try {
+    const { identityToken, fullName, email: providedEmail } = req.body || {};
+    if (!identityToken) {
+      return res.status(400).json({ error: "Missing identityToken" });
+    }
+    if (!APPLE_CLIENT_ID) {
+      return res.status(500).json({ error: "Apple Sign-In not configured" });
+    }
+
+    let payload;
+    try {
+      const verified = await jwtVerify(identityToken, appleJwks, {
+        issuer: APPLE_ISSUER,
+        audience: APPLE_CLIENT_ID,
+      });
+      payload = verified.payload;
+    } catch (err) {
+      console.error("appleExchange verify error:", err);
+      return res.status(401).json({ error: "Invalid Apple identity token" });
+    }
+
+    const sub = payload?.sub;
+    if (!sub) return res.status(400).json({ error: "Invalid Apple token payload" });
+
+    const emailFromToken = payload?.email ? String(payload.email).toLowerCase() : null;
+    const email = emailFromToken || (providedEmail ? String(providedEmail).toLowerCase() : null);
+    const emailVerified = normalizeAppleBool(payload?.email_verified);
+
+    let user = await models.User.findOne({
+      where: { auth_provider: "apple", provider_sub: sub },
+    });
+    const isNew = !user;
+
+    if (!user) {
+      if (email) {
+        user = await models.User.findOne({ where: { email } });
+      }
+
+      if (user) {
+        const updates = {
+          auth_provider: "apple",
+          provider_sub: sub,
+        };
+        if (emailVerified && !user.email_verified) updates.email_verified = true;
+        if (!user.name) {
+          updates.name = resolveAppleName(fullName, email || user.email);
+        }
+        await user.update(updates);
+      } else {
+        if (!email) {
+          return res.status(400).json({
+            error: "Apple account missing email. Revoke Apple access and try again.",
+          });
+        }
+        const name = resolveAppleName(fullName, email);
+        user = await models.User.create({
+          name,
+          email,
+          password_hash: null,
+          auth_provider: "apple",
+          provider_sub: sub,
+          email_verified: emailVerified,
+        });
+      }
+    } else {
+      const updates = {};
+      if (!user.email && email) updates.email = email;
+      if (emailVerified && !user.email_verified) updates.email_verified = true;
+      if (!user.name && fullName) updates.name = resolveAppleName(fullName, email || user.email);
+      if (Object.keys(updates).length) {
+        await user.update(updates);
+      }
+    }
+
+    await ensureGuestProfile(user.id);
+    await user.update({ last_login_at: new Date() });
+
+    const token = signToken({
+      id: user.id,
+      type: "user",
+      role: user.role,
+      countryCode: user.country_code ?? null,
+      countryOfResidenceCode: user.residence_country_code ?? null,
+      referredByInfluencerId: user.referred_by_influencer_id ?? null,
+      referredByCode: user.referred_by_code ?? null,
+      referredAt: user.referred_at ?? null,
+    });
+
+    const safeUser = await loadSafeUser(user.id);
+
+    if (isNew) {
+      emitAdminActivity({
+        type: "user",
+        user: { name: safeUser.name || "New Apple User" },
+        action: "joined via Apple",
+        location: safeUser.countryCode || "Global",
+        status: "SUCCESS",
+        timestamp: new Date(),
+      });
+    }
+
+    return res.json({ token, user: safeUser });
+  } catch (err) {
+    console.error("appleExchange error:", err);
     return res.status(500).json({ error: "Internal error" });
   }
 };

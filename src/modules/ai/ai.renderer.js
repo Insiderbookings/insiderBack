@@ -99,7 +99,7 @@ const buildCards = (inventory) => {
   ].filter(Boolean);
 };
 
-export const renderAssistantPayload = async ({ plan, messages, inventory, nextAction }) => {
+export const renderAssistantPayload = async ({ plan, messages, inventory, nextAction, trip, tripContext }) => {
   const baseLanguage = normalizeLanguage(plan);
   const language = detectLanguageFromMessages(messages, baseLanguage);
   let replyText = "";
@@ -120,6 +120,8 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
       plan,
       messages,
       inventory,
+      trip,
+      tripContext,
     });
     replyText = replyPayload?.reply || "";
     followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];

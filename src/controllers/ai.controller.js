@@ -1,10 +1,14 @@
+import { AI_LIMITS } from "../modules/ai/ai.config.js";
 import { runAiTurn } from "../modules/ai/ai.service.js";
 import { saveAssistantState } from "../modules/ai/ai.stateStore.js";
 import { isAssistantEnabled } from "../services/aiAssistant.service.js";
 import {
   appendAssistantChatMessage,
   createAssistantSessionForUser,
+  deleteAssistantSession,
   fetchAssistantMessages,
+  getAssistantSessionWithMessages,
+  listAssistantSessionsForUser,
 } from "../services/aiAssistantHistory.service.js";
 
 const QUICK_START_PROMPTS = [
@@ -81,7 +85,7 @@ export const handleAiChat = async (req, res) => {
 
   let storedMessages = [];
   try {
-    storedMessages = await fetchAssistantMessages(conversationId, userId, { limit: 100 });
+    storedMessages = await fetchAssistantMessages(conversationId, userId, { limit: AI_LIMITS.maxMessages });
   } catch (err) {
     console.error("[ai] failed to load messages", err);
     return res.status(500).json({ error: "Unable to load messages" });
@@ -99,6 +103,7 @@ export const handleAiChat = async (req, res) => {
       messages: normalizedMessages,
       limits: body.limit,
       uiEvent: body.uiEvent,
+      context: body.context || body.tripContext || null,
     });
 
     try {
@@ -122,14 +127,18 @@ export const handleAiChat = async (req, res) => {
       return res.status(500).json({ error: "Unable to save assistant reply" });
     }
 
+    const replyText = result.assistant?.text || result.reply || "";
     return res.json({
       ok: true,
       conversationId,
-      assistant: result.assistant || { text: result.reply || "", tone: "neutral", disclaimers: [] },
+      sessionId: conversationId,
+      reply: replyText,
+      assistant: result.assistant || { text: replyText, tone: "neutral", disclaimers: [] },
       ui: result.ui,
       state: result.state,
       plan: result.plan,
       inventory: result.inventory,
+      trip: result.trip,
       counts: {
         homes: Array.isArray(result.inventory?.homes) ? result.inventory.homes.length : 0,
         hotels: Array.isArray(result.inventory?.hotels) ? result.inventory.hotels.length : 0,
@@ -143,5 +152,78 @@ export const handleAiChat = async (req, res) => {
   } catch (err) {
     console.error("[ai] chat failed", err);
     return res.status(500).json({ error: "Unable to process assistant query right now" });
+  }
+};
+
+export const createAiChat = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const session = await createAssistantSessionForUser(userId);
+    const messages = await fetchAssistantMessages(session.id, userId, { limit: AI_LIMITS.maxMessages });
+    return res.status(201).json({ ok: true, session, messages });
+  } catch (err) {
+    console.error("[ai] failed to create session", err);
+    return res.status(500).json({ error: "Unable to create chat session" });
+  }
+};
+
+export const listAiChats = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const limit = Number(req.query?.limit) || 25;
+    const chats = await listAssistantSessionsForUser(userId, { limit });
+    return res.json({ ok: true, chats });
+  } catch (err) {
+    console.error("[ai] failed to list sessions", err);
+    return res.status(500).json({ error: "Unable to load chat history" });
+  }
+};
+
+export const getAiChat = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const sessionId = req.params?.sessionId;
+  if (!sessionId) {
+    return res.status(400).json({ error: "sessionId is required" });
+  }
+  try {
+    const limit = Number(req.query?.limit) || 200;
+    const payload = await getAssistantSessionWithMessages(sessionId, userId, { limit });
+    return res.json({ ok: true, ...payload });
+  } catch (err) {
+    if (err?.code === "AI_CHAT_NOT_FOUND") {
+      return res.status(404).json({ error: "Chat session not found" });
+    }
+    console.error("[ai] failed to load session", err);
+    return res.status(500).json({ error: "Unable to load chat session" });
+  }
+};
+
+export const deleteAiChat = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const sessionId = req.params?.sessionId;
+  if (!sessionId) {
+    return res.status(400).json({ error: "sessionId is required" });
+  }
+  try {
+    await deleteAssistantSession(sessionId, userId);
+    return res.json({ ok: true });
+  } catch (err) {
+    if (err?.code === "AI_CHAT_NOT_FOUND") {
+      return res.status(404).json({ error: "Chat session not found" });
+    }
+    console.error("[ai] failed to delete session", err);
+    return res.status(500).json({ error: "Unable to delete chat session" });
   }
 };

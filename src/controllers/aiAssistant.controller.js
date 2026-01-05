@@ -1,3 +1,4 @@
+import { AI_LIMITS } from "../modules/ai/ai.config.js";
 import { extractSearchPlan, generateAssistantReply, isAssistantEnabled } from "../services/aiAssistant.service.js";
 import { searchHomesForPlan, searchHotelsForPlan } from "../services/assistantSearch.service.js";
 import {
@@ -77,7 +78,7 @@ export const handleAssistantSearch = async (req, res) => {
       role: "user",
       content: incomingMessage,
     });
-    storedMessages = await fetchAssistantMessages(sessionId, userId, { limit: 60 });
+    storedMessages = await fetchAssistantMessages(sessionId, userId, { limit: AI_LIMITS.maxMessages });
   } catch (err) {
     if (err?.code === "AI_CHAT_NOT_FOUND") {
       return res.status(404).json({ error: "Chat session not found" });
@@ -92,7 +93,6 @@ export const handleAssistantSearch = async (req, res) => {
   }));
 
   const plan = await extractSearchPlan(normalizedMessages);
-  console.log("[DEBUG] Extracted Plan:", JSON.stringify(plan, null, 2));
   const intent = plan?.intent || "SMALL_TALK";
 
   const shouldSearch = intent === "SEARCH";
@@ -172,7 +172,7 @@ export const createAssistantChat = async (req, res) => {
   }
   try {
     const session = await createAssistantSessionForUser(userId);
-    const messages = await fetchAssistantMessages(session.id, userId, { limit: 100 });
+    const messages = await fetchAssistantMessages(session.id, userId, { limit: AI_LIMITS.maxMessages });
     return res.status(201).json({ ok: true, session, messages });
   } catch (err) {
     console.error("[aiAssistant] failed to create session", err);

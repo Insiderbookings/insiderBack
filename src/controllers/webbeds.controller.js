@@ -5,6 +5,22 @@ import { formatStaticHotel } from "../utils/webbedsMapper.js"
 
 const provider = new WebbedsProvider()
 
+const maskEmail = (email = "") => {
+  const value = String(email || "").trim()
+  if (!value) return null
+  const [user, domain] = value.split("@")
+  if (!domain) return value
+  if (user.length <= 2) return `${user[0] || ""}*@${domain}`
+  return `${user[0]}***${user[user.length - 1]}@${domain}`
+}
+
+const maskPhone = (phone = "") => {
+  const value = String(phone || "").trim()
+  if (!value) return null
+  const tail = value.slice(-2)
+  return `***${tail}`
+}
+
 export const search = (req, res, next) => provider.search(req, res, next)
 export const getRooms = (req, res, next) => provider.getRooms(req, res, next)
 export const saveBooking = (req, res, next) => provider.saveBooking(req, res, next)
@@ -28,7 +44,45 @@ export const createPaymentIntent = async (req, res, next) => {
       guests, // { adults, children }
       holder, // { firstName, lastName, ... }
       roomName,
+      requestId,
     } = req.body
+    const requestTag =
+      requestId ||
+      req.headers["x-request-id"] ||
+      req.headers["x-correlation-id"] ||
+      `webbeds-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    const logPrefix = `[webbeds] createPaymentIntent ${requestTag}`
+
+    console.info(`${logPrefix} request`, {
+      bookingId,
+      amount,
+      currency,
+      hotelId,
+      checkIn,
+      checkOut,
+      guests,
+      holder: {
+        firstName: holder?.firstName || null,
+        lastName: holder?.lastName || null,
+        email: maskEmail(holder?.email),
+        phone: maskPhone(holder?.phone),
+      },
+      roomName,
+      userId: req.user?.id || null,
+    })
+
+    if (!bookingId) {
+      console.warn(`${logPrefix} missing bookingId`)
+      return res.status(400).json({ error: "Missing bookingId" })
+    }
+    if (!hotelId) {
+      console.warn(`${logPrefix} missing hotelId`)
+      return res.status(400).json({ error: "Missing hotelId" })
+    }
+    if (!checkIn || !checkOut) {
+      console.warn(`${logPrefix} missing dates`, { checkIn, checkOut })
+      return res.status(400).json({ error: "Missing check-in or check-out dates" })
+    }
     const referral = {
       influencerId: Number(req.user?.referredByInfluencerId) || null,
       code: req.user?.referredByCode || null,
@@ -41,21 +95,113 @@ export const createPaymentIntent = async (req, res, next) => {
 
     // Convert amounts
     const amountNumber = Number(amount)
-    if (!Number.isFinite(amountNumber)) throw new Error("Invalid amount")
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      console.warn(`${logPrefix} invalid amount`, { amount })
+      return res.status(400).json({ error: "Invalid amount" })
+    }
+
+    const guestAdultsRaw = guests?.adults ?? req.body?.adults
+    const guestChildrenRaw = guests?.children ?? req.body?.children
+    const adults = Math.max(1, Number(guestAdultsRaw) || 1)
+    const children = Math.max(0, Number(guestChildrenRaw) || 0)
+
+    const guestEmail = holder?.email || req.user?.email
+    if (!guestEmail) {
+      console.warn(`${logPrefix} missing guest email`)
+      return res.status(400).json({ error: "Missing guest email" })
+    }
+
+    const guestName = holder?.firstName
+      ? `${holder.firstName} ${holder.lastName || ""}`.trim()
+      : "Guest"
+
+    console.info(`${logPrefix} normalized`, {
+      adults,
+      children,
+      guestName,
+      guestEmail: maskEmail(guestEmail),
+      guestPhone: maskPhone(holder?.phone),
+    })
+
+    let inventorySnapshot = null
+    let guestSnapshot = null
+    try {
+      const hotelIdValue = String(hotelId).trim()
+      const staticHotel = await models.WebbedsHotel.findOne({
+        where: { hotel_id: hotelIdValue },
+      })
+      const staticPayload = formatStaticHotel(staticHotel)
+      const locationFallback =
+        staticPayload?.address ||
+        [staticPayload?.city, staticPayload?.country].filter(Boolean).join(", ") ||
+        null
+      const hotelSnapshot = staticPayload
+        ? {
+            id: staticPayload.id,
+            name: staticPayload.name,
+            city: staticPayload.city,
+            country: staticPayload.country,
+            rating: staticPayload.rating ?? null,
+            address: staticPayload.address ?? null,
+            geoPoint: staticPayload.geoPoint ?? null,
+            image: staticPayload.coverImage ?? null,
+            chain: staticPayload.chain ?? null,
+            classification: staticPayload.classification ?? null,
+          }
+        : {
+            id: hotelIdValue,
+            name: null,
+            city: null,
+            country: null,
+            rating: null,
+            address: null,
+            geoPoint: null,
+            image: null,
+            chain: null,
+            classification: null,
+          }
+
+      inventorySnapshot = {
+        hotelId: hotelIdValue,
+        hotelName: hotelSnapshot?.name ?? null,
+        hotelImage: hotelSnapshot?.image ?? null,
+        location: locationFallback,
+        hotel: hotelSnapshot,
+        room: roomName ? { name: roomName } : null,
+      }
+    } catch (snapshotError) {
+      console.warn(`${logPrefix} static hotel snapshot failed`, {
+        hotelId,
+        error: snapshotError?.message || snapshotError,
+      })
+    }
+
+    guestSnapshot = {
+      name: guestName,
+      email: guestEmail,
+      phone: holder?.phone || null,
+      adults,
+      children,
+    }
 
     const localBooking = await models.Booking.create({
       booking_ref,
       user_id: req.user?.id || null,
       influencer_user_id: referral.influencerId,
-      source: "WEBBEDS",
-      inventory_type: "WEBBEDS",
+      source: "PARTNER",
+      inventory_type: "LOCAL_HOTEL",
+      inventory_id: String(hotelId),
       external_ref: bookingId, // The Webbeds Booking ID
 
       check_in: checkIn,
       check_out: checkOut,
 
-      guest_name: holder?.firstName ? `${holder.firstName} ${holder.lastName}` : "Guest",
-      guest_email: holder?.email,
+      guest_name: guestName,
+      guest_email: guestEmail,
+      guest_phone: holder?.phone || null,
+
+      adults,
+      children,
 
       status: "PENDING",
       payment_status: "UNPAID",
@@ -64,8 +210,11 @@ export const createPaymentIntent = async (req, res, next) => {
 
       meta: {
         hotelId,
+        hotelName: inventorySnapshot?.hotelName ?? null,
+        hotelImage: inventorySnapshot?.hotelImage ?? null,
         roomName,
-        guests,
+        location: inventorySnapshot?.location ?? null,
+        guests: { adults, children },
         ...(referral.influencerId
           ? {
               referral: {
@@ -74,7 +223,13 @@ export const createPaymentIntent = async (req, res, next) => {
               },
             }
           : {}),
-      }
+      },
+      inventory_snapshot: inventorySnapshot,
+      guest_snapshot: guestSnapshot,
+    })
+    console.info(`${logPrefix} local booking created`, {
+      localBookingId: localBooking.id,
+      bookingRef: booking_ref,
     })
 
     // 2. Create Stripe Payment Intent
@@ -92,12 +247,14 @@ export const createPaymentIntent = async (req, res, next) => {
         automatic_payment_methods: { enabled: true },
       })
     })
+    console.info(`${logPrefix} payment intent created`, { paymentIntentId: paymentIntent.id })
 
     // 3. Update Local Booking with Payment Intent ID
     await localBooking.update({
       payment_intent_id: paymentIntent.id,
       payment_provider: "STRIPE"
     })
+    console.info(`${logPrefix} local booking updated`, { paymentIntentId: paymentIntent.id })
 
     res.json({
       clientSecret: paymentIntent.client_secret,

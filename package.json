@@ -26,6 +26,7 @@
     "google-auth-library": "^10.2.1",
     "graphql-request": "^7.2.0",
     "graphql-tag": "^2.12.6",
+    "jose": "^5.10.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^2.0.2",

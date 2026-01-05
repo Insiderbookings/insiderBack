@@ -53,6 +53,7 @@ export default (sequelize) => {
       allow_shared_spaces: { type: DataTypes.BOOLEAN, defaultValue: false },
       is_visible: { type: DataTypes.BOOLEAN, defaultValue: false },
       marketing_tags: { type: DataTypes.JSON },
+      auto_close_at: { type: DataTypes.DATE, allowNull: true },
     },
     {
       tableName: "home",

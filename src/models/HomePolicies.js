@@ -17,6 +17,7 @@ export default (sequelize) => {
       checkout_time: { type: DataTypes.TIME },
       quiet_hours_start: { type: DataTypes.TIME },
       quiet_hours_end: { type: DataTypes.TIME },
+      cancellation_policy: { type: DataTypes.TEXT },
       smoking_allowed: { type: DataTypes.BOOLEAN, defaultValue: false },
       pets_allowed: { type: DataTypes.BOOLEAN, defaultValue: false },
       events_allowed: { type: DataTypes.BOOLEAN, defaultValue: false },

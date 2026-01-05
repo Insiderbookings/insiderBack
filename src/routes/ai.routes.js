@@ -1,7 +1,13 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { authenticate } from "../middleware/auth.js";
-import { handleAiChat } from "../controllers/ai.controller.js";
+import {
+  createAiChat,
+  deleteAiChat,
+  getAiChat,
+  handleAiChat,
+  listAiChats,
+} from "../controllers/ai.controller.js";
 
 const router = Router();
 
@@ -12,7 +18,11 @@ const aiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-router.use(aiLimiter);
-router.post("/chat", handleAiChat);
+
+router.post("/chat", aiLimiter, handleAiChat);
+router.post("/chats", createAiChat);
+router.get("/chats", listAiChats);
+router.get("/chats/:sessionId", getAiChat);
+router.delete("/chats/:sessionId", deleteAiChat);
 
 export default router;

@@ -46,8 +46,10 @@ export default (sequelize) => {
   /* ─────────── Asociaciones ─────────── */
   Hotel.associate = (models) => {
     Hotel.hasMany(models.Room, { foreignKey: "hotel_id" });
-    Hotel.hasMany(models.Booking, { foreignKey: "hotel_id" });
     Hotel.hasMany(models.DiscountCode, { foreignKey: "hotel_id" });
+    if (models.StayHotel) {
+      Hotel.hasMany(models.StayHotel, { foreignKey: "hotel_id", as: "stayHotels" });
+    }
     if (models.HotelAlias) {
       Hotel.hasMany(models.HotelAlias, {
         as: "aliases",
