@@ -855,6 +855,15 @@ export const appleExchange = async (req, res) => {
 
     let payload;
     try {
+      // 1. Decode without verification to debug audience mismatch
+      const decodedUnsafe = jwt.decode(identityToken);
+      console.log("DEBUG APPLE TOKEN:", {
+        tokenAud: decodedUnsafe?.aud,
+        envClientId: APPLE_CLIENT_ID,
+        match: decodedUnsafe?.aud === APPLE_CLIENT_ID
+      });
+
+      // 2. Verify signature
       const verified = await jwtVerify(identityToken, appleJwks, {
         issuer: APPLE_ISSUER,
         audience: APPLE_CLIENT_ID,
@@ -866,7 +875,13 @@ export const appleExchange = async (req, res) => {
       if (err.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') {
         console.error("JWT claims failed validation. Expected audience:", APPLE_CLIENT_ID);
       }
-      return res.status(401).json({ error: "Invalid Apple identity token" });
+      return res.status(401).json({
+        error: "Invalid Apple identity token",
+        details: err.message,
+        code: err.code,
+        expectedAudience: APPLE_CLIENT_ID,
+        receivedAudience: jwt.decode(identityToken)?.aud
+      });
     }
 
     const sub = payload?.sub;
