@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const DEFAULT_RADIUS_KM = 3;
+const DEFAULT_RADIUS_KM = 10;
 const MAX_RADIUS_KM = 15;
 const MIN_RADIUS_KM = 0.5;
 
@@ -58,6 +58,20 @@ const normalizePlace = (item, origin) => {
   const lat = toNumber(location?.lat);
   const lng = toNumber(location?.lng);
   const coords = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+
+  // Extract photo
+  let photoUrl = null;
+  if (Array.isArray(item.photos) && item.photos.length > 0) {
+    const ref = item.photos[0].photo_reference;
+    const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
+
+    console.log(`[ai] place ${item.name} | hasRef: ${!!ref} | hasKey: ${!!apiKey}`);
+
+    if (ref && apiKey) {
+      photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${ref}&key=${apiKey}`;
+    }
+  }
+
   return {
     id: item.place_id,
     name: item.name,
@@ -69,6 +83,7 @@ const normalizePlace = (item, origin) => {
     location: coords,
     distanceKm: coords ? computeDistanceKm(origin, coords) : null,
     openNow: Boolean(item.opening_hours?.open_now),
+    photoUrl,
     mapsUrl: item.place_id
       ? `https://www.google.com/maps/place/?q=place_id:${item.place_id}`
       : null,

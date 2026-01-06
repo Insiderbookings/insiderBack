@@ -99,13 +99,42 @@ const buildCards = (inventory) => {
   ].filter(Boolean);
 };
 
-export const renderAssistantPayload = async ({ plan, messages, inventory, nextAction, trip, tripContext }) => {
+export const renderAssistantPayload = async ({ plan, messages, inventory, nextAction, trip, tripContext, userContext, weather, missing = [] }) => {
   const baseLanguage = normalizeLanguage(plan);
   const language = detectLanguageFromMessages(messages, baseLanguage);
   let replyText = "";
   let followUps = [];
 
-  if (
+  const missingDest = missing.includes("DESTINATION");
+  const missingDates = missing.includes("DATES");
+  const missingGuests = missing.includes("GUESTS");
+  const multipleMissing = (missingDest ? 1 : 0) + (missingDates ? 1 : 0) + (missingGuests ? 1 : 0) > 1;
+
+  if (multipleMissing) {
+    const partsEs = [];
+    const partsEn = [];
+    if (missingDest) {
+      partsEs.push("a dónde querés ir");
+      partsEn.push("where you want to go");
+    }
+    if (missingDates) {
+      partsEs.push("cuándo");
+      partsEn.push("when");
+    }
+    if (missingGuests) {
+      partsEs.push("cuántos son");
+      partsEn.push("how many guests");
+    }
+
+    if (language === "es") {
+      const list = partsEs.join(", ").replace(/, ([^,]*)$/, " y $1");
+      replyText = `Me encanta la idea. Para buscar opciones necesito saber ${list}.`;
+    } else {
+      const list = partsEn.join(", ").replace(/, ([^,]*)$/, " and $1");
+      replyText = `Great idea. To find the best options I need to know ${list}.`;
+    }
+    followUps = [];
+  } else if (
     nextAction === NEXT_ACTIONS.ASK_FOR_DESTINATION ||
     nextAction === NEXT_ACTIONS.ASK_FOR_DATES ||
     nextAction === NEXT_ACTIONS.ASK_FOR_GUESTS
@@ -122,6 +151,8 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
       inventory,
       trip,
       tripContext,
+      userContext,
+      weather,
     });
     replyText = replyPayload?.reply || "";
     followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
@@ -134,10 +165,19 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
         : "Got it. Tell me what you need and I will help.";
   }
 
+  let combinedInputs = [];
+  if (missing.length > 0) {
+    if (missingDest) combinedInputs.push({ type: "destination", id: "DESTINATION", required: true });
+    if (missingDates) combinedInputs.push({ type: "dateRange", id: "DATES", required: true });
+    if (missingGuests) combinedInputs.push({ type: "guestCount", id: "GUESTS", required: true });
+  } else {
+    combinedInputs = inputByAction[nextAction] || [];
+  }
+
   const ui = {
     chips: buildChips(followUps),
     cards: buildCards(inventory),
-    inputs: inputByAction[nextAction] || [],
+    inputs: combinedInputs,
     sections: [],
   };
 

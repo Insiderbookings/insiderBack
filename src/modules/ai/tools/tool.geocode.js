@@ -2,8 +2,15 @@ import axios from "axios";
 
 export const geocodePlace = async (placeText) => {
   const query = String(placeText || "").trim();
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!query || !apiKey) return null;
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
+
+  if (!query) return null;
+  if (!apiKey) {
+    console.warn("[ai] geocode - Missing Google API Key in env");
+    return null;
+  }
+
+  console.log(`[ai] geocoding: "${query}" with key length: ${apiKey.length}`);
 
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
     query

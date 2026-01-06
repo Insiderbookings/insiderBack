@@ -52,6 +52,49 @@ const languageInstruction = (lang) =>
 
 const pickLanguageText = (lang, english, spanish) => (lang === "es" ? spanish : english);
 
+const isDateQuestion = (text = "") => {
+  const normalized = String(text || "").toLowerCase();
+  return (
+    /\bque\s+dia\s+es\s+hoy\b/.test(normalized) ||
+    /\bque\s+dia\s+es\b/.test(normalized) ||
+    /\bfecha\s+de\s+hoy\b/.test(normalized) ||
+    /\bwhat\s+day\s+is\s+today\b/.test(normalized) ||
+    /\bwhat\s+date\s+is\s+today\b/.test(normalized) ||
+    /\bwhat\s+day\s+is\s+it\b/.test(normalized)
+  );
+};
+
+const describeWeatherCode = (code, lang) => {
+  const value = Number(code);
+  if (!Number.isFinite(value)) return lang === "es" ? "condiciones variables" : "variable conditions";
+  const map = {
+    0: { en: "clear skies", es: "cielo despejado" },
+    1: { en: "mostly clear", es: "mayormente despejado" },
+    2: { en: "partly cloudy", es: "parcialmente nublado" },
+    3: { en: "overcast", es: "nublado" },
+    45: { en: "foggy", es: "con niebla" },
+    48: { en: "foggy", es: "con niebla" },
+    51: { en: "light drizzle", es: "llovizna ligera" },
+    53: { en: "drizzle", es: "llovizna" },
+    55: { en: "heavy drizzle", es: "llovizna intensa" },
+    61: { en: "light rain", es: "lluvia ligera" },
+    63: { en: "rain", es: "lluvia" },
+    65: { en: "heavy rain", es: "lluvia intensa" },
+    71: { en: "light snow", es: "nieve ligera" },
+    73: { en: "snow", es: "nieve" },
+    75: { en: "heavy snow", es: "nieve intensa" },
+    80: { en: "rain showers", es: "chaparrones" },
+    81: { en: "rain showers", es: "chaparrones" },
+    82: { en: "heavy showers", es: "chaparrones fuertes" },
+    95: { en: "thunderstorm", es: "tormenta" },
+    96: { en: "thunderstorm with hail", es: "tormenta con granizo" },
+    99: { en: "thunderstorm with hail", es: "tormenta con granizo" },
+  };
+  return (map[value] && map[value][lang]) || (lang === "es" ? "condiciones variables" : "variable conditions");
+};
+
+const isWeatherQuestion = (text = "") => /(clima|tiempo|weather|temperatura|pronostico|pronóstico)/i.test(text);
+
 const sanitizeMessages = (messages = []) =>
   messages
     .map((message) => {
@@ -62,6 +105,101 @@ const sanitizeMessages = (messages = []) =>
       return { role, content };
     })
     .filter(Boolean);
+
+const sanitizeContextText = (value, maxLength = 160) => {
+  if (value == null) return "";
+  const normalized = String(value).replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.slice(0, maxLength);
+};
+
+const normalizeUserContext = (raw) => {
+  if (!raw || typeof raw !== "object") return null;
+  const user = raw.user && typeof raw.user === "object" ? raw.user : {};
+  const device = raw.device && typeof raw.device === "object" ? raw.device : {};
+  const history = raw.history && typeof raw.history === "object" ? raw.history : {};
+  const locationSource =
+    (raw.location && typeof raw.location === "object" ? raw.location : null) ||
+    (user.location && typeof user.location === "object" ? user.location : null) ||
+    (device.location && typeof device.location === "object" ? device.location : null) ||
+    {};
+  const recentChatsRaw =
+    (Array.isArray(history.recentChats) && history.recentChats) ||
+    (Array.isArray(raw.recentChats) && raw.recentChats) ||
+    [];
+  const recentChats = recentChatsRaw
+    .slice(0, 5)
+    .map((chat) => {
+      const title = sanitizeContextText(chat?.title, 80);
+      const preview = sanitizeContextText(chat?.preview, 120);
+      if (!title && !preview) return null;
+      return {
+        title,
+        preview,
+        lastMessageAt: sanitizeContextText(chat?.lastMessageAt || chat?.updatedAt || "", 40),
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    now: raw.now || device.now || null,
+    localDate: raw.localDate || device.localDate || null,
+    localTime: raw.localTime || device.localTime || null,
+    localWeekday: raw.localWeekday || device.localWeekday || null,
+    timeZone: raw.timeZone || raw.timezone || device.timeZone || null,
+    locale: raw.locale || device.locale || null,
+    user: {
+      id: user.id ?? null,
+      name: user.name ?? user.full_name ?? user.first_name ?? null,
+      role: user.role ?? null,
+      language: user.language ?? null,
+      city: user.city ?? null,
+      country: user.country ?? null,
+    },
+    location: {
+      city: locationSource.city ?? null,
+      country: locationSource.country ?? null,
+    },
+    recentChats,
+  };
+};
+
+const buildUserContextBlock = (rawContext, language) => {
+  const context = normalizeUserContext(rawContext);
+  if (!context) return "";
+  const lines = [];
+  if (context.localDate) lines.push(`Local date: ${sanitizeContextText(context.localDate, 80)}`);
+  if (context.localWeekday) lines.push(`Local weekday: ${sanitizeContextText(context.localWeekday, 40)}`);
+  if (context.localTime) lines.push(`Local time: ${sanitizeContextText(context.localTime, 40)}`);
+  if (context.timeZone) lines.push(`Time zone: ${sanitizeContextText(context.timeZone, 60)}`);
+  if (context.locale) lines.push(`Locale: ${sanitizeContextText(context.locale, 40)}`);
+  if (context.location?.city || context.location?.country) {
+    const parts = [context.location.city, context.location.country].filter(Boolean);
+    lines.push(`Location: ${sanitizeContextText(parts.join(", "), 80)}`);
+  }
+  if (context.user?.name || context.user?.role || context.user?.language) {
+    const parts = [
+      context.user?.name ? `name=${sanitizeContextText(context.user.name, 60)}` : null,
+      context.user?.role != null ? `role=${sanitizeContextText(context.user.role, 20)}` : null,
+      context.user?.language ? `lang=${sanitizeContextText(context.user.language, 20)}` : null,
+    ].filter(Boolean);
+    if (parts.length) lines.push(`User: ${parts.join(", ")}`);
+  }
+  if (context.recentChats?.length) {
+    const chatLines = context.recentChats.map((chat, index) => {
+      const title = chat.title || "Chat";
+      const preview = chat.preview ? ` - ${chat.preview}` : "";
+      return `${index + 1}) ${title}${preview}`;
+    });
+    lines.push(`Recent chats: ${chatLines.join(" | ")}`);
+  }
+  if (!lines.length) return "";
+  const dateInstruction =
+    language === "es"
+      ? "Si el usuario pregunta por la fecha, hora o dia actual, responde usando el contexto. Si falta, pide aclaracion."
+      : "If the user asks for the current date/time/day, answer using this context. If missing, ask for clarification.";
+  return `${lines.join("\n")}\n${dateInstruction}`;
+};
 
 const sanitizeStringList = (value, { uppercase = false } = {}) => {
   if (!Array.isArray(value) || !value.length) return [];
@@ -207,8 +345,8 @@ const buildPlannerPrompt = () => [
       "- SMALL_TALK: Greetings, farewells, thanks, personal questions, casual conversation without search intent.\n" +
       "- HELP: Questions about functionality, assistant capabilities, or general information about accommodation types.\n\n" +
 
-      "IMPORTANT: If the user only mentions a destination without explicit search request ('I want to go to Cordoba'), use SMALL_TALK, NOT SEARCH.\n" +
-      "Only use SEARCH when there is a clear request to find/search/show accommodation.\n\n" +
+      "IMPORTANT: If the user expresses a desire to travel ('I want to go to...', 'Quiero viajar a...') or provides a destination with travel context, use SEARCH intent.\n" +
+      "Use SEARCH when the user's goal is to find options or plan a trip, even if details are missing.\n\n" +
 
       "LANGUAGE AND IDIOMS DETECTION:\n" +
       "Detect and recognize regional idioms:\n" +
@@ -223,7 +361,7 @@ const buildPlannerPrompt = () => [
       "User: 'What types of accommodation do you have?' -> intent: HELP\n" +
       "User: 'Looking for a house in Cordoba for 4' -> intent: SEARCH\n" +
       "User: 'Hey, do you have something cool?' -> intent: SMALL_TALK (lacks specific info)\n" +
-      "User: 'I want to go to Bariloche' -> intent: SMALL_TALK (no search request)\n" +
+      "User: 'I want to go to Bariloche' -> intent: SEARCH (implied search)\n" +
       "User: 'Show me hotels in CABA' -> intent: SEARCH\n\n" +
 
       "FILTERING & SORTING RULES:\n" +
@@ -410,6 +548,8 @@ export const generateAssistantReply = async ({
   inventory = {},
   trip = null,
   tripContext = null,
+  userContext = null,
+  weather = null,
 } = {}) => {
   const client = ensureClient();
   const normalized = sanitizeMessages(messages);
@@ -418,8 +558,65 @@ export const generateAssistantReply = async ({
   const modismos = Array.isArray(plan?.notes) ? plan.notes.join(", ") : "";
   const planLanguage = typeof plan?.language === "string" ? plan.language : null;
   const targetLanguage = detectLanguageFromText(latestUserMessage, planLanguage || "en");
+  const contextBlock = buildUserContextBlock(userContext, targetLanguage);
+
+  let finalContextBlock = contextBlock;
+  if (tripContext?.summary) {
+    const tripInfo = targetLanguage === "es"
+      ? `CONTEXTO DEL VIAJE ACTIVO: ${tripContext.summary}`
+      : `ACTIVE TRIP CONTEXT: ${tripContext.summary}`;
+    finalContextBlock = finalContextBlock ? `${finalContextBlock}\n${tripInfo}` : tripInfo;
+  }
+
   if (plan && typeof plan === "object") {
     plan.language = targetLanguage;
+  }
+  if (isDateQuestion(latestUserMessage)) {
+    const context = normalizeUserContext(userContext);
+    const dateParts = [];
+    if (context?.localWeekday) dateParts.push(context.localWeekday);
+    if (context?.localDate) dateParts.push(context.localDate);
+    if (context?.localTime) dateParts.push(context.localTime);
+    if (dateParts.length) {
+      const reply = targetLanguage === "es"
+        ? `Hoy es ${dateParts.join(", ")}.`
+        : `Today is ${dateParts.join(", ")}.`;
+      return {
+        reply,
+        followUps:
+          targetLanguage === "es"
+            ? ["Buscar alojamiento", "Necesito un hotel", "Busco una casa"]
+            : ["Search accommodation", "Need a hotel", "Looking for a home"],
+      };
+    }
+  }
+  if (isWeatherQuestion(latestUserMessage) && weather?.current) {
+    const temp = weather.current.temperatureC;
+    const feels = weather.current.apparentC;
+    const wind = weather.current.windKph;
+    const description = describeWeatherCode(weather.current.weatherCode, targetLanguage);
+    const parts = [];
+    if (Number.isFinite(temp)) {
+      parts.push(targetLanguage === "es" ? `temperatura ${temp}°C` : `temperature ${temp}°C`);
+    }
+    if (Number.isFinite(feels)) {
+      parts.push(targetLanguage === "es" ? `sensacion ${feels}°C` : `feels like ${feels}°C`);
+    }
+    if (Number.isFinite(wind)) {
+      parts.push(targetLanguage === "es" ? `viento ${wind} km/h` : `wind ${wind} km/h`);
+    }
+    const summary = parts.length ? parts.join(", ") : "";
+    const reply =
+      targetLanguage === "es"
+        ? `El clima actual es ${description}${summary ? `, ${summary}` : ""}.`
+        : `Current weather is ${description}${summary ? `, ${summary}` : ""}.`;
+    return {
+      reply,
+      followUps:
+        targetLanguage === "es"
+          ? ["Buscar alojamiento", "Necesito un hotel", "Busco una casa"]
+          : ["Search accommodation", "Need a hotel", "Looking for a home"],
+    };
   }
   const matchTypes = inventory?.matchTypes ?? {};
   const matchTypeValues = Object.values(matchTypes);
@@ -432,6 +629,13 @@ export const generateAssistantReply = async ({
     guests: plan?.guests ?? null,
     dates: plan?.dates ?? null,
     matchTypes,
+    weather: weather
+      ? {
+        current: weather.current || null,
+        timeZone: weather.timeZone || null,
+        updatedAt: weather.updatedAt || null,
+      }
+      : null,
     homes: (inventory.homes || []).slice(0, 5).map((home) => ({
       id: home.id,
       title: home.title,
@@ -448,23 +652,23 @@ export const generateAssistantReply = async ({
   };
   const tripSummary = trip
     ? {
-        location: trip.location ?? null,
-        stayName: tripContext?.stayName ?? null,
-        dates: tripContext?.dates ?? null,
-        suggestions: (trip.suggestions || []).map((category) => ({
-          id: category.id,
-          label: category.label,
-          places: (category.places || []).slice(0, 4).map((place) => ({
-            id: place.id,
-            name: place.name,
-            rating: place.rating,
-            distanceKm: place.distanceKm,
-            priceLevel: place.priceLevel,
-            address: place.address,
-          })),
+      location: trip.location ?? null,
+      stayName: tripContext?.stayName ?? null,
+      dates: tripContext?.dates ?? null,
+      suggestions: (trip.suggestions || []).map((category) => ({
+        id: category.id,
+        label: category.label,
+        places: (category.places || []).slice(0, 4).map((place) => ({
+          id: place.id,
+          name: place.name,
+          rating: place.rating,
+          distanceKm: place.distanceKm,
+          priceLevel: place.priceLevel,
+          address: place.address,
         })),
-        itinerary: Array.isArray(trip.itinerary) ? trip.itinerary : [],
-      }
+      })),
+      itinerary: Array.isArray(trip.itinerary) ? trip.itinerary : [],
+    }
     : null;
 
   if (!client) {
@@ -475,20 +679,20 @@ export const generateAssistantReply = async ({
       const reply = hasSuggestions
         ? hasItinerary
           ? pickLanguageText(
-              targetLanguage,
-              "I pulled nearby options and drafted a short itinerary. Want me to adjust the plan or focus on a specific category?",
-              "Encontre opciones cercanas y arme un itinerario corto. Queres que ajuste el plan o que me enfoque en alguna categoria?"
-            )
-          : pickLanguageText(
-              targetLanguage,
-              "I found nearby options based on your stay. Want a day-by-day itinerary too?",
-              "Encontre opciones cercanas segun tu estadia. Queres que arme un itinerario dia por dia?"
-            )
-        : pickLanguageText(
             targetLanguage,
-            "Tell me what kind of places you want nearby and I will build suggestions.",
-            "Decime que tipo de lugares queres cerca y te armo sugerencias."
-          );
+            "I pulled nearby options and drafted a short itinerary. Want me to adjust the plan or focus on a specific category?",
+            "Encontre opciones cercanas y arme un itinerario corto. Queres que ajuste el plan o que me enfoque en alguna categoria?"
+          )
+          : pickLanguageText(
+            targetLanguage,
+            "I found nearby options based on your stay. Want a day-by-day itinerary too?",
+            "Encontre opciones cercanas segun tu estadia. Queres que arme un itinerario dia por dia?"
+          )
+        : pickLanguageText(
+          targetLanguage,
+          "Tell me what kind of places you want nearby and I will build suggestions.",
+          "Decime que tipo de lugares queres cerca y te armo sugerencias."
+        );
       return {
         reply,
         followUps:
@@ -553,6 +757,10 @@ export const generateAssistantReply = async ({
     let systemPrompt = "";
     const langLine = languageInstruction(targetLanguage);
 
+    const contextInstruction = tripContext?.summary
+      ? "IMPORTANT: You HAVE access to the user's active booking/trip in the 'USER CONTEXT' section below. If the user asks about their booking, reservation, or trip details, USE that information to answer."
+      : "";
+
     if (intent === "TRIP") {
       systemPrompt =
         "You are a travel planner helping a guest who already booked a stay.\n" +
@@ -568,6 +776,7 @@ export const generateAssistantReply = async ({
         "You are a friendly and professional travel assistant. The user is looking for accommodation.\n" +
         `${langLine}\n` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
+        `${contextInstruction}\n` +
         "- If there are results: Return the 'reply' as a single, VERY concise and helpful sentence. If a location is known, mention it (e.g., 'I found these options in [Location] for you').\n" +
         "- If results are marked as SIMILAR (matchTypes): say there were no exact matches and mention you found similar options.\n" +
         "- If NO results: Suggest concrete adjustments (change city, dates, budget).\n" +
@@ -578,7 +787,9 @@ export const generateAssistantReply = async ({
         "You are a friendly travel assistant. The user needs help or information.\n" +
         `${langLine}\n` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
+        `${contextInstruction}\n` +
         "- Explain what you can do: search for homes and hotels, filter by amenities, dates, budget.\n" +
+        "- If the user asks about their booking, CONFIRM you see it using the context below.\n" +
         "- Be concise but helpful.\n" +
         "- followUps: Suggestions on how to start searching.\n" +
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
@@ -588,6 +799,7 @@ export const generateAssistantReply = async ({
         "You are a friendly and conversational travel assistant. The user is chatting casually.\n" +
         `${langLine}\n` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
+        `${contextInstruction}\n` +
         "- Reply naturally and in a friendly way.\n" +
         "- If they mention destinations without asking for a search, ask for more details before searching.\n" +
         "- DO NOT assume they want to search unless explicitly requested.\n" +
@@ -595,16 +807,24 @@ export const generateAssistantReply = async ({
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     }
 
+    if (finalContextBlock) {
+      systemPrompt += `\nUSER CONTEXT:\n${finalContextBlock}\n`;
+    }
+
     const userContent =
       intent === "SEARCH"
         ? JSON.stringify({ latestUserMessage, plan, inventory: summary })
         : intent === "TRIP"
           ? JSON.stringify({
-              latestUserMessage,
-              tripContext,
-              trip: tripSummary,
-            })
-          : JSON.stringify({ latestUserMessage, conversationHistory: normalized.slice(-4) });
+            latestUserMessage,
+            tripContext,
+            trip: tripSummary,
+          })
+          : JSON.stringify({
+            latestUserMessage,
+            conversationHistory: normalized.slice(-4),
+            weather: summary.weather,
+          });
 
     const completion = await client.chat.completions.create({
       model: DEFAULT_MODEL,

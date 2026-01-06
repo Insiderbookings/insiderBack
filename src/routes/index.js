@@ -26,8 +26,11 @@ import guestRoutes from "./guest.routes.js"
 import assistantRoutes from "./assistant.routes.js"
 import aiRoutes from "./ai.routes.js"
 import flowsRoutes from "./flows.routes.js"
+import supportRoutes from "./support.routes.js"
+import analyticsRoutes from "./analytics.routes.js"
 
 const router = Router()
+
 
 router.use("/auth", authRoutes)
 router.use("/users", userRoutes)
@@ -56,5 +59,7 @@ router.use("/guests", guestRoutes)
 router.use("/assistant", assistantRoutes)
 router.use("/ai", aiRoutes)
 router.use("/flows", flowsRoutes)
+router.use("/support", supportRoutes)
+router.use("/analytics", analyticsRoutes)
 
 export default router

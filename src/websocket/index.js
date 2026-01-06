@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import registerChatGateway from "./chat.gateway.js";
+import registerSupportGateway from "./support.gateway.js";
 import {
   setIOReference,
   joinUserRoom,
@@ -54,6 +55,7 @@ export const initSocketServer = (httpServer) => {
     }
 
     registerChatGateway(io, socket);
+    registerSupportGateway(io, socket);
 
     socket.on("disconnect", () => {
       if (userId) {

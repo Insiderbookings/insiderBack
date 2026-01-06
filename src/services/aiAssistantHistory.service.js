@@ -75,7 +75,7 @@ const notFoundError = () => {
 
 export const createAssistantSessionForUser = async (userId, { greeting } = {}) => {
   if (!userId) throw new Error("userId is required");
-  const normalizedGreeting = sanitizeContent(greeting) || DEFAULT_ASSISTANT_GREETING;
+  const normalizedGreeting = sanitizeContent(greeting);
   const preview = buildPreview(normalizedGreeting);
   const now = new Date();
 
@@ -84,22 +84,24 @@ export const createAssistantSessionForUser = async (userId, { greeting } = {}) =
       {
         user_id: userId,
         title: "New chat",
-        last_message_preview: preview,
+        last_message_preview: preview || "",
         last_message_at: now,
-        message_count: 1,
+        message_count: preview ? 1 : 0,
         metadata: {},
       },
       { transaction }
     );
 
-    await models.AiChatMessage.create(
-      {
-        session_id: record.id,
-        role: "assistant",
-        content: normalizedGreeting,
-      },
-      { transaction }
-    );
+    if (normalizedGreeting) {
+      await models.AiChatMessage.create(
+        {
+          session_id: record.id,
+          role: "assistant",
+          content: normalizedGreeting,
+        },
+        { transaction }
+      );
+    }
 
     return record;
   });

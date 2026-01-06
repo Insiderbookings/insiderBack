@@ -4,7 +4,7 @@ import { applyPlanToState, buildPlanOutcome, INTENTS, NEXT_ACTIONS, updateStageF
 import { enforcePolicy } from "./ai.policy.js";
 import { renderAssistantPayload } from "./ai.renderer.js";
 import { loadAssistantState } from "./ai.stateStore.js";
-import { geocodePlace, getNearbyPlaces, searchStays } from "./tools/index.js";
+import { geocodePlace, getNearbyPlaces, getWeatherSummary, searchStays } from "./tools/index.js";
 import { logAiEvent } from "./ai.telemetry.js";
 
 const buildEmptyInventory = () => ({
@@ -16,14 +16,14 @@ const buildEmptyInventory = () => ({
 const normalizeMessages = (messages = []) =>
   Array.isArray(messages)
     ? messages
-        .map((message) => {
-          if (!message) return null;
-          const role = typeof message.role === "string" ? message.role : "user";
-          const content = typeof message.content === "string" ? message.content.trim() : "";
-          if (!content) return null;
-          return { role, content };
-        })
-        .filter(Boolean)
+      .map((message) => {
+        if (!message) return null;
+        const role = typeof message.role === "string" ? message.role : "user";
+        const content = typeof message.content === "string" ? message.content.trim() : "";
+        if (!content) return null;
+        return { role, content };
+      })
+      .filter(Boolean)
     : [];
 
 const applyPlanDefaults = (plan, state) => {
@@ -137,6 +137,7 @@ const normalizeTripContext = (value) => {
     },
     guests: raw.guests ?? null,
     radiusKm: raw.radiusKm ?? raw.radius_km ?? null,
+    summary: raw.summary ?? null,
   };
 };
 
@@ -163,7 +164,15 @@ const extractTripRequest = ({ text, uiEvent, tripContext }) => {
       normalized
     );
 
-  const keyword = /(vegano|vegan|vegetarian|veg)/i.test(normalized) ? "vegan" : null;
+  // Extract specific keyword if present (very naive, just checks existence)
+  let specificKeyword = null;
+  if (/(museo|museum)/i.test(normalized)) specificKeyword = "museum";
+  else if (/(parque|park)/i.test(normalized)) specificKeyword = "park";
+  else if (/(cafe|coffee)/i.test(normalized)) specificKeyword = "cafe";
+  else if (/(bar|pub)/i.test(normalized)) specificKeyword = "bar";
+  else if (/(sushi|pizza|burger|pasta)/i.test(normalized)) specificKeyword = normalized.match(/(sushi|pizza|burger|pasta)/i)[0];
+
+  const keyword = /(vegano|vegan|vegetarian|veg)/i.test(normalized) ? "vegan" : specificKeyword;
 
   const categories = PLACE_CATEGORIES.filter((category) =>
     category.keywords.some((kw) => normalized.includes(kw))
@@ -190,31 +199,48 @@ const extractTripRequest = ({ text, uiEvent, tripContext }) => {
   };
 };
 
-const resolveTripLocation = async (tripContext, state, plan) => {
+const resolveTripLocation = async (tripContext, state, plan, userContext) => {
   if (tripContext?.location?.lat != null && tripContext?.location?.lng != null) {
     return tripContext.location;
   }
   if (state?.destination?.lat != null && state?.destination?.lon != null) {
     return { lat: state.destination.lat, lng: state.destination.lon };
   }
-  const locationText =
-    tripContext?.locationText ||
+
+  // Strategy 1: Specific Address
+  const specificText = tripContext?.locationText || plan?.location?.address;
+  if (specificText) {
+    const geocoded = await geocodePlace(specificText);
+    if (geocoded?.lat && geocoded?.lon) {
+      return { lat: geocoded.lat, lng: geocoded.lon };
+    }
+  }
+
+  // Strategy 2: Broad Location (City/Country)
+  const broadText =
+    tripContext?.location?.city ||
     plan?.location?.city ||
-    plan?.location?.state ||
+    tripContext?.location?.country ||
     plan?.location?.country ||
+    userContext?.location?.city ||
     state?.destination?.name ||
     null;
-  if (!locationText) return null;
-  const geocoded = await geocodePlace(locationText);
-  if (!geocoded?.lat || !geocoded?.lon) return null;
-  return { lat: geocoded.lat, lng: geocoded.lon };
+
+  if (broadText) {
+    const geocoded = await geocodePlace(broadText);
+    if (geocoded?.lat && geocoded?.lon) {
+      return { lat: geocoded.lat, lng: geocoded.lon };
+    }
+  }
+
+  return null;
 };
 
 const buildTripSuggestions = async ({ request, location }) => {
   if (!request || !location) return [];
   const suggestions = [];
   for (const category of request.categories) {
-    const useKeyword = category.id === "food" ? request.keyword : null;
+    const useKeyword = request.keyword || null;
     const places = await getNearbyPlaces({
       location,
       radiusKm: request.radiusKm,
@@ -230,6 +256,29 @@ const buildTripSuggestions = async ({ request, location }) => {
     });
   }
   return suggestions;
+};
+
+const extractWeatherLocationText = (text) => {
+  const normalized = String(text || "").trim();
+  if (!normalized) return "";
+  const match =
+    normalized.match(/(?:clima|tiempo|weather|temperatura|pronostico|pronóstico)\s*(?:en|in)\s+(.+)/i) ||
+    normalized.match(/\b(?:en|in)\s+(.+)/i);
+  if (!match) return "";
+  const raw = match[1] || "";
+  return raw.replace(/[?.!,]+$/g, "").trim();
+};
+
+const resolveWeatherLocation = async ({ text, tripContext, state, plan, userContext }) => {
+  const explicit = extractWeatherLocationText(text);
+  if (explicit) {
+    const geocoded = await geocodePlace(explicit);
+    if (geocoded?.lat && geocoded?.lon) {
+      return { lat: geocoded.lat, lng: geocoded.lon, name: explicit };
+    }
+    return { name: explicit };
+  }
+  return resolveTripLocation(tripContext, state, plan, userContext);
 };
 
 const buildItinerary = ({ request, tripContext, suggestions }) => {
@@ -315,6 +364,7 @@ export const runAiTurn = async ({
     (sessionId && userId ? await loadAssistantState({ sessionId, userId }) : null);
 
   const incomingTripContext = normalizeTripContext(context?.trip ?? context?.tripContext ?? context);
+  const userContext = context && typeof context === "object" ? context : null;
 
   const planCandidate = await extractSearchPlan(normalizedMessages);
   const { state: nextState, plan: mergedPlanRaw } = applyPlanToState(existingState, planCandidate);
@@ -337,6 +387,22 @@ export const runAiTurn = async ({
     uiEvent,
     tripContext: nextState.tripContext,
   });
+  const wantsWeather = /(clima|tiempo|weather|temperatura|pronostico|pronóstico)/i.test(latestUserMessage);
+  const resolvedLocation = wantsWeather
+    ? await resolveWeatherLocation({
+      text: latestUserMessage,
+      tripContext: nextState.tripContext,
+      state: nextState,
+      plan: mergedPlan,
+      userContext,
+    })
+    : null;
+  const weather = resolvedLocation
+    ? await getWeatherSummary({ location: resolvedLocation, timeZone: userContext?.timeZone })
+    : null;
+  const weatherFromContext =
+    userContext && typeof userContext === "object" && userContext.weather ? userContext.weather : null;
+  const resolvedWeather = wantsWeather ? weather || weatherFromContext : weather;
   if (mergedPlan && resolvedIntent) {
     mergedPlan.intent = resolvedIntent;
   }
@@ -351,7 +417,7 @@ export const runAiTurn = async ({
 
   let trip = null;
   if (tripRequest) {
-    const location = await resolveTripLocation(nextState.tripContext, nextState, mergedPlan);
+    const location = await resolveTripLocation(nextState.tripContext, nextState, mergedPlan, userContext);
     if (location) {
       const suggestions = await buildTripSuggestions({ request: tripRequest, location });
       const itinerary = buildItinerary({
@@ -392,6 +458,9 @@ export const runAiTurn = async ({
     nextAction: resolvedNextAction,
     trip,
     tripContext: nextState.tripContext,
+    userContext,
+    weather: resolvedWeather,
+    missing: outcome.missing,
   });
 
   logAiEvent("turn", {
@@ -413,6 +482,7 @@ export const runAiTurn = async ({
     plan: mergedPlan,
     inventory,
     trip,
+    weather,
     state: updatedState,
     intent: resolvedIntent,
     nextAction: resolvedNextAction,

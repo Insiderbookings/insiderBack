@@ -134,13 +134,7 @@ export const applyPlanToState = (state, plan) => {
 
 export const buildPlanOutcome = ({ state, plan }) => {
   const baseIntent = plan?.intent || INTENTS.SMALL_TALK;
-  const isSearchStage = [STAGES.NEED_DESTINATION, STAGES.NEED_DATES, STAGES.NEED_GUESTS, STAGES.SHOW_RESULTS].includes(
-    state?.stage
-  );
-  let intent = baseIntent;
-  if (baseIntent === INTENTS.SMALL_TALK && isSearchStage) {
-    intent = INTENTS.SEARCH;
-  }
+  const intent = baseIntent;
 
   const missing = [];
   if (intent === INTENTS.SEARCH) {

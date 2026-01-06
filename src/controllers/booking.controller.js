@@ -1126,6 +1126,7 @@ export const createHomeBooking = async (req, res) => {
       return res.status(400).json({ error: "Guest count exceeds listing capacity" })
 
     const pricing = home.pricing ?? {}
+    const cancellationPolicy = home.policies?.cancellation_policy ?? null
     const minStay = Number(pricing.minimum_stay ?? 0) || 1
     const maxStay = Number(pricing.maximum_stay ?? 0) || null
     if (nights < minStay)
@@ -2595,6 +2596,7 @@ export const confirmBooking = async (req, res) => {
             notificationTitle: "Booking confirmation",
             notificationSender: "BookingGPT",
             notificationType: "BOOKING_CONFIRMATION",
+            senderName: "BookingGPT",
           };
 
           const thread = await createThread({

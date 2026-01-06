@@ -1,3 +1,4 @@
+
 import models, { sequelize } from "../models/index.js";
 import { Op } from "sequelize";
 
@@ -24,6 +25,11 @@ export const getKPIDashboard = async (req, res, next) => {
             startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
             endDate = now;
             prevStartDate = new Date(startDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+            prevEndDate = startDate;
+        } else if (range === '30d') {
+            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            endDate = now;
+            prevStartDate = new Date(startDate.getTime() - 30 * 24 * 60 * 60 * 1000);
             prevEndDate = startDate;
         } else if (range === 'mtd') {
             startDate = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -65,26 +71,33 @@ export const getKPIDashboard = async (req, res, next) => {
             userStats,
             repeatBookers,
             // Section 8: Operations
-            failedPayments, refunds, manualAssists
+            failedPayments, refunds, manualAssists,
+            // NEW: AI & Support
+            aiChatsStarted,
+            aiChatsCompleted,
+            aiTotalMessages,
+            ticketCount,
+            // Funnel
+            fAll, fSearch, fResults, fCheckout
         ] = await Promise.all([
             // Bookings Today / Current Range
-            models.Stay.count({ where: { created_at: { [Op.between]: [startDate, endDate] } } }),
-            models.Stay.count({ where: { created_at: { [Op.between]: [prevStartDate, prevEndDate] } } }),
+            models.Stay.count({ where: { createdAt: { [Op.between]: [startDate, endDate] } } }),
+            models.Stay.count({ where: { createdAt: { [Op.between]: [prevStartDate, prevEndDate] } } }),
 
             // Revenue Current Range
-            models.Stay.sum('gross_price', { where: { payment_status: 'PAID', created_at: { [Op.between]: [startDate, endDate] } } }),
-            models.Stay.sum('gross_price', { where: { payment_status: 'PAID', created_at: { [Op.between]: [prevStartDate, prevEndDate] } } }),
+            models.Stay.sum('gross_price', { where: { payment_status: 'PAID', createdAt: { [Op.between]: [startDate, endDate] } } }),
+            models.Stay.sum('gross_price', { where: { payment_status: 'PAID', createdAt: { [Op.between]: [prevStartDate, prevEndDate] } } }),
 
             // Sources (Today)
             models.Stay.findAll({
-                where: { created_at: { [Op.between]: [startDate, endDate] } },
+                where: { createdAt: { [Op.between]: [startDate, endDate] } },
                 attributes: ['source', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
                 group: ['source']
             }),
 
             // Finance Detail
             models.Stay.findOne({
-                where: { status: { [Op.in]: ['CONFIRMED', 'PAID', 'COMPLETED'] }, created_at: { [Op.between]: [startDate, endDate] } },
+                where: { payment_status: 'PAID', createdAt: { [Op.between]: [startDate, endDate] } },
                 attributes: [
                     [sequelize.fn('AVG', sequelize.col('gross_price')), 'avg_value'],
                     [sequelize.fn('SUM', sequelize.literal('gross_price - net_cost')), 'total_net_yield']
@@ -94,7 +107,7 @@ export const getKPIDashboard = async (req, res, next) => {
 
             // Cancellations
             models.Stay.findOne({
-                where: { status: 'CANCELLED', created_at: { [Op.between]: [startDate, endDate] } },
+                where: { status: 'CANCELLED', createdAt: { [Op.between]: [startDate, endDate] } },
                 attributes: [
                     [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
                     [sequelize.fn('SUM', sequelize.col('gross_price')), 'lost_revenue']
@@ -115,7 +128,7 @@ export const getKPIDashboard = async (req, res, next) => {
                 where: { role: 3 },
                 limit: 10,
                 attributes: ['id', 'name'],
-                include: [{ model: models.Stay, attributes: ['id', 'gross_price', 'created_at'], required: false }]
+                include: [{ model: models.Stay, attributes: ['id', 'gross_price', 'createdAt'], required: false }]
             }),
 
             // Section 6: Inventory
@@ -123,7 +136,7 @@ export const getKPIDashboard = async (req, res, next) => {
             models.Home.count({ where: { status: 'PUBLISHED' } }),
             models.Stay.count({ where: { inventory_type: 'HOME' } }),
             models.Hotel.count(),
-            models.Hotel.count({ distinct: true, col: 'city_code' }),
+            models.Hotel.count({ distinct: true, col: 'city' }),
 
             // Section 7: User Behavior
             models.User.findOne({
@@ -143,9 +156,21 @@ export const getKPIDashboard = async (req, res, next) => {
             }),
 
             // Section 8: Operations
-            models.Payment.count({ where: { status: 'FAILED', created_at: { [Op.between]: [startDate, endDate] } } }),
-            models.Payment.count({ where: { status: 'REFUNDED', created_at: { [Op.between]: [startDate, endDate] } } }),
-            models.StayManual.count({ where: { created_at: { [Op.between]: [startDate, endDate] } } })
+            models.Payment.count({ where: { status: 'FAILED', createdAt: { [Op.between]: [startDate, endDate] } } }),
+            models.Payment.count({ where: { status: 'REFUNDED', createdAt: { [Op.between]: [startDate, endDate] } } }),
+            models.StayManual.count({ where: { createdAt: { [Op.between]: [startDate, endDate] } } }),
+
+            // NEW: Real Intelligence Data (AI & Support)
+            models.AiChatSession.count({ where: { createdAt: { [Op.between]: [startDate, endDate] } } }),
+            models.AiChatSession.count({ where: { createdAt: { [Op.between]: [startDate, endDate] }, message_count: { [Op.gte]: 3 } } }),
+            models.AiChatSession.sum('message_count', { where: { createdAt: { [Op.between]: [startDate, endDate] } } }),
+            models.SupportTicket.count({ where: { createdAt: { [Op.between]: [startDate, endDate] } } }),
+
+            // NEW: Funnel Real Data
+            models.AnalyticsEvent.count({ where: { event_type: 'app_open', createdAt: { [Op.between]: [startDate, endDate] } } }),
+            models.AnalyticsEvent.count({ where: { event_type: 'search', createdAt: { [Op.between]: [startDate, endDate] } } }),
+            models.AnalyticsEvent.count({ where: { event_type: 'view_results', createdAt: { [Op.between]: [startDate, endDate] } } }),
+            models.AnalyticsEvent.count({ where: { event_type: 'checkout_start', createdAt: { [Op.between]: [startDate, endDate] } } })
         ]);
 
         const bookingTrend = calcTrend(bookingsCurr || 0, bookingsPrev || 0);
@@ -172,6 +197,12 @@ export const getKPIDashboard = async (req, res, next) => {
         const repeatCount = repeatBookers?.length || 0;
         const repeatPercent = totalBookersCount > 0 ? (repeatCount / totalBookersCount) * 100 : 0;
 
+        // AI Math
+        const chatsStarted = aiChatsStarted || 0;
+        const chatsCompleted = aiChatsCompleted || 0;
+        const totalMessages = aiTotalMessages || 0;
+        const avgMsg = chatsStarted > 0 ? Math.round(totalMessages / chatsStarted) : 0;
+
         return res.json({
             summary: {
                 bookings: { value: bookingsCurr, trend: bookingTrend },
@@ -190,10 +221,10 @@ export const getKPIDashboard = async (req, res, next) => {
                 system: { webbeds: 'ok', payments: 'ok', chat_ai: 'ok' }
             },
             funnel: {
-                app_opens: 1250,
-                searches: 840,
-                results_viewed: 520,
-                checkout_started: 110,
+                app_opens: fAll,
+                searches: fSearch,
+                results_viewed: fResults,
+                checkout_started: fCheckout,
                 bookings_completed: bookingsCurr
             },
             finance: {
@@ -207,10 +238,10 @@ export const getKPIDashboard = async (req, res, next) => {
             },
             acquisition: { ambassadors: ambassadorData, corporate: corporateData },
             ai_performance: {
-                chats_started: 450,
-                chats_completed: 380,
-                chat_to_booking_percent: 1.8,
-                avg_messages: 12,
+                chats_started: chatsStarted,
+                chats_completed: chatsCompleted,
+                chat_to_booking_percent: chatsStarted > 0 ? ((bookingsCurr / chatsStarted) * 10).toFixed(1) : 0, // Rough estimation logic
+                avg_messages: avgMsg,
                 failure_signals: { price_confusion: 4, repeated_questions: 12, manual_override: 2 }
             },
             inventory: {
@@ -226,6 +257,7 @@ export const getKPIDashboard = async (req, res, next) => {
                 failed_payments: failedPayments,
                 refunds: refunds,
                 manual_assists: manualAssists,
+                tickets: ticketCount,
                 chargebacks: 0
             },
             meta: { range, startDate, endDate }

@@ -1,21 +1,21 @@
 // src/app.js  ─── archivo COMPLETO, línea por línea
-import dotenv          from "dotenv";
-import dotenvExpand     from "dotenv-expand";
+import dotenv from "dotenv";
+import dotenvExpand from "dotenv-expand";
 const myEnv = dotenv.config();
 dotenvExpand.expand(myEnv);
 
-import http            from "http";
-import express         from "express";
-import morgan          from "morgan";
-import cors            from "cors";
-import bodyParser      from "body-parser";
-import rateLimit       from "express-rate-limit";
-import path            from "node:path";
+import http from "http";
+import express from "express";
+import morgan from "morgan";
+import cors from "cors";
+import bodyParser from "body-parser";
+import rateLimit from "express-rate-limit";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
-import swaggerUi       from "swagger-ui-express";
-import YAML            from "yamljs";
+import swaggerUi from "swagger-ui-express";
+import YAML from "yamljs";
 import models, { sequelize } from "./models/index.js";
-import router          from "./routes/index.js";
+import router from "./routes/index.js";
 import { handleWebhook } from "./controllers/payment.controller.js";
 import { setGlobalDispatcher, Agent } from "undici";
 import { ensureDefaultPlatforms } from "./services/platform.service.js";
@@ -113,7 +113,7 @@ app.use("/api/payments", paymentsLimiter);
 app.use("/api/tgx-payment", paymentsLimiter);
 
 // Restricción de origen por lista blanca (si se define CORS_ALLOWED_ORIGINS)
-const __allowed = (process.env.CORS_ALLOWED_ORIGINS || "").split(",").map(s=>s.trim()).filter(Boolean)
+const __allowed = (process.env.CORS_ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean)
 if (__allowed.length > 0) {
   app.use("/api", (req, res, next) => {
     const origin = req.headers.origin
@@ -172,3 +172,5 @@ const PORT = process.env.PORT || 3000;
 })();
  */
 
+
+// Forces restart: 2026-01-05

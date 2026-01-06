@@ -106,6 +106,9 @@ import ChatAutoPromptModel from "./ChatAutoPrompt.js";
 import ReviewModel from "./Review.js";
 import AiChatSessionModel from "./AiChatSession.js";
 import AiChatMessageModel from "./AiChatMessage.js";
+import SupportTicketModel from "./SupportTicket.js";
+import SupportMessageModel from "./SupportMessage.js";
+import AnalyticsEventModel from "./AnalyticsEvent.js";
 
 /* ---------- Construir objetos ---------- */
 const Stay = StayModel(sequelize);
@@ -218,6 +221,10 @@ const models = {
   Contract: ContractFactory(sequelize),
   UserContract: UserContractFactory(sequelize),
   Review: ReviewModel(sequelize),
+
+  SupportTicket: SupportTicketModel(sequelize),
+  SupportMessage: SupportMessageModel(sequelize),
+  AnalyticsEvent: AnalyticsEventModel(sequelize),
 };
 
 /* ---------- Ejecutar asociaciones ---------- */
