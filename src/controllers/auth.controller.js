@@ -836,11 +836,21 @@ export const googleExchange = async (req, res) => {
 export const appleExchange = async (req, res) => {
   try {
     const { identityToken, fullName, email: providedEmail } = req.body || {};
+
+    // LOG DETAILED INFO FOR DEBUGGING
+    console.log("appleExchange called with:", {
+      hasToken: !!identityToken,
+      hasFullName: !!fullName,
+      hasEmail: !!providedEmail,
+      envClientId: APPLE_CLIENT_ID
+    });
+
     if (!identityToken) {
       return res.status(400).json({ error: "Missing identityToken" });
     }
     if (!APPLE_CLIENT_ID) {
-      return res.status(500).json({ error: "Apple Sign-In not configured" });
+      console.error("CRITICAL: APPLE_CLIENT_ID/APPLE_BUNDLE_ID not set in env");
+      return res.status(500).json({ error: "Apple Sign-In not configured (server-side)" });
     }
 
     let payload;
@@ -852,6 +862,10 @@ export const appleExchange = async (req, res) => {
       payload = verified.payload;
     } catch (err) {
       console.error("appleExchange verify error:", err);
+      // Log more details about the verification failure
+      if (err.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') {
+        console.error("JWT claims failed validation. Expected audience:", APPLE_CLIENT_ID);
+      }
       return res.status(401).json({ error: "Invalid Apple identity token" });
     }
 
@@ -892,7 +906,7 @@ export const appleExchange = async (req, res) => {
         user = await models.User.create({
           name,
           email,
-          password_hash: null,
+          password_hash: null, // social login === sin password local
           auth_provider: "apple",
           provider_sub: sub,
           email_verified: emailVerified,
@@ -937,7 +951,7 @@ export const appleExchange = async (req, res) => {
 
     return res.json({ token, user: safeUser });
   } catch (err) {
-    console.error("appleExchange error:", err);
-    return res.status(500).json({ error: "Internal error" });
+    console.error("appleExchange CRITICAL error:", err);
+    return res.status(500).json({ error: "Internal error", details: err.message });
   }
 };
