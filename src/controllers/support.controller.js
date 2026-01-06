@@ -15,28 +15,37 @@ export const createTicket = async (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-        const { subject, category, priority, message } = req.body;
+        const { subject, category, priority, message, bookingId, metadata } = req.body;
         const userId = req.user.id; // From auth middleware
+
+        // Enrich subject if bookingId is provided
+        const finalSubject = bookingId
+            ? `${subject} (Booking #${bookingId})`
+            : subject;
 
         const ticket = await models.SupportTicket.create({
             user_id: userId,
-            subject,
-            category,
-            priority,
+            subject: finalSubject,
+            category: category || "GENERAL",
+            priority: priority || "MEDIUM",
             status: "OPEN",
             last_message_at: new Date()
         });
 
-        // Create initial message
+        // Create initial message with metadata
         const initialMsg = await models.SupportMessage.create({
             ticket_id: ticket.id,
             sender_type: "USER",
             sender_id: userId,
-            content: message
+            content: message,
+            metadata: {
+                ...metadata,
+                bookingId
+            }
         });
 
         // Notify Admins
-        emitSupportEvent("support:new_ticket", { ticketId: ticket.id, subject, user: req.user.name });
+        emitSupportEvent("support:new_ticket", { ticketId: ticket.id, subject: finalSubject, user: req.user.name });
 
         return res.status(201).json({ ticket, message: initialMsg });
     } catch (error) {
