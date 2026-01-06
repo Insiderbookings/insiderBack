@@ -9,6 +9,8 @@ import { sendMail } from "../helpers/mailer.js"
 import models, { sequelize } from "../models/index.js"
 import { streamCertificatePDF } from "../helpers/bookingCertificate.js"
 import { sendCancellationEmail } from "../emailTemplates/cancel-email.js"
+import { sendBookingEmail } from "../emailTemplates/booking-email.js"
+import { sendHomeHostBookingEmail } from "../emailTemplates/home-host-booking-email.js"
 import {
   PROMPT_TRIGGERS,
   createThread,
@@ -1457,6 +1459,85 @@ export const createHomeBooking = async (req, res) => {
       homeSnapshotName: home.title,
       homeSnapshotImage: coverImageUrl,
     }).catch((err) => console.error("booking auto prompt dispatch error:", err))
+
+    try {
+      const pricingSnapshot =
+        fresh.pricing_snapshot && typeof fresh.pricing_snapshot === "object" ? fresh.pricing_snapshot : {}
+      const nightsCount = Number(fresh.nights ?? nights) || null
+      const baseSubtotalValue = Number(pricingSnapshot.baseSubtotal ?? 0)
+      const ratePerNight = nightsCount ? Number((baseSubtotalValue / nightsCount).toFixed(2)) : null
+      const taxAmountValue = Number(pricingSnapshot.taxAmount ?? 0)
+      const bookingCode = fresh.booking_ref || fresh.id
+      const homeAddress = [
+        home.address?.address_line1,
+        home.address?.city,
+        home.address?.state,
+        home.address?.country,
+      ]
+        .filter(Boolean)
+        .join(", ") || null
+
+      await sendBookingEmail(
+        {
+          id: fresh.id,
+          bookingCode,
+          guestName: fresh.guest_name,
+          guests: { adults: fresh.adults, children: fresh.children },
+          roomsCount: 1,
+          checkIn: fresh.check_in,
+          checkOut: fresh.check_out,
+          hotel: {
+            name: home.title || "Home",
+            address: homeAddress,
+            city: home.address?.city || null,
+            country: home.address?.country || null,
+          },
+          currency: fresh.currency || currencyCode,
+          totals: {
+            total: Number(fresh.gross_price ?? totalAmount),
+            nights: nightsCount || undefined,
+            ratePerNight: ratePerNight || undefined,
+            taxes: taxAmountValue || undefined,
+          },
+        },
+        fresh.guest_email,
+        {
+          attachCertificate: false,
+          branding: {
+            footerIntroText: "We look forward to hosting you. Your booking details are below.",
+          },
+        }
+      )
+
+      const hostUser = await models.User.findByPk(home.host_id, {
+        attributes: ["id", "name", "email", "phone"],
+      })
+      if (hostUser?.email) {
+        await sendHomeHostBookingEmail({
+          toEmail: hostUser.email,
+          hostName: hostUser.name,
+          bookingCode,
+          homeName: home.title,
+          homeAddress,
+          checkIn: fresh.check_in,
+          checkOut: fresh.check_out,
+          nights: nightsCount,
+          guests: {
+            adults: fresh.adults,
+            children: fresh.children,
+            infants: infantsCount,
+          },
+          total: Number(fresh.gross_price ?? totalAmount),
+          currency: fresh.currency || currencyCode,
+          guestName: fresh.guest_name,
+          guestEmail: fresh.guest_email,
+          guestPhone: fresh.guest_phone,
+          securityDeposit: pricingSnapshot.securityDeposit ?? null,
+        })
+      }
+    } catch (mailErr) {
+      console.warn("createHomeBooking: email dispatch failed:", mailErr?.message || mailErr)
+    }
 
     return res.status(201).json({
       booking: responsePayload,
