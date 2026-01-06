@@ -31,6 +31,28 @@ const pickCoverImage = (imagesPayload) => {
   return found?.url ?? null;
 };
 
+const extractImages = (imagesPayload) => {
+  if (!imagesPayload) return [];
+  const hotelImages = imagesPayload?.hotelImages ?? imagesPayload;
+  const imageList = ensureArray(hotelImages?.image);
+  return imageList
+    .map((img) => {
+      if (!img) return null;
+      if (typeof img === "string") return { url: img, categoryName: "General" };
+      return {
+        url: img?.url ?? null,
+        categoryName: img?.category?.["#text"] ?? img?.category?.text ?? img?.category?.name ?? "General",
+        isThumbnail: img?.isThumbnail || false
+      };
+    })
+    .filter((img) => img?.url);
+};
+
+const extractAmenities = (node, categoryName) => {
+  const list = extractTextList(node, categoryName === "amenitieItem" ? "amenitieItem" : (categoryName === "leisureItem" ? "leisureItem" : "businessItem"));
+  return list.map(name => ({ name, category: categoryName === "amenitieItem" ? "General" : (categoryName === "leisureItem" ? "Leisure" : "Business") }));
+};
+
 const extractShortDescription = (descriptions) => {
   const descNode = descriptions?.description1 ?? descriptions?.description2 ?? null;
   if (!descNode) return null;
@@ -73,9 +95,13 @@ export const formatStaticHotel = (hotel) => {
   if (!hotel) return null;
   const plain = hotel.get ? hotel.get({ plain: true }) : hotel;
   const coverImage = pickCoverImage(plain.images);
-  const amenityList = extractTextList(plain.amenities, "amenitieItem").slice(0, 6);
-  const leisureList = extractTextList(plain.leisure, "leisureItem").slice(0, 4);
-  const businessList = extractTextList(plain.business, "businessItem").slice(0, 4);
+  const allImages = extractImages(plain.images);
+
+  const amenitiesGeneral = extractAmenities(plain.amenities, "amenitieItem");
+  const amenitiesLeisure = extractAmenities(plain.leisure, "leisureItem");
+  const amenitiesBusiness = extractAmenities(plain.business, "businessItem");
+  const allAmenities = [...amenitiesGeneral, ...amenitiesLeisure, ...amenitiesBusiness];
+
   const transportationList = extractTextList(plain.transportation, "transportationItem");
   const geoLocations = extractGeoLocations(plain.geo_locations);
   const extraLocations = [plain.location1, plain.location2, plain.location3]
@@ -134,18 +160,17 @@ export const formatStaticHotel = (hotel) => {
         ? { code: String(plain.classification_code), name: null }
         : null,
     coverImage,
-    imagesCount:
-      Number(plain.images?.hotelImages?.["@_count"] ?? plain.images?.["@count"]) ||
-      (plain.images?.hotelImages?.image?.length ?? null),
-    shortDescription: extractShortDescription(plain.descriptions),
+    lat: plain.lat ? Number(plain.lat) : null,
+    lng: plain.lng ? Number(plain.lng) : null,
+    images: allImages,
+    amenities: allAmenities, // Now returns full list of objects {name, category}
+    leisure: amenitiesLeisure.map(a => a.name), // Keep backward compat
+    business: amenitiesBusiness.map(a => a.name), // Keep backward compat
     transportation: transportationList,
-    amenities: amenityList,
-    leisure: leisureList,
-    business: businessList,
     roomTypes: roomTypesRaw,
     metadata: {
-      hasLeisure: leisureList.length > 0,
-      hasBusiness: businessList.length > 0,
+      hasLeisure: amenitiesLeisure.length > 0,
+      hasBusiness: amenitiesBusiness.length > 0,
       rawPriority: plain.priority ?? null,
     },
   };
