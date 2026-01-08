@@ -69,7 +69,7 @@ export const getKPIDashboard = async (req, res, next) => {
             corporate,
             // Section 6: Inventory
             hostCount, activeListings, homeBookings,
-            hotelCount, cityCount,
+            hotelCount, cityCount, homeMargin,
             // Section 7: User Behavior
             userStats,
             repeatBookers,
@@ -82,7 +82,8 @@ export const getKPIDashboard = async (req, res, next) => {
             aiTotalMessages,
             ticketCount,
             // Funnel
-            fAll, fSearch, fResults, fCheckout
+            fAll, fSearch, fResults, fCheckout,
+            ambassadorClicks
         ] = await Promise.all([
             // Bookings Today / Current Range
             models.Stay.count({ where: { createdAt: { [Op.between]: [startDate, endDate] } } }),
@@ -138,7 +139,7 @@ export const getKPIDashboard = async (req, res, next) => {
             models.User.findAll({
                 where: { role: 2 },
                 limit: 10,
-                attributes: ['id', 'name', 'is_active'],
+                attributes: ['id', 'name', 'is_active', 'user_code'],
                 include: [{ model: models.Stay, as: 'influencerStays', attributes: ['id', 'gross_price'], required: false }]
             }),
 
@@ -218,17 +219,26 @@ export const getKPIDashboard = async (req, res, next) => {
 
         // Map Clicks to Ambassadors
         const clicksMap = {};
-        // safe check if ambassadorClicks (last item) exists
-        const ambassadorClicks = arguments[0][arguments[0].length - 1]; // Because Promise.all result is destructured above, I need to be careful with indexing if I added items.
-        // Re-mapping destructuring to be safe:
-        // The array is huge. Let's fix the destructuring in the next step or use the new variable.
-        // Actually, let's look at the variable names in the original code. 
-        // I added 'homeMargin' after 'cityCount' and 'ambassadorClicks' at the end.
-        // I will assume the destructuring needs to be referenced by index or updated.
+        (ambassadorClicks || []).forEach((row) => {
+            const code = row?.code ? String(row.code) : null;
+            const count = parseInt(row?.count || 0, 10);
+            if (!code) return;
+            clicksMap[code] = count;
+        });
 
-        // Wait, I can't easily access the extra variables if I don't update the destructuring var list.
-        // I will update the destructuring list in the ReplacementContent to include 'homeMargin' and 'referralClicks'.
-
+        const ambassadorData = (ambassadors || []).map((amb) => {
+            const stays = amb.influencerStays || [];
+            const revenue = stays.reduce((sum, s) => sum + parseFloat(s.gross_price || 0), 0);
+            const code = amb.user_code ? String(amb.user_code) : null;
+            return {
+                id: amb.id,
+                name: amb.name,
+                bookings: stays.length,
+                revenue,
+                status: amb.is_active ? 'active' : 'inactive',
+                clicks: code ? (clicksMap[code] || 0) : 0
+            };
+        });
 
         const corporateData = corporate.map(c => {
             const bookings = c.Stays?.length || 0;
