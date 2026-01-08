@@ -14,6 +14,11 @@ export default (sequelize) => {
                 allowNull: false,
                 references: { model: "user", key: "id" },
             },
+            chat_thread_id: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                references: { model: "chat_thread", key: "id" },
+            },
             subject: {
                 type: DataTypes.STRING(255),
                 allowNull: false,

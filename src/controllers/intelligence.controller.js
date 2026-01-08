@@ -1,4 +1,4 @@
-import { generateTripAddons } from "../services/aiAssistant.service.js";
+import { generateTripAddons, generateAndSaveTripIntelligence } from "../services/aiAssistant.service.js";
 import { runAiTurn } from "../modules/ai/ai.service.js";
 import models from "../models/index.js";
 
@@ -25,6 +25,11 @@ export const getTripIntelligence = async (req, res) => {
                 intelligence: {
                     insights: intelligence.insights || [],
                     preparation: intelligence.preparation || [],
+                    weather: intelligence.metadata?.weather || null,
+                    timeContext: intelligence.metadata?.timeContext || null,
+                    localPulse: intelligence.metadata?.localPulse || [],
+                    localLingo: intelligence.metadata?.localLingo || null,
+                    suggestions: intelligence.metadata?.suggestions || [],
                     updatedAt: intelligence.lastGeneratedAt
                 }
             });
@@ -32,29 +37,27 @@ export const getTripIntelligence = async (req, res) => {
 
         // 2. If not found and we have context, generate it (Legacy/Fallback)
         if (tripContext) {
-            const location = tripContext.location || {};
-            const addons = await generateTripAddons({
+            intelligence = await generateAndSaveTripIntelligence({
+                stayId: bookingId,
                 tripContext,
-                location,
                 lang: lang || "es"
             });
 
-            // Save for future requests
-            intelligence = await StayIntelligence.create({
-                stayId: bookingId,
-                insights: addons.insights || [],
-                preparation: addons.preparation || [],
-                lastGeneratedAt: new Date()
-            });
-
-            return res.json({
-                bookingId,
-                intelligence: {
-                    insights: intelligence.insights,
-                    preparation: intelligence.preparation,
-                    updatedAt: intelligence.lastGeneratedAt
-                }
-            });
+            if (intelligence) {
+                return res.json({
+                    bookingId,
+                    intelligence: {
+                        insights: intelligence.insights || [],
+                        preparation: intelligence.preparation || [],
+                        weather: intelligence.metadata?.weather || null,
+                        timeContext: intelligence.metadata?.timeContext || null,
+                        localPulse: intelligence.metadata?.localPulse || [],
+                        localLingo: intelligence.metadata?.localLingo || null,
+                        suggestions: intelligence.metadata?.suggestions || [],
+                        updatedAt: intelligence.lastGeneratedAt
+                    }
+                });
+            }
         }
 
         return res.status(404).json({ error: "Intelligence not found and no context provided" });

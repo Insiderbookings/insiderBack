@@ -7,7 +7,8 @@ import {
     getTicketDetails,
     replyTicket,
     updateTicketStatus,
-    getAllTickets
+    getAllTickets,
+    executeTicketAction
 } from "../controllers/support.controller.js";
 
 const router = Router();
@@ -29,5 +30,6 @@ router.post("/tickets/:id/reply", authenticate, replyTicket);
 // Admin routes (additional RBAC logic inside controller, but good to have dedicated endpoints too)
 router.get("/admin/tickets", authenticate, getAllTickets); // Admin list
 router.put("/admin/tickets/:id", authenticate, updateTicketStatus); // Update status/priority
+router.post("/admin/tickets/:id/action", authenticate, executeTicketAction); // Admin actions (refund/cancel)
 
 export default router;

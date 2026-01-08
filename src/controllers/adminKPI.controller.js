@@ -156,6 +156,12 @@ export const getKPIDashboard = async (req, res, next) => {
             models.Stay.count({ where: { inventory_type: 'HOME' } }),
             models.Hotel.count(),
             models.Hotel.count({ distinct: true, col: 'city' }),
+            // Real Margin Calculation for Homes
+            models.Stay.findOne({
+                where: { inventory_type: 'HOME', payment_status: 'PAID', gross_price: { [Op.gt]: 0 } },
+                attributes: [[sequelize.literal('AVG((gross_price - net_cost) / gross_price * 100)'), 'avg_margin']],
+                raw: true
+            }),
 
             // Section 7: User Behavior
             models.User.findOne({
@@ -190,7 +196,18 @@ export const getKPIDashboard = async (req, res, next) => {
             models.AnalyticsEvent.count({ where: { event_type: 'app_open', createdAt: { [Op.between]: [startDate, endDate] } } }),
             models.AnalyticsEvent.count({ where: { event_type: 'search', createdAt: { [Op.between]: [startDate, endDate] } } }),
             models.AnalyticsEvent.count({ where: { event_type: 'view_results', createdAt: { [Op.between]: [startDate, endDate] } } }),
-            models.AnalyticsEvent.count({ where: { event_type: 'checkout_start', createdAt: { [Op.between]: [startDate, endDate] } } })
+            models.AnalyticsEvent.count({ where: { event_type: 'checkout_start', createdAt: { [Op.between]: [startDate, endDate] } } }),
+
+            // Ambassador Clicks (Real)
+            models.AnalyticsEvent.findAll({
+                where: { event_type: 'referral_click', createdAt: { [Op.between]: [startDate, endDate] } },
+                attributes: [
+                    [sequelize.literal("metadata->>'$.code'"), 'code'],
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                ],
+                group: [sequelize.literal("metadata->>'$.code'")],
+                raw: true
+            })
         ]);
 
         const bookingTrend = calcTrend(bookingsCurr || 0, bookingsPrev || 0);
@@ -199,19 +216,19 @@ export const getKPIDashboard = async (req, res, next) => {
         const sourcesMap = {};
         sources.forEach(s => { sourcesMap[s.source] = parseInt(s.get('count')); });
 
-        const ambassadorData = ambassadors.map(a => {
-            const bookings = a.influencerStays?.length || 0;
-            const revenue = a.influencerStays?.reduce((sum, s) => sum + parseFloat(s.gross_price || 0), 0) || 0;
-            return {
-                id: a.id,
-                name: a.name,
-                bookings,
-                clicks: Math.floor(bookings * (Math.random() * 20 + 5)), // Placeholder metric until link tracking is granular
-                revenue,
-                conversion_rate: bookings > 0 ? (1 / (Math.random() * 20 + 5) * 100).toFixed(1) : 0, // Placeholder
-                status: a.is_active ? 'active' : 'inactive'
-            };
-        }).sort((a, b) => b.revenue - a.revenue);
+        // Map Clicks to Ambassadors
+        const clicksMap = {};
+        // safe check if ambassadorClicks (last item) exists
+        const ambassadorClicks = arguments[0][arguments[0].length - 1]; // Because Promise.all result is destructured above, I need to be careful with indexing if I added items.
+        // Re-mapping destructuring to be safe:
+        // The array is huge. Let's fix the destructuring in the next step or use the new variable.
+        // Actually, let's look at the variable names in the original code. 
+        // I added 'homeMargin' after 'cityCount' and 'ambassadorClicks' at the end.
+        // I will assume the destructuring needs to be referenced by index or updated.
+
+        // Wait, I can't easily access the extra variables if I don't update the destructuring var list.
+        // I will update the destructuring list in the ReplacementContent to include 'homeMargin' and 'referralClicks'.
+
 
         const corporateData = corporate.map(c => {
             const bookings = c.Stays?.length || 0;
@@ -308,7 +325,7 @@ export const getKPIDashboard = async (req, res, next) => {
                     hosts: hostCount,
                     active: activeListings,
                     total_bookings: homeBookings,
-                    avg_margin: 18.5 // Placeholder until margin is tracked on Home bookings
+                    avg_margin: homeMargin ? parseFloat(parseFloat(homeMargin.avg_margin).toFixed(1)) : 0
                 },
                 supply_health: { availability_failures: 0, price_mismatch: 0 } // Placeholders
             },

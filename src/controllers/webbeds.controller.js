@@ -232,6 +232,23 @@ export const createPaymentIntent = async (req, res, next) => {
       bookingRef: booking_ref,
     })
 
+    if (models.StayHotel) {
+      const parsedHotelId = Number(String(hotelId).trim())
+      const hotelIdForStay = Number.isFinite(parsedHotelId) ? parsedHotelId : null
+      const roomSnapshot = roomName ? { name: roomName } : null
+      await models.StayHotel.create({
+        stay_id: localBooking.id,
+        hotel_id: hotelIdForStay,
+        room_id: null,
+        room_name: roomName || null,
+        room_snapshot: roomSnapshot,
+      })
+      console.info(`${logPrefix} stay_hotel created`, {
+        stayId: localBooking.id,
+        hotelId: hotelIdForStay,
+      })
+    }
+
     // 2. Create Stripe Payment Intent
     const paymentIntent = await import("stripe").then(m => {
       const Stripe = m.default

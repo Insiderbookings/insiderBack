@@ -77,7 +77,7 @@ export const getWeatherSummary = async ({ location, timeZone } = {}) => {
     });
 
   try {
-    const { data } = await fetchWeather(8000);
+    const { data } = await fetchWeather(10000); // Increased to 10s
     const current = data?.current || null;
     if (!current) return null;
     return {
@@ -94,9 +94,9 @@ export const getWeatherSummary = async ({ location, timeZone } = {}) => {
       },
     };
   } catch (err) {
-    console.warn("[ai] weather lookup failed", err?.message || err);
+    console.warn("[ai] weather lookup failed (10s)", err?.message || "timeout");
     try {
-      const { data } = await fetchWeather(12000);
+      const { data } = await fetchWeather(15000); // Retry with 15s
       const current = data?.current || null;
       if (!current) return null;
       return {

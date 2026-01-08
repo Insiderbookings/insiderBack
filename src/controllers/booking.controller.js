@@ -1461,6 +1461,29 @@ export const createHomeBooking = async (req, res) => {
       homeSnapshotImage: coverImageUrl,
     }).catch((err) => console.error("booking auto prompt dispatch error:", err))
 
+    const homeAddress = [
+      home.address?.address_line1,
+      home.address?.city,
+      home.address?.state,
+      home.address?.country,
+    ]
+      .filter(Boolean)
+      .join(", ") || null
+
+    // FIRE AND FORGET: Generate Trip Intelligence (Trip Hub)
+    generateAndSaveTripIntelligence({
+      stayId: bookingView.id,
+      tripContext: {
+        stayName: home.title,
+        locationText: homeAddress,
+        location: { city: home.address?.city, country: home.address?.country },
+        amenities: home.amenities || [],
+        houseRules: home.house_rules || "",
+        inventoryType: "HOME"
+      },
+      lang: "es" // Default or detect from user
+    }).catch(err => console.error("[HOME BOOKING] Intelligence generation failed", err));
+
     try {
       const pricingSnapshot =
         fresh.pricing_snapshot && typeof fresh.pricing_snapshot === "object" ? fresh.pricing_snapshot : {}
@@ -1469,15 +1492,6 @@ export const createHomeBooking = async (req, res) => {
       const ratePerNight = nightsCount ? Number((baseSubtotalValue / nightsCount).toFixed(2)) : null
       const taxAmountValue = Number(pricingSnapshot.taxAmount ?? 0)
       const bookingCode = fresh.booking_ref || fresh.id
-      const homeAddress = [
-        home.address?.address_line1,
-        home.address?.city,
-        home.address?.state,
-        home.address?.country,
-      ]
-        .filter(Boolean)
-        .join(", ") || null
-
       await sendBookingEmail(
         {
           id: fresh.id,
@@ -2005,6 +2019,8 @@ export const getBookingById = async (req, res) => {
   }
 }
 
+import { processBookingCancellation } from "../services/booking.service.js";
+
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    PUT  /api/bookings/:id/cancel
    (este endpoint cancela reservas legacy; para TGX usar su flow)
@@ -2014,295 +2030,19 @@ export const cancelBooking = async (req, res) => {
     const { id } = req.params
     const userId = req.user.id
 
-    const booking = await models.Booking.findOne({
-      where: { id, user_id: userId },
-      include: [{ model: models.StayHome, as: "homeStay", required: false }],
-    })
-    if (!booking) return res.status(404).json({ error: "Booking not found" })
+    const result = await processBookingCancellation({
+      bookingId: id,
+      userId,
+      reason: "user_initiated_cancel"
+    });
 
-    const statusLc = String(booking.status).toLowerCase()
-    if (statusLc === "cancelled")
-      return res.status(400).json({ error: "Booking is already cancelled" })
-    if (statusLc === "completed")
-      return res.status(400).json({ error: "Cannot cancel completed booking" })
-
-    const isHomeBooking =
-      String(booking.inventory_type || "").toUpperCase() === "HOME" ||
-      String(booking.source || "").toUpperCase() === "HOME"
-    const wasPaid = String(booking.payment_status || "").toUpperCase() === "PAID"
-    const refundCurrency = booking.currency || "USD"
-    let cancellationMeta = null
-    let refundAmount = 0
-    let refundPercent = 0
-    let nextPaymentStatus = wasPaid ? "PAID" : "UNPAID"
-
-    if (isHomeBooking) {
-      let policyRaw =
-        booking.meta?.cancellationPolicy ??
-        booking.meta?.cancellation_policy ??
-        booking.homeStay?.house_rules_snapshot?.cancellation_policy ??
-        booking.homeStay?.house_rules_snapshot?.cancellationPolicy ??
-        null
-
-      if (!policyRaw) {
-        const homeIdValue =
-          booking.homeStay?.home_id ??
-          (booking.inventory_id ? Number.parseInt(booking.inventory_id, 10) : null)
-        if (homeIdValue) {
-          const homePolicies = await models.HomePolicies.findOne({
-            where: { home_id: homeIdValue },
-            attributes: ["cancellation_policy"],
-          })
-          policyRaw = homePolicies?.cancellation_policy ?? null
-        }
-      }
-
-      const quote = buildHomeCancellationQuote({
-        policyRaw,
-        checkIn: booking.check_in,
-        bookedAt: booking.booked_at ?? booking.created_at ?? booking.createdAt ?? null,
-        nights: booking.nights,
-        total: booking.gross_price,
-      })
-
-      if (!quote.cancellable) {
-        return res.status(400).json({ error: quote.reason || "Cancellation not allowed" })
-      }
-
-      refundPercent = quote.refundPercent
-      refundAmount = wasPaid ? quote.refundAmount : 0
-
-      let stripeRefundId = null
-      let stripeRefundStatus = null
-      let paymentIntentStatus = null
-      let paymentIntentCanceled = false
-
-      if (booking.payment_intent_id && (refundAmount > 0 || wasPaid)) {
-        const stripe = await getStripeClient()
-        if (!stripe) {
-          return res.status(500).json({ error: "Stripe is not configured for refunds" })
-        }
-
-        const refundCents = Math.round(refundAmount * 100)
-        const paymentIntent = await stripe.paymentIntents.retrieve(booking.payment_intent_id)
-        paymentIntentStatus = paymentIntent?.status || null
-
-        if (refundCents > 0 && paymentIntent?.status === "succeeded") {
-          const refund = await stripe.refunds.create({
-            payment_intent: booking.payment_intent_id,
-            amount: refundCents,
-            metadata: {
-              stayId: String(booking.id),
-              policy: quote.policyCode,
-              reason: "guest_cancel",
-            },
-          })
-          stripeRefundId = refund.id
-          stripeRefundStatus = refund.status
-        } else if (paymentIntent?.status === "requires_capture") {
-          await stripe.paymentIntents.cancel(booking.payment_intent_id)
-          paymentIntentCanceled = true
-        }
-      } else if (refundAmount > 0 && !booking.payment_intent_id) {
-        return res.status(500).json({ error: "Missing payment intent for refund" })
-      }
-
-      nextPaymentStatus =
-        refundAmount > 0 || stripeRefundId
-          ? "REFUNDED"
-          : !wasPaid && booking.payment_intent_id
-            ? "UNPAID"
-            : paymentIntentCanceled
-              ? "REFUNDED"
-              : wasPaid
-                ? "PAID"
-                : "UNPAID"
-
-      cancellationMeta = {
-        policy: quote.policyCode,
-        refundPercent,
-        refundAmount,
-        currency: refundCurrency,
-        timeline: quote.timeline,
-        paymentIntentStatus,
-        refundId: stripeRefundId,
-        refundStatus: stripeRefundStatus,
-        paymentIntentCanceled,
-        cancelledAt: new Date().toISOString(),
-      }
-    } else {
-      const hoursUntilCI = (new Date(booking.check_in) - new Date()) / 36e5
-      if (hoursUntilCI < 24)
-        return res.status(400).json({ error: "Cannot cancel booking less than 24 hours before check-in" })
-      nextPaymentStatus = wasPaid ? "REFUNDED" : "UNPAID"
-    }
-
-    const metaPayload = cancellationMeta
-      ? {
-        ...(booking.meta || {}),
-        cancellationPolicy:
-          booking.meta?.cancellationPolicy ??
-          booking.meta?.cancellation_policy ??
-          cancellationMeta.policy ??
-          null,
-        cancellation: cancellationMeta,
-      }
-      : booking.meta
-
-    await booking.update({
-      status: "CANCELLED",
-      payment_status: nextPaymentStatus,
-      cancelled_at: new Date(),
-      ...(metaPayload ? { meta: metaPayload } : {}),
-    })
-
-    if (booking.inventory_type === "HOME") {
-      try {
-        const stayHome = await models.StayHome.findOne({ where: { stay_id: booking.id } })
-        const homeIdValue =
-          stayHome?.home_id ??
-          (booking.inventory_id ? Number.parseInt(booking.inventory_id, 10) : null)
-
-        const stayDates = enumerateStayDates(booking.check_in, booking.check_out)
-        if (homeIdValue && stayDates.length) {
-          const overlappingStays = await models.Stay.findAll({
-            where: {
-              id: { [Op.ne]: booking.id },
-              inventory_type: "HOME",
-              status: { [Op.in]: ["PENDING", "CONFIRMED"] },
-              check_in: { [Op.lt]: booking.check_out },
-              check_out: { [Op.gt]: booking.check_in },
-            },
-            include: [
-              {
-                model: models.StayHome,
-                as: "homeStay",
-                required: true,
-                where: { home_id: homeIdValue },
-              },
-            ],
-          })
-
-          const occupiedDates = new Set()
-          for (const otherStay of overlappingStays) {
-            enumerateStayDates(otherStay.check_in, otherStay.check_out).forEach((d) =>
-              occupiedDates.add(d)
-            )
-          }
-
-          const calendarEntries = await models.HomeCalendar.findAll({
-            where: {
-              home_id: homeIdValue,
-              date: stayDates,
-            },
-          })
-
-          for (const entry of calendarEntries) {
-            if (occupiedDates.has(entry.date)) continue
-
-            const noteMatches =
-              typeof entry.note === "string" &&
-              entry.note.toUpperCase() === `BOOKING:${String(booking.id).toUpperCase()}`
-
-            if (noteMatches) {
-              if (entry.price_override == null) {
-                await entry.destroy()
-              } else {
-                await entry.update({
-                  status: "AVAILABLE",
-                  note: null,
-                  source: entry.source === "PLATFORM" ? "PLATFORM" : entry.source,
-                })
-              }
-              continue
-            }
-
-            if (entry.price_override == null && !entry.note) {
-              await entry.destroy()
-            } else {
-              await entry.update({
-                status: "AVAILABLE",
-                source: entry.source === "PLATFORM" ? "PLATFORM" : entry.source,
-              })
-            }
-          }
-        }
-      } catch (calendarErr) {
-        console.warn("cancelBooking: calendar cleanup failed:", calendarErr?.message || calendarErr)
-      }
-    }
-
-    // Si quedÃ³ REFUNDED, revertir comisiÃ³n influencer asociada (si no fue pagada)
-    if (wasPaid) {
-      try {
-        const ic = await models.InfluencerCommission.findOne({ where: { booking_id: booking.id } })
-        if (ic && ic.status !== 'paid') {
-          await ic.update({ status: 'reversed', reversal_reason: 'cancelled' })
-        }
-      } catch (e) {
-        console.warn('cancelBooking: could not reverse influencer commission:', e?.message || e)
-      }
-    }
-
-    try {
-      const redemption = await sequelize.transaction((tx) => reverseReferralRedemption(booking.id, tx))
-      if (redemption) {
-        const meta = booking.meta || {}
-        const snapshot = booking.pricing_snapshot || {}
-        if (snapshot.referralCoupon) snapshot.referralCoupon.status = redemption.status
-        if (meta.referralCoupon) meta.referralCoupon.status = redemption.status
-        await booking.update({ meta, pricing_snapshot: snapshot })
-      }
-    } catch (e) {
-      console.warn("cancelBooking: could not reverse referral coupon:", e?.message || e)
-    }
-
-    // Enviar email de cancelaciÃ³n (best-effort)
-    try {
-      const bookingForEmail = {
-        id: booking.id,
-        bookingCode: booking.booking_ref || booking.id,
-        guestName: booking.guest_name,
-        guests: { adults: booking.adults, children: booking.children },
-        roomsCount: 1,
-        checkIn: booking.check_in,
-        checkOut: booking.check_out,
-        hotel: { name: booking.Hotel?.name || booking.meta?.snapshot?.hotelName || 'Hotel' },
-        currency: booking.currency || 'USD',
-        totals: { total: Number(booking.gross_price || 0) },
-      }
-      const lang = (booking.meta?.language || process.env.DEFAULT_LANG || 'en')
-      const policy = null
-      const refund = cancellationMeta
-        ? {
-          amount: refundAmount,
-          currency: refundCurrency,
-          method: cancellationMeta.refundId ? "Stripe" : "Original payment method",
-        }
-        : {}
-      await sendCancellationEmail({ booking: bookingForEmail, toEmail: booking.guest_email, lang, policy, refund })
-    } catch (e) {
-      console.warn('cancelBooking: could not send cancellation email:', e?.message || e)
-    }
-
-    return res.json({
-      message: "Booking cancelled successfully",
-      booking: {
-        id: booking.id,
-        status: String(booking.status).toLowerCase(),
-        paymentStatus: String(booking.payment_status).toLowerCase(),
-      },
-      refund: cancellationMeta
-        ? {
-          amount: refundAmount,
-          percent: refundPercent,
-          currency: refundCurrency,
-          policy: cancellationMeta.policy,
-        }
-        : null,
-    })
+    return res.json(result);
   } catch (err) {
-    console.error(err)
+    // Handle service errors
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    console.error("cancelBooking Error:", err)
     return res.status(500).json({ error: "Server error" })
   }
 }
@@ -2588,12 +2328,37 @@ export const confirmBooking = async (req, res) => {
       }
     };
 
-    const influencerId = booking.influencer_user_id || null;
     if (influencerId) {
       console.log("[CONFIRM BOOKING] processing influencer", { influencer_user_id: influencerId });
       await ensureInfluencerCommission(influencerId);
     }
 
+    // FIRE AND FORGET: Generate Trip Intelligence (Trip Hub) if confirmed
+    // This covers Hotel bookings which are often created then confirmed
+    try {
+      const stayName = booking.hotel_name || booking.home?.title || "Your Stay";
+      const locationText = booking.location || booking.hotel?.city || booking.home?.address?.city || "Destination";
+      const city = booking.hotel?.city || booking.home?.address?.city || null;
+      const country = booking.hotel?.country || booking.home?.address?.country || null;
+      const amenities = booking.hotel?.amenities || booking.home?.amenities || [];
+      const houseRules = booking.home?.house_rules || "";
+      const inventoryType = booking.inventory_type || (booking.hotel_name ? "HOTEL" : "HOME");
+
+      generateAndSaveTripIntelligence({
+        stayId: booking.id,
+        tripContext: {
+          stayName,
+          locationText,
+          location: { city, country },
+          amenities,
+          houseRules,
+          inventoryType
+        },
+        lang: "es"
+      }).catch(err => console.error("[CONFIRM BOOKING] Intelligence generation failed", err));
+    } catch (e) {
+      console.warn("[CONFIRM BOOKING] Error prepping intelligence context", e);
+    }
 
     let redemption = null;
     await sequelize.transaction(async (tx) => {

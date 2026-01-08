@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import models from "../models/index.js";
+import { getWeatherSummary } from "../modules/ai/tools/tool.weather.js";
+import { getLocalNews } from "../modules/ai/tools/tool.news.js";
 
 const DEFAULT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini";
 const apiKey = process.env.OPENAI_API_KEY;
@@ -349,6 +351,18 @@ const buildPlannerPrompt = () => [
       "IMPORTANT: If the user expresses a desire to travel ('I want to go to...', 'Quiero viajar a...') or provides a destination with travel context, use SEARCH intent.\n" +
       "Use SEARCH when the user's goal is to find options or plan a trip, even if details are missing.\n\n" +
 
+      "SPECIAL LOCATION HANDLING:\n" +
+      "- If the user says 'nearby', 'Nearby', 'User's Current Location', or 'current location':\n" +
+      "  1. Look at the provided location object in the context (city, lat, lng).\n" +
+      "  2. Use that location as the SEARCH destination.\n" +
+      "  3. Do NOT ask 'Which city?' if the context location is available. Proceed with the search using the context coordinates or city.\n" +
+      "- If the user specifies a city but no country, try to infer it from the context or region.\n\n" +
+
+      "DATE HANDLING:\n" +
+      "- If the user says a date without a year (e.g., 'Jan 18'), assume the NEXT occurrence of that date relative to 'now' in the context.\n" +
+      "- If 'now' is 2026-01-08 and user says 'Jan 18', assume 2026-01-18.\n" +
+      "- If today is Dec 2025 and user says 'Jan 18', assume 2026-01-18.\n\n" +
+
       "LANGUAGE AND IDIOMS DETECTION:\n" +
       "Detect and recognize regional idioms:\n" +
       "- Argentinians: che, boludo, copado, finde, buenisimo, genial, dale, barbaro\n" +
@@ -363,7 +377,8 @@ const buildPlannerPrompt = () => [
       "User: 'Looking for a house in Cordoba for 4' -> intent: SEARCH\n" +
       "User: 'Hey, do you have something cool?' -> intent: SMALL_TALK (lacks specific info)\n" +
       "User: 'I want to go to Bariloche' -> intent: SEARCH (implied search)\n" +
-      "User: 'Show me hotels in CABA' -> intent: SEARCH\n\n" +
+      "User: 'Show me hotels in CABA' -> intent: SEARCH\n" +
+      "User: 'Search nearby' -> intent: SEARCH (uses context location)\n\n" +
 
       "FILTERING & SORTING RULES:\n" +
       "- Fill location city/state/country and lat/lng when provided. If the user requests proximity (\"1km around Movistar Arena\"), set location.radiusKm and location.landmark.\n" +
@@ -556,28 +571,55 @@ export const generateTripAddons = async ({ tripContext, location, lang = "es" })
   const rules = tripContext?.houseRules || "";
   const type = tripContext?.inventoryType || "stay";
 
+
+  // FETCH REAL NEWS
+  let newsHeadlines = [];
+  try {
+    const newsItems = await getLocalNews({ query: city, locale: lang === "es" ? "es-419" : "en-US" });
+    newsHeadlines = newsItems.map(i => `- ${i.title} (${i.publishedAt || 'Recent'})`);
+  } catch (newsErr) {
+    console.warn("[ai] News fetch warning:", newsErr);
+  }
+
   const systemMessage =
     "You are a premium travel concierge. Generate smart insights and a preparation hub for a user's trip.\n" +
     "### DEEP INTELLIGENCE INSTRUCTIONS:\n" +
-    "1. Analyze the stay type, amenities, and house rules provided.\n" +
-    "2. If an amenity is missing (e.g., no breakfast, no parking), generate an Insight with a practical local alternative.\n" +
-    "3. If there are interesting house rules, explain them gently as a 'Pearl of Wisdom'.\n" +
-    "4. Insights should feel personal, not generic. Use the stay name and city name.\n" +
-    "5. icons MUST be valid Ionicons names.\n\n" +
+    "1. FOCUS ON THE DESTINATION FIRST: Provide cultural insights, hidden local gems, or 'live like a local' tips for ${city}.\n" +
+    "2. WEATHER SMART TIPS: If weather data is available, offer specific advice (e.g., 'Windy city, bring a jacket').\n" +
+    "3. STAY HIGHLIGHTS: Mention unique features of ${stay}. If a critical amenity is missing (e.g., no breakfast), offer a *specific* high-rated local alternative nearby.\n" +
+    "4. HOUSE RULES: Only mention rules if they are unusual or critical for avoiding fines.\n" +
+    "5. DIVERSITY: Mix cultural facts, practical tips, and fun local knowledge. Do not just list what is missing.\n" +
+    "6. TIME CONTEXT: Generate specific advice for Morning, Afternoon, and Evening.\n" +
+    "7. LOCAL PULSE: Use the provided REAL NEWS HEADLINES to generate 2-3 Pulse items. Summarize the event/news. If no headlines are provided, fall back to generic seasonal highlights. Do NOT invent news.\n" +
+    "8. LOCAL LINGO: Provide one interesting local phrase/slang with translation and context.\n" +
+    "9. SMART ITINERARY: Generate a 3-day simplified itinerary (Day 1, Day 2, Day 3). For each day, provide a title (e.g., 'Cultural Immersion') and 3 key items (Morning, Afternoon, Evening). Each item needs a time (e.g., '10:00 AM'), activity name, and a valid Ionicon name.\n" +
+    "10. icons MUST be valid Ionicons names.\n\n" +
     "Return JSON with shape:\n" +
     "{\n" +
-    "  \"insights\": [{ \"title\": string, \"icon\": string, \"description\": string, \"type\": \"TIP\"|\"FUN_FACT\"|\"WARNING\" }],\n" +
-    "  \"preparation\": [{ \"id\": string, \"title\": string, \"value\": string, \"icon\": string }]\n" +
+    "  \"insights\": [{ \"title\": string, \"icon\": string, \"description\": string, \"details\": string, \"type\": \"TIP\"|\"FUN_FACT\"|\"WARNING\" }],\n" +
+    "  \"preparation\": [{ \"id\": string, \"title\": string, \"value\": string, \"details\": string, \"icon\": string }],\n" +
+    "  \"timeContext\": {\n" +
+    "    \"morning\": { \"action\": string, \"tip\": string, \"icon\": string },\n" +
+    "    \"afternoon\": { \"action\": string, \"tip\": string, \"icon\": string },\n" +
+    "    \"evening\": { \"action\": string, \"tip\": string, \"icon\": string }\n" +
+    "  },\n" +
+    "  \"localPulse\": [{ \"headline\": string, \"subtext\": string, \"category\": \"event\"|\"news\"|\"culture\" }],\n" +
+    "  \"localLingo\": { \"phrase\": string, \"translation\": string, \"pronunciation\": string, \"context\": string },\n" +
+    "  \"suggestions\": [{ \"title\": string, \"items\": [{ \"name\": string, \"category\": string, \"rating\": number, \"distanceKm\": number, \"description\": string }] }],\n" +
+    "  \"itinerary\": [{ \"day\": string, \"title\": string, \"items\": [{ \"time\": string, \"activity\": string, \"icon\": string }] }]\n" +
     "}\n" +
+    "For 'suggestions', generate 3 categories: 'Where to Eat', 'Drinks & Nightlife', and 'Things to Do'. Provide 3-4 top-tier recommendations for each.\n" +
+    "For 'details', provide a deeper explanation (2-3 sentences) that expands on the insight/prep item so key info is read-ready.\n" +
     `Language: ${lang === "es" ? "Spanish" : "English"}.\n` +
     `Destination: ${city}. Stay: ${stay} (Type: ${type}).\n` +
     `Amenities: ${JSON.stringify(amenities)}.\n` +
     `House Rules: ${rules}.\n`;
 
   try {
-    const userPrompt = `Provide deep intelligence for my ${type} at ${stay} in ${city}. ` +
-      (amenities.length ? `I have these amenities: ${amenities.join(", ")}. ` : "") +
-      (rules ? `Remember these rules: ${rules}.` : "");
+    const userPrompt = `Provide deep intelligence for my ${type} at ${stay} in ${city}. Include time-specific advice, local events (pulse), a local phrase (lingo), curated local suggestions (Food, Drinks, Activities), and a smart 3-day itinerary. Focus on unique local experiences. \n` +
+      (amenities.length ? `Amenities available: ${amenities.join(", ")}. ` : "") +
+      (rules ? `House rules: ${rules}.` : "") +
+      (newsHeadlines.length ? `\nREAL NEWS HEADLINES (Use these for Local Pulse):\n${newsHeadlines.join("\n")}` : "");
 
     const completion = await client.chat.completions.create({
       model: DEFAULT_MODEL,
@@ -595,6 +637,11 @@ export const generateTripAddons = async ({ tripContext, location, lang = "es" })
     return {
       insights: Array.isArray(parsed.insights) ? parsed.insights : [],
       preparation: Array.isArray(parsed.preparation) ? parsed.preparation : [],
+      timeContext: parsed.timeContext || null,
+      localPulse: parsed.localPulse || [],
+      localLingo: parsed.localLingo || null,
+      suggestions: parsed.suggestions || [],
+      itinerary: Array.isArray(parsed.itinerary) ? parsed.itinerary : [],
     };
   } catch (err) {
     console.error("[aiAssistant] generateTripAddons failed", err);
@@ -617,13 +664,45 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
       lang
     });
 
-    // 2. Upsert intelligence record
-    const [record] = await StayIntelligence.upsert({
-      stayId,
-      insights: addons.insights || [],
-      preparation: addons.preparation || [],
-      lastGeneratedAt: new Date()
-    }, { returning: true });
+    // 2. Fetch Weather
+    let weather = null;
+    try {
+      weather = await getWeatherSummary({ location });
+    } catch (wErr) {
+      console.warn("[aiAssistant] background weather fetch failed", wErr?.message);
+    }
+
+    // 3. Upsert intelligence record (Manual check to avoid ON CONFLICT errors if constraint missing)
+    let record = await StayIntelligence.findOne({ where: { stayId } });
+    if (record) {
+      await record.update({
+        insights: addons.insights || [],
+        preparation: addons.preparation || [],
+        metadata: {
+          ...record.metadata,
+          weather,
+          timeContext: addons.timeContext,
+          localPulse: addons.localPulse,
+          localLingo: addons.localLingo,
+          suggestions: addons.suggestions
+        },
+        lastGeneratedAt: new Date()
+      });
+    } else {
+      record = await StayIntelligence.create({
+        stayId,
+        insights: addons.insights || [],
+        preparation: addons.preparation || [],
+        metadata: {
+          weather,
+          timeContext: addons.timeContext,
+          localPulse: addons.localPulse,
+          localLingo: addons.localLingo,
+          suggestions: addons.suggestions
+        },
+        lastGeneratedAt: new Date()
+      });
+    }
 
     return record;
   } catch (err) {

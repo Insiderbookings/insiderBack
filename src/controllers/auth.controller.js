@@ -855,14 +855,6 @@ export const appleExchange = async (req, res) => {
 
     let payload;
     try {
-      // 1. Decode without verification to debug audience mismatch
-      const decodedUnsafe = jwt.decode(identityToken);
-      console.log("DEBUG APPLE TOKEN:", {
-        tokenAud: decodedUnsafe?.aud,
-        envClientId: APPLE_CLIENT_ID,
-        match: decodedUnsafe?.aud === APPLE_CLIENT_ID
-      });
-
       // 2. Verify signature
       const verified = await jwtVerify(identityToken, appleJwks, {
         issuer: APPLE_ISSUER,
@@ -880,7 +872,6 @@ export const appleExchange = async (req, res) => {
         details: err.message,
         code: err.code,
         expectedAudience: APPLE_CLIENT_ID,
-        receivedAudience: jwt.decode(identityToken)?.aud
       });
     }
 
