@@ -590,7 +590,7 @@ export const generateTripAddons = async ({ tripContext, location, lang = "es" })
     "4. HOUSE RULES: Only mention rules if they are unusual or critical for avoiding fines.\n" +
     "5. DIVERSITY: Mix cultural facts, practical tips, and fun local knowledge. Do not just list what is missing.\n" +
     "6. TIME CONTEXT: Generate specific advice for Morning, Afternoon, and Evening.\n" +
-    "7. LOCAL PULSE: Use the provided REAL NEWS HEADLINES to generate 2-3 Pulse items. Summarize the event/news. If no headlines are provided, fall back to generic seasonal highlights. Do NOT invent news.\n" +
+    "7. LOCAL PULSE: Use the provided REAL NEWS HEADLINES to generate 2-3 Pulse items. Summarize the event/news. If no headlines are provided, return an empty localPulse array. Do NOT invent news.\n" +
     "8. LOCAL LINGO: Provide one interesting local phrase/slang with translation and context.\n" +
     "9. SMART ITINERARY: Generate a 3-day simplified itinerary (Day 1, Day 2, Day 3). For each day, provide a title (e.g., 'Cultural Immersion') and 3 key items (Morning, Afternoon, Evening). Each item needs a time (e.g., '10:00 AM'), activity name, and a valid Ionicon name.\n" +
     "10. icons MUST be valid Ionicons names.\n\n" +
@@ -634,11 +634,14 @@ export const generateTripAddons = async ({ tripContext, location, lang = "es" })
     if (!payload) return { insights: [], preparation: [] };
     const parsed = JSON.parse(payload);
 
+    const resolvedLocalPulse =
+      newsHeadlines.length && Array.isArray(parsed.localPulse) ? parsed.localPulse : [];
+
     return {
       insights: Array.isArray(parsed.insights) ? parsed.insights : [],
       preparation: Array.isArray(parsed.preparation) ? parsed.preparation : [],
       timeContext: parsed.timeContext || null,
-      localPulse: parsed.localPulse || [],
+      localPulse: resolvedLocalPulse,
       localLingo: parsed.localLingo || null,
       suggestions: parsed.suggestions || [],
       itinerary: Array.isArray(parsed.itinerary) ? parsed.itinerary : [],

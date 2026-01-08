@@ -125,11 +125,15 @@ export const createPaymentIntent = async (req, res, next) => {
 
     let inventorySnapshot = null
     let guestSnapshot = null
+    const hotelIdValue = String(hotelId).trim()
+    let webbedsHotelIdForStay = null
     try {
-      const hotelIdValue = String(hotelId).trim()
       const staticHotel = await models.WebbedsHotel.findOne({
         where: { hotel_id: hotelIdValue },
       })
+      if (staticHotel?.hotel_id != null) {
+        webbedsHotelIdForStay = String(staticHotel.hotel_id)
+      }
       const staticPayload = formatStaticHotel(staticHotel)
       const locationFallback =
         staticPayload?.address ||
@@ -233,12 +237,17 @@ export const createPaymentIntent = async (req, res, next) => {
     })
 
     if (models.StayHotel) {
-      const parsedHotelId = Number(String(hotelId).trim())
-      const hotelIdForStay = Number.isFinite(parsedHotelId) ? parsedHotelId : null
+      const parsedHotelId = Number(hotelIdValue)
+      let hotelIdForStay = Number.isFinite(parsedHotelId) ? parsedHotelId : null
+      if (hotelIdForStay != null && models.Hotel) {
+        const localHotel = await models.Hotel.findByPk(hotelIdForStay, { attributes: ["id"] })
+        if (!localHotel) hotelIdForStay = null
+      }
       const roomSnapshot = roomName ? { name: roomName } : null
       await models.StayHotel.create({
         stay_id: localBooking.id,
         hotel_id: hotelIdForStay,
+        webbeds_hotel_id: webbedsHotelIdForStay,
         room_id: null,
         room_name: roomName || null,
         room_snapshot: roomSnapshot,
@@ -246,6 +255,8 @@ export const createPaymentIntent = async (req, res, next) => {
       console.info(`${logPrefix} stay_hotel created`, {
         stayId: localBooking.id,
         hotelId: hotelIdForStay,
+        webbedsHotelId: webbedsHotelIdForStay,
+        webbedsHotelIdRaw: hotelIdValue,
       })
     }
 

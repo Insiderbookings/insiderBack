@@ -80,6 +80,7 @@ export const getKPIDashboard = async (req, res, next) => {
             aiChatsStarted,
             aiChatsCompleted,
             aiTotalMessages,
+            aiSessionsWithResults,
             ticketCount,
             // Funnel
             fAll, fSearch, fResults, fCheckout,
@@ -191,6 +192,15 @@ export const getKPIDashboard = async (req, res, next) => {
             models.AiChatSession.count({ where: { createdAt: { [Op.between]: [startDate, endDate] } } }),
             models.AiChatSession.count({ where: { createdAt: { [Op.between]: [startDate, endDate] }, message_count: { [Op.gte]: 3 } } }),
             models.AiChatSession.sum('message_count', { where: { createdAt: { [Op.between]: [startDate, endDate] } } }),
+            models.AiChatSession.count({
+                where: {
+                    createdAt: { [Op.between]: [startDate, endDate] },
+                    [Op.and]: [
+                        { metadata: { [Op.not]: null } },
+                        sequelize.where(sequelize.json("metadata.lastInventorySnapshot"), { [Op.not]: null }),
+                    ],
+                },
+            }),
             models.SupportTicket.count({ where: { createdAt: { [Op.between]: [startDate, endDate] } } }),
 
             // NEW: Funnel Real Data
@@ -262,7 +272,10 @@ export const getKPIDashboard = async (req, res, next) => {
         const chatsStarted = aiChatsStarted || 0;
         const chatsCompleted = aiChatsCompleted || 0;
         const totalMessages = aiTotalMessages || 0;
+        const sessionsWithResults = aiSessionsWithResults || 0;
         const avgMsg = chatsStarted > 0 ? Math.round(totalMessages / chatsStarted) : 0;
+        const dropOffs = Math.max(chatsStarted - chatsCompleted, 0);
+        const noResults = Math.max(chatsStarted - sessionsWithResults, 0);
 
         // Alerts Logic
         const alerts = [];
@@ -327,7 +340,7 @@ export const getKPIDashboard = async (req, res, next) => {
                 chats_completed: chatsCompleted,
                 chat_to_booking_percent: chatsStarted > 0 ? ((bookingsCurr / chatsStarted) * 100).toFixed(1) : 0,
                 avg_messages: avgMsg,
-                failure_signals: { price_confusion: 4, repeated_questions: 12, manual_override: manualAssists }
+                failure_signals: { drop_offs: dropOffs, no_results: noResults, manual_override: manualAssists }
             },
             inventory: {
                 hotels: { count: hotelCount, cities: cityCount },

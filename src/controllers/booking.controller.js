@@ -294,6 +294,19 @@ const mergeValues = (base, updates) => {
 const mapStay = (row, source) => {
   const stayHotel = toPlain(row.hotelStay ?? row.StayHotel ?? row.stayHotel) ?? null
   const hotelFromStay = toPlain(stayHotel?.hotel) ?? null
+  const webbedsHotelFromStay = toPlain(stayHotel?.webbedsHotel) ?? null
+  const webbedsHotelPayload = webbedsHotelFromStay
+    ? {
+      id: webbedsHotelFromStay.hotel_id ?? webbedsHotelFromStay.id ?? null,
+      name: webbedsHotelFromStay.name ?? null,
+      city: webbedsHotelFromStay.city_name ?? null,
+      country: webbedsHotelFromStay.country_name ?? null,
+      rating: webbedsHotelFromStay.rating ?? null,
+      address: webbedsHotelFromStay.address ?? null,
+      location: null,
+      image: null,
+    }
+    : null
   const roomFromStay = toPlain(stayHotel?.room) ?? toPlain(stayHotel?.room_snapshot) ?? null
   const inventorySnapshot = toPlain(row.inventory_snapshot ?? row.inventorySnapshot) ?? null
   const inventoryHotel = toPlain(inventorySnapshot?.hotel) ?? null
@@ -319,7 +332,7 @@ const mapStay = (row, source) => {
       name: inventorySnapshot.roomName ?? inventoryRoom?.name ?? null,
     }
     : null
-  const hotel = toPlain(row.Hotel ?? row.hotel ?? hotelFromStay) ?? null
+  const hotel = toPlain(row.Hotel ?? row.hotel ?? hotelFromStay ?? webbedsHotelPayload) ?? null
   const room = toPlain(row.Room ?? row.room ?? roomFromStay) ?? null
   const tgxMeta = toPlain(row.tgxMeta) ?? null
   const stayHome = toPlain(row.homeStay ?? row.StayHome ?? row.stayHome) ?? null
@@ -439,6 +452,19 @@ const STAY_BASE_INCLUDE = [
         model: models.Room,
         as: "room",
         attributes: ["id", "name", "room_number", "image", "price", "beds", "capacity"],
+      },
+      {
+        model: models.WebbedsHotel,
+        as: "webbedsHotel",
+        attributes: [
+          "hotel_id",
+          "name",
+          "city_name",
+          "country_name",
+          "rating",
+          "address",
+          "images",
+        ],
       },
     ],
   },

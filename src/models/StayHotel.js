@@ -13,6 +13,7 @@ export default (sequelize) => {
         onDelete: "CASCADE",
       },
       hotel_id: { type: DataTypes.INTEGER, allowNull: true },
+      webbeds_hotel_id: { type: DataTypes.BIGINT, allowNull: true },
       room_id: { type: DataTypes.INTEGER, allowNull: true },
       tgx_option_id: { type: DataTypes.STRING(120), allowNull: true },
       board_code: { type: DataTypes.STRING(40), allowNull: true },
@@ -33,6 +34,9 @@ export default (sequelize) => {
     StayHotel.belongsTo(models.Stay, { foreignKey: "stay_id" });
     if (models.Hotel) {
       StayHotel.belongsTo(models.Hotel, { foreignKey: "hotel_id", as: "hotel" });
+    }
+    if (models.WebbedsHotel) {
+      StayHotel.belongsTo(models.WebbedsHotel, { foreignKey: "webbeds_hotel_id", as: "webbedsHotel" });
     }
     if (models.Room) {
       StayHotel.belongsTo(models.Room, { foreignKey: "room_id", as: "room" });
