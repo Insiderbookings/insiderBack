@@ -74,6 +74,7 @@ export const mapHomeToCard = (home) => {
     city: address.city ?? null,
     state: address.state ?? null,
     country: address.country ?? null,
+    spaceType: home.space_type ?? home.spaceType ?? null,
     pricePerNight:
       pricing?.base_price != null ? Number(pricing.base_price) * 1.1 : null,
     currency: pricing?.currency ?? "USD",

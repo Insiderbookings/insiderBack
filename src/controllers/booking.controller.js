@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken"
 import { sendMail } from "../helpers/mailer.js"
 import models, { sequelize } from "../models/index.js"
 import { streamCertificatePDF } from "../helpers/bookingCertificate.js"
+import { generateAndSaveTripIntelligence } from "../services/aiAssistant.service.js"
 import { sendCancellationEmail } from "../emailTemplates/cancel-email.js"
 import { sendBookingEmail } from "../emailTemplates/booking-email.js"
 import { sendHomeHostBookingEmail } from "../emailTemplates/home-host-booking-email.js"
@@ -299,24 +300,24 @@ const mapStay = (row, source) => {
   const inventoryRoom = toPlain(inventorySnapshot?.room) ?? null
   const inventoryHotelFallback = inventorySnapshot
     ? {
-        id: inventorySnapshot.hotelId ?? inventoryHotel?.id ?? null,
-        name: inventorySnapshot.hotelName ?? inventoryHotel?.name ?? null,
-        image:
-          inventorySnapshot.hotelImage ??
-          inventoryHotel?.image ??
-          inventoryHotel?.coverImage ??
-          null,
-        city: inventorySnapshot.city ?? inventoryHotel?.city ?? null,
-        country: inventorySnapshot.country ?? inventoryHotel?.country ?? null,
-        rating: inventorySnapshot.rating ?? inventoryHotel?.rating ?? null,
-        address: inventorySnapshot.address ?? inventoryHotel?.address ?? null,
-        location: inventorySnapshot.location ?? null,
-      }
+      id: inventorySnapshot.hotelId ?? inventoryHotel?.id ?? null,
+      name: inventorySnapshot.hotelName ?? inventoryHotel?.name ?? null,
+      image:
+        inventorySnapshot.hotelImage ??
+        inventoryHotel?.image ??
+        inventoryHotel?.coverImage ??
+        null,
+      city: inventorySnapshot.city ?? inventoryHotel?.city ?? null,
+      country: inventorySnapshot.country ?? inventoryHotel?.country ?? null,
+      rating: inventorySnapshot.rating ?? inventoryHotel?.rating ?? null,
+      address: inventorySnapshot.address ?? inventoryHotel?.address ?? null,
+      location: inventorySnapshot.location ?? null,
+    }
     : null
   const inventoryRoomFallback = inventorySnapshot
     ? {
-        name: inventorySnapshot.roomName ?? inventoryRoom?.name ?? null,
-      }
+      name: inventorySnapshot.roomName ?? inventoryRoom?.name ?? null,
+    }
     : null
   const hotel = toPlain(row.Hotel ?? row.hotel ?? hotelFromStay) ?? null
   const room = toPlain(row.Room ?? row.room ?? roomFromStay) ?? null
@@ -2593,6 +2594,7 @@ export const confirmBooking = async (req, res) => {
       await ensureInfluencerCommission(influencerId);
     }
 
+
     let redemption = null;
     await sequelize.transaction(async (tx) => {
       redemption = await finalizeReferralRedemption(booking.id, tx);
@@ -2619,6 +2621,39 @@ export const confirmBooking = async (req, res) => {
       alreadyFinal && typeof booking.toJSON === "function"
         ? booking
         : await models.Booking.findByPk(id, { include: STAY_BASE_INCLUDE });
+
+    // TRIGGER PROACTIVE AI INTELLIGENCE (Background)
+    const triggerProactiveAi = async () => {
+      try {
+        const inventoryType = fresh.inventoryType || (fresh.home ? "HOME" : "HOTEL");
+        const home = fresh.homeStay?.home || fresh.home || {};
+        const hotel = fresh.hotelStay?.hotel || fresh.hotel || {};
+
+        const tripContext = {
+          inventoryType,
+          location: {
+            city: home?.address?.city || hotel?.city || fresh?.meta?.snapshot?.city || null,
+            country: home?.address?.country || hotel?.country || fresh?.meta?.snapshot?.country || null
+          },
+          stayName: home?.title || hotel?.name || fresh?.meta?.snapshot?.hotelName || "Your stay",
+          amenities: home?.amenities || hotel?.amenities || [],
+          houseRules: home?.house_rules || null,
+          dates: {
+            checkIn: fresh.checkIn,
+            checkOut: fresh.checkOut
+          }
+        };
+        await generateAndSaveTripIntelligence({
+          stayId: fresh.id,
+          tripContext,
+          lang: fresh.meta?.language || "es"
+        });
+        console.log(`[CONFIRM BOOKING] Proactive AI triggered for stay ${fresh.id} (Deep Intelligence enabled)`);
+      } catch (e) {
+        console.warn("[CONFIRM BOOKING] Proactive AI trigger failed:", e.message);
+      }
+    };
+    triggerProactiveAi();
 
     const mapped = mapStay(fresh.toJSON(), fresh.source || "insider");
     const responsePayload = {

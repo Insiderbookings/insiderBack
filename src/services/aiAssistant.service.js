@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import models from "../models/index.js";
 
 const DEFAULT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini";
 const apiKey = process.env.OPENAI_API_KEY;
@@ -537,8 +538,97 @@ export const extractSearchPlan = async (messages = []) => {
     const parsed = JSON.parse(payload);
     return mergePlan(parsed, { contextText: latestUserMessage });
   } catch (err) {
-    console.error("[aiAssistant] extract plan failed", err?.message || err);
-    return mergePlan(defaultPlan, { contextText: latestUserMessage });
+    console.error("[aiAssistant] generate reply failed", err?.message || err);
+    return { reply: "I index an error. Please try again.", followUps: [] };
+  }
+};
+
+/**
+ * Generates smart insights and preparation items for a trip hub.
+ */
+export const generateTripAddons = async ({ tripContext, location, lang = "es" }) => {
+  const client = ensureClient();
+  if (!client) return { insights: [], preparation: [] };
+
+  const city = location?.city || tripContext?.location?.city || "your destination";
+  const stay = tripContext?.stayName || "your stay";
+  const amenities = tripContext?.amenities || [];
+  const rules = tripContext?.houseRules || "";
+  const type = tripContext?.inventoryType || "stay";
+
+  const systemMessage =
+    "You are a premium travel concierge. Generate smart insights and a preparation hub for a user's trip.\n" +
+    "### DEEP INTELLIGENCE INSTRUCTIONS:\n" +
+    "1. Analyze the stay type, amenities, and house rules provided.\n" +
+    "2. If an amenity is missing (e.g., no breakfast, no parking), generate an Insight with a practical local alternative.\n" +
+    "3. If there are interesting house rules, explain them gently as a 'Pearl of Wisdom'.\n" +
+    "4. Insights should feel personal, not generic. Use the stay name and city name.\n" +
+    "5. icons MUST be valid Ionicons names.\n\n" +
+    "Return JSON with shape:\n" +
+    "{\n" +
+    "  \"insights\": [{ \"title\": string, \"icon\": string, \"description\": string, \"type\": \"TIP\"|\"FUN_FACT\"|\"WARNING\" }],\n" +
+    "  \"preparation\": [{ \"id\": string, \"title\": string, \"value\": string, \"icon\": string }]\n" +
+    "}\n" +
+    `Language: ${lang === "es" ? "Spanish" : "English"}.\n` +
+    `Destination: ${city}. Stay: ${stay} (Type: ${type}).\n` +
+    `Amenities: ${JSON.stringify(amenities)}.\n` +
+    `House Rules: ${rules}.\n`;
+
+  try {
+    const userPrompt = `Provide deep intelligence for my ${type} at ${stay} in ${city}. ` +
+      (amenities.length ? `I have these amenities: ${amenities.join(", ")}. ` : "") +
+      (rules ? `Remember these rules: ${rules}.` : "");
+
+    const completion = await client.chat.completions.create({
+      model: DEFAULT_MODEL,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemMessage },
+        { role: "user", content: userPrompt },
+      ],
+    });
+
+    const payload = completion.choices?.[0]?.message?.content;
+    if (!payload) return { insights: [], preparation: [] };
+    const parsed = JSON.parse(payload);
+
+    return {
+      insights: Array.isArray(parsed.insights) ? parsed.insights : [],
+      preparation: Array.isArray(parsed.preparation) ? parsed.preparation : [],
+    };
+  } catch (err) {
+    console.error("[aiAssistant] generateTripAddons failed", err);
+    return { insights: [], preparation: [] };
+  }
+};
+
+/**
+ * Proactively generates and saves trip intelligence in the background.
+ */
+export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lang = "es" }) => {
+  try {
+    const { StayIntelligence } = models;
+    const location = tripContext?.location || {};
+
+    // 1. Generate core addons
+    const addons = await generateTripAddons({
+      tripContext,
+      location,
+      lang
+    });
+
+    // 2. Upsert intelligence record
+    const [record] = await StayIntelligence.upsert({
+      stayId,
+      insights: addons.insights || [],
+      preparation: addons.preparation || [],
+      lastGeneratedAt: new Date()
+    }, { returning: true });
+
+    return record;
+  } catch (err) {
+    console.error(`[aiAssistant] generateAndSaveTripIntelligence failed for stay ${stayId}`, err);
+    return null;
   }
 };
 

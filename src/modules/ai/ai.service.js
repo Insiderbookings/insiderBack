@@ -1,4 +1,4 @@
-import { extractSearchPlan } from "../../services/aiAssistant.service.js";
+import { extractSearchPlan, generateTripAddons } from "../../services/aiAssistant.service.js";
 import { AI_FLAGS, AI_LIMITS } from "./ai.config.js";
 import { applyPlanToState, buildPlanOutcome, INTENTS, NEXT_ACTIONS, updateStageFromAction } from "./ai.planner.js";
 import { enforcePolicy } from "./ai.policy.js";
@@ -425,11 +425,27 @@ export const runAiTurn = async ({
         tripContext: nextState.tripContext,
         suggestions,
       });
+      let insights = [];
+      let preparation = [];
+      const isHubInit = (uiEvent?.id || uiEvent?.event || uiEvent) === "TRIP_HUB_INIT";
+
+      if (isHubInit) {
+        const addons = await generateTripAddons({
+          tripContext: nextState.tripContext,
+          location,
+          lang: mergedPlan?.language || "es"
+        });
+        insights = addons.insights;
+        preparation = addons.preparation;
+      }
+
       trip = {
         request: tripRequest,
         location,
         suggestions,
         itinerary,
+        insights,
+        preparation,
       };
       resolvedIntent = INTENTS.TRIP;
       resolvedNextAction = NEXT_ACTIONS.RUN_TRIP;

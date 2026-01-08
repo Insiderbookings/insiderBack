@@ -1,0 +1,87 @@
+import { generateTripAddons } from "../services/aiAssistant.service.js";
+import { runAiTurn } from "../modules/ai/ai.service.js";
+import models from "../models/index.js";
+
+const { StayIntelligence } = models;
+
+/**
+ * Controller to handle proactive trip intelligence.
+ */
+export const getTripIntelligence = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const { tripContext, lang } = req.body;
+
+        if (!bookingId) {
+            return res.status(400).json({ error: "Missing bookingId" });
+        }
+
+        // 1. Check if we already have intelligence for this stay
+        let intelligence = await StayIntelligence.findOne({ where: { stayId: bookingId } });
+
+        if (intelligence) {
+            return res.json({
+                bookingId,
+                intelligence: {
+                    insights: intelligence.insights || [],
+                    preparation: intelligence.preparation || [],
+                    updatedAt: intelligence.lastGeneratedAt
+                }
+            });
+        }
+
+        // 2. If not found and we have context, generate it (Legacy/Fallback)
+        if (tripContext) {
+            const location = tripContext.location || {};
+            const addons = await generateTripAddons({
+                tripContext,
+                location,
+                lang: lang || "es"
+            });
+
+            // Save for future requests
+            intelligence = await StayIntelligence.create({
+                stayId: bookingId,
+                insights: addons.insights || [],
+                preparation: addons.preparation || [],
+                lastGeneratedAt: new Date()
+            });
+
+            return res.json({
+                bookingId,
+                intelligence: {
+                    insights: intelligence.insights,
+                    preparation: intelligence.preparation,
+                    updatedAt: intelligence.lastGeneratedAt
+                }
+            });
+        }
+
+        return res.status(404).json({ error: "Intelligence not found and no context provided" });
+    } catch (error) {
+        console.error("[IntelligenceController] Error:", error);
+        return res.status(500).json({ error: "Failed to fetch trip intelligence" });
+    }
+};
+
+/**
+ * Specialized handler for in-place consultations.
+ */
+export const consultWidget = async (req, res) => {
+    try {
+        const { sessionId, userId, query, context } = req.body;
+
+        const result = await runAiTurn({
+            sessionId,
+            userId,
+            message: query,
+            context,
+            // We can force a specific tone or limit for widget responses here
+        });
+
+        return res.json(result);
+    } catch (error) {
+        console.error("[IntelligenceController] Consult Error:", error);
+        return res.status(500).json({ error: "Consultation failed" });
+    }
+};

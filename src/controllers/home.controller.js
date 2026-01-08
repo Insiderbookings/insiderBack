@@ -388,6 +388,7 @@ export const listExploreHomes = async (req, res) => {
       attributes: [
         "id",
         "title",
+        "space_type",
         "max_guests",
         "bedrooms",
         "beds",

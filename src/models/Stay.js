@@ -160,6 +160,9 @@ export default (sequelize) => {
     if (models.Commission) {
       Stay.hasOne(models.Commission, { foreignKey: "stay_id" });
     }
+    if (models.StayIntelligence) {
+      Stay.hasOne(models.StayIntelligence, { foreignKey: "stay_id", as: "intelligence" });
+    }
   };
 
   return Stay;
