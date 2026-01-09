@@ -1475,6 +1475,78 @@ export const createHomeBooking = async (req, res) => {
       homeSnapshotImage: coverImageUrl,
     }).catch((err) => console.error("booking auto prompt dispatch error:", err))
 
+    try {
+      const guestLine = [adultsCount, childrenCount, infantsCount]
+        .map((count, index) => {
+          if (!count) return null
+          if (index === 0) return `${count} ${count === 1 ? "adult" : "adults"}`
+          if (index === 1) return `${count} ${count === 1 ? "child" : "children"}`
+          return `${count} ${count === 1 ? "infant" : "infants"}`
+        })
+        .filter(Boolean)
+        .join(", ")
+      const detailLines = [
+        home.title ? `Listing: ${home.title}` : null,
+        normalizedCheckIn ? `Check-in: ${normalizedCheckIn}` : null,
+        normalizedCheckOut ? `Check-out: ${normalizedCheckOut}` : null,
+        guestLine ? `Guests: ${guestLine}` : null,
+        bookingView?.id ? `Booking ID: ${bookingView.id}` : null,
+        `Status: ${String(bookingView?.status || "PENDING").toUpperCase()}`,
+      ].filter(Boolean)
+
+      const baseMetadata = {
+        notificationTitle: "Booking created",
+        notificationSender: "BookingGPT",
+        notificationType: "BOOKING_CREATED",
+        notificationBody: "Your booking request has been created.",
+        senderName: "BookingGPT",
+      }
+
+      const thread = await createThread({
+        guestUserId: userId,
+        hostUserId: home.host_id,
+        homeId: home.id,
+        reserveId: bookingView.id,
+        checkIn: normalizedCheckIn,
+        checkOut: normalizedCheckOut,
+        homeSnapshotName: home.title,
+        homeSnapshotImage: coverImageUrl,
+      })
+
+      const guestMessage = [
+        "Your booking request has been created.",
+        ...detailLines,
+        "We will notify you when it is confirmed.",
+      ].join("\n")
+
+      const hostMessage = [
+        `${guestNameFinal} has requested to book your listing ${home.title || ""}.`.trim(),
+        ...detailLines,
+        "Review the reservation request in your Host dashboard.",
+      ].join("\n")
+
+      await Promise.allSettled([
+        postMessage({
+          chatId: thread.id,
+          senderId: null,
+          senderRole: "SYSTEM",
+          type: "SYSTEM",
+          body: guestMessage,
+          metadata: { ...baseMetadata, audience: "GUEST" },
+        }),
+        postMessage({
+          chatId: thread.id,
+          senderId: null,
+          senderRole: "SYSTEM",
+          type: "SYSTEM",
+          body: hostMessage,
+          metadata: { ...baseMetadata, audience: "HOST" },
+        }),
+      ])
+    } catch (notifyErr) {
+      console.warn("[HOME BOOKING] notification dispatch failed:", notifyErr?.message || notifyErr)
+    }
+
     const homeAddress = [
       home.address?.address_line1,
       home.address?.city,
