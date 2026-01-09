@@ -1,6 +1,7 @@
 import { Op } from "sequelize";
 import models, { sequelize } from "../models/index.js";
 import { emitToRoom, emitToUser } from "../websocket/emitter.js";
+import { sendPushToUser } from "./pushNotifications.service.js";
 
 const {
   ChatThread,
@@ -58,6 +59,89 @@ const mapMessage = (message) => ({
 const normalizeAudience = (audience) => {
   if (!audience) return null;
   return String(audience).trim().toUpperCase();
+};
+
+const resolvePushRecipients = ({ thread, audience, senderId }) => {
+  if (!thread) return [];
+  const recipients = [];
+  const normalized = normalizeAudience(audience);
+
+  if (normalized === "HOST") {
+    if (thread.host_user_id && thread.host_user_id !== senderId) {
+      recipients.push(thread.host_user_id);
+    }
+    return recipients;
+  }
+
+  if (normalized === "GUEST") {
+    if (thread.guest_user_id && thread.guest_user_id !== senderId) {
+      recipients.push(thread.guest_user_id);
+    }
+    return recipients;
+  }
+
+  if (thread.guest_user_id && thread.guest_user_id !== senderId) {
+    recipients.push(thread.guest_user_id);
+  }
+  if (thread.host_user_id && thread.host_user_id !== senderId) {
+    recipients.push(thread.host_user_id);
+  }
+
+  return recipients;
+};
+
+const buildPushPayload = ({ message, senderName }) => {
+  const meta = message?.metadata || {};
+  const rawBody =
+    typeof message?.body === "string" && message.body.trim()
+      ? message.body.trim()
+      : "You have a new message.";
+  const title =
+    meta.notificationTitle ||
+    meta.notificationSender ||
+    senderName ||
+    "New message";
+  const body =
+    meta.notificationBody ||
+    (rawBody.length > 160 ? `${rawBody.slice(0, 157)}...` : rawBody);
+
+  return {
+    title,
+    body,
+    data: {
+      type: "CHAT_MESSAGE",
+      chatId: message?.chat_id,
+      messageId: message?.id,
+    },
+  };
+};
+
+const notifyPushRecipients = async ({
+  thread,
+  message,
+  senderName,
+  senderId,
+}) => {
+  if (!thread || !message) return;
+
+  const recipients = resolvePushRecipients({
+    thread,
+    audience: message?.metadata?.audience,
+    senderId,
+  });
+  if (!recipients.length) return;
+
+  const payload = buildPushPayload({ message, senderName });
+  await Promise.allSettled(
+    recipients.map((userId) =>
+      sendPushToUser({
+        userId,
+        title: payload.title,
+        body: payload.body,
+        data: payload.data,
+      })
+    )
+  );
 };
 
 const buildAudienceFilter = (audience) => {
@@ -309,6 +393,34 @@ const sendPromptMessages = async ({
     thread.setDataValue("last_message_at", lastCreatedAt);
   }
 
+  const pushSenderId = thread?.host_user_id ?? null;
+  const pushSenderName =
+    thread?.hostUser?.name ??
+    (pushSenderId
+      ? (await User.findByPk(pushSenderId, { attributes: ["name"] }))?.name
+      : null);
+
+  const runPush = async () => {
+    await Promise.allSettled(
+      createdMessages.map((message) =>
+        notifyPushRecipients({
+          thread,
+          message,
+          senderName: pushSenderName,
+          senderId: pushSenderId,
+        })
+      )
+    );
+  };
+
+  if (transaction) {
+    transaction.afterCommit(() => {
+      void runPush();
+    });
+  } else {
+    await runPush();
+  }
+
   return createdMessages;
 };
 
@@ -515,6 +627,19 @@ export const postMessage = async ({
 
   if (thread) {
     emitUnreadCounters(thread);
+  }
+
+  if (thread) {
+    try {
+      await notifyPushRecipients({
+        thread,
+        message,
+        senderName: message?.sender?.name,
+        senderId: message?.sender_id ?? null,
+      });
+    } catch (err) {
+      console.warn("[push] notify failed:", err?.message || err);
+    }
   }
 
   // After a guest replies, enqueue next prompt if any remaining

@@ -30,6 +30,7 @@ import supportRoutes from "./support.routes.js"
 import analyticsRoutes from "./analytics.routes.js"
 import intelligenceRoutes from "./intelligence.routes.js"
 import placesRoutes from "./places.routes.js"
+import pushRoutes from "./push.routes.js"
 
 const router = Router()
 
@@ -65,5 +66,6 @@ router.use("/support", supportRoutes)
 router.use("/analytics", analyticsRoutes)
 router.use("/intelligence", intelligenceRoutes)
 router.use("/places", placesRoutes)
+router.use("/push", pushRoutes)
 
 export default router

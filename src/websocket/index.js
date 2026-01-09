@@ -13,7 +13,13 @@ const getAllowedOrigins = () => {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  return origins.length ? origins : ["*"];
+  if (!origins.length) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("CORS_ALLOWED_ORIGINS is required for websocket in production");
+    }
+    return ["*"];
+  }
+  return origins;
 };
 
 export const initSocketServer = (httpServer) => {

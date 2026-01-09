@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import models from "../models/index.js";
+import { sendPushToUser } from "./pushNotifications.service.js";
 import { getWeatherSummary } from "../modules/ai/tools/tool.weather.js";
 import { getLocalNews } from "../modules/ai/tools/tool.news.js";
 
@@ -656,8 +657,9 @@ export const generateTripAddons = async ({ tripContext, location, lang = "en" })
  * Proactively generates and saves trip intelligence in the background.
  */
 export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lang = "en" }) => {
+  const startedAt = Date.now();
   try {
-    const { StayIntelligence } = models;
+    const { StayIntelligence, Stay } = models;
     const location = tripContext?.location || {};
 
     // 1. Generate core addons
@@ -677,6 +679,7 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
 
     // 3. Upsert intelligence record (Manual check to avoid ON CONFLICT errors if constraint missing)
     let record = await StayIntelligence.findOne({ where: { stayId } });
+    const isNewRecord = !record;
     if (record) {
       await record.update({
         insights: addons.insights || [],
@@ -707,6 +710,29 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
       });
     }
 
+    if (isNewRecord) {
+      try {
+        const stay = await Stay.findByPk(stayId, { attributes: ["id", "user_id"] });
+        const userId = stay?.user_id ?? null;
+        if (userId) {
+          const stayName = tripContext?.stayName || "your trip";
+          await sendPushToUser({
+            userId,
+            title: "Trip Hub ready",
+            body: `Your Trip Hub is ready for ${stayName}.`,
+            data: { type: "TRIP_HUB_READY", stayId },
+          });
+        }
+      } catch (pushErr) {
+        console.warn("[aiAssistant] Trip hub push failed:", pushErr?.message || pushErr);
+      }
+    }
+
+    console.log("[perf] tripHub.generate", {
+      stayId,
+      durationMs: Date.now() - startedAt,
+      generated: isNewRecord,
+    });
     return record;
   } catch (err) {
     console.error(`[aiAssistant] generateAndSaveTripIntelligence failed for stay ${stayId}`, err);

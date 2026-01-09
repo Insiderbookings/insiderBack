@@ -53,6 +53,43 @@ const ensureSwaggerAuth = (() => {
   };
 })();
 
+const ensureRequiredEnv = (keys) => {
+  const missing = keys.filter((key) => !process.env[key] || !String(process.env[key]).trim());
+  if (missing.length) {
+    throw new Error(`Missing required env vars: ${missing.join(", ")}`);
+  }
+};
+
+const ensureHttpsUrl = (label, value) => {
+  if (!value) return;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") {
+      throw new Error(`${label} must use https in production`);
+    }
+  } catch (err) {
+    throw new Error(`${label} is invalid: ${value}`);
+  }
+};
+
+if (process.env.NODE_ENV === "production") {
+  ensureRequiredEnv([
+    "JWT_SECRET",
+    "CLIENT_URL",
+    "CORS_ALLOWED_ORIGINS",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "WEBBEDS_TOKENIZER_URL",
+    "WEBBEDS_TOKENIZER_AUTH",
+  ]);
+  ensureHttpsUrl("CLIENT_URL", process.env.CLIENT_URL);
+  const origins = (process.env.CORS_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  origins.forEach((origin) => ensureHttpsUrl("CORS_ALLOWED_ORIGINS", origin));
+}
+
 const app = express();
 const server = http.createServer(app);
 app.disable("etag");

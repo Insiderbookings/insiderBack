@@ -109,6 +109,7 @@ export const getUserThread = async (req, res, next) => {
 
 export const listUserMessages = async (req, res, next) => {
   try {
+    const startedAt = Date.now();
     const userId = ensureUser(req);
     const { chatId } = req.params;
     const { before, limit } = req.query;
@@ -118,6 +119,12 @@ export const listUserMessages = async (req, res, next) => {
       before,
       limit: limit ? Number(limit) : undefined,
     });
+    console.log("[perf] chat.listMessages", {
+      chatId,
+      userId,
+      count: messages?.length ?? 0,
+      durationMs: Date.now() - startedAt,
+    });
     return res.json({ messages });
   } catch (err) {
     return respondError(res, next, err);
@@ -126,6 +133,7 @@ export const listUserMessages = async (req, res, next) => {
 
 export const sendUserMessage = async (req, res, next) => {
   try {
+    const startedAt = Date.now();
     const userId = ensureUser(req);
     const { chatId } = req.params;
     const { body, type, metadata } = req.body;
@@ -140,6 +148,12 @@ export const sendUserMessage = async (req, res, next) => {
       body,
       type,
       metadata,
+    });
+    console.log("[perf] chat.sendMessage", {
+      chatId,
+      userId,
+      type: type || "TEXT",
+      durationMs: Date.now() - startedAt,
     });
     return res.status(201).json({ message });
   } catch (err) {

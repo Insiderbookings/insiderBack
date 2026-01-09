@@ -4,12 +4,14 @@
 // Maneja pagos de Bookings y de Add-Ons (UpsellCode & BookingAddOn)
 // ─────────────────────────────────────────────────────────────────────────────
 import Stripe from "stripe"
+import { Op } from "sequelize";
 import dotenv from "dotenv"
 import models, { sequelize } from "../models/index.js";
 import { sendBookingEmail } from "../emailTemplates/booking-email.js";
 import { sendMail } from "../helpers/mailer.js";
 import { resolveVaultBranding } from "../helpers/vaultBranding.js";
 import { emitAdminActivity } from "../websocket/emitter.js";
+import { createThread, postMessage } from "../services/chat.service.js";
 
 dotenv.config()
 
@@ -19,10 +21,133 @@ if (!process.env.STRIPE_WEBHOOK_SECRET) throw new Error("\U0001f6d1 Falta STRIPE
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" });
 
-const safeURL = (maybe, fallback) => { try { return new URL(maybe).toString() } catch { return fallback } }
+const safeURL = (maybe, fallback) => {
+  try {
+    const url = new URL(maybe);
+    if (process.env.NODE_ENV === "production" && url.protocol !== "https:") {
+      throw new Error("CLIENT_URL must use https in production");
+    }
+    return url.toString();
+  } catch {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("CLIENT_URL is required and must be valid in production");
+    }
+    return fallback;
+  }
+};
 const YOUR_DOMAIN = safeURL(process.env.CLIENT_URL, "http://localhost:5173")
 const getStayIdFromMeta = (meta = {}) =>
   Number(meta.stayId || meta.stay_id || meta.bookingId || meta.booking_id) || 0;
+
+const dispatchHomeBookingConfirmation = async (booking) => {
+  if (!booking || booking.inventory_type !== "HOME") return;
+
+  const stayHome = await models.StayHome.findOne({
+    where: { stay_id: booking.id },
+    include: [
+      {
+        model: models.Home,
+        as: "home",
+        attributes: ["id", "title", "host_id"],
+        include: [
+          {
+            association: "media",
+            attributes: ["url", "cover"],
+            where: { cover: true },
+            required: false,
+            limit: 1,
+          },
+        ],
+      },
+    ],
+  });
+
+  const home = stayHome?.home || null;
+  const hostUserId =
+    stayHome?.host_id || home?.host_id || booking.meta?.home?.hostId || null;
+  const guestUserId = booking.user_id || null;
+  if (!hostUserId || !guestUserId) return;
+
+  const thread = await createThread({
+    guestUserId,
+    hostUserId,
+    homeId: home?.id || stayHome?.home_id || null,
+    reserveId: booking.id,
+    checkIn: booking.check_in || null,
+    checkOut: booking.check_out || null,
+    homeSnapshotName: home?.title || booking.meta?.home?.title || null,
+    homeSnapshotImage: home?.media?.[0]?.url || null,
+  });
+
+  const confirmationExists = await models.ChatMessage.findOne({
+    where: {
+      chat_id: thread.id,
+      type: "SYSTEM",
+      [Op.and]: [
+        sequelize.where(
+          sequelize.json("metadata.notificationType"),
+          "BOOKING_CONFIRMATION"
+        ),
+      ],
+    },
+  });
+  if (confirmationExists) return;
+
+  const adultsCount = Number(booking.adults ?? 0) || 0;
+  const childrenCount = Number(booking.children ?? 0) || 0;
+  const infantsCount = Number(booking.infants ?? 0) || 0;
+  const guestParts = [];
+  if (adultsCount) guestParts.push(`${adultsCount} ${adultsCount === 1 ? "adult" : "adults"}`);
+  if (childrenCount) guestParts.push(`${childrenCount} ${childrenCount === 1 ? "child" : "children"}`);
+  if (infantsCount) guestParts.push(`${infantsCount} ${infantsCount === 1 ? "infant" : "infants"}`);
+  const guestLine = guestParts.length ? guestParts.join(", ") : null;
+
+  const detailLines = [
+    home?.title ? `Listing: ${home.title}` : null,
+    booking.check_in ? `Check-in: ${booking.check_in}` : null,
+    booking.check_out ? `Check-out: ${booking.check_out}` : null,
+    guestLine ? `Guests: ${guestLine}` : null,
+    booking.id ? `Booking ID: ${booking.id}` : null,
+  ].filter(Boolean);
+
+  const baseMetadata = {
+    notificationTitle: "Booking confirmation",
+    notificationSender: "BookingGPT",
+    notificationType: "BOOKING_CONFIRMATION",
+    senderName: "BookingGPT",
+  };
+
+  const guestMessage = [
+    "Your reservation is confirmed.",
+    ...detailLines,
+    "You can find all the details in your Trips tab.",
+  ].join("\n");
+
+  const hostMessage = [
+    `${booking.guest_name || "Guest"} has booked your listing${home?.title ? ` ${home.title}` : ""}.`,
+    ...detailLines,
+    "Review the reservation details in your Host dashboard.",
+  ].join("\n");
+
+  await Promise.allSettled([
+    postMessage({
+      chatId: thread.id,
+      senderId: null,
+      senderRole: "SYSTEM",
+      type: "SYSTEM",
+      body: guestMessage,
+      metadata: { ...baseMetadata, audience: "GUEST" },
+    }),
+    postMessage({
+      chatId: thread.id,
+      senderId: null,
+      senderRole: "SYSTEM",
+      type: "SYSTEM",
+      body: hostMessage,
+      metadata: { ...baseMetadata, audience: "HOST" },
+    }),
+  ]);
+};
 
 /* ============================================================================
    1. CREAR SESSION PARA BOOKING
@@ -210,6 +335,10 @@ export const handleWebhook = async (req, res) => {
       return next;
     });
     if (booking) {
+      if (booking.inventory_type === "HOME" && booking.status !== "CONFIRMED") {
+        await booking.update({ status: "CONFIRMED" });
+      }
+
       console.log("[payments] markBookingAsPaid:done", {
         bookingId,
         status: booking.status,
@@ -226,6 +355,14 @@ export const handleWebhook = async (req, res) => {
         status: 'PAID',
         timestamp: new Date()
       });
+
+      if (booking.inventory_type === "HOME") {
+        try {
+          await dispatchHomeBookingConfirmation(booking);
+        } catch (err) {
+          console.warn("[payments] home confirmation notify failed:", err?.message || err);
+        }
+      }
     }
   };
 

@@ -185,11 +185,14 @@ const getStripeClient = async () => {
 }
 
 // OTP + token helpers (stateless challenge)
-const codeHash = (email, code) =>
-  crypto
+const codeHash = (email, code) => {
+  const secret = process.env.JWT_SECRET
+  if (!secret) throw new Error("JWT_SECRET is required for OTP hashing")
+  return crypto
     .createHash("sha256")
-    .update(`${String(email).trim().toLowerCase()}|${String(code)}|${process.env.JWT_SECRET || "secret"}`)
+    .update(`${String(email).trim().toLowerCase()}|${String(code)}|${secret}`)
     .digest("hex")
+}
 
 /* ──────────────── Helper – flattener ──────────────────
    Recibe una fila de Booking (snake_case en DB) y la

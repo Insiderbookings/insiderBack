@@ -2,7 +2,7 @@ import axios from "axios"
 
 const DEFAULT_TOKENIZER_URL = process.env.WEBBEDS_TOKENIZER_URL?.trim() ||
   "https://securepayapi.dev.rezpayments.com/"
-const DEFAULT_TOKENIZER_AUTH = process.env.WEBBEDS_TOKENIZER_AUTH?.trim() || "Basic 99Bwebbeds"
+const DEFAULT_TOKENIZER_AUTH = process.env.WEBBEDS_TOKENIZER_AUTH?.trim()
 
 export const tokenizeCard = async ({
   cardName,
@@ -16,6 +16,19 @@ export const tokenizeCard = async ({
 } = {}) => {
   if (!cardNumber || !securityCode || !expiryMonth || !expiryYear) {
     throw new Error("Missing card details for tokenization")
+  }
+  if (!authHeader) {
+    throw new Error("Missing WEBBEDS_TOKENIZER_AUTH")
+  }
+  if (process.env.NODE_ENV === "production") {
+    try {
+      const url = new URL(tokenizerUrl);
+      if (url.protocol !== "https:") {
+        throw new Error("WEBBEDS_TOKENIZER_URL must use https in production");
+      }
+    } catch {
+      throw new Error("WEBBEDS_TOKENIZER_URL must be a valid https URL in production");
+    }
   }
 
   const url = tokenizerUrl.endsWith("/")

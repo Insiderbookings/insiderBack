@@ -110,6 +110,7 @@ import SupportTicketModel from "./SupportTicket.js";
 import SupportMessageModel from "./SupportMessage.js";
 import AnalyticsEventModel from "./AnalyticsEvent.js";
 import StayIntelligenceModel from "./StayIntelligence.js";
+import PushTokenModel from "./PushToken.js";
 
 /* ---------- Construir objetos ---------- */
 const Stay = StayModel(sequelize);
@@ -227,6 +228,7 @@ const models = {
   SupportMessage: SupportMessageModel(sequelize),
   AnalyticsEvent: AnalyticsEventModel(sequelize),
   StayIntelligence: StayIntelligenceModel(sequelize),
+  PushToken: PushTokenModel(sequelize),
 };
 
 /* ---------- Ejecutar asociaciones ---------- */

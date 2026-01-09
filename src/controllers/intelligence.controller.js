@@ -9,6 +9,7 @@ const { StayIntelligence } = models;
  */
 export const getTripIntelligence = async (req, res) => {
     try {
+        const startedAt = Date.now();
         const { bookingId } = req.params;
         const { tripContext, lang } = req.body;
 
@@ -20,6 +21,11 @@ export const getTripIntelligence = async (req, res) => {
         let intelligence = await StayIntelligence.findOne({ where: { stayId: bookingId } });
 
         if (intelligence) {
+            console.log("[perf] tripHub.fetch", {
+                bookingId,
+                status: "cached",
+                durationMs: Date.now() - startedAt,
+            });
             return res.json({
                 bookingId,
                 intelligence: {
@@ -44,6 +50,11 @@ export const getTripIntelligence = async (req, res) => {
             });
 
             if (intelligence) {
+                console.log("[perf] tripHub.fetch", {
+                    bookingId,
+                    status: "generated",
+                    durationMs: Date.now() - startedAt,
+                });
                 return res.json({
                     bookingId,
                     intelligence: {
@@ -60,6 +71,11 @@ export const getTripIntelligence = async (req, res) => {
             }
         }
 
+        console.log("[perf] tripHub.fetch", {
+            bookingId,
+            status: "missing",
+            durationMs: Date.now() - startedAt,
+        });
         return res.status(404).json({ error: "Intelligence not found and no context provided" });
     } catch (error) {
         console.error("[IntelligenceController] Error:", error);
