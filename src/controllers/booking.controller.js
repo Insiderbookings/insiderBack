@@ -1192,7 +1192,6 @@ export const createHomeBooking = async (req, res) => {
     if (blockedEntry)
       return res.status(409).json({ error: "Selected dates are not available" })
 
-    const existingCalendarMap = new Map(calendarEntries.map((entry) => [entry.date, entry]))
     const stayDates = enumerateStayDates(normalizedCheckIn, normalizedCheckOut)
 
     const overlappingStay = await models.Stay.findOne({
@@ -1425,28 +1424,17 @@ export const createHomeBooking = async (req, res) => {
       })
 
       for (const date of stayDates) {
-        const existingEntry = existingCalendarMap.get(date)
-        if (existingEntry) {
-          await existingEntry.update(
-            {
-              status: "RESERVED",
-              source: "PLATFORM",
-            },
-            { transaction: tx }
-          )
-        } else {
-          await models.HomeCalendar.create(
-            {
-              home_id: homeIdValue,
-              date,
-              status: "RESERVED",
-              currency: currencyCode,
-              source: "PLATFORM",
-              note: `BOOKING:${created.id}`,
-            },
-            { transaction: tx }
-          )
-        }
+        await models.HomeCalendar.upsert(
+          {
+            home_id: homeIdValue,
+            date,
+            status: "RESERVED",
+            currency: currencyCode,
+            source: "PLATFORM",
+            note: `BOOKING:${created.id}`,
+          },
+          { transaction: tx }
+        )
       }
 
       return created
@@ -2380,7 +2368,7 @@ export const confirmBooking = async (req, res) => {
           houseRules,
           inventoryType
         },
-        lang: "es"
+        lang: "en"
       }).catch(err => console.error("[CONFIRM BOOKING] Intelligence generation failed", err));
     } catch (e) {
       console.warn("[CONFIRM BOOKING] Error prepping intelligence context", e);
@@ -2437,7 +2425,7 @@ export const confirmBooking = async (req, res) => {
         await generateAndSaveTripIntelligence({
           stayId: fresh.id,
           tripContext,
-          lang: fresh.meta?.language || "es"
+          lang: fresh.meta?.language || "en"
         });
         console.log(`[CONFIRM BOOKING] Proactive AI triggered for stay ${fresh.id} (Deep Intelligence enabled)`);
       } catch (e) {

@@ -40,7 +40,7 @@ export const getTripIntelligence = async (req, res) => {
             intelligence = await generateAndSaveTripIntelligence({
                 stayId: bookingId,
                 tripContext,
-                lang: lang || "es"
+                lang: lang || "en"
             });
 
             if (intelligence) {

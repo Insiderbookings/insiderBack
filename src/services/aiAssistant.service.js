@@ -445,7 +445,7 @@ const defaultPlan = {
   budget: { currency: null, max: null, min: null },
   sortBy: "RELEVANCE",
   limit: null,
-  language: "es",
+  language: "en",
   notes: [],
 };
 
@@ -561,7 +561,7 @@ export const extractSearchPlan = async (messages = []) => {
 /**
  * Generates smart insights and preparation items for a trip hub.
  */
-export const generateTripAddons = async ({ tripContext, location, lang = "es" }) => {
+export const generateTripAddons = async ({ tripContext, location, lang = "en" }) => {
   const client = ensureClient();
   if (!client) return { insights: [], preparation: [] };
 
@@ -655,7 +655,7 @@ export const generateTripAddons = async ({ tripContext, location, lang = "es" })
 /**
  * Proactively generates and saves trip intelligence in the background.
  */
-export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lang = "es" }) => {
+export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lang = "en" }) => {
   try {
     const { StayIntelligence } = models;
     const location = tripContext?.location || {};

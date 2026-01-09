@@ -433,7 +433,7 @@ export const runAiTurn = async ({
         const addons = await generateTripAddons({
           tripContext: nextState.tripContext,
           location,
-          lang: mergedPlan?.language || "es"
+          lang: mergedPlan?.language || "en"
         });
         insights = addons.insights;
         preparation = addons.preparation;
