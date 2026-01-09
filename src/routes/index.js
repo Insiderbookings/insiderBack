@@ -29,6 +29,7 @@ import flowsRoutes from "./flows.routes.js"
 import supportRoutes from "./support.routes.js"
 import analyticsRoutes from "./analytics.routes.js"
 import intelligenceRoutes from "./intelligence.routes.js"
+import placesRoutes from "./places.routes.js"
 
 const router = Router()
 
@@ -63,5 +64,6 @@ router.use("/flows", flowsRoutes)
 router.use("/support", supportRoutes)
 router.use("/analytics", analyticsRoutes)
 router.use("/intelligence", intelligenceRoutes)
+router.use("/places", placesRoutes)
 
 export default router
