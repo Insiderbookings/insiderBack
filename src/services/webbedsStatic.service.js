@@ -1,4 +1,5 @@
 import models, { sequelize } from "../models/index.js"
+import { Op } from "sequelize"
 import { createWebbedsClient, buildEnvelope } from "../providers/webbeds/client.js"
 import { getWebbedsConfig } from "../providers/webbeds/config.js"
 import { createHash } from "crypto"
@@ -8,6 +9,17 @@ import dayjs from "dayjs"
 const ensureArray = (value) => {
   if (!value) return []
   return Array.isArray(value) ? value : [value]
+}
+
+const chunkArray = (items, size) => {
+  if (!Array.isArray(items) || !items.length) return []
+  const chunkSize = Number(size) || items.length
+  if (chunkSize <= 0) return [items]
+  const chunks = []
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize))
+  }
+  return chunks
 }
 
 const STATIC_LOOKAHEAD_DAYS = Number(process.env.WEBBEDS_STATIC_LOOKAHEAD_DAYS || 120)
@@ -37,6 +49,13 @@ const STATIC_OCCUPANCIES =
 const NAMESPACE_ATOMIC = "http://us.dotwconnect.com/xsd/atomicCondition"
 const NAMESPACE_COMPLEX = "http://us.dotwconnect.com/xsd/complexCondition"
 const MAX_NOTIN_VALUES = Number(process.env.WEBBEDS_NOTIN_MAX || 20000)
+const HOTEL_BATCH_SIZE = Number(process.env.WEBBEDS_HOTEL_BATCH_SIZE || 50)
+const MAX_HOTEL_ROW_BYTES = Number(process.env.WEBBEDS_HOTEL_MAX_ROW_BYTES || 1000000)
+const MAX_ROOMTYPE_ROW_BYTES = Number(process.env.WEBBEDS_ROOMTYPE_MAX_ROW_BYTES || 200000)
+const ROOMTYPE_BATCH_SIZE = Number(process.env.WEBBEDS_ROOMTYPE_BATCH_SIZE || 50)
+const RELATION_BATCH_SIZE = Number(process.env.WEBBEDS_RELATION_BATCH_SIZE || 200)
+const HOTEL_BATCH_RETRIES = Number(process.env.WEBBEDS_HOTEL_BATCH_RETRIES || 2)
+const HOTEL_BATCH_RETRY_DELAY_MS = Number(process.env.WEBBEDS_HOTEL_BATCH_RETRY_DELAY_MS || 1000)
 const amenityCatalogCache = new Set()
 
 const formatTimestampForFilters = (value) => {
@@ -433,7 +452,7 @@ const extractRoomTypeEntries = (hotelId, hotel) => {
   return entries
 }
 
-const upsertHotelRelations = async (hotelId, hotel, transaction) => {
+const upsertHotelRelations = async (hotelId, hotel, transaction, { safeMode = false } = {}) => {
   const imageEntries = extractImageEntries(hotelId, hotel)
   const amenityEntries = extractAmenityEntries(hotelId, hotel)
   const geoEntries = extractGeoLocationEntries(hotelId, hotel)
@@ -467,24 +486,63 @@ const upsertHotelRelations = async (hotelId, hotel, transaction) => {
     amenityCatalogCache.add(amenity.catalog_code)
   }
 
+  const relationBatchSize = safeMode ? Math.max(1, Math.floor(RELATION_BATCH_SIZE / 4)) : RELATION_BATCH_SIZE
+  const roomBatchSize = safeMode ? Math.max(1, Math.floor(ROOMTYPE_BATCH_SIZE / 4)) : ROOMTYPE_BATCH_SIZE
+
   await models.WebbedsHotelImage.destroy({ where: { hotel_id: hotelId }, transaction })
   if (imageEntries.length) {
-    await models.WebbedsHotelImage.bulkCreate(imageEntries, { transaction })
+    const batches = chunkArray(imageEntries, relationBatchSize)
+    for (const batch of batches) {
+      await models.WebbedsHotelImage.bulkCreate(batch, { transaction })
+    }
   }
 
   await models.WebbedsHotelAmenity.destroy({ where: { hotel_id: hotelId }, transaction })
   if (amenityEntries.length) {
-    await models.WebbedsHotelAmenity.bulkCreate(amenityEntries, { transaction })
+    const batches = chunkArray(amenityEntries, relationBatchSize)
+    for (const batch of batches) {
+      await models.WebbedsHotelAmenity.bulkCreate(batch, { transaction })
+    }
   }
 
   await models.WebbedsHotelGeoLocation.destroy({ where: { hotel_id: hotelId }, transaction })
   if (geoEntries.length) {
-    await models.WebbedsHotelGeoLocation.bulkCreate(geoEntries, { transaction })
+    const batches = chunkArray(geoEntries, relationBatchSize)
+    for (const batch of batches) {
+      await models.WebbedsHotelGeoLocation.bulkCreate(batch, { transaction })
+    }
   }
 
   await models.WebbedsHotelRoomType.destroy({ where: { hotel_id: hotelId }, transaction })
   if (roomEntries.length) {
-    await models.WebbedsHotelRoomType.bulkCreate(roomEntries, { transaction })
+    const normalizedRooms = roomEntries.map((entry) => {
+      if (safeMode) {
+        return {
+          ...entry,
+          raw_payload: null,
+        }
+      }
+      const rowBytes = estimateJsonBytes(entry)
+      if (rowBytes <= MAX_ROOMTYPE_ROW_BYTES) return entry
+      return {
+        ...entry,
+        raw_payload: null,
+      }
+    })
+    const roomBatches = chunkArray(normalizedRooms, roomBatchSize)
+    for (const batch of roomBatches) {
+      try {
+        await models.WebbedsHotelRoomType.bulkCreate(batch, { transaction })
+      } catch (error) {
+        const errorCode = error?.original?.code ?? error?.parent?.code
+        if (errorCode !== "ER_NET_PACKET_TOO_LARGE") throw error
+        const trimmedBatch = batch.map((entry) => ({
+          ...entry,
+          raw_payload: null,
+        }))
+        await models.WebbedsHotelRoomType.bulkCreate(trimmedBatch, { transaction })
+      }
+    }
   }
 }
 
@@ -494,84 +552,238 @@ const resolvePasswordMd5 = (config) => {
   return createHash("md5").update(config.password).digest("hex")
 }
 
-const persistHotels = async (hotels, fallbackCityCode) => {
-  if (!hotels?.length) return 0
-  const tx = await sequelize.transaction()
+const estimateJsonBytes = (value) => {
+  if (value == null) return 0
   try {
-    let processed = 0
-    for (const hotel of hotels) {
-      const hotelId = Number(hotel["@_hotelid"] ?? hotel.hotelid) || null
-      if (!hotelId) {
-        console.warn("[webbeds][static] hotel missing id", { hotel })
-        continue
-      }
-
-      const cityCodeValue = Number(hotel.cityCode ?? fallbackCityCode) || null
-      const countryCodeValue = Number(hotel.countryCode) || null
-      const lat = hotel.geoPoint?.lat ? Number(hotel.geoPoint.lat) : null
-      const lng = hotel.geoPoint?.lng ? Number(hotel.geoPoint.lng) : null
-
-      await models.WebbedsHotel.upsert(
-        {
-          hotel_id: hotelId,
-          name: hotel.hotelName ?? hotel.name ?? null,
-          city_code: cityCodeValue,
-          city_name: hotel.cityName ?? null,
-          country_code: countryCodeValue,
-          country_name: hotel.countryName ?? null,
-          region_name: hotel.regionName ?? null,
-          region_code: hotel.regionCode ?? null,
-          address: hotel.address ?? null,
-          zip_code: hotel.zipCode ?? null,
-          location1: hotel.location1 ?? null,
-          location2: hotel.location2 ?? null,
-          location3: hotel.location3 ?? null,
-          built_year: hotel.builtYear ?? null,
-          renovation_year: hotel.renovationYear ?? null,
-          floors: hotel.floors ?? null,
-          no_of_rooms: hotel.noOfRooms ?? null,
-          rating: hotel.rating ?? null,
-          priority: hotel.priority ? Number(hotel.priority) : null,
-          preferred: normalizeBoolean(hotel.preferred ?? hotel["@_preferred"]),
-          exclusive: normalizeBoolean(hotel.exclusive ?? hotel["@_exclusive"]),
-          direct: normalizeBoolean(hotel.direct),
-          fire_safety: normalizeBoolean(hotel.fireSafety),
-          chain: hotel.chain ?? null,
-           chain_code: toNumberOrNull(hotel.chain),
-           classification_code: toNumberOrNull(hotel.rating),
-          hotel_phone: hotel.hotelPhone ?? null,
-          hotel_check_in: hotel.hotelCheckIn ?? null,
-          hotel_check_out: hotel.hotelCheckOut ?? null,
-          min_age: hotel.minAge ?? null,
-          last_updated: hotel.lastUpdated ? Number(hotel.lastUpdated) : null,
-          lat,
-          lng,
-          full_address: hotel.fullAddress ?? null,
-          descriptions: {
-            description1: hotel.description1 ?? null,
-            description2: hotel.description2 ?? null,
-          },
-          amenities: hotel.amenitie ?? null,
-          leisure: hotel.leisure ?? null,
-          business: hotel.business ?? null,
-          transportation: hotel.transportation ?? null,
-          geo_locations: hotel.geoLocations ?? null,
-          images: hotel.images ?? null,
-          room_static: hotel.rooms ?? null,
-          raw_payload: hotel,
-        },
-        { transaction: tx },
-      )
-
-      await upsertHotelRelations(hotelId, hotel, tx)
-      processed += 1
-    }
-    await tx.commit()
-    return processed
+    return Buffer.byteLength(JSON.stringify(value), "utf8")
   } catch (error) {
-    await tx.rollback()
+    return 0
+  }
+}
+
+const isRetryableDbError = (error) => {
+  const code = error?.original?.code ?? error?.parent?.code ?? error?.code
+  return code === "ECONNRESET" || code === "PROTOCOL_CONNECTION_LOST"
+}
+
+const waitForRetry = (attempt) =>
+  new Promise((resolve) =>
+    setTimeout(resolve, HOTEL_BATCH_RETRY_DELAY_MS * Math.max(1, attempt)),
+  )
+
+const buildHotelRecord = (hotel, fallbackCityCode, { safeMode = false } = {}) => {
+  const hotelId = Number(hotel["@_hotelid"] ?? hotel.hotelid) || null
+  if (!hotelId) return null
+
+  const cityCodeValue = Number(hotel.cityCode ?? fallbackCityCode) || null
+  const countryCodeValue = Number(hotel.countryCode) || null
+  const lat = hotel.geoPoint?.lat ? Number(hotel.geoPoint.lat) : null
+  const lng = hotel.geoPoint?.lng ? Number(hotel.geoPoint.lng) : null
+
+  const baseRecord = {
+    hotel_id: hotelId,
+    name: hotel.hotelName ?? hotel.name ?? null,
+    city_code: cityCodeValue,
+    city_name: hotel.cityName ?? null,
+    country_code: countryCodeValue,
+    country_name: hotel.countryName ?? null,
+    region_name: hotel.regionName ?? null,
+    region_code: hotel.regionCode ?? null,
+    address: hotel.address ?? null,
+    zip_code: hotel.zipCode ?? null,
+    location1: hotel.location1 ?? null,
+    location2: hotel.location2 ?? null,
+    location3: hotel.location3 ?? null,
+    built_year: hotel.builtYear ?? null,
+    renovation_year: hotel.renovationYear ?? null,
+    floors: hotel.floors ?? null,
+    no_of_rooms: hotel.noOfRooms ?? null,
+    rating: hotel.rating ?? null,
+    priority: hotel.priority ? Number(hotel.priority) : null,
+    preferred: normalizeBoolean(hotel.preferred ?? hotel["@_preferred"]),
+    exclusive: normalizeBoolean(hotel.exclusive ?? hotel["@_exclusive"]),
+    direct: normalizeBoolean(hotel.direct),
+    fire_safety: normalizeBoolean(hotel.fireSafety),
+    chain: hotel.chain ?? null,
+    chain_code: toNumberOrNull(hotel.chain),
+    classification_code: toNumberOrNull(hotel.rating),
+    hotel_phone: hotel.hotelPhone ?? null,
+    hotel_check_in: hotel.hotelCheckIn ?? null,
+    hotel_check_out: hotel.hotelCheckOut ?? null,
+    min_age: hotel.minAge ?? null,
+    last_updated: hotel.lastUpdated ? Number(hotel.lastUpdated) : null,
+    lat,
+    lng,
+    full_address: hotel.fullAddress ?? null,
+    descriptions: {
+      description1: hotel.description1 ?? null,
+      description2: hotel.description2 ?? null,
+    },
+    amenities: safeMode ? null : (hotel.amenitie ?? null),
+    leisure: safeMode ? null : (hotel.leisure ?? null),
+    business: safeMode ? null : (hotel.business ?? null),
+    transportation: safeMode ? null : (hotel.transportation ?? null),
+    geo_locations: safeMode ? null : (hotel.geoLocations ?? null),
+    images: safeMode ? null : (hotel.images ?? null),
+    room_static: safeMode ? null : (hotel.rooms ?? null),
+    raw_payload: safeMode ? null : hotel,
+  }
+
+  const rowBytes = estimateJsonBytes(baseRecord)
+  const record =
+    rowBytes > MAX_HOTEL_ROW_BYTES
+      ? {
+          ...baseRecord,
+          amenities: null,
+          leisure: null,
+          business: null,
+          transportation: null,
+          geo_locations: null,
+          images: null,
+          room_static: null,
+          raw_payload: null,
+        }
+      : baseRecord
+
+  return { hotelId, cityCodeValue, record, rowBytes }
+}
+
+const upsertHotelRecord = async (hotelMeta, transaction) => {
+  const { hotelId, cityCodeValue, record, rowBytes } = hotelMeta
+  try {
+    await models.WebbedsHotel.upsert(record, { transaction })
+    return
+  } catch (error) {
+    const errorCode = error?.original?.code ?? error?.parent?.code
+    if (errorCode === "ER_NET_PACKET_TOO_LARGE" && record.raw_payload) {
+      console.warn("[webbeds][static] hotel payload too large, retrying without blobs", {
+        hotelId,
+        cityCode: cityCodeValue,
+        rowBytes,
+        maxBytes: MAX_HOTEL_ROW_BYTES,
+      })
+      const trimmedRecord = {
+        ...record,
+        amenities: null,
+        leisure: null,
+        business: null,
+        transportation: null,
+        geo_locations: null,
+        images: null,
+        room_static: null,
+        raw_payload: null,
+      }
+      await models.WebbedsHotel.upsert(trimmedRecord, { transaction })
+      return
+    }
     throw error
   }
+}
+
+const persistSingleHotel = async (
+  hotel,
+  fallbackCityCode,
+  transaction,
+  { safeMode = false } = {},
+) => {
+  const hotelMeta = buildHotelRecord(hotel, fallbackCityCode, { safeMode })
+  if (!hotelMeta) {
+    console.warn("[webbeds][static] hotel missing id", { hotel })
+    return false
+  }
+
+  await upsertHotelRecord(hotelMeta, transaction)
+  await upsertHotelRelations(hotelMeta.hotelId, hotel, transaction, { safeMode })
+  return true
+}
+
+const persistHotelIndividually = async (hotel, fallbackCityCode, { safeMode = false } = {}) => {
+  let attempt = 0
+  while (true) {
+    const tx = await sequelize.transaction()
+    try {
+      const processed = await persistSingleHotel(hotel, fallbackCityCode, tx, { safeMode })
+      await tx.commit()
+      return processed
+    } catch (error) {
+      try {
+        await tx.rollback()
+      } catch (rollbackError) {
+        console.warn("[webbeds][static] hotel rollback failed", rollbackError)
+      }
+      if (attempt < HOTEL_BATCH_RETRIES && isRetryableDbError(error)) {
+        attempt += 1
+        console.warn("[webbeds][static] retrying hotel after transient error", {
+          attempt,
+          maxAttempts: HOTEL_BATCH_RETRIES,
+          error: error?.message,
+        })
+        await waitForRetry(attempt)
+        continue
+      }
+      if (!safeMode && isRetryableDbError(error)) {
+        console.warn("[webbeds][static] retrying hotel in safe mode after transient error", {
+          error: error?.message,
+        })
+        return persistHotelIndividually(hotel, fallbackCityCode, { safeMode: true })
+      }
+      throw error
+    }
+  }
+}
+
+const persistHotels = async (hotels, fallbackCityCode) => {
+  if (!hotels?.length) return 0
+  const batches = chunkArray(hotels, HOTEL_BATCH_SIZE)
+  let processed = 0
+
+  for (const batch of batches) {
+    let attempt = 0
+    while (true) {
+      const tx = await sequelize.transaction()
+      let batchProcessed = 0
+      try {
+        for (const hotel of batch) {
+          const didProcess = await persistSingleHotel(hotel, fallbackCityCode, tx)
+          if (didProcess) batchProcessed += 1
+        }
+        await tx.commit()
+        processed += batchProcessed
+        break
+      } catch (error) {
+        try {
+          await tx.rollback()
+        } catch (rollbackError) {
+          console.warn("[webbeds][static] hotel batch rollback failed", rollbackError)
+        }
+        if (attempt < HOTEL_BATCH_RETRIES && isRetryableDbError(error)) {
+          attempt += 1
+          console.warn("[webbeds][static] retrying hotel batch after transient error", {
+            attempt,
+            maxAttempts: HOTEL_BATCH_RETRIES,
+            error: error?.message,
+          })
+          await waitForRetry(attempt)
+          continue
+        }
+        if (isRetryableDbError(error)) {
+          console.warn("[webbeds][static] falling back to per-hotel transactions", {
+            error: error?.message,
+          })
+          for (const hotel of batch) {
+            const didProcess = await persistHotelIndividually(hotel, fallbackCityCode, {
+              safeMode: true,
+            })
+            if (didProcess) processed += 1
+          }
+          break
+        }
+        throw error
+      }
+    }
+  }
+
+  return processed
 }
 
 const logDryRun = ({ command, payload }) => {
@@ -828,18 +1040,58 @@ export const syncWebbedsCities = async ({ countryCode, dryRun = false } = {}) =>
     return { inserted: 0 }
   }
 
-  if (!countryNameCache) {
-    const countryRows = await models.WebbedsCountry.findAll({
-      attributes: ["code", "name"],
-    })
-    countryNameCache = new Map(
-      countryRows.map((row) => [Number(row.code), row.name]),
-    )
-  }
-
   const tx = await sequelize.transaction()
   try {
-    const operations = cities.map((city) => {
+    if (!countryNameCache) {
+      countryNameCache = new Map()
+    }
+
+    const countryCodeToName = new Map()
+    for (const city of cities) {
+      const resolvedCountryCode =
+        Number(city.countryCode) ||
+        (countryCode != null ? Number(countryCode) : null)
+      const resolvedCountryName = city.countryName ?? null
+      if (!resolvedCountryCode) continue
+      if (resolvedCountryName) {
+        countryCodeToName.set(resolvedCountryCode, resolvedCountryName)
+      }
+    }
+
+    const countryCodes = Array.from(countryCodeToName.keys())
+    if (countryCodes.length) {
+      const existingCountryRows = await models.WebbedsCountry.findAll({
+        where: { code: { [Op.in]: countryCodes } },
+        attributes: ["code", "name"],
+        transaction: tx,
+      })
+      const existingCodes = new Set()
+      for (const row of existingCountryRows) {
+        const code = Number(row.code)
+        existingCodes.add(code)
+        if (row.name) countryNameCache.set(code, row.name)
+      }
+
+      const missingCountries = countryCodes
+        .filter((code) => !existingCodes.has(code))
+        .map((code) => ({
+          code,
+          name: countryCodeToName.get(code) ?? null,
+        }))
+        .filter((row) => row.code && row.name)
+
+      if (missingCountries.length) {
+        await models.WebbedsCountry.bulkCreate(missingCountries, {
+          transaction: tx,
+          updateOnDuplicate: ["name"],
+        })
+        for (const row of missingCountries) {
+          countryNameCache.set(row.code, row.name)
+        }
+      }
+    }
+
+    const rows = cities.map((city) => {
       const code = Number(city.code) || null
       if (!code) return null
       const resolvedCountryCode =
@@ -864,30 +1116,47 @@ export const syncWebbedsCities = async ({ countryCode, dryRun = false } = {}) =>
         })
         return null
       }
-      return models.WebbedsCity.upsert(
-        {
-          code,
-          name: city.name ?? null,
-          country_code: resolvedCountryCode,
-          country_name: resolvedCountryName,
-          state_name: city.stateName ?? null,
-          state_code: city.stateCode ?? null,
-          region_name: city.regionName ?? null,
-          region_code: city.regionCode ?? null,
-          metadata: city,
-        },
-        { transaction: tx },
-      )
+      return {
+        code,
+        name: city.name ?? null,
+        country_code: resolvedCountryCode,
+        country_name: resolvedCountryName,
+        state_name: city.stateName ?? null,
+        state_code: city.stateCode ?? null,
+        region_name: city.regionName ?? null,
+        region_code: city.regionCode ?? null,
+        metadata: city,
+      }
     })
 
-    await Promise.all(operations.filter(Boolean))
+    const entries = rows.filter(Boolean)
+    const updateFields = [
+      "name",
+      "country_code",
+      "country_name",
+      "state_name",
+      "state_code",
+      "region_name",
+      "region_code",
+      "metadata",
+    ]
+
+    let processed = 0
+    const batches = chunkArray(entries, process.env.WEBBEDS_CITY_BATCH_SIZE || 1000)
+    for (const batch of batches) {
+      await models.WebbedsCity.bulkCreate(batch, {
+        transaction: tx,
+        updateOnDuplicate: updateFields,
+      })
+      processed += batch.length
+    }
     await tx.commit()
 
     console.info("[webbeds][static] cities synchronized", {
-      count: operations.filter(Boolean).length,
+      count: processed,
       countryCode,
     })
-    return { inserted: operations.filter(Boolean).length }
+    return { inserted: processed }
   } catch (error) {
     await tx.rollback()
     console.error("[webbeds][static] cities sync failed", { countryCode, error })
