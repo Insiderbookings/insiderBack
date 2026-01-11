@@ -3,7 +3,6 @@ import dotenv from "dotenv"
 import crypto from "crypto"
 import Stripe from "stripe"
 import { sendBookingEmail } from "../emailTemplates/booking-email.js"
-import sendMagicLink from "../services/sendMagicLink.js"
 import models, { sequelize } from "../models/index.js"
 import { bookTGX, quoteTGX } from "../providers/travelgate/services/booking.service.js"
 import { normalizeTGXBookingID } from "../utils/normalizeBookingId.tgx.js"
@@ -284,7 +283,6 @@ export const createTravelgatePaymentIntent = async (req, res) => {
             role : 0,
           })
           resolvedUserId = created.id
-          try { await sendMagicLink(created) } catch (e) { console.warn("Failed to send magic link:", e?.message || e) }
         }
       } catch (e) {
         console.warn("User resolve/create failed:", e?.message || e)
@@ -687,7 +685,6 @@ export const confirmPaymentAndBook = async (req, res) => {
         if (!user) {
           const displayName = String(booking.guest_name || normalizedEmail).slice(0, 100)
           user = await models.User.create({ name: displayName, email: normalizedEmail, phone: booking.guest_phone || null, role: 0 })
-          try { await sendMagicLink(user) } catch (e) { console.warn("Failed to send magic link:", e?.message || e) }
         }
         if (user && user.id) {
           await booking.update({ user_id: user.id })
@@ -1156,7 +1153,6 @@ export const bookWithCard = async (req, res) => {
         if (!user) {
           const displayName = String(guestInfo?.fullName || normalizedEmail).slice(0, 100)
           user = await models.User.create({ name: displayName, email: normalizedEmail, phone: guestInfo?.phone || null, role: 0 })
-          try { await sendMagicLink(user) } catch (e) { console.warn("Failed to send magic link:", e?.message || e) }
         }
         if (user) resolvedUserId = user.id
       }

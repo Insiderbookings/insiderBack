@@ -12,6 +12,8 @@ import { sendMail } from "../helpers/mailer.js";
 import { resolveVaultBranding } from "../helpers/vaultBranding.js";
 import { emitAdminActivity } from "../websocket/emitter.js";
 import { createThread, postMessage } from "../services/chat.service.js";
+import { generateAndSaveTripIntelligence } from "../services/aiAssistant.service.js";
+import { finalizeReferralRedemption, recordInfluencerEvent } from "../services/referralRewards.service.js";
 
 dotenv.config()
 
@@ -147,6 +149,231 @@ const dispatchHomeBookingConfirmation = async (booking) => {
       metadata: { ...baseMetadata, audience: "HOST" },
     }),
   ]);
+};
+
+export const finalizeBookingAfterPayment = async ({ bookingId }) => {
+  if (!bookingId) return null;
+  const booking = await models.Booking.findByPk(bookingId, {
+    include: [
+      {
+        model: models.StayHome,
+        as: "homeStay",
+        required: false,
+        include: [
+          {
+            model: models.Home,
+            as: "home",
+            attributes: ["id", "title", "host_id"],
+            include: [
+              {
+                model: models.HomeAddress,
+                as: "address",
+                attributes: ["address_line1", "city", "state", "country"],
+              },
+            ],
+          },
+        ],
+      },
+      {
+        model: models.StayHotel,
+        as: "hotelStay",
+        required: false,
+        include: [
+          {
+            model: models.Hotel,
+            as: "hotel",
+            attributes: ["id", "name", "city", "country"],
+          },
+        ],
+      },
+    ],
+  });
+  if (!booking) return null;
+
+  const meta =
+    booking.meta && typeof booking.meta === "object" ? { ...booking.meta } : {};
+  if (meta.confirmationProcessedAt) return booking;
+
+  const influencerId = Number(booking.influencer_user_id) || null;
+  if (influencerId) {
+    try {
+      const existing = await models.InfluencerCommission.findOne({
+        where: { stay_id: booking.id },
+      });
+      if (!existing) {
+        const rateEnv = Number(process.env.INFLUENCER_COMMISSION_PCT);
+        const ratePct = Number.isFinite(rateEnv) && rateEnv > 0 ? rateEnv : 15;
+        const capUsdEnv = Number(process.env.INFLUENCER_COMMISSION_CAP_USD);
+        const capUsd = Number.isFinite(capUsdEnv) && capUsdEnv > 0 ? capUsdEnv : 5;
+        let capAmt = capUsd;
+        try {
+          const ratesStr = process.env.FX_USD_RATES || "{}";
+          const rates = JSON.parse(ratesStr);
+          const r = Number(rates[(booking.currency || "USD").toUpperCase()]);
+          if (Number.isFinite(r) && r > 0) capAmt = capUsd * r;
+        } catch { }
+        const holdDaysEnv = Number(process.env.INFLUENCER_HOLD_DAYS);
+        const holdDays = Number.isFinite(holdDaysEnv) && holdDaysEnv >= 0 ? holdDaysEnv : 3;
+
+        const gross = Number(booking.gross_price || 0);
+        const net = booking.net_cost != null ? Number(booking.net_cost) : null;
+        const markup = net != null ? Math.max(0, gross - Number(net)) : null;
+        const base = markup != null ? markup : gross;
+        const baseType = markup != null ? "markup" : "gross";
+
+        const rawCommission = base * (ratePct / 100);
+        const commissionAmount =
+          Math.round((Math.min(rawCommission, capAmt) + Number.EPSILON) * 100) / 100;
+        const currency = booking.currency || "USD";
+
+        let holdUntil = null;
+        try {
+          const co = booking.check_out ? new Date(booking.check_out) : null;
+          if (co && !isNaN(co)) {
+            co.setDate(co.getDate() + holdDays);
+            holdUntil = co;
+          }
+        } catch { }
+        const useHold =
+          String(process.env.INFLUENCER_USE_HOLD || "").toLowerCase() === "true";
+        await models.InfluencerCommission.create({
+          influencer_user_id: influencerId,
+          stay_id: booking.id,
+          discount_code_id: null,
+          commission_base: baseType,
+          commission_rate_pct: ratePct,
+          commission_amount: commissionAmount,
+          commission_currency: currency,
+          status: useHold && holdUntil ? "hold" : "eligible",
+          hold_until: holdUntil,
+        });
+      }
+    } catch (e) {
+      console.warn("[payments] influencer commission failed:", e?.message || e);
+    }
+  }
+
+  let redemption = null;
+  try {
+    await sequelize.transaction(async (tx) => {
+      redemption = await finalizeReferralRedemption(booking.id, tx);
+      if (influencerId) {
+        await recordInfluencerEvent({
+          eventType: "booking",
+          influencerUserId: influencerId,
+          stayId: booking.id,
+          currency: booking.currency || "USD",
+          transaction: tx,
+        });
+      }
+    });
+  } catch (e) {
+    console.warn("[payments] referral redemption finalize failed:", e?.message || e);
+  }
+
+  if (redemption) {
+    const snapshot =
+      booking.pricing_snapshot && typeof booking.pricing_snapshot === "object"
+        ? { ...booking.pricing_snapshot }
+        : {};
+    if (snapshot.referralCoupon) snapshot.referralCoupon.status = redemption.status;
+    if (meta.referralCoupon) meta.referralCoupon.status = redemption.status;
+    await booking.update({ meta, pricing_snapshot: snapshot });
+  }
+
+  try {
+    await dispatchHomeBookingConfirmation(booking);
+  } catch (err) {
+    console.warn("[payments] home confirmation notify failed:", err?.message || err);
+  }
+
+  try {
+    const home = booking.homeStay?.home || null;
+    const hotel = booking.hotelStay?.hotel || null;
+    const stayName =
+      booking.hotel_name ||
+      home?.title ||
+      hotel?.name ||
+      booking.meta?.snapshot?.hotelName ||
+      "Your Stay";
+    const locationText =
+      booking.location ||
+      hotel?.city ||
+      home?.address?.city ||
+      booking.meta?.snapshot?.city ||
+      "Destination";
+    const city =
+      hotel?.city ||
+      home?.address?.city ||
+      booking.meta?.snapshot?.city ||
+      null;
+    const country =
+      hotel?.country ||
+      home?.address?.country ||
+      booking.meta?.snapshot?.country ||
+      null;
+    const amenities = hotel?.amenities || home?.amenities || [];
+    const houseRules = home?.house_rules || "";
+    const inventoryType =
+      booking.inventory_type || (hotel ? "HOTEL" : "HOME");
+
+    await generateAndSaveTripIntelligence({
+      stayId: booking.id,
+      tripContext: {
+        stayName,
+        locationText,
+        location: { city, country },
+        amenities,
+        houseRules,
+        inventoryType,
+      },
+      lang: "en",
+    });
+  } catch (err) {
+    console.warn("[payments] trip intelligence failed:", err?.message || err);
+  }
+
+  try {
+    const home = booking.homeStay?.home || null;
+    const hotel = booking.hotelStay?.hotel || null;
+    const tripContext = {
+      inventoryType: booking.inventory_type || (home ? "HOME" : "HOTEL"),
+      location: {
+        city:
+          home?.address?.city ||
+          hotel?.city ||
+          booking.meta?.snapshot?.city ||
+          null,
+        country:
+          home?.address?.country ||
+          hotel?.country ||
+          booking.meta?.snapshot?.country ||
+          null,
+      },
+      stayName:
+        home?.title ||
+        hotel?.name ||
+        booking.meta?.snapshot?.hotelName ||
+        "Your stay",
+      amenities: home?.amenities || hotel?.amenities || [],
+      houseRules: home?.house_rules || null,
+      dates: {
+        checkIn: booking.check_in,
+        checkOut: booking.check_out,
+      },
+    };
+    await generateAndSaveTripIntelligence({
+      stayId: booking.id,
+      tripContext,
+      lang: booking.meta?.language || "en",
+    });
+  } catch (err) {
+    console.warn("[payments] proactive AI trigger failed:", err?.message || err);
+  }
+
+  meta.confirmationProcessedAt = new Date().toISOString();
+  await booking.update({ meta });
+  return booking;
 };
 
 /* ============================================================================
@@ -356,12 +583,10 @@ export const handleWebhook = async (req, res) => {
         timestamp: new Date()
       });
 
-      if (booking.inventory_type === "HOME") {
-        try {
-          await dispatchHomeBookingConfirmation(booking);
-        } catch (err) {
-          console.warn("[payments] home confirmation notify failed:", err?.message || err);
-        }
+      try {
+        await finalizeBookingAfterPayment({ bookingId: booking.id });
+      } catch (err) {
+        console.warn("[payments] post-payment finalize failed:", err?.message || err);
       }
     }
   };

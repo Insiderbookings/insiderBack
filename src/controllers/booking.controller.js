@@ -21,11 +21,10 @@ import {
 import {
   planReferralCoupon,
   createPendingRedemption,
-  finalizeReferralRedemption,
   reverseReferralRedemption,
-  recordInfluencerEvent,
 } from "../services/referralRewards.service.js"
 import { emitAdminActivity } from "../websocket/emitter.js"
+import { finalizeBookingAfterPayment } from "./payment.controller.js"
 /* ──────────────── Helper – count nights ───────────── */
 const diffDays = (from, to) =>
   Math.ceil((new Date(to) - new Date(from)) / 86_400_000)
@@ -80,6 +79,97 @@ const roundCurrency = (value) => {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return 0
   return Math.round((numeric + Number.EPSILON) * 100) / 100
+}
+
+const resolveHomePricingConfig = ({ pricing = {}, capacity = null }) => {
+  const basePrice = Number.parseFloat(pricing.base_price ?? 0) * 1.1
+  if (!Number.isFinite(basePrice) || basePrice <= 0) {
+    return { error: "Listing does not have a valid base price" }
+  }
+
+  const weekendPrice =
+    pricing.weekend_price != null ? Number.parseFloat(pricing.weekend_price) * 1.1 : null
+  const hasWeekendPrice = Number.isFinite(weekendPrice) && weekendPrice > 0
+  const securityDeposit =
+    pricing.security_deposit != null ? Number.parseFloat(pricing.security_deposit) : 0
+  const extraGuestFee =
+    pricing.extra_guest_fee != null ? Number.parseFloat(pricing.extra_guest_fee) : 0
+  const extraGuestThreshold =
+    pricing.extra_guest_threshold != null
+      ? Number(pricing.extra_guest_threshold)
+      : capacity
+  const taxRate =
+    (pricing.tax_rate != null && Number(pricing.tax_rate) > 0) ? Number.parseFloat(pricing.tax_rate) : 8
+  const currencyCode = String(
+    pricing.currency ?? process.env.DEFAULT_CURRENCY ?? "USD"
+  )
+    .trim()
+    .toUpperCase()
+
+  return {
+    basePrice,
+    weekendPrice,
+    hasWeekendPrice,
+    securityDeposit,
+    extraGuestFee,
+    extraGuestThreshold,
+    taxRate,
+    currencyCode,
+  }
+}
+
+const computeHomePricingBreakdown = ({
+  checkInDate,
+  checkOutDate,
+  nights,
+  totalGuests,
+  basePrice,
+  weekendPrice,
+  hasWeekendPrice,
+  extraGuestFee,
+  extraGuestThreshold,
+  taxRate,
+}) => {
+  let baseSubtotal = 0
+  const nightlyBreakdown = []
+  let cursor = new Date(checkInDate)
+  const endDate = new Date(checkOutDate)
+  while (cursor < endDate) {
+    const day = cursor.getUTCDay()
+    const isWeekend = day === 5 || day === 6
+    const useWeekendRate = isWeekend && hasWeekendPrice
+    const nightlyRate = useWeekendRate ? weekendPrice : basePrice
+    const roundedRate = roundCurrency(nightlyRate)
+    nightlyBreakdown.push({
+      date: cursor.toISOString().slice(0, 10),
+      rate: roundedRate,
+      weekend: isWeekend,
+      reason: useWeekendRate ? "weekend" : "standard",
+    })
+    baseSubtotal += roundedRate
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+
+  baseSubtotal = roundCurrency(baseSubtotal)
+
+  let extraGuestSubtotal = 0
+  if (extraGuestFee > 0 && extraGuestThreshold != null && totalGuests > extraGuestThreshold) {
+    const extraGuests = totalGuests - extraGuestThreshold
+    extraGuestSubtotal = roundCurrency(extraGuests * extraGuestFee * nights)
+  }
+
+  const subtotalBeforeTax = roundCurrency(baseSubtotal + extraGuestSubtotal)
+  const taxAmount = taxRate > 0 ? roundCurrency((subtotalBeforeTax * taxRate) / 100) : 0
+  const totalBeforeDiscount = roundCurrency(subtotalBeforeTax + taxAmount)
+
+  return {
+    nightlyBreakdown,
+    baseSubtotal,
+    extraGuestSubtotal,
+    subtotalBeforeTax,
+    taxAmount,
+    totalBeforeDiscount,
+  }
 }
 
 const buildHomeCancellationQuote = ({
@@ -905,55 +995,44 @@ export const quoteHomeBooking = async (req, res) => {
     if (maxStay && nights > maxStay)
       return res.status(400).json({ error: `Maximum stay is ${maxStay} nights` })
 
-    const basePrice = Number.parseFloat(pricing.base_price ?? 0) * 1.1
-    if (!Number.isFinite(basePrice) || basePrice <= 0)
-      return res.status(400).json({ error: "Listing does not have a valid base price" })
-    const weekendPrice =
-      pricing.weekend_price != null ? Number.parseFloat(pricing.weekend_price) * 1.1 : null
-    const hasWeekendPrice = Number.isFinite(weekendPrice) && weekendPrice > 0
-    const securityDeposit =
-      pricing.security_deposit != null ? Number.parseFloat(pricing.security_deposit) : 0
-    const extraGuestFee =
-      pricing.extra_guest_fee != null ? Number.parseFloat(pricing.extra_guest_fee) : 0
-    const extraGuestThreshold =
-      pricing.extra_guest_threshold != null ? Number(pricing.extra_guest_threshold) : null
-    const taxRate =
-      (pricing.tax_rate != null && Number(pricing.tax_rate) > 0) ? Number.parseFloat(pricing.tax_rate) : 8
+    const pricingConfig = resolveHomePricingConfig({
+      pricing,
+      capacity: Number(home.max_guests ?? 0) || null,
+    })
+    if (pricingConfig.error) return res.status(400).json({ error: pricingConfig.error })
 
-    const currencyCode = String(
-      pricing.currency ?? process.env.DEFAULT_CURRENCY ?? "USD"
-    )
-      .trim()
-      .toUpperCase()
+    const {
+      basePrice,
+      weekendPrice,
+      hasWeekendPrice,
+      securityDeposit,
+      extraGuestFee,
+      extraGuestThreshold,
+      taxRate,
+      currencyCode,
+    } = pricingConfig
 
-    let baseSubtotal = 0
-    const nightlyBreakdown = []
-    let cursor = new Date(checkInDate)
-    const endDate = new Date(checkOutDate)
-    while (cursor < endDate) {
-      const day = cursor.getUTCDay()
-      const isWeekend = day === 5 || day === 6
-      const useWeekendRate = isWeekend && hasWeekendPrice
-      const nightlyRate = useWeekendRate ? weekendPrice : basePrice
-      const roundedRate = Number.parseFloat(Number(nightlyRate).toFixed(2))
-      nightlyBreakdown.push({
-        date: cursor.toISOString().slice(0, 10),
-        rate: roundedRate,
-        reason: useWeekendRate ? "weekend" : "standard",
-      })
-      baseSubtotal += roundedRate
-      cursor.setUTCDate(cursor.getUTCDate() + 1)
-    }
+    const pricingBreakdown = computeHomePricingBreakdown({
+      checkInDate,
+      checkOutDate,
+      nights,
+      totalGuests,
+      basePrice,
+      weekendPrice,
+      hasWeekendPrice,
+      extraGuestFee,
+      extraGuestThreshold,
+      taxRate,
+    })
 
-    let extraGuestSubtotal = 0
-    if (extraGuestFee > 0 && extraGuestThreshold != null && totalGuests > extraGuestThreshold) {
-      const extraGuests = totalGuests - extraGuestThreshold
-      extraGuestSubtotal = extraGuests * extraGuestFee * nights
-    }
-
-    const subtotalBeforeTax = Number.parseFloat((baseSubtotal + extraGuestSubtotal).toFixed(2))
-    const taxAmount = taxRate > 0 ? Number.parseFloat(((subtotalBeforeTax * taxRate) / 100).toFixed(2)) : 0
-    const totalBeforeDiscount = Number.parseFloat((subtotalBeforeTax + taxAmount).toFixed(2))
+    const {
+      nightlyBreakdown,
+      baseSubtotal,
+      extraGuestSubtotal,
+      subtotalBeforeTax,
+      taxAmount,
+      totalBeforeDiscount,
+    } = pricingBreakdown
 
     let referralCouponPlan = null
     let referralDiscountAmount = 0
@@ -967,7 +1046,7 @@ export const quoteHomeBooking = async (req, res) => {
       referralDiscountAmount = referralCouponPlan?.apply ? referralCouponPlan.discountAmount : 0
     }
 
-    const total = Number.parseFloat(Math.max(0, totalBeforeDiscount - referralDiscountAmount).toFixed(2))
+    const total = roundCurrency(Math.max(0, totalBeforeDiscount - referralDiscountAmount))
 
     const nightlyGroups = new Map()
     nightlyBreakdown.forEach((night) => {
@@ -999,7 +1078,7 @@ export const quoteHomeBooking = async (req, res) => {
       items.push({
         key: "extraGuests",
         label: "Extra guests",
-        amount: Number.parseFloat(extraGuestSubtotal.toFixed(2)),
+        amount: roundCurrency(extraGuestSubtotal),
       })
     }
     if (taxAmount > 0) {
@@ -1013,7 +1092,7 @@ export const quoteHomeBooking = async (req, res) => {
       items.push({
         key: "referralCoupon",
         label: "Referral discount",
-        amount: -Number.parseFloat(referralDiscountAmount.toFixed(2)),
+        amount: -roundCurrency(referralDiscountAmount),
       })
     }
 
@@ -1041,21 +1120,21 @@ export const quoteHomeBooking = async (req, res) => {
         taxRate,
         taxAmount,
         totalBeforeDiscount,
-        discountAmount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
+        discountAmount: roundCurrency(referralDiscountAmount),
         total,
         referralCoupon,
         pricingSnapshot: {
           nightlyBreakdown,
-          baseSubtotal: Number.parseFloat(baseSubtotal.toFixed(2)),
-          extraGuestSubtotal: Number.parseFloat(extraGuestSubtotal.toFixed(2)),
+          baseSubtotal: roundCurrency(baseSubtotal),
+          extraGuestSubtotal: roundCurrency(extraGuestSubtotal),
           cleaningFee: null,
           taxRate,
           taxAmount,
           securityDeposit,
-          subtotalBeforeTax: Number.parseFloat(subtotalBeforeTax.toFixed(2)),
+          subtotalBeforeTax: roundCurrency(subtotalBeforeTax),
           totalBeforeDiscount,
           referralCoupon,
-          referralDiscountAmount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
+          referralDiscountAmount: roundCurrency(referralDiscountAmount),
           total,
           currency: currencyCode,
         },
@@ -1166,78 +1245,43 @@ export const createHomeBooking = async (req, res) => {
     if (maxStay && nights > maxStay)
       return res.status(400).json({ error: `Maximum stay is ${maxStay} nights` })
 
-    const basePrice = Number.parseFloat(pricing.base_price ?? 0) * 1.1
-    if (!Number.isFinite(basePrice) || basePrice <= 0)
-      return res.status(400).json({ error: "Listing does not have a valid base price" })
-    const weekendPrice =
-      pricing.weekend_price != null ? Number.parseFloat(pricing.weekend_price) * 1.1 : null
-    const cleaningFeeValue = 0
-    const securityDeposit =
-      pricing.security_deposit != null ? Number.parseFloat(pricing.security_deposit) : 0
-    const extraGuestFee =
-      pricing.extra_guest_fee != null ? Number.parseFloat(pricing.extra_guest_fee) : 0
-    const extraGuestThreshold =
-      pricing.extra_guest_threshold != null
-        ? Number(pricing.extra_guest_threshold)
-        : capacity
-    const taxRate =
-      (pricing.tax_rate != null && Number(pricing.tax_rate) > 0) ? Number.parseFloat(pricing.tax_rate) : 8
+    const pricingConfig = resolveHomePricingConfig({ pricing, capacity })
+    if (pricingConfig.error) return res.status(400).json({ error: pricingConfig.error })
 
-    const calendarEntries = await models.HomeCalendar.findAll({
-      where: {
-        home_id: homeIdValue,
-        date: { [Op.gte]: normalizedCheckIn, [Op.lt]: normalizedCheckOut },
-      },
+    const {
+      basePrice,
+      weekendPrice,
+      hasWeekendPrice,
+      securityDeposit,
+      extraGuestFee,
+      extraGuestThreshold,
+      taxRate,
+      currencyCode,
+    } = pricingConfig
+
+    const pricingBreakdown = computeHomePricingBreakdown({
+      checkInDate,
+      checkOutDate,
+      nights,
+      totalGuests,
+      basePrice,
+      weekendPrice,
+      hasWeekendPrice,
+      extraGuestFee,
+      extraGuestThreshold,
+      taxRate,
     })
-    const blockedEntry = calendarEntries.find(
-      (entry) => entry.status && entry.status.toUpperCase() !== "AVAILABLE"
-    )
-    if (blockedEntry)
-      return res.status(409).json({ error: "Selected dates are not available" })
+
+    const {
+      nightlyBreakdown,
+      baseSubtotal,
+      extraGuestSubtotal,
+      subtotalBeforeTax,
+      taxAmount,
+      totalBeforeDiscount,
+    } = pricingBreakdown
 
     const stayDates = enumerateStayDates(normalizedCheckIn, normalizedCheckOut)
-
-    const overlappingStay = await models.Stay.findOne({
-      where: {
-        inventory_type: "HOME",
-        status: { [Op.in]: ["PENDING", "CONFIRMED"] },
-        check_in: { [Op.lt]: normalizedCheckOut },
-        check_out: { [Op.gt]: normalizedCheckIn },
-      },
-      include: [
-        { model: models.StayHome, as: "homeStay", required: true, where: { home_id: homeIdValue } },
-      ],
-    })
-    if (overlappingStay)
-      return res.status(409).json({ error: "Selected dates already reserved" })
-
-    const nightlyBreakdown = []
-    let cursor = new Date(checkInDate)
-    const endDate = new Date(checkOutDate)
-    let baseSubtotal = 0
-    while (cursor < endDate) {
-      const day = cursor.getUTCDay()
-      const isWeekend = day === 5 || day === 6
-      const nightlyRate = isWeekend && Number.isFinite(weekendPrice) ? weekendPrice : basePrice
-      const rateValue = Number.parseFloat(nightlyRate.toFixed(2))
-      nightlyBreakdown.push({
-        date: cursor.toISOString().slice(0, 10),
-        rate: rateValue,
-        weekend: isWeekend,
-      })
-      baseSubtotal += rateValue
-      cursor.setUTCDate(cursor.getUTCDate() + 1)
-    }
-
-    let extraGuestSubtotal = 0
-    if (extraGuestFee > 0 && extraGuestThreshold != null && totalGuests > extraGuestThreshold) {
-      const extraGuests = totalGuests - extraGuestThreshold
-      extraGuestSubtotal = extraGuests * extraGuestFee * nights
-    }
-    const cleaningFeeTotal = 0
-    const subtotalBeforeTax = baseSubtotal + extraGuestSubtotal
-    const taxAmount = taxRate > 0 ? Number.parseFloat(((subtotalBeforeTax * taxRate) / 100).toFixed(2)) : 0
-    const totalAmount = Number.parseFloat((subtotalBeforeTax + taxAmount).toFixed(2))
     let referralCouponPlan = null
     let referralDiscountAmount = 0
     let referralCouponApplied = false
@@ -1249,24 +1293,56 @@ export const createHomeBooking = async (req, res) => {
       return res.status(400).json({ error: "Guest name and email are required" })
     const guestPhoneFinal = (guestPhone ?? user.phone ?? "").trim() || null
 
-    const currencyCode = String(
-      pricing.currency ?? process.env.DEFAULT_CURRENCY ?? "USD"
-    )
-      .trim()
-      .toUpperCase()
-
     const stay = await sequelize.transaction(async (tx) => {
+      await models.Home.findByPk(homeIdValue, { transaction: tx, lock: tx.LOCK.UPDATE })
+
+      const calendarEntries = await models.HomeCalendar.findAll({
+        where: {
+          home_id: homeIdValue,
+          date: { [Op.gte]: normalizedCheckIn, [Op.lt]: normalizedCheckOut },
+        },
+        transaction: tx,
+        lock: tx.LOCK.UPDATE,
+      })
+      const blockedEntry = calendarEntries.find(
+        (entry) => entry.status && entry.status.toUpperCase() !== "AVAILABLE"
+      )
+      if (blockedEntry) {
+        const err = new Error("Selected dates are not available")
+        err.status = 409
+        throw err
+      }
+
+      const overlappingStay = await models.Stay.findOne({
+        where: {
+          inventory_type: "HOME",
+          status: { [Op.in]: ["PENDING", "CONFIRMED"] },
+          check_in: { [Op.lt]: normalizedCheckOut },
+          check_out: { [Op.gt]: normalizedCheckIn },
+        },
+        include: [
+          { model: models.StayHome, as: "homeStay", required: true, where: { home_id: homeIdValue } },
+        ],
+        transaction: tx,
+        lock: tx.LOCK.UPDATE,
+      })
+      if (overlappingStay) {
+        const err = new Error("Selected dates already reserved")
+        err.status = 409
+        throw err
+      }
+
       if (referral.influencerId) {
         console.log("[HOME BOOKING] referral lookup", {
           influencerId: referral.influencerId,
           referralCode: referral.code || null,
-          totalBeforeDiscount: totalAmount,
+          totalBeforeDiscount,
           currency: currencyCode,
         })
         referralCouponPlan = await planReferralCoupon({
           influencerUserId: referral.influencerId,
           userId,
-          totalBeforeDiscount: totalAmount,
+          totalBeforeDiscount,
           currency: currencyCode,
           transaction: tx,
         })
@@ -1280,7 +1356,7 @@ export const createHomeBooking = async (req, res) => {
         referralDiscountAmount = referralCouponPlan?.apply ? referralCouponPlan.discountAmount : 0
         referralCouponApplied = referralCouponPlan?.apply || false
       }
-      const grossTotal = Number.parseFloat(Math.max(0, totalAmount - referralDiscountAmount).toFixed(2))
+      const grossTotal = roundCurrency(Math.max(0, totalBeforeDiscount - referralDiscountAmount))
 
       const created = await models.Booking.create(
         {
@@ -1308,14 +1384,14 @@ export const createHomeBooking = async (req, res) => {
           booked_at: new Date(),
           pricing_snapshot: {
             nightlyBreakdown,
-            baseSubtotal: Number.parseFloat(baseSubtotal.toFixed(2)),
-            extraGuestSubtotal: Number.parseFloat(extraGuestSubtotal.toFixed(2)),
+            baseSubtotal: roundCurrency(baseSubtotal),
+            extraGuestSubtotal: roundCurrency(extraGuestSubtotal),
             cleaningFee: null,
             taxRate,
             taxAmount,
             securityDeposit,
-            subtotalBeforeTax: Number.parseFloat(subtotalBeforeTax.toFixed(2)),
-            totalBeforeDiscount: Number.parseFloat(totalAmount.toFixed(2)),
+            subtotalBeforeTax: roundCurrency(subtotalBeforeTax),
+            totalBeforeDiscount: roundCurrency(totalBeforeDiscount),
             referralCoupon: referralCouponPlan?.apply
               ? {
                 amount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
@@ -1325,7 +1401,7 @@ export const createHomeBooking = async (req, res) => {
                 applied: referralCouponApplied,
               }
               : null,
-            referralDiscountAmount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
+            referralDiscountAmount: roundCurrency(referralDiscountAmount),
             total: grossTotal,
             currency: currencyCode,
           },
@@ -1598,7 +1674,7 @@ export const createHomeBooking = async (req, res) => {
           },
           currency: fresh.currency || currencyCode,
           totals: {
-            total: Number(fresh.gross_price ?? totalAmount),
+            total: Number(fresh.gross_price ?? totalBeforeDiscount),
             nights: nightsCount || undefined,
             ratePerNight: ratePerNight || undefined,
             taxes: taxAmountValue || undefined,
@@ -1631,7 +1707,7 @@ export const createHomeBooking = async (req, res) => {
             children: fresh.children,
             infants: infantsCount,
           },
-          total: Number(fresh.gross_price ?? totalAmount),
+          total: Number(fresh.gross_price ?? totalBeforeDiscount),
           currency: fresh.currency || currencyCode,
           guestName: fresh.guest_name,
           guestEmail: fresh.guest_email,
@@ -1648,12 +1724,17 @@ export const createHomeBooking = async (req, res) => {
       payment: {
         required: true,
         provider: "stripe",
-        amount: Number(fresh.gross_price ?? totalAmount),
+        amount: Number(fresh.gross_price ?? totalBeforeDiscount),
         currency: fresh.currency || currencyCode,
       },
     })
   } catch (err) {
     console.error("createHomeBooking:", err)
+    const status = err?.status || err?.statusCode
+    if (status) return res.status(status).json({ error: err.message || "Request failed" })
+    if (err?.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({ error: "Selected dates already reserved" })
+    }
     return res.status(500).json({ error: "Server error" })
   }
 }
@@ -2313,7 +2394,7 @@ export const downloadBookingCertificate = async (req, res) => {
 
 /* -----------------------------------------------------------
    PUT  /api/bookings/:id/confirm
-   Marca la reserva como CONFIRMED/PAID (uso temporal desde app).
+   Marca la reserva como CONFIRMED si el pago ya esta confirmado.
   Autorización: owner de la booking.
 ----------------------------------------------------------- */
 export const confirmBooking = async (req, res) => {
@@ -2332,182 +2413,28 @@ export const confirmBooking = async (req, res) => {
     const statusLc = String(booking.status || "").toUpperCase();
     if (statusLc === "CANCELLED") return res.status(400).json({ error: "Booking is cancelled" });
 
-    console.log("[CONFIRM BOOKING] loaded booking", {
-      id: booking.id,
-      status: booking.status,
-      payment_status: booking.payment_status,
-      influencer_user_id: booking.influencer_user_id,
-      gross_price: booking.gross_price,
-      currency: booking.currency,
-    });
+    const paymentStatusLc = String(booking.payment_status || "").toUpperCase();
+    if (paymentStatusLc !== "PAID") {
+      return res.status(409).json({ error: "Payment not confirmed" });
+    }
 
     const alreadyFinal = statusLc === "CONFIRMED" || statusLc === "COMPLETED";
     if (!alreadyFinal) {
       await booking.update({
         status: "CONFIRMED",
-        payment_status: "PAID",
         booked_at: booking.booked_at || new Date(),
       });
-      console.log("[CONFIRM BOOKING] updated to CONFIRMED/PAID", { id: booking.id });
+      console.log("[CONFIRM BOOKING] updated to CONFIRMED", { id: booking.id });
     }
 
-    const ensureInfluencerCommission = async (influencerUserId) => {
-      const influencerId = Number(influencerUserId) || null;
-      if (!influencerId) return;
-      try {
-        const existing = await models.InfluencerCommission.findOne({ where: { stay_id: booking.id } });
-        if (existing) return;
-
-        const rateEnv = Number(process.env.INFLUENCER_COMMISSION_PCT);
-        const ratePct = Number.isFinite(rateEnv) && rateEnv > 0 ? rateEnv : 15;
-        const capUsdEnv = Number(process.env.INFLUENCER_COMMISSION_CAP_USD);
-        const capUsd = Number.isFinite(capUsdEnv) && capUsdEnv > 0 ? capUsdEnv : 5;
-        let capAmt = capUsd;
-        try {
-          const ratesStr = process.env.FX_USD_RATES || "{}";
-          const rates = JSON.parse(ratesStr);
-          const r = Number(rates[(booking.currency || "USD").toUpperCase()]);
-          if (Number.isFinite(r) && r > 0) capAmt = capUsd * r;
-        } catch { }
-        const holdDaysEnv = Number(process.env.INFLUENCER_HOLD_DAYS);
-        const holdDays = Number.isFinite(holdDaysEnv) && holdDaysEnv >= 0 ? holdDaysEnv : 3;
-
-        const gross = Number(booking.gross_price || 0);
-        const net = booking.net_cost != null ? Number(booking.net_cost) : null;
-        const markup = net != null ? Math.max(0, gross - Number(net)) : null;
-        const base = markup != null ? markup : gross;
-        const baseType = markup != null ? "markup" : "gross";
-
-        const rawCommission = base * (ratePct / 100);
-        const commissionAmount =
-          Math.round((Math.min(rawCommission, capAmt) + Number.EPSILON) * 100) / 100;
-        const currency = booking.currency || "USD";
-
-        let holdUntil = null;
-        try {
-          const co = booking.check_out ? new Date(booking.check_out) : null;
-          if (co && !isNaN(co)) {
-            co.setDate(co.getDate() + holdDays);
-            holdUntil = co;
-          }
-        } catch { }
-        const useHold = String(process.env.INFLUENCER_USE_HOLD || "").toLowerCase() === "true";
-        await models.InfluencerCommission.create({
-          influencer_user_id: influencerId,
-          stay_id: booking.id,
-          discount_code_id: null,
-          commission_base: baseType,
-          commission_rate_pct: ratePct,
-          commission_amount: commissionAmount,
-          commission_currency: currency,
-          status: useHold && holdUntil ? "hold" : "eligible",
-          hold_until: holdUntil,
-        });
-        console.log("[CONFIRM BOOKING] influencer_commission created", {
-          influencer_user_id: influencerId,
-          stay_id: booking.id,
-          commission_amount: commissionAmount,
-          commission_currency: currency,
-          status: useHold && holdUntil ? "hold" : "eligible",
-          commission_base: baseType,
-          commission_rate_pct: ratePct,
-        });
-      } catch (e) {
-        console.warn("(INF) Could not create InfluencerCommission:", e?.message || e);
-      }
-    };
-
-    if (influencerId) {
-      console.log("[CONFIRM BOOKING] processing influencer", { influencer_user_id: influencerId });
-      await ensureInfluencerCommission(influencerId);
-    }
-
-    // FIRE AND FORGET: Generate Trip Intelligence (Trip Hub) if confirmed
-    // This covers Hotel bookings which are often created then confirmed
     try {
-      const stayName = booking.hotel_name || booking.home?.title || "Your Stay";
-      const locationText = booking.location || booking.hotel?.city || booking.home?.address?.city || "Destination";
-      const city = booking.hotel?.city || booking.home?.address?.city || null;
-      const country = booking.hotel?.country || booking.home?.address?.country || null;
-      const amenities = booking.hotel?.amenities || booking.home?.amenities || [];
-      const houseRules = booking.home?.house_rules || "";
-      const inventoryType = booking.inventory_type || (booking.hotel_name ? "HOTEL" : "HOME");
-
-      generateAndSaveTripIntelligence({
-        stayId: booking.id,
-        tripContext: {
-          stayName,
-          locationText,
-          location: { city, country },
-          amenities,
-          houseRules,
-          inventoryType
-        },
-        lang: "en"
-      }).catch(err => console.error("[CONFIRM BOOKING] Intelligence generation failed", err));
-    } catch (e) {
-      console.warn("[CONFIRM BOOKING] Error prepping intelligence context", e);
+      await finalizeBookingAfterPayment({ bookingId: booking.id });
+    } catch (finalizeErr) {
+      console.warn("[CONFIRM BOOKING] finalize failed:", finalizeErr?.message || finalizeErr);
     }
 
-    let redemption = null;
-    await sequelize.transaction(async (tx) => {
-      redemption = await finalizeReferralRedemption(booking.id, tx);
-      if (influencerId) {
-        await recordInfluencerEvent({
-          eventType: "booking",
-          influencerUserId: influencerId,
-          stayId: booking.id,
-          currency: booking.currency || "USD",
-          transaction: tx,
-        });
-      }
-    });
-
-    if (redemption) {
-      const meta = booking.meta || {};
-      const snapshot = booking.pricing_snapshot || {};
-      if (snapshot.referralCoupon) snapshot.referralCoupon.status = redemption.status;
-      if (meta.referralCoupon) meta.referralCoupon.status = redemption.status;
-      await booking.update({ meta, pricing_snapshot: snapshot });
-    }
-
-    const fresh =
-      alreadyFinal && typeof booking.toJSON === "function"
-        ? booking
-        : await models.Booking.findByPk(id, { include: STAY_BASE_INCLUDE });
-
-    // TRIGGER PROACTIVE AI INTELLIGENCE (Background)
-    const triggerProactiveAi = async () => {
-      try {
-        const inventoryType = fresh.inventoryType || (fresh.home ? "HOME" : "HOTEL");
-        const home = fresh.homeStay?.home || fresh.home || {};
-        const hotel = fresh.hotelStay?.hotel || fresh.hotel || {};
-
-        const tripContext = {
-          inventoryType,
-          location: {
-            city: home?.address?.city || hotel?.city || fresh?.meta?.snapshot?.city || null,
-            country: home?.address?.country || hotel?.country || fresh?.meta?.snapshot?.country || null
-          },
-          stayName: home?.title || hotel?.name || fresh?.meta?.snapshot?.hotelName || "Your stay",
-          amenities: home?.amenities || hotel?.amenities || [],
-          houseRules: home?.house_rules || null,
-          dates: {
-            checkIn: fresh.checkIn,
-            checkOut: fresh.checkOut
-          }
-        };
-        await generateAndSaveTripIntelligence({
-          stayId: fresh.id,
-          tripContext,
-          lang: fresh.meta?.language || "en"
-        });
-        console.log(`[CONFIRM BOOKING] Proactive AI triggered for stay ${fresh.id} (Deep Intelligence enabled)`);
-      } catch (e) {
-        console.warn("[CONFIRM BOOKING] Proactive AI trigger failed:", e.message);
-      }
-    };
-    triggerProactiveAi();
+    const fresh = await models.Booking.findByPk(id, { include: STAY_BASE_INCLUDE });
+    if (!fresh) return res.status(404).json({ error: "Booking not found" });
 
     const mapped = mapStay(fresh.toJSON(), fresh.source || "insider");
     const responsePayload = {
@@ -2520,104 +2447,6 @@ export const confirmBooking = async (req, res) => {
         fresh.meta?.referral_coupon ??
         null,
     };
-
-    if (!alreadyFinal) {
-      try {
-        const guestUserId = userId;
-        const hostUserId =
-          responsePayload?.home?.hostId ??
-          fresh?.homeStay?.host_id ??
-          fresh?.StayHome?.host_id ??
-          fresh?.meta?.home?.hostId ??
-          null;
-        if (guestUserId && hostUserId) {
-          const listingName =
-            responsePayload?.home?.title ??
-            responsePayload?.hotel_name ??
-            null;
-          const listingLabel = listingName || "your listing";
-          const checkInValue = fresh.check_in ?? responsePayload.checkIn ?? null;
-          const checkOutValue = fresh.check_out ?? responsePayload.checkOut ?? null;
-          const guestNameRaw =
-            fresh.guest_name ??
-            fresh.guest_snapshot?.name ??
-            fresh.guestSnapshot?.name ??
-            req.user?.name ??
-            "Guest";
-          const guestName = String(guestNameRaw).trim() || "Guest";
-          const adultsCount = Number(fresh.adults ?? 0) || 0;
-          const childrenCount = Number(fresh.children ?? 0) || 0;
-          const infantsCount = Number(fresh.infants ?? 0) || 0;
-          const guestParts = [];
-          if (adultsCount) guestParts.push(`${adultsCount} ${adultsCount === 1 ? "adult" : "adults"}`);
-          if (childrenCount) guestParts.push(`${childrenCount} ${childrenCount === 1 ? "child" : "children"}`);
-          if (infantsCount) guestParts.push(`${infantsCount} ${infantsCount === 1 ? "infant" : "infants"}`);
-          const guestLine = guestParts.length ? guestParts.join(", ") : null;
-
-          const detailLines = [
-            listingLabel ? `Listing: ${listingLabel}` : null,
-            checkInValue ? `Check-in: ${checkInValue}` : null,
-            checkOutValue ? `Check-out: ${checkOutValue}` : null,
-            guestLine ? `Guests: ${guestLine}` : null,
-            fresh.id ? `Booking ID: ${fresh.id}` : null,
-          ].filter(Boolean);
-
-          const baseMetadata = {
-            notificationTitle: "Booking confirmation",
-            notificationSender: "BookingGPT",
-            notificationType: "BOOKING_CONFIRMATION",
-            senderName: "BookingGPT",
-          };
-
-          const thread = await createThread({
-            guestUserId,
-            hostUserId,
-            homeId: responsePayload?.home?.id ?? null,
-            reserveId: fresh.id,
-            checkIn: checkInValue,
-            checkOut: checkOutValue,
-            homeSnapshotName: listingName,
-            homeSnapshotImage: responsePayload?.image ?? null,
-          });
-
-          const guestMessage = [
-            "Your reservation is confirmed.",
-            ...detailLines,
-            "You can find all the details in your Trips tab.",
-          ].join("\n");
-
-          const hostMessage = [
-            `${guestName} has booked your listing${listingName ? ` ${listingName}` : ""}.`,
-            ...detailLines,
-            "Review the reservation details in your Host dashboard.",
-          ].join("\n");
-
-          await Promise.allSettled([
-            postMessage({
-              chatId: thread.id,
-              senderId: null,
-              senderRole: "SYSTEM",
-              type: "SYSTEM",
-              body: guestMessage,
-              metadata: { ...baseMetadata, audience: "GUEST" },
-            }),
-            postMessage({
-              chatId: thread.id,
-              senderId: null,
-              senderRole: "SYSTEM",
-              type: "SYSTEM",
-              body: hostMessage,
-              metadata: { ...baseMetadata, audience: "HOST" },
-            }),
-          ]);
-        }
-      } catch (notifyErr) {
-        console.warn(
-          "[CONFIRM BOOKING] notification dispatch failed:",
-          notifyErr?.message || notifyErr
-        );
-      }
-    }
 
     return res.json(responsePayload);
   } catch (err) {

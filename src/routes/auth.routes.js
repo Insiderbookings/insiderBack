@@ -1,39 +1,30 @@
-/* ────────────────────────────────────────────────────────────────
-   src/routes/auth.routes.js — COMPLETO, SIN LÍNEAS OMITIDAS
-   ──────────────────────────────────────────────────────────────── */
 import { Router } from "express";
-import { body }   from "express-validator";
+import { body } from "express-validator";
 
-/* ---------- controladores ---------- */
 import {
-  /* Staff  */
   registerStaff,
   loginStaff,
-
-  /* Users  */
   registerUser,
   loginUser,
   requestPasswordReset,
   verifyEmail,
-
-  /* Magic-link  */
   setPasswordWithToken,
   validateToken,
   hireStaff,
   listByHotel,
-
-  /* Google (GIS popup + code exchange) */
   googleExchange,
   appleExchange,
+  refreshSession,
+  logoutSession,
+  logoutAllSessions,
 } from "../controllers/auth.controller.js";
 
 import { autoSignupOrLogin } from "../controllers/auth.auto.controller.js";
+import { authenticate } from "../middleware/auth.js";
 
 const router = Router();
 
-/* ════════════════════════════════════════════════════════════════
-   STAFF AUTH
-   ════════════════════════════════════════════════════════════════ */
+// Staff auth
 router.post(
   "/staff/register",
   [
@@ -44,12 +35,9 @@ router.post(
   ],
   registerStaff,
 );
-
 router.post("/staff/login", loginStaff);
 
-/* ════════════════════════════════════════════════════════════════
-   USER AUTH (local)
-   ════════════════════════════════════════════════════════════════ */
+// User auth (local)
 router.post(
   "/user/register",
   [
@@ -62,33 +50,18 @@ router.post(
   ],
   registerUser,
 );
-
 router.post("/user/login", loginUser);
-
 router.post(
   "/user/forgot-password",
-  [ body("email").isEmail() ],
+  [body("email").isEmail()],
   requestPasswordReset,
 );
 
-/* ════════════════════════════════════════════════════════════════
-   SOCIAL LOGIN — Google (GIS popup + Authorization Code con PKCE)
-   ════════════════════════════════════════════════════════════════ */
-router.post(
-  "/google/exchange",
-  [ body("code").notEmpty() ],
-  googleExchange,
-);
+// Social login
+router.post("/google/exchange", [body("code").notEmpty()], googleExchange);
+router.post("/apple/exchange", [body("identityToken").notEmpty()], appleExchange);
 
-router.post(
-  "/apple/exchange",
-  [ body("identityToken").notEmpty() ],
-  appleExchange,
-);
-
-/* ════════════════════════════════════════════════════════════════
-   AUTO-SIGNUP (outside bookings)  →  crea/relaciona usuario
-   ════════════════════════════════════════════════════════════════ */
+// Auto signup for outside bookings
 router.post(
   "/auto-signup",
   [
@@ -101,31 +74,23 @@ router.post(
   autoSignupOrLogin,
 );
 
-/* ════════════════════════════════════════════════════════════════
-   MAGIC-LINK — establecer contraseña con token
-   ════════════════════════════════════════════════════════════════ */
+// Set/reset password
 router.post(
   "/set-password",
-  [
-    body("token").notEmpty(),
-    body("password").isLength({ min: 6 }),
-  ],
+  [body("token").notEmpty(), body("password").isLength({ min: 6 })],
   setPasswordWithToken,
 );
 
-/* ════════════════════════════════════════════════════════════════
-   VALIDAR TOKEN (solo lectura) — usado antes de mostrar el form
-   ════════════════════════════════════════════════════════════════ */
-router.get("/validate-token/:token", validateToken);
+// Session refresh + logout
+router.post("/refresh", refreshSession);
+router.post("/logout", logoutSession);
+router.post("/logout-all", authenticate, logoutAllSessions);
 
-/* ════════════════════════════════════════════════════════════════
-   VERIFY EMAIL
-   ════════════════════════════════════════════════════════════════ */
+// Token validation and email verify
+router.get("/validate-token/:token", validateToken);
 router.get("/verify-email/:token", verifyEmail);
 
-/* ════════════════════════════════════════════════════════════════
-   STAFF: crear/vincular y listar
-   ════════════════════════════════════════════════════════════════ */
+// Staff helpers
 router.post(
   "/hire",
   [
@@ -137,11 +102,6 @@ router.post(
   ],
   hireStaff,
 );
+router.get("/by-hotel/:hotelId", listByHotel);
 
-router.get(
-  "/by-hotel/:hotelId",
-  listByHotel,
-);
-
-/* ---------------------------------------------------------------- */
 export default router;

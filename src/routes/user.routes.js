@@ -25,7 +25,7 @@ import {
   getInfluencerPayouts,
   runInfluencerPayoutBatch,
 } from "../controllers/influencerPayout.controller.js"
-import { authenticate, authorizeRoles } from "../middleware/auth.js"
+import { authenticate, authorizeRoles, requireVerifiedEmail } from "../middleware/auth.js"
 import {
   createUserRoleRequest,
   getMyLatestRequest,
@@ -44,10 +44,10 @@ router.get("/me/influencer/stats", authenticate, authorizeRoles(2), getInfluence
 router.get("/me/influencer/goals", authenticate, authorizeRoles(2), getInfluencerGoals)
 router.get("/me/influencer/commissions", authenticate, authorizeRoles(2), getInfluencerCommissions)
 router.get("/me/influencer/payouts", authenticate, authorizeRoles(2), getInfluencerPayouts)
-router.get("/me/influencer/payout-account", authenticate, authorizeRoles(2), getPayoutAccount)
-router.post("/me/influencer/payout-account/stripe/link", authenticate, authorizeRoles(2), createStripeOnboardingLink)
-router.post("/me/influencer/payout-account/stripe/update-link", authenticate, authorizeRoles(2), createStripeAccountUpdateLink)
-router.post("/me/influencer/payout-account/stripe/refresh", authenticate, authorizeRoles(2), refreshStripeAccountStatus)
+router.get("/me/influencer/payout-account", authenticate, authorizeRoles(2), requireVerifiedEmail, getPayoutAccount)
+router.post("/me/influencer/payout-account/stripe/link", authenticate, authorizeRoles(2), requireVerifiedEmail, createStripeOnboardingLink)
+router.post("/me/influencer/payout-account/stripe/update-link", authenticate, authorizeRoles(2), requireVerifiedEmail, createStripeAccountUpdateLink)
+router.post("/me/influencer/payout-account/stripe/refresh", authenticate, authorizeRoles(2), requireVerifiedEmail, refreshStripeAccountStatus)
 router.get("/", authenticate, authorizeRoles(2), getInfluencerReferrals)
 router.post("/admin/influencer/payouts/create", authenticate, authorizeRoles(100), adminCreateInfluencerPayoutBatch)
 router.post("/admin/influencer/payouts/batch", authenticate, authorizeRoles(100), runInfluencerPayoutBatch)
@@ -93,9 +93,9 @@ router.post("/contracts/:id/accept", acceptContract)
 
 // User profile
 router.get("/me", getCurrentUser)
-router.put("/me", updateUserProfile)
-router.put("/me/password", changePassword)
+router.put("/me", requireVerifiedEmail, updateUserProfile)
+router.put("/me/password", requireVerifiedEmail, changePassword)
 router.delete("/me", deleteAccount)
-router.post("/me/become-host", becomeHost)
+router.post("/me/become-host", requireVerifiedEmail, becomeHost)
 
 export default router

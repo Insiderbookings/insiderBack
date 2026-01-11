@@ -189,6 +189,13 @@ export default (sequelize) => {
         onDelete: "CASCADE",
       });
     }
+    if (models.RefreshToken) {
+      User.hasMany(models.RefreshToken, {
+        foreignKey: "user_id",
+        as: "refreshTokens",
+        onDelete: "CASCADE",
+      });
+    }
   };
 
   const ensureHostProfile = async (user, transaction) => {

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate, authorizeRoles } from "../middleware/auth.js";
+import { authenticate, authorizeRoles, requireVerifiedEmail } from "../middleware/auth.js";
 import {
   getHostDashboard,
   getHostBookingDetail,
@@ -34,13 +34,13 @@ router.patch("/calendar/:homeId/day", upsertHostCalendarDay);
 router.get("/listings/:homeId/arrival-guide", getArrivalGuide);
 router.put("/listings/:homeId/arrival-guide", updateArrivalGuide);
 router.get("/bookings", getHostBookingsList);
-router.put("/payout-methods", updatePayoutMethod);
-router.get("/payout-account", getPayoutAccount);
-router.put("/payout-account", upsertPayoutAccount);
-router.get("/payouts", listHostPayouts);
-router.post("/payout-account/stripe/link", createStripeOnboardingLink);
-router.post("/payout-account/stripe/update-link", createStripeAccountUpdateLink);
-router.post("/payout-account/stripe/refresh", refreshStripeAccountStatus);
-router.post("/payout-account/payoneer/link", createPayoneerOnboardingLink);
+router.put("/payout-methods", requireVerifiedEmail, updatePayoutMethod);
+router.get("/payout-account", requireVerifiedEmail, getPayoutAccount);
+router.put("/payout-account", requireVerifiedEmail, upsertPayoutAccount);
+router.get("/payouts", requireVerifiedEmail, listHostPayouts);
+router.post("/payout-account/stripe/link", requireVerifiedEmail, createStripeOnboardingLink);
+router.post("/payout-account/stripe/update-link", requireVerifiedEmail, createStripeAccountUpdateLink);
+router.post("/payout-account/stripe/refresh", requireVerifiedEmail, refreshStripeAccountStatus);
+router.post("/payout-account/payoneer/link", requireVerifiedEmail, createPayoneerOnboardingLink);
 
 export default router;

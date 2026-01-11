@@ -22,14 +22,14 @@ import {
   linkGuestBookingsToUser,
   getHomeBookingsForUser,
 } from "../controllers/booking.controller.js"
-import { authenticate, authorizeStaff, authenticateGuest } from "../middleware/auth.js"
+import { authenticate, authorizeStaff, authenticateGuest, requireVerifiedEmail } from "../middleware/auth.js"
 
 const router = Router()
 
 /* ---- Create ---- */
-router.post("/", authenticate, createBooking)
+router.post("/", authenticate, requireVerifiedEmail, createBooking)
 router.post("/homes/quote", authenticate, quoteHomeBooking)
-router.post("/homes", authenticate, createHomeBooking)
+router.post("/homes", authenticate, requireVerifiedEmail, createHomeBooking)
 router.get("/homes/me", authenticate, getHomeBookingsForUser)
 
 /* ---- Public single-booking lookup (email + ref) ---- */
@@ -54,7 +54,7 @@ router.get("/staff/me", authenticate, authorizeStaff, getBookingsForStaff)
 /* ---- Single booking / cancel ---- */
 router.get("/:id",              getBookingById)
 router.put("/:id/cancel",       authenticate, cancelBooking)
-router.put("/:id/confirm",      authenticate, confirmBooking)
+router.put("/:id/confirm",      authenticate, requireVerifiedEmail, confirmBooking)
 
 /* ---- Outside-booking helpers ---- */
 router.get("/confirmation/:confirmation", getOutsideBookingByConfirmation)

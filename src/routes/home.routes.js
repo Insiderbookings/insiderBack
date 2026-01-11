@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, requireVerifiedEmail } from "../middleware/auth.js";
 import {
   createHomeDraft,
   updateHomeBasics,
@@ -58,6 +58,6 @@ router.post(
   respondUploadedMedia
 );
 router.put("/:id/media", loadHostHome, attachHomeMedia);
-router.post("/:id/publish", publishHome);
+router.post("/:id/publish", requireVerifiedEmail, publishHome);
 
 export default router;

@@ -1,6 +1,7 @@
 // src/controllers/auth.controller.js
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import crypto from "node:crypto";
 import { validationResult } from "express-validator";
 import models from "../models/index.js";
 import dotenv from "dotenv";
@@ -17,6 +18,18 @@ import { emitAdminActivity } from "../websocket/emitter.js";
 
 dotenv.config();
 
+const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+const ACCESS_TOKEN_TTL = process.env.JWT_ACCESS_TTL || "15m";
+const STAFF_TOKEN_TTL = process.env.JWT_STAFF_TTL || "7d";
+const REFRESH_TOKEN_DAYS_RAW = Number(process.env.JWT_REFRESH_TTL_DAYS || 30);
+const REFRESH_TOKEN_DAYS = Number.isFinite(REFRESH_TOKEN_DAYS_RAW) ? REFRESH_TOKEN_DAYS_RAW : 30;
+const REFRESH_TOKEN_TTL = `${REFRESH_TOKEN_DAYS}d`;
+const REFRESH_TOKEN_TTL_SECONDS = REFRESH_TOKEN_DAYS * 24 * 60 * 60;
+const REFRESH_COOKIE_NAME = process.env.REFRESH_COOKIE_NAME || "insider_rt";
+const REFRESH_COOKIE_DOMAIN = process.env.REFRESH_COOKIE_DOMAIN || ".insiderbookings.com";
+const IS_PROD = process.env.NODE_ENV === "production";
+
 const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 const APPLE_ISSUER = "https://appleid.apple.com";
@@ -31,6 +44,7 @@ const USER_SAFE_ATTRIBUTES = [
   "role",
   "avatar_url",
   "is_active",
+  "email_verified",
   "country_code",
   "residence_country_code",
   "referred_by_influencer_id",
@@ -59,6 +73,7 @@ const presentUser = (user) => {
     role: plain.role ?? 0,
     avatar_url: plain.avatar_url ?? null,
     is_active: plain.is_active ?? true,
+    emailVerified: plain.email_verified ?? false,
     countryCode: plain.country_code ?? null,
     countryOfResidenceCode: plain.residence_country_code ?? null,
     referredByInfluencerId: plain.referred_by_influencer_id ?? null,
@@ -90,7 +105,7 @@ const resolveAppleName = (fullName, fallbackEmail) => {
   return "Apple User";
 };
 
-const loadSafeUser = async (id) => {
+export const loadSafeUser = async (id) => {
   if (!id) return null;
   const user = await models.User.findByPk(id, {
     attributes: USER_SAFE_ATTRIBUTES,
@@ -107,8 +122,139 @@ const ensureGuestProfile = async (userId) => {
   return profile;
 };
 
-export const signToken = (payload) =>
-  jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
+const normalizeDeviceId = (value) => {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, 120);
+};
+
+const getClientType = (req) =>
+  String(req?.headers?.["x-client-type"] || req?.headers?.["x-client-platform"] || "")
+    .trim()
+    .toLowerCase();
+
+export const shouldExposeRefreshToken = (req) => {
+  const clientType = getClientType(req);
+  return clientType === "mobile" || clientType === "app" || clientType === "react-native";
+};
+
+const readCookie = (req, name) => {
+  const raw = req?.headers?.cookie;
+  if (!raw) return null;
+  const parts = String(raw)
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  for (const part of parts) {
+    if (!part.startsWith(`${name}=`)) continue;
+    return decodeURIComponent(part.slice(name.length + 1));
+  }
+  return null;
+};
+
+const getRefreshTokenFromRequest = (req) => {
+  const headerToken = req?.headers?.["x-refresh-token"];
+  if (headerToken) return String(headerToken).trim();
+  const bodyToken = req?.body?.refreshToken;
+  if (bodyToken) return String(bodyToken).trim();
+  return readCookie(req, REFRESH_COOKIE_NAME);
+};
+
+const setRefreshCookie = (res, token) => {
+  if (!res || !token) return;
+  const parts = [
+    `${REFRESH_COOKIE_NAME}=${encodeURIComponent(token)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${REFRESH_TOKEN_TTL_SECONDS}`,
+  ];
+  if (IS_PROD) {
+    parts.push("Secure");
+    if (REFRESH_COOKIE_DOMAIN) parts.push(`Domain=${REFRESH_COOKIE_DOMAIN}`);
+  }
+  res.append("Set-Cookie", parts.join("; "));
+};
+
+const clearRefreshCookie = (res) => {
+  if (!res) return;
+  const parts = [
+    `${REFRESH_COOKIE_NAME}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+  ];
+  if (IS_PROD) {
+    parts.push("Secure");
+    if (REFRESH_COOKIE_DOMAIN) parts.push(`Domain=${REFRESH_COOKIE_DOMAIN}`);
+  }
+  res.append("Set-Cookie", parts.join("; "));
+};
+
+const buildUserAccessPayload = (user, referral = {}) => ({
+  id: user.id,
+  type: "user",
+  role: user.role,
+  countryCode: user.country_code ?? null,
+  countryOfResidenceCode: user.residence_country_code ?? null,
+  referredByInfluencerId: referral.influencerId ?? user.referred_by_influencer_id ?? null,
+  referredByCode: referral.code ?? user.referred_by_code ?? null,
+  referredAt: referral.at ?? user.referred_at ?? null,
+});
+
+export const signUserAccessToken = (payload) =>
+  jwt.sign(payload, ACCESS_SECRET, { expiresIn: ACCESS_TOKEN_TTL });
+
+export const signStaffToken = (payload) =>
+  jwt.sign(payload, ACCESS_SECRET, { expiresIn: STAFF_TOKEN_TTL });
+
+const signRefreshToken = (payload) =>
+  jwt.sign(payload, REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_TTL });
+
+export const issueUserSession = async ({ user, req, res, referral, deviceId }) => {
+  const resolvedDeviceId = normalizeDeviceId(deviceId || req?.headers?.["x-device-id"]) || crypto.randomUUID();
+  const tokenId = crypto.randomUUID();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + REFRESH_TOKEN_TTL_SECONDS * 1000);
+
+  const refreshToken = signRefreshToken({
+    jti: tokenId,
+    type: "refresh",
+    userId: user.id,
+    deviceId: resolvedDeviceId,
+  });
+
+  await models.RefreshToken.create({
+    user_id: user.id,
+    token_id: tokenId,
+    device_id: resolvedDeviceId,
+    expires_at: expiresAt,
+    last_used_at: now,
+  });
+
+  setRefreshCookie(res, refreshToken);
+
+  const accessToken = signUserAccessToken(buildUserAccessPayload(user, referral));
+
+  return {
+    accessToken,
+    refreshToken,
+    deviceId: resolvedDeviceId,
+  };
+};
+
+const revokeRefreshTokens = async ({ userId, deviceId }) => {
+  if (!userId) return 0;
+  const where = { user_id: userId, revoked_at: null };
+  if (deviceId) where.device_id = deviceId;
+  const [count] = await models.RefreshToken.update(
+    { revoked_at: new Date() },
+    { where },
+  );
+  return count;
+};
 
 /* ────────────────────────────────────────────────────────────────
    STAFF: REGISTER
@@ -216,7 +362,7 @@ export const registerStaff = async (req, res) => {
       });
 
       /* 4.3 Token + respuesta */
-      const token = signToken({ id: staff.id, type: "staff", roleName: role.name });
+      const token = signStaffToken({ id: staff.id, type: "staff", roleName: role.name });
       res.status(201).json({ token, codesPerHotel: codeMap, staff, hotels });
     });
   } catch (err) {
@@ -268,7 +414,7 @@ export const loginStaff = async (req, res) => {
     });
 
     /* 4. JWT */
-    const token = signToken({
+    const token = signStaffToken({
       id: staff.id,
       type: "staff",
       roleName: staff.role.name,
@@ -367,15 +513,15 @@ export const registerUser = async (req, res) => {
     // Emit a token + user to satisfy FE expectations; still send verify email above
     await ensureGuestProfile(user.id)
     await user.update({ last_login_at: new Date() })
-    const token = signToken({
-      id: user.id,
-      type: "user",
-      role: user.role,
-      countryCode: user.country_code ?? null,
-      countryOfResidenceCode: user.residence_country_code ?? null,
-      referredByInfluencerId: referral.influencerId ?? null,
-      referredByCode: referral.code ?? null,
-      referredAt: referral.at ? referral.at.toISOString?.() ?? referral.at : null,
+    const { accessToken, refreshToken } = await issueUserSession({
+      user,
+      req,
+      res,
+      referral: {
+        influencerId: referral.influencerId ?? null,
+        code: referral.code ?? null,
+        at: referral.at ? referral.at.toISOString?.() ?? referral.at : null,
+      },
     })
     const safeUser = await loadSafeUser(user.id)
 
@@ -389,7 +535,9 @@ export const registerUser = async (req, res) => {
       timestamp: new Date()
     });
 
-    return res.status(201).json({ token, user: safeUser })
+    const response = { token: accessToken, user: safeUser }
+    if (shouldExposeRefreshToken(req)) response.refreshToken = refreshToken
+    return res.status(201).json(response)
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Server error" });
@@ -434,24 +582,17 @@ export const loginUser = async (req, res) => {
     /* 3 ▸ Emitir JWT */
     await ensureGuestProfile(user.id);
     await user.update({ last_login_at: new Date() });
-    const token = signToken({
-      id: user.id,
-      type: "user",
-      role: user.role,
-      countryCode: user.country_code ?? null,
-      countryOfResidenceCode: user.residence_country_code ?? null,
-      referredByInfluencerId: user.referred_by_influencer_id ?? null,
-      referredByCode: user.referred_by_code ?? null,
-      referredAt: user.referred_at ?? null,
-    });
+    const { accessToken, refreshToken } = await issueUserSession({ user, req, res });
     if (process.env.NODE_ENV != "production") {
-      console.log("[loginUser] issued token:", token);
+      console.log("[loginUser] issued token:", accessToken);
     }
     const safeUser = await loadSafeUser(user.id);
     if (process.env.NODE_ENV != "production") {
       console.log("[loginUser] response user:", JSON.stringify(safeUser, null, 2));
     }
-    return res.json({ token, user: safeUser });
+    const response = { token: accessToken, user: safeUser };
+    if (shouldExposeRefreshToken(req)) response.refreshToken = refreshToken;
+    return res.json(response);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Server error" });
@@ -544,7 +685,7 @@ export const verifyEmail = async (req, res) => {
 };
 
 /* ────────────────────────────────────────────────────────────────
-   USER: Set password con token (Magic Link)
+   USER: Set password con token (set/reset password)
    ──────────────────────────────────────────────────────────────── */
 export const setPasswordWithToken = async (req, res) => {
   /* 0. validación body --------------------------- */
@@ -571,29 +712,12 @@ export const setPasswordWithToken = async (req, res) => {
     await user.update({ password_hash: hash });
 
     /* 4. emitir JWT de sesión -------------------- */
-    const sessionToken = signToken({
-      id: user.id,
-      type: "user",
-      countryCode: user.country_code ?? null,
-      countryOfResidenceCode: user.residence_country_code ?? null,
-      referredByInfluencerId: user.referred_by_influencer_id ?? null,
-      referredByCode: user.referred_by_code ?? null,
-      referredAt: user.referred_at ?? null,
-    });
+    const { accessToken, refreshToken } = await issueUserSession({ user, req, res });
+    const safeUser = await loadSafeUser(user.id);
 
-    /* 5. respuesta                                 */
-    return res.json({
-      token: sessionToken,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        countryCode: user.country_code ?? null,
-        countryOfResidenceCode: user.residence_country_code ?? null,
-      },
-    });
+    const response = { token: accessToken, user: safeUser };
+    if (shouldExposeRefreshToken(req)) response.refreshToken = refreshToken;
+    return res.json(response);
   } catch (err) {
     console.error("setPassword error:", err);
     return res.status(400).json({ error: "Token expired or invalid" });
@@ -797,17 +921,7 @@ export const googleExchange = async (req, res) => {
     await user.update({ last_login_at: new Date() })
 
     // 4) Emitir JWT (mismo formato que login local)
-    const token = signToken({
-      id: user.id,
-      type: "user",
-      role: user.role,
-      countryCode: user.country_code ?? null,
-      countryOfResidenceCode: user.residence_country_code ?? null,
-      referredByInfluencerId: user.referred_by_influencer_id ?? null,
-      referredByCode: user.referred_by_code ?? null,
-      referredAt: user.referred_at ?? null,
-    });
-
+    const { accessToken, refreshToken } = await issueUserSession({ user, req, res })
     const safeUser = await loadSafeUser(user.id)
 
     if (isNew) {
@@ -821,7 +935,9 @@ export const googleExchange = async (req, res) => {
       });
     }
 
-    return res.json({ token, user: safeUser });
+    const response = { token: accessToken, user: safeUser }
+    if (shouldExposeRefreshToken(req)) response.refreshToken = refreshToken
+    return res.json(response);
   } catch (err) {
     console.error("googleExchange error:", err);
     return res.status(500).json({ error: "Internal error" });
@@ -931,17 +1047,7 @@ export const appleExchange = async (req, res) => {
     await ensureGuestProfile(user.id);
     await user.update({ last_login_at: new Date() });
 
-    const token = signToken({
-      id: user.id,
-      type: "user",
-      role: user.role,
-      countryCode: user.country_code ?? null,
-      countryOfResidenceCode: user.residence_country_code ?? null,
-      referredByInfluencerId: user.referred_by_influencer_id ?? null,
-      referredByCode: user.referred_by_code ?? null,
-      referredAt: user.referred_at ?? null,
-    });
-
+    const { accessToken, refreshToken } = await issueUserSession({ user, req, res });
     const safeUser = await loadSafeUser(user.id);
 
     if (isNew) {
@@ -955,9 +1061,141 @@ export const appleExchange = async (req, res) => {
       });
     }
 
-    return res.json({ token, user: safeUser });
+    const response = { token: accessToken, user: safeUser };
+    if (shouldExposeRefreshToken(req)) response.refreshToken = refreshToken;
+    return res.json(response);
   } catch (err) {
     console.error("appleExchange CRITICAL error:", err);
     return res.status(500).json({ error: "Internal error", details: err.message });
   }
+};
+
+export const refreshSession = async (req, res) => {
+  const refreshToken = getRefreshTokenFromRequest(req);
+  if (!refreshToken) return res.status(401).json({ error: "Missing refresh token" });
+
+  let payload;
+  try {
+    payload = jwt.verify(refreshToken, REFRESH_SECRET);
+  } catch (err) {
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: "Invalid refresh token" });
+  }
+
+  if (payload?.type !== "refresh") {
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: "Invalid refresh token" });
+  }
+
+  const userId = Number(payload.userId || payload.sub || payload.id);
+  const tokenId = payload.jti;
+  const deviceId = normalizeDeviceId(payload.deviceId || req?.headers?.["x-device-id"]);
+
+  if (!userId || !tokenId) {
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: "Invalid refresh token" });
+  }
+
+  const record = await models.RefreshToken.findOne({
+    where: { token_id: tokenId, user_id: userId },
+  });
+
+  if (!record) {
+    await revokeRefreshTokens({ userId, deviceId });
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: "Refresh token revoked" });
+  }
+
+  if (record.revoked_at) {
+    await revokeRefreshTokens({ userId, deviceId: record.device_id || deviceId });
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: "Refresh token revoked" });
+  }
+
+  if (record.expires_at && new Date(record.expires_at) <= new Date()) {
+    await revokeRefreshTokens({ userId, deviceId: record.device_id || deviceId });
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: "Refresh token expired" });
+  }
+
+  const user = await models.User.findByPk(userId);
+  if (!user || !user.is_active) {
+    await revokeRefreshTokens({ userId, deviceId: record.device_id || deviceId });
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const newTokenId = crypto.randomUUID();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + REFRESH_TOKEN_TTL_SECONDS * 1000);
+  const resolvedDeviceId = record.device_id || deviceId || crypto.randomUUID();
+
+  const nextRefreshToken = signRefreshToken({
+    jti: newTokenId,
+    type: "refresh",
+    userId,
+    deviceId: resolvedDeviceId,
+  });
+
+  await record.update({
+    revoked_at: now,
+    last_used_at: now,
+    replaced_by: newTokenId,
+  });
+
+  await models.RefreshToken.create({
+    user_id: userId,
+    token_id: newTokenId,
+    device_id: resolvedDeviceId,
+    expires_at: expiresAt,
+    last_used_at: now,
+  });
+
+  setRefreshCookie(res, nextRefreshToken);
+
+  const accessToken = signUserAccessToken(buildUserAccessPayload(user));
+  const safeUser = await loadSafeUser(userId);
+  const response = { token: accessToken, user: safeUser };
+  if (shouldExposeRefreshToken(req)) response.refreshToken = nextRefreshToken;
+  return res.json(response);
+};
+
+export const logoutSession = async (req, res) => {
+  const refreshToken = getRefreshTokenFromRequest(req);
+  let revokedCount = 0;
+
+  if (refreshToken) {
+    try {
+      const payload = jwt.verify(refreshToken, REFRESH_SECRET);
+      if (payload?.type === "refresh") {
+        const tokenId = payload.jti;
+        const userId = Number(payload.userId || payload.sub || payload.id);
+        if (tokenId && userId) {
+          const [count] = await models.RefreshToken.update(
+            { revoked_at: new Date() },
+            { where: { token_id: tokenId, user_id: userId, revoked_at: null } },
+          );
+          revokedCount = count;
+        }
+      }
+    } catch (err) {
+      // ignore invalid refresh token
+    }
+  }
+
+  clearRefreshCookie(res);
+  return res.json({ ok: true, revoked: revokedCount });
+};
+
+export const logoutAllSessions = async (req, res) => {
+  const userId = Number(req.user?.id);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const [count] = await models.RefreshToken.update(
+    { revoked_at: new Date() },
+    { where: { user_id: userId, revoked_at: null } },
+  );
+
+  clearRefreshCookie(res);
+  return res.json({ ok: true, revoked: count });
 };

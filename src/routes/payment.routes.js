@@ -15,7 +15,7 @@ import {
 import { createHomePaymentIntentAppTest } from "../controllers/paymentAppTest.controller.js";
 
 import express from "express";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, requireVerifiedEmail } from "../middleware/auth.js";
 
 const router = Router();
 console.log("[payments] registering /api/payments routes (includes /stripe/webhook)");
@@ -24,8 +24,8 @@ console.log("[payments] registering /api/payments routes (includes /stripe/webho
 router.post("/stripe/create-session",   createCheckoutSession);
 router.post("/apple-pay/process",       processApplePay);
 router.post("/booking-addons/create-session", createOutsideAddOnsSession);
-router.post("/homes/create-payment-intent", authenticate, createHomePaymentIntent);
-router.post("/homes/test/create-payment-intent", authenticate, createHomePaymentIntentAppTest);
+router.post("/homes/create-payment-intent", authenticate, requireVerifiedEmail, createHomePaymentIntent);
+router.post("/homes/test/create-payment-intent", authenticate, requireVerifiedEmail, createHomePaymentIntentAppTest);
 
 /* Add-Ons */
 router.post("/upsell/create-session",   createAddOnSession);

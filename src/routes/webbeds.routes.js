@@ -20,18 +20,18 @@ import {
   getBookingDetails,
   createPaymentIntent,
 } from "../controllers/webbeds.controller.js"
-import { authenticate } from "../middleware/auth.js"
+import { authenticate, requireVerifiedEmail } from "../middleware/auth.js"
 
 const router = Router()
 
 router.get("/search", authenticate, search)
 router.get("/rooms", authenticate, getRooms)
 router.post("/create-payment-intent", authenticate, createPaymentIntent)
-router.post("/savebooking", authenticate, saveBooking)
-router.post("/bookitinerary", authenticate, bookItinerary)
-router.post("/bookitinerary/recheck", authenticate, bookItineraryRecheck)
-router.post("/bookitinerary/preauth", authenticate, bookItineraryPreauth)
-router.post("/confirmbooking", authenticate, confirmBooking)
+router.post("/savebooking", authenticate, requireVerifiedEmail, saveBooking)
+router.post("/bookitinerary", authenticate, requireVerifiedEmail, bookItinerary)
+router.post("/bookitinerary/recheck", authenticate, requireVerifiedEmail, bookItineraryRecheck)
+router.post("/bookitinerary/preauth", authenticate, requireVerifiedEmail, bookItineraryPreauth)
+router.post("/confirmbooking", authenticate, requireVerifiedEmail, confirmBooking)
 router.post("/cancelbooking", authenticate, cancelBooking)
 router.post("/deleteitinerary", authenticate, deleteItinerary)
 router.get("/booking", authenticate, getBookingDetails)

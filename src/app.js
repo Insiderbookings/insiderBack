@@ -21,6 +21,7 @@ import { setGlobalDispatcher, Agent } from "undici";
 import { ensureDefaultPlatforms } from "./services/platform.service.js";
 import { startPayoutScheduler } from "./services/payoutScheduler.js";
 import { startInfluencerPayoutScheduler } from "./services/influencerPayoutScheduler.js";
+import { startBookingCleanupScheduler } from "./services/bookingCleanupScheduler.js";
 import ensureHomeFavoriteIndexes from "./utils/ensureHomeFavoriteIndexes.js";
 import { initSocketServer } from "./websocket/index.js";
 import diagnoseForeignKeyError from "./utils/diagnoseForeignKeyError.js";
@@ -106,7 +107,7 @@ app.use(
 );
 
 /* ---------- Middlewares globales ---------- */
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
@@ -149,6 +150,14 @@ const paymentsLimiter = rateLimit({
 app.use("/api/payments", paymentsLimiter);
 app.use("/api/tgx-payment", paymentsLimiter);
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.AUTH_RATE_LIMIT_MAX || 200),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use("/api/auth", authLimiter);
+
 // Restricción de origen por lista blanca (si se define CORS_ALLOWED_ORIGINS)
 const __allowed = (process.env.CORS_ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean)
 if (__allowed.length > 0) {
@@ -181,6 +190,7 @@ const PORT = process.env.PORT || 3000;
     initSocketServer(server);
     startPayoutScheduler();
     startInfluencerPayoutScheduler();
+    startBookingCleanupScheduler();
     server.listen(PORT, () =>
       console.log(`Server listening on port ${PORT}`)
     );

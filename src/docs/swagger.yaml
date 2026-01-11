@@ -225,7 +225,7 @@ paths:
   /api/auth/validate-token/{token}:
     get:
       tags: [Auth]
-      summary: Validate magic token
+      summary: Validate password token
       security: []
       parameters:
         - name: token

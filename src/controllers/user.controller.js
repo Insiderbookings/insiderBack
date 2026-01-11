@@ -41,6 +41,7 @@ export const getCurrentUser = async (req, res) => {
         "id",
         "name",
         "email",
+        ["email_verified", "emailVerified"],
         "phone",
         "role",                    // ðŸ‘ˆ importante
         ["is_active", "isActive"], // opcional alias
