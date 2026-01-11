@@ -1,9 +1,6 @@
 import { DataTypes } from "sequelize";
 
 export default (sequelize) => {
-    const isMySQL = ["mysql", "mariadb"].includes(sequelize.getDialect());
-    const JSON_TYPE = isMySQL ? DataTypes.JSON : DataTypes.JSONB;
-
     const StayIntelligence = sequelize.define(
         "StayIntelligence",
         {
@@ -18,15 +15,15 @@ export default (sequelize) => {
                 unique: true,
             },
             insights: {
-                type: JSON_TYPE,
+                type: DataTypes.JSONB,
                 defaultValue: [],
             },
             preparation: {
-                type: JSON_TYPE,
+                type: DataTypes.JSONB,
                 defaultValue: [],
             },
             weatherTips: {
-                type: JSON_TYPE,
+                type: DataTypes.JSONB,
                 defaultValue: null,
             },
             lastGeneratedAt: {
@@ -34,7 +31,7 @@ export default (sequelize) => {
                 defaultValue: DataTypes.NOW,
             },
             metadata: {
-                type: JSON_TYPE,
+                type: DataTypes.JSONB,
                 defaultValue: {},
             },
         },
