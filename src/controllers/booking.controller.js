@@ -28,7 +28,24 @@ import { emitAdminActivity } from "../websocket/emitter.js"
 import { finalizeBookingAfterPayment } from "./payment.controller.js"
 /* ──────────────── Helper – count nights ───────────── */
 const diffDays = (from, to) =>
-  Math.ceil((new Date(to) - new Date(from)) / 86_400_000)
+    Math.ceil((new Date(to) - new Date(from)) / 86_400_000)
+
+const parseDateOnly = (value) => {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number)
+    return new Date(year, month - 1, day)
+  }
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.valueOf())) return null
+  return parsed
+}
+
+const toDateOnlyString = (date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
 
 const enumerateStayDates = (from, to) => {
   const start = new Date(from)
@@ -762,15 +779,15 @@ export const createBooking = async (req, res) => {
     if (totalGuests <= 0)
       return res.status(400).json({ error: "A booking must include at least one guest" })
 
-    const checkInDate = new Date(checkIn)
-    const checkOutDate = new Date(checkOut)
-    if (Number.isNaN(checkInDate.valueOf()) || Number.isNaN(checkOutDate.valueOf()))
+    const checkInDate = parseDateOnly(checkIn)
+    const checkOutDate = parseDateOnly(checkOut)
+    if (!checkInDate || !checkOutDate)
       return res.status(400).json({ error: "Invalid dates" })
     if (checkOutDate <= checkInDate)
       return res.status(400).json({ error: "Check-out must be after check-in" })
 
-    const normalizedCheckIn = checkInDate.toISOString().slice(0, 10)
-    const normalizedCheckOut = checkOutDate.toISOString().slice(0, 10)
+    const normalizedCheckIn = toDateOnlyString(checkInDate)
+    const normalizedCheckOut = toDateOnlyString(checkOutDate)
 
     const nights = diffDays(normalizedCheckIn, normalizedCheckOut)
     if (nights <= 0)
@@ -1039,18 +1056,15 @@ export const quoteHomeBooking = async (req, res) => {
     if (!homeIdValue || !checkIn || !checkOut)
       return res.status(400).json({ error: "Missing required fields" })
 
-    const checkInDate = new Date(checkIn)
-    const checkOutDate = new Date(checkOut)
-    if (Number.isNaN(checkInDate.valueOf()) || Number.isNaN(checkOutDate.valueOf()))
+    const checkInDate = parseDateOnly(checkIn)
+    const checkOutDate = parseDateOnly(checkOut)
+    if (!checkInDate || !checkOutDate)
       return res.status(400).json({ error: "Invalid dates" })
     if (checkOutDate <= checkInDate)
       return res.status(400).json({ error: "Check-out must be after check-in" })
 
-    checkInDate.setHours(0, 0, 0, 0)
-    checkOutDate.setHours(0, 0, 0, 0)
-
-    const normalizedCheckIn = checkInDate.toISOString().slice(0, 10)
-    const normalizedCheckOut = checkOutDate.toISOString().slice(0, 10)
+    const normalizedCheckIn = toDateOnlyString(checkInDate)
+    const normalizedCheckOut = toDateOnlyString(checkOutDate)
 
     const nights = diffDays(normalizedCheckIn, normalizedCheckOut)
     if (nights <= 0)
@@ -1268,18 +1282,15 @@ export const createHomeBooking = async (req, res) => {
     if (!homeIdValue || !checkIn || !checkOut)
       return res.status(400).json({ error: "Missing required fields" })
 
-    const checkInDate = new Date(checkIn)
-    const checkOutDate = new Date(checkOut)
-    if (Number.isNaN(checkInDate.valueOf()) || Number.isNaN(checkOutDate.valueOf()))
+    const checkInDate = parseDateOnly(checkIn)
+    const checkOutDate = parseDateOnly(checkOut)
+    if (!checkInDate || !checkOutDate)
       return res.status(400).json({ error: "Invalid dates" })
     if (checkOutDate <= checkInDate)
       return res.status(400).json({ error: "Check-out must be after check-in" })
 
-    checkInDate.setHours(0, 0, 0, 0)
-    checkOutDate.setHours(0, 0, 0, 0)
-
-    const normalizedCheckIn = checkInDate.toISOString().slice(0, 10)
-    const normalizedCheckOut = checkOutDate.toISOString().slice(0, 10)
+    const normalizedCheckIn = toDateOnlyString(checkInDate)
+    const normalizedCheckOut = toDateOnlyString(checkOutDate)
 
     const nights = diffDays(normalizedCheckIn, normalizedCheckOut)
     if (nights <= 0)
@@ -2437,12 +2448,22 @@ export const inviteBookingMember = async (req, res) => {
     }
 
     const userLookup = []
-    if (normalizedEmail) userLookup.push({ email: normalizedEmail })
+    if (normalizedEmail) {
+      userLookup.push(
+        sequelize.where(
+          sequelize.fn("lower", sequelize.col("email")),
+          normalizedEmail,
+        )
+      )
+    }
     if (normalizedPhone) userLookup.push({ phone: normalizedPhone })
     const invitedUser =
       userLookup.length > 0
         ? await models.User.findOne({ where: { [Op.or]: userLookup } })
         : null
+    if (!invitedUser) {
+      return res.status(404).json({ error: "User not found" })
+    }
 
     if (invitedUser && Number(invitedUser.id) === userId) {
       return res.status(400).json({ error: "Owner is already part of the booking" })

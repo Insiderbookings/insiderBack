@@ -8,6 +8,8 @@ const DISCOUNT_REMINDER_GRACE_DAYS = 1
 const LOGIN_TOUCH_INTERVAL_MS = 5 * 60 * 1000
 
 const normalizeDiscountCode = (value) => String(value || "").trim().toUpperCase()
+const isValidEmail = (value = "") =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim())
 
 const shouldTouchLastLogin = (value) => {
   if (!value) return true
@@ -72,6 +74,37 @@ export const getCurrentUser = async (req, res) => {
     return res.json(user.get({ plain: true }))
   } catch (err) {
     console.error("Error getting current user:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+/* ----------------------- GET /api/users/lookup ----------------------- */
+export const lookupUserByEmail = async (req, res) => {
+  try {
+    const email = String(req.query?.email || "").trim().toLowerCase()
+    if (!email) return res.status(400).json({ error: "Email is required" })
+    if (!isValidEmail(email)) return res.status(400).json({ error: "Invalid email" })
+
+    const user = await models.User.findOne({
+      where: sequelize.where(
+        sequelize.fn("lower", sequelize.col("email")),
+        email,
+      ),
+      attributes: ["id", "name", "email", "avatar_url"],
+    })
+
+    if (!user) return res.json({ user: null })
+
+    return res.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        avatarUrl: user.avatar_url ?? null,
+      },
+    })
+  } catch (err) {
+    console.error("lookupUserByEmail:", err)
     return res.status(500).json({ error: "Server error" })
   }
 }

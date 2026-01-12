@@ -10,6 +10,7 @@ import {
   getInfluencerCommissions,
   adminCreateInfluencerPayoutBatch,
   getInfluencerReferrals,
+  lookupUserByEmail,
   becomeHost,
   recordDiscountCodeStatus,
   applyDiscountCode,
@@ -83,6 +84,7 @@ router.post(
 // All below require authenticate
 router.use(authenticate)
 
+router.get("/lookup", lookupUserByEmail)
 router.post("/me/discount-code/status", recordDiscountCodeStatus)
 router.post("/me/discount-code", applyDiscountCode)
 

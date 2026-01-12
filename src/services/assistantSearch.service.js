@@ -177,6 +177,17 @@ const buildStringFilter = (value) => {
   return { [operator]: `%${trimmed}%` };
 };
 
+const hasLocationConstraint = (location = {}) => {
+  if (!location || typeof location !== "object") return false;
+  const city = typeof location.city === "string" ? location.city.trim() : "";
+  const state = typeof location.state === "string" ? location.state.trim() : "";
+  const country = typeof location.country === "string" ? location.country.trim() : "";
+  const landmark = typeof location.landmark === "string" ? location.landmark.trim() : "";
+  const lat = toNumberOrNull(location.lat);
+  const lng = toNumberOrNull(location.lng ?? location.lon);
+  return Boolean(city || state || country || landmark || (lat != null && lng != null));
+};
+
 const resolveGuestTotal = (plan) => {
   const adults = Number(plan?.guests?.adults);
   const children = Number(plan?.guests?.children);
@@ -544,6 +555,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
   const combinedGuestCapacity = combineCapacities(guests, explicitGuestCapacity);
   const requiredAmenityKeys = normalizedHomeFilters.amenityKeys || [];
   const requiredTagKeys = normalizedHomeFilters.tagKeys || [];
+  const hasLocation = hasLocationConstraint(plan?.location || {});
 
   const attempts = [
     { respectGuest: true, respectBudget: true },
@@ -631,6 +643,11 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
       items: relaxedEnriched,
       matchType: "SIMILAR",
     };
+  }
+
+  if (hasLocation) {
+    console.log("[assistant] no fallback homes; location constraint present");
+    return { items: [], matchType: "NONE" };
   }
 
   const fallbackHomes = await runHomeQuery({
@@ -942,6 +959,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     minRating: toNumberOrNull(hotelFiltersRaw.minRating),
   };
   const coordinateFilter = buildCoordinateFilterUsingRadius(plan?.location || {});
+  const hasLocation = hasLocationConstraint(plan?.location || {});
 
   const liveResults = await tryRunLiveHotelSearch({
     plan,
@@ -1047,6 +1065,11 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     .slice(0, limit);
   if (relaxedCards.length) {
     return { items: relaxedCards, matchType: "SIMILAR" };
+  }
+
+  if (hasLocation) {
+    console.log("[assistant] no fallback hotels; location constraint present");
+    return { items: [], matchType: "NONE" };
   }
 
   const fallbackHotels = await models.WebbedsHotel.findAll({

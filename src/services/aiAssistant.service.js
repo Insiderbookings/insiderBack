@@ -680,48 +680,53 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
     // 3. Upsert intelligence record (Manual check to avoid ON CONFLICT errors if constraint missing)
     let record = await StayIntelligence.findOne({ where: { stayId } });
     const isNewRecord = !record;
+    const baseMetadata = {
+      ...(record?.metadata || {}),
+      weather,
+      timeContext: addons.timeContext,
+      localPulse: addons.localPulse,
+      localLingo: addons.localLingo,
+      suggestions: addons.suggestions,
+    };
+    const alreadyNotified = Boolean(
+      baseMetadata.tripHubReadyNotifiedAt || baseMetadata.tripHubReadyNotified
+    );
+
     if (record) {
       await record.update({
         insights: addons.insights || [],
         preparation: addons.preparation || [],
-        metadata: {
-          ...record.metadata,
-          weather,
-          timeContext: addons.timeContext,
-          localPulse: addons.localPulse,
-          localLingo: addons.localLingo,
-          suggestions: addons.suggestions
-        },
-        lastGeneratedAt: new Date()
+        metadata: baseMetadata,
+        lastGeneratedAt: new Date(),
       });
     } else {
       record = await StayIntelligence.create({
         stayId,
         insights: addons.insights || [],
         preparation: addons.preparation || [],
-        metadata: {
-          weather,
-          timeContext: addons.timeContext,
-          localPulse: addons.localPulse,
-          localLingo: addons.localLingo,
-          suggestions: addons.suggestions
-        },
-        lastGeneratedAt: new Date()
+        metadata: baseMetadata,
+        lastGeneratedAt: new Date(),
       });
     }
 
-    if (isNewRecord) {
+    if (!alreadyNotified) {
       try {
         const stay = await Stay.findByPk(stayId, { attributes: ["id", "user_id"] });
         const userId = stay?.user_id ?? null;
         if (userId) {
-          const stayName = tripContext?.stayName || "your trip";
-          await sendPushToUser({
-            userId,
-            title: "Trip Hub ready",
-            body: `Your Trip Hub is ready for ${stayName}.`,
-            data: { type: "TRIP_HUB_READY", stayId },
-          });
+          const tokenCount = await models.PushToken.count({ where: { user_id: userId } });
+          if (tokenCount > 0) {
+            const stayName = tripContext?.stayName || "your trip";
+            await sendPushToUser({
+              userId,
+              title: "Trip Hub ready",
+              body: `Your Trip Hub is ready for ${stayName}.`,
+              data: { type: "TRIP_HUB_READY", stayId },
+            });
+            await record.update({
+              metadata: { ...baseMetadata, tripHubReadyNotifiedAt: new Date().toISOString() },
+            });
+          }
         }
       } catch (pushErr) {
         console.warn("[aiAssistant] Trip hub push failed:", pushErr?.message || pushErr);
