@@ -17,6 +17,8 @@ import {
   refreshSession,
   logoutSession,
   logoutAllSessions,
+  requestEmailVerificationCode,
+  confirmEmailVerificationCode,
 } from "../controllers/auth.controller.js";
 
 import { autoSignupOrLogin } from "../controllers/auth.auto.controller.js";
@@ -85,6 +87,10 @@ router.post(
 router.post("/refresh", refreshSession);
 router.post("/logout", logoutSession);
 router.post("/logout-all", authenticate, logoutAllSessions);
+
+// Email verification (code-based)
+router.post("/verify-email/request", authenticate, requestEmailVerificationCode);
+router.post("/verify-email/confirm", authenticate, confirmEmailVerificationCode);
 
 // Token validation and email verify
 router.get("/validate-token/:token", validateToken);

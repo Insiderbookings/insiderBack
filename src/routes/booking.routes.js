@@ -10,6 +10,10 @@ import {
   getBookingsForUser,
   getBookingsForStaff,
   getBookingById,
+  getBookingInvite,
+  inviteBookingMember,
+  acceptBookingInvite,
+  declineBookingInvite,
   cancelBooking,
   confirmBooking,
   getOutsideBookingByConfirmation,
@@ -41,6 +45,12 @@ router.post("/guest/verify", verifyGuestAccess)
 router.get("/guest", authenticateGuest, listGuestBookings)
 router.post("/link", authenticate, linkGuestBookingsToUser)
 
+/* ---- Booking invites (homes only) ---- */
+router.get("/invites/:token", getBookingInvite)
+router.post("/invites/accept", authenticate, acceptBookingInvite)
+router.post("/invites/decline", authenticate, declineBookingInvite)
+router.post("/:id/invite", authenticate, inviteBookingMember)
+
 /* ---- Unified user list & latest ---- */
 router.get("/me",         authenticate, getBookingsUnified)      // full or ?latest=true
 router.get("/me/latest",  authenticate, getLatestStayForUser)    // explicit shortcut
@@ -52,7 +62,7 @@ router.get("/legacy/me",  authenticate, getBookingsForUser)
 router.get("/staff/me", authenticate, authorizeStaff, getBookingsForStaff)
 
 /* ---- Single booking / cancel ---- */
-router.get("/:id",              getBookingById)
+router.get("/:id",              authenticate, getBookingById)
 router.put("/:id/cancel",       authenticate, cancelBooking)
 router.put("/:id/confirm",      authenticate, requireVerifiedEmail, confirmBooking)
 

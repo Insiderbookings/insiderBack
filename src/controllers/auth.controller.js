@@ -29,6 +29,22 @@ const REFRESH_TOKEN_TTL_SECONDS = REFRESH_TOKEN_DAYS * 24 * 60 * 60;
 const REFRESH_COOKIE_NAME = process.env.REFRESH_COOKIE_NAME || "insider_rt";
 const REFRESH_COOKIE_DOMAIN = process.env.REFRESH_COOKIE_DOMAIN || ".insiderbookings.com";
 const IS_PROD = process.env.NODE_ENV === "production";
+const EMAIL_VERIFICATION_TTL_MINUTES_RAW = Number(process.env.EMAIL_VERIFICATION_TTL_MINUTES);
+const EMAIL_VERIFICATION_TTL_MINUTES =
+  Number.isFinite(EMAIL_VERIFICATION_TTL_MINUTES_RAW) && EMAIL_VERIFICATION_TTL_MINUTES_RAW > 0
+    ? EMAIL_VERIFICATION_TTL_MINUTES_RAW
+    : 10;
+const EMAIL_VERIFICATION_RESEND_SECONDS_RAW = Number(process.env.EMAIL_VERIFICATION_RESEND_SECONDS);
+const EMAIL_VERIFICATION_RESEND_SECONDS =
+  Number.isFinite(EMAIL_VERIFICATION_RESEND_SECONDS_RAW) && EMAIL_VERIFICATION_RESEND_SECONDS_RAW > 0
+    ? EMAIL_VERIFICATION_RESEND_SECONDS_RAW
+    : 60;
+const EMAIL_VERIFICATION_MAX_ATTEMPTS_RAW = Number(process.env.EMAIL_VERIFICATION_MAX_ATTEMPTS);
+const EMAIL_VERIFICATION_MAX_ATTEMPTS =
+  Number.isFinite(EMAIL_VERIFICATION_MAX_ATTEMPTS_RAW) && EMAIL_VERIFICATION_MAX_ATTEMPTS_RAW > 0
+    ? EMAIL_VERIFICATION_MAX_ATTEMPTS_RAW
+    : 5;
+const EMAIL_VERIFICATION_SECRET = process.env.EMAIL_VERIFICATION_SECRET || process.env.JWT_SECRET;
 
 const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
@@ -127,6 +143,21 @@ const normalizeDeviceId = (value) => {
   const trimmed = String(value).trim();
   if (!trimmed) return null;
   return trimmed.slice(0, 120);
+};
+
+const normalizeVerificationCode = (value) => String(value || "").trim();
+
+const generateEmailVerificationCode = () =>
+  Math.floor(100000 + Math.random() * 900000).toString();
+
+const hashEmailVerificationCode = (code) => {
+  if (!EMAIL_VERIFICATION_SECRET) {
+    throw new Error("Missing EMAIL_VERIFICATION_SECRET or JWT_SECRET for email verification codes");
+  }
+  return crypto
+    .createHmac("sha256", EMAIL_VERIFICATION_SECRET)
+    .update(code)
+    .digest("hex");
 };
 
 const getClientType = (req) =>
@@ -475,41 +506,6 @@ export const registerUser = async (req, res) => {
         throw err;
       }
     }
-    // generate verification token valid for 1 day
-    const verifyToken = jwt.sign(
-      { id: user.id, type: "user", action: "verify-email" },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" },
-    );
-
-    const link = `${process.env.CLIENT_URL || process.env.API_URL}/auth/verify-email/${verifyToken}`;
-
-    try {
-      const content = `
-        <p style="color:#334155;margin:0 0 12px;font-size:16px;">Hi ${name.split(" ")[0]},</p>
-        <p style="color:#4a5568;margin:0 0 24px;font-size:16px;">Click the button below to verify your account.</p>
-        <table role="presentation" style="margin:16px 0;">
-          <tr>
-            <td align="center">
-              <a href="${link}"
-                 style="display:inline-block;background:#ef4444;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;">Verify email</a>
-            </td>
-          </tr>
-        </table>
-        <p style="color:#94a3b8;margin:24px 0 0;font-size:12px;">If you didn't create this account, you can safely ignore this email.</p>
-      `
-
-      const html = getBaseEmailTemplate(content, "Verify your email")
-
-      await transporter.sendMail({
-        to: email,
-        subject: "Verify your email",
-        html,
-      });
-    } catch (mailErr) {
-      console.error(mailErr);
-    }
-
     // Emit a token + user to satisfy FE expectations; still send verify email above
     await ensureGuestProfile(user.id)
     await user.update({ last_login_at: new Date() })
@@ -1067,6 +1063,138 @@ export const appleExchange = async (req, res) => {
   } catch (err) {
     console.error("appleExchange CRITICAL error:", err);
     return res.status(500).json({ error: "Internal error", details: err.message });
+  }
+};
+
+const buildEmailVerificationTemplate = ({ name, code }) => {
+  const firstName = name ? String(name).split(" ")[0] : "there";
+  const spacedCode = code.split("").join(" ");
+  const content = `
+    <p style="color:#0f172a;margin:0 0 12px;font-size:16px;">Hi ${firstName},</p>
+    <p style="color:#4b5563;margin:0 0 18px;font-size:15px;">
+      Use the code below to verify your BookingGPT account.
+    </p>
+    <div style="background:#111827;border-radius:12px;padding:16px 20px;display:inline-block;margin-bottom:16px;">
+      <span style="color:#ffffff;font-size:22px;letter-spacing:6px;font-weight:700;">${spacedCode}</span>
+    </div>
+    <p style="color:#6b7280;margin:0;font-size:13px;">
+      This code expires in ${EMAIL_VERIFICATION_TTL_MINUTES} minutes.
+    </p>
+  `;
+  return getBaseEmailTemplate(content, "Verify your email", {
+    brandName: "BookingGPT",
+    headerTitle: "BookingGPT",
+    headerSubtitle: "AI-powered travel",
+    primaryColor: "#0b0b10",
+    accentColor: "#ff1b6d",
+    backgroundColor: "#f8fafc",
+    bodyBackground: "#ffffff",
+    textColor: "#ffffff",
+    logoUrl: "https://bookinggpt.app/bookinggpt-logo.png",
+    tagline: "AI-powered booking assistant",
+    supportText: "Need help? partners@insiderbookings.com",
+  });
+};
+
+export const requestEmailVerificationCode = async (req, res) => {
+  try {
+    if (!req.user?.id) return res.status(401).json({ error: "Unauthorized" });
+    const user = await models.User.findByPk(req.user.id, { attributes: ["id", "name", "email", "email_verified", "email_verification_sent_at"] });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    if (user.email_verified) return res.json({ message: "Email already verified." });
+
+    const resendSeconds = EMAIL_VERIFICATION_RESEND_SECONDS;
+    const lastSentAt = user.email_verification_sent_at
+      ? new Date(user.email_verification_sent_at).getTime()
+      : null;
+    if (lastSentAt && Date.now() - lastSentAt < resendSeconds * 1000) {
+      const remaining = Math.ceil((resendSeconds * 1000 - (Date.now() - lastSentAt)) / 1000);
+      return res.status(429).json({ error: `Please wait ${remaining}s before requesting another code.` });
+    }
+
+    const code = generateEmailVerificationCode();
+    const hash = hashEmailVerificationCode(code);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + EMAIL_VERIFICATION_TTL_MINUTES * 60 * 1000);
+
+    await user.update({
+      email_verification_code_hash: hash,
+      email_verification_expires_at: expiresAt,
+      email_verification_attempts: 0,
+      email_verification_sent_at: now,
+    });
+
+    const html = buildEmailVerificationTemplate({ name: user.name, code });
+    try {
+      await transporter.sendMail({
+        to: user.email,
+        from: process.env.MAIL_FROM || `"BookingGPT" <${process.env.SMTP_USER}>`,
+        subject: "Your BookingGPT verification code",
+        html,
+      });
+    } catch (mailErr) {
+      await user.update({
+        email_verification_code_hash: null,
+        email_verification_expires_at: null,
+        email_verification_attempts: 0,
+      });
+      console.error(mailErr);
+      return res.status(500).json({ error: "Unable to send verification email." });
+    }
+
+    return res.json({
+      message: "Verification code sent.",
+      expiresInMinutes: EMAIL_VERIFICATION_TTL_MINUTES,
+      resendAfterSeconds: resendSeconds,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const confirmEmailVerificationCode = async (req, res) => {
+  try {
+    if (!req.user?.id) return res.status(401).json({ error: "Unauthorized" });
+    const code = normalizeVerificationCode(req.body?.code);
+    if (!code) return res.status(400).json({ error: "Verification code is required." });
+
+    const user = await models.User.findByPk(req.user.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    if (user.email_verified) return res.json({ message: "Email already verified." });
+
+    if (!user.email_verification_code_hash || !user.email_verification_expires_at) {
+      return res.status(400).json({ error: "Verification code is invalid or expired." });
+    }
+
+    const attempts = Number(user.email_verification_attempts || 0);
+    if (attempts >= EMAIL_VERIFICATION_MAX_ATTEMPTS) {
+      return res.status(429).json({ error: "Too many attempts. Please request a new code." });
+    }
+
+    if (new Date(user.email_verification_expires_at).getTime() < Date.now()) {
+      return res.status(400).json({ error: "Verification code expired. Please request a new one." });
+    }
+
+    const expected = user.email_verification_code_hash;
+    const actual = hashEmailVerificationCode(code);
+    if (expected !== actual) {
+      await user.update({ email_verification_attempts: attempts + 1 });
+      return res.status(400).json({ error: "Invalid verification code." });
+    }
+
+    await user.update({
+      email_verified: true,
+      email_verification_code_hash: null,
+      email_verification_expires_at: null,
+      email_verification_attempts: 0,
+      email_verification_sent_at: null,
+    });
+
+    return res.json({ message: "Email verified." });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
   }
 };
 

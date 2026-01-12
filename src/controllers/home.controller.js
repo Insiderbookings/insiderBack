@@ -1540,18 +1540,18 @@ export const getPublicHome = async (req, res) => {
           include: [{ model: models.HomeTag, as: "tag" }],
         },
         { model: models.HomeDiscountRule, as: "discounts" },
-        {
-          model: models.User,
-          as: "host",
-          attributes: ["id", "name", "email", "avatar_url", "role", "created_at"],
-          include: [
-            {
-              model: models.HostProfile,
-              as: "hostProfile",
-              attributes: ["id", "metadata", "created_at"],
-            },
-          ],
-        },
+          {
+            model: models.User,
+            as: "host",
+            attributes: ["id", "name", "email", "email_verified", "avatar_url", "role", "created_at"],
+            include: [
+              {
+                model: models.HostProfile,
+                as: "hostProfile",
+                attributes: ["id", "metadata", "kyc_status", "created_at"],
+              },
+            ],
+          },
       ],
     });
 
@@ -2234,18 +2234,18 @@ export const getHomeById = async (req, res) => {
         { model: models.HomeBedTypeLink, as: "bedTypes", include: [{ model: models.HomeBedType, as: "bedType" }] },
         { model: models.HomeTagLink, as: "tags", include: [{ model: models.HomeTag, as: "tag" }] },
         { model: models.HomeDiscountRule, as: "discounts" },
-        {
-          model: models.User,
-          as: "host",
-          attributes: ["id", "name", "email", "avatar_url", "role", "created_at"],
-          include: [
-            {
-              model: models.HostProfile,
-              as: "hostProfile",
-              attributes: ["id", "metadata", "created_at"],
-            },
-          ],
-        },
+          {
+            model: models.User,
+            as: "host",
+            attributes: ["id", "name", "email", "email_verified", "avatar_url", "role", "created_at"],
+            include: [
+              {
+                model: models.HostProfile,
+                as: "hostProfile",
+                attributes: ["id", "metadata", "kyc_status", "created_at"],
+              },
+            ],
+          },
       ],
     });
     if (!homeInstance) return res.status(404).json({ error: "Home not found" });

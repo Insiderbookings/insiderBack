@@ -46,6 +46,7 @@ import UpsellCodeModel from "./UpsellCode.js";
 import TgxHotelModel from "./TGXHotel.js";
 import BookingFlowModel from "./BookingFlow.js";
 import BookingFlowStepModel from "./BookingFlowStep.js";
+import BookingUserModel from "./BookingUser.js";
 
 import HomeModel from "./Home.js";
 import HomeAddressModel from "./HomeAddress.js";
@@ -170,6 +171,7 @@ const models = {
   TgxHotel: TgxHotelModel(sequelize),
   BookingFlow: BookingFlowModel(sequelize),
   BookingFlowStep: BookingFlowStepModel(sequelize),
+  BookingUser: BookingUserModel(sequelize),
 
   Home: HomeModel(sequelize),
   HomeAddress: HomeAddressModel(sequelize),

@@ -1,5 +1,4 @@
-import { QueryTypes } from "sequelize";
-import models, { sequelize } from "../models/index.js";
+import models from "../models/index.js";
 import { mapHomeToCard } from "../utils/homeMapper.js";
 
 const ensureUser = (req, res) => {
@@ -324,31 +323,40 @@ export const addFavoriteToList = async (req, res) => {
       return;
     }
 
-    const [favorite] = await sequelize.query(
-      `
-        INSERT INTO home_favorite (user_id, home_id, list_id, created_at, updated_at, deleted_at)
-        VALUES (:userId, :homeId, :listId, NOW(), NOW(), NULL)
-        ON CONFLICT (user_id, home_id, list_id) WHERE deleted_at IS NULL
-        DO UPDATE SET
-          deleted_at = NULL,
-          updated_at = EXCLUDED.updated_at
-        RETURNING id, created_at;
-      `,
-      {
-        replacements: { userId, homeId, listId },
-        type: QueryTypes.SELECT,
-      }
-    );
+    const [favorite, created] = await models.HomeFavorite.findOrCreate({
+      where: { user_id: userId, home_id: homeId, list_id: listId },
+      defaults: { user_id: userId, home_id: homeId, list_id: listId },
+    });
+
+    if (!created) {
+      favorite.updatedAt = new Date();
+      await favorite.save();
+    }
 
     res.status(200).json({
       favorite: {
         id: favorite?.id ?? null,
         homeId,
         listId,
-        addedAt: favorite?.created_at ?? new Date(),
+        addedAt: favorite?.created_at ?? favorite?.createdAt ?? new Date(),
       },
     });
   } catch (err) {
+    if (err?.name === "SequelizeUniqueConstraintError") {
+      const existing = await models.HomeFavorite.findOne({
+        where: { user_id: userId, home_id: homeId, list_id: listId },
+      });
+      if (existing) {
+        return res.status(200).json({
+          favorite: {
+            id: existing.id,
+            homeId,
+            listId,
+            addedAt: existing.created_at ?? existing.createdAt ?? new Date(),
+          },
+        });
+      }
+    }
     console.error("[favorites] addFavoriteToList error:", err);
     res.status(500).json({ error: "Unable to save favorite." });
   }

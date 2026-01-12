@@ -8,10 +8,20 @@ import {
     replyTicket,
     updateTicketStatus,
     getAllTickets,
-    executeTicketAction
+    executeTicketAction,
+    reportIssue
 } from "../controllers/support.controller.js";
 
 const router = Router();
+
+// Public issue report (no auth)
+router.post(
+    "/report-issue",
+    [
+        check('details', 'Details are required').not().isEmpty()
+    ],
+    reportIssue
+);
 
 // User routes
 router.post(

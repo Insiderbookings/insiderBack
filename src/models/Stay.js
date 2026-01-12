@@ -156,12 +156,16 @@ export default (sequelize) => {
       otherKey: "add_on_id",
     });
     Stay.hasMany(models.BookingAddOn, { foreignKey: "stay_id" });
+    Stay.hasOne(models.DiscountCode, { foreignKey: "stay_id" });
 
     if (models.Commission) {
       Stay.hasOne(models.Commission, { foreignKey: "stay_id" });
     }
     if (models.StayIntelligence) {
       Stay.hasOne(models.StayIntelligence, { foreignKey: "stay_id", as: "intelligence" });
+    }
+    if (models.BookingUser) {
+      Stay.hasMany(models.BookingUser, { foreignKey: "stay_id", as: "members" });
     }
   };
 

@@ -1,6 +1,7 @@
 import models from "../models/index.js";
 import { emitAdminActivity, emitToUser, emitToRoom } from "../websocket/emitter.js";
 import { validationResult } from "express-validator";
+import transporter from "../services/transporter.js";
 
 // Helper to broadcast support events
 const emitSupportEvent = (event, payload) => {
@@ -308,5 +309,62 @@ export const executeTicketAction = async (req, res, next) => {
 
     } catch (error) {
         next(error);
+    }
+};
+
+export const reportIssue = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    try {
+        const {
+            name = "",
+            email = "",
+            phone = "",
+            device = "",
+            os = "",
+            appVersion = "",
+            details = "",
+        } = req.body || {};
+
+        const subject = "BookingGPT Issue Report";
+        const lines = [
+            `Name: ${name}`,
+            `Email: ${email}`,
+            `Phone: ${phone}`,
+            `Device: ${device}`,
+            `OS: ${os}`,
+            `App version: ${appVersion}`,
+            "",
+            "Issue details:",
+            details,
+        ];
+
+        const html = `
+          <div style="font-family: Arial, sans-serif; color: #0f172a;">
+            <h2 style="margin: 0 0 12px;">BookingGPT Issue Report</h2>
+            <p><strong>Name:</strong> ${name || "-"}</p>
+            <p><strong>Email:</strong> ${email || "-"}</p>
+            <p><strong>Phone:</strong> ${phone || "-"}</p>
+            <p><strong>Device:</strong> ${device || "-"}</p>
+            <p><strong>OS:</strong> ${os || "-"}</p>
+            <p><strong>App version:</strong> ${appVersion || "-"}</p>
+            <p><strong>Issue details:</strong></p>
+            <pre style="background:#f8fafc;border:1px solid #e2e8f0;padding:12px;border-radius:8px;white-space:pre-wrap;">${details || "-"}</pre>
+          </div>
+        `;
+
+        await transporter.sendMail({
+            to: "partners@insiderbookings.com",
+            from: process.env.MAIL_FROM || `"BookingGPT" <${process.env.SMTP_USER}>`,
+            subject,
+            text: lines.join("\n"),
+            html,
+        });
+
+        return res.json({ message: "Report sent" });
+    } catch (error) {
+        console.error("reportIssue error:", error);
+        return res.status(500).json({ error: "Unable to send report" });
     }
 };

@@ -109,6 +109,23 @@ export default (sequelize) => {
         allowNull: false,
         defaultValue: false,
       },
+      email_verification_code_hash: {
+        type: DataTypes.STRING(128),
+        allowNull: true,
+      },
+      email_verification_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      email_verification_attempts: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: 0,
+      },
+      email_verification_sent_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
       avatar_url: {
         type: DataTypes.TEXT,
         allowNull: true,
@@ -194,6 +211,13 @@ export default (sequelize) => {
         foreignKey: "user_id",
         as: "refreshTokens",
         onDelete: "CASCADE",
+      });
+    }
+    if (models.BookingUser) {
+      User.hasMany(models.BookingUser, {
+        foreignKey: "user_id",
+        as: "bookingMemberships",
+        onDelete: "SET NULL",
       });
     }
   };

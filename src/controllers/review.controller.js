@@ -8,6 +8,25 @@ const STATUS_PUBLISHED = "PUBLISHED";
 
 const allowedGuestStatuses = new Set(["CONFIRMED", "COMPLETED"]);
 
+const parseDateValue = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const dateOnly = new Date(`${raw}T00:00:00Z`);
+    return Number.isNaN(dateOnly.getTime()) ? null : dateOnly;
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const isDateReached = (value, now = new Date()) => {
+  const date = parseDateValue(value);
+  if (!date) return false;
+  return now >= date;
+};
+
 const clampRating = (value) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return null;
@@ -80,16 +99,24 @@ const getReviewSummary = async (where) => {
   };
 };
 
-const enforceReviewWindow = (booking) => {
-  if (!booking?.check_out) return;
-  const checkOutDate = new Date(booking.check_out);
-  if (Number.isNaN(checkOutDate.getTime())) return;
+const enforceReviewWindow = (referenceDate) => {
+  if (REVIEW_WINDOW_DAYS <= 0) return; // allow always if configured to 0 or negative
+  const checkOutDate = parseDateValue(referenceDate);
+  if (!checkOutDate) return;
   const limit = new Date(checkOutDate);
   limit.setDate(limit.getDate() + REVIEW_WINDOW_DAYS);
-  if (REVIEW_WINDOW_DAYS <= 0) return; // allow always if configured to 0 or negative
   if (Date.now() > limit.getTime()) {
     throw Object.assign(new Error("The review window for this booking has expired."), { status: 400 });
   }
+};
+
+const isWithinReviewWindow = (referenceDate, now = new Date()) => {
+  if (REVIEW_WINDOW_DAYS <= 0) return true;
+  const checkOutDate = parseDateValue(referenceDate);
+  if (!checkOutDate) return true;
+  const limit = new Date(checkOutDate);
+  limit.setDate(limit.getDate() + REVIEW_WINDOW_DAYS);
+  return now <= limit;
 };
 
 export const createHomeReview = async (req, res) => {
@@ -129,7 +156,10 @@ export const createHomeReview = async (req, res) => {
     if (!allowedGuestStatuses.has(String(booking.status).toUpperCase())) {
       return res.status(400).json({ error: "This booking cannot be reviewed yet" });
     }
-    enforceReviewWindow(booking);
+    if (!isDateReached(booking.check_in)) {
+      return res.status(400).json({ error: "This booking can be reviewed after check-in" });
+    }
+    enforceReviewWindow(booking.check_out);
 
     const existing = await models.Review.findOne({
       where: { stay_id: bookingId, author_id: userId, author_type: "GUEST" },
@@ -196,7 +226,13 @@ export const createGuestReview = async (req, res) => {
     if (hostId !== userId) {
       return res.status(403).json({ error: "You can only review your own guests" });
     }
-    enforceReviewWindow(booking);
+    if (!allowedGuestStatuses.has(String(booking.status).toUpperCase())) {
+      return res.status(400).json({ error: "This booking cannot be reviewed yet" });
+    }
+    if (!isDateReached(booking.check_out)) {
+      return res.status(400).json({ error: "This booking can be reviewed after check-out" });
+    }
+    enforceReviewWindow(booking.check_out);
 
     const existing = await models.Review.findOne({
       where: { stay_id: bookingId, author_id: userId, author_type: "HOST" },
@@ -440,12 +476,18 @@ export const getPendingReviews = async (req, res) => {
       };
     };
 
+    const now = new Date();
+
     const pendingAsGuest = guestBookings
       .filter((booking) => !existingMap.get(booking.id))
+      .filter((booking) => isDateReached(booking.check_in, now))
+      .filter((booking) => isWithinReviewWindow(booking.check_out, now))
       .map((booking) => formatPending(booking, "GUEST"));
 
     const pendingAsHost = hostBookings
       .filter((booking) => !existingMap.get(booking.id))
+      .filter((booking) => isDateReached(booking.check_out, now))
+      .filter((booking) => isWithinReviewWindow(booking.check_out, now))
       .map((booking) => formatPending(booking, "HOST"));
 
     return res.json({

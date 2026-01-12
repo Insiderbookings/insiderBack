@@ -143,41 +143,56 @@ const dropLegacyArtifacts = async () => {
   }
 };
 
-const ensureTargetIndex = async () => {
+const targetIndexExists = async () => {
   if (DIALECT === "postgres") {
-    // Índice parcial en Postgres
+    const rows = await sequelize.query(
+      `
+        SELECT 1
+        FROM pg_indexes
+        WHERE tablename = :table AND indexname = :index
+        LIMIT 1
+      `,
+      {
+        replacements: { table: HOME_FAVORITE_TABLE, index: TARGET_INDEX },
+        type: QueryTypes.SELECT,
+      }
+    );
+    return Array.isArray(rows) && rows.length > 0;
+  }
+
+  if (DIALECT === "mysql" || DIALECT === "mariadb") {
+    const rows = await sequelize.query(
+      `SHOW INDEX FROM \`${HOME_FAVORITE_TABLE}\``,
+      { type: QueryTypes.SELECT }
+    );
+    return rows.some((row) => row.Key_name === TARGET_INDEX);
+  }
+
+  return false;
+};
+
+const ensureTargetIndex = async () => {
+  if (await targetIndexExists()) {
+    logDebug("Target index already exists", TARGET_INDEX);
+    return;
+  }
+
+  if (DIALECT === "postgres") {
     await sequelize.query(
       `
         CREATE UNIQUE INDEX IF NOT EXISTS "${TARGET_INDEX}"
         ON "${HOME_FAVORITE_TABLE}" (user_id, home_id, list_id)
-        WHERE deleted_at IS NULL
       `,
       { type: QueryTypes.RAW }
     );
   } else if (DIALECT === "mysql" || DIALECT === "mariadb") {
-    // MySQL/MariaDB NO soportan índices parciales con WHERE.
-    // Acá creamos un índice único simple en (user_id, home_id, list_id).
-    // OJO: esto NO permite tener duplicados aunque estén "soft deleted".
-    const existing = await sequelize.query(
+    await sequelize.query(
       `
-        SHOW INDEX FROM \`${HOME_FAVORITE_TABLE}\`
-        WHERE Key_name = :idxName
+        CREATE UNIQUE INDEX \`${TARGET_INDEX}\`
+        ON \`${HOME_FAVORITE_TABLE}\` (user_id, home_id, list_id)
       `,
-      {
-        replacements: { idxName: TARGET_INDEX },
-        type: QueryTypes.SELECT,
-      }
+      { type: QueryTypes.RAW }
     );
-
-    if (!Array.isArray(existing) || existing.length === 0) {
-      await sequelize.query(
-        `
-          CREATE UNIQUE INDEX \`${TARGET_INDEX}\`
-          ON \`${HOME_FAVORITE_TABLE}\` (user_id, home_id, list_id)
-        `,
-        { type: QueryTypes.RAW }
-      );
-    }
   } else {
     logDebug("ensureTargetIndex: dialect no soportado", DIALECT);
   }

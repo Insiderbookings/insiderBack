@@ -4,10 +4,10 @@ export const DEFAULT_BADGES = [
   {
     slug: "host_superhost",
     scope: "HOST",
-    title: "Superanfitrion",
-    subtitle: "Resenas destacadas y experiencia comprobada",
+    title: "Superhost",
+    subtitle: "Top reviews and proven hosting experience",
     description:
-      "Los superanfitriones mantienen calificaciones altas, experiencia constante y ofrecen hospedajes confiables para los huespedes.",
+      "Superhosts keep outstanding ratings, consistent experience, and provide reliable stays for guests.",
     icon: "star-sharp",
     priority: 100,
     criteria: {
@@ -17,12 +17,25 @@ export const DEFAULT_BADGES = [
     },
   },
   {
+    slug: "host_verified",
+    scope: "HOST",
+    title: "Verified host",
+    subtitle: "Identity verified on the platform",
+    description:
+      "This host completed verification and meets Insider identity requirements.",
+    icon: "checkmark-circle",
+    priority: 95,
+    criteria: {
+      kycStatus: "APPROVED",
+    },
+  },
+  {
     slug: "home_top_rated_10",
     scope: "HOME",
-    title: "En el 10% de los alojamientos mejor calificados",
-    subtitle: "Los huespedes resaltan su experiencia",
+    title: "Top 10% rated homes",
+    subtitle: "Guests highlight this experience",
     description:
-      "Este alojamiento se encuentra entre los mejores de la plataforma segun sus evaluaciones y comentarios.",
+      "This home is among the top-rated stays on the platform based on guest reviews.",
     icon: "trophy",
     priority: 90,
     criteria: {
@@ -32,12 +45,25 @@ export const DEFAULT_BADGES = [
     },
   },
   {
+    slug: "home_free_cancellation",
+    scope: "HOME",
+    title: "Flexible cancellation",
+    subtitle: "Full refund within the allowed window",
+    description:
+      "This property offers flexible cancellation based on the policy shown at booking.",
+    icon: "calendar-clear",
+    priority: 85,
+    criteria: {
+      cancellationPolicy: "FLEXIBLE",
+    },
+  },
+  {
     slug: "home_exceptional_checkin",
     scope: "HOME",
-    title: "Experiencia de llegada excepcional",
-    subtitle: "Llegada simple y bien evaluada",
+    title: "Exceptional check-in",
+    subtitle: "Smooth, highly rated arrival",
     description:
-      "Los huespedes recientes calificaron el proceso de llegada con 5 estrellas en promedio.",
+      "Recent guests rated the arrival experience 5 stars on average.",
     icon: "log-in",
     priority: 80,
     criteria: {
@@ -48,10 +74,10 @@ export const DEFAULT_BADGES = [
   {
     slug: "home_private_room",
     scope: "HOME",
-    title: "Habitacion en vivienda rentada",
-    subtitle: "Espacio privado dentro de una vivienda compartida",
+    title: "Private room",
+    subtitle: "Private space inside a shared home",
     description:
-      "Una habitacion solo para ti dentro de un alojamiento con acceso a areas compartidas.",
+      "A room just for you with access to shared areas.",
     icon: "home",
     priority: 70,
     criteria: {
@@ -61,10 +87,10 @@ export const DEFAULT_BADGES = [
   {
     slug: "home_entire_place",
     scope: "HOME",
-    title: "Alojamiento entero",
-    subtitle: "Total privacidad durante tu estadia",
+    title: "Entire place",
+    subtitle: "Full privacy during your stay",
     description:
-      "Disfrutaras de todo el alojamiento para ti solo, sin areas compartidas con otros huespedes.",
+      "Enjoy the entire home to yourself, with no shared spaces.",
     icon: "home-sharp",
     priority: 65,
     criteria: {

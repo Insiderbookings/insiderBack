@@ -18,6 +18,7 @@ import {
   postMessage,
   triggerBookingAutoPrompts,
 } from "../services/chat.service.js"
+import { sendPushToUser } from "../services/pushNotifications.service.js"
 import {
   planReferralCoupon,
   createPendingRedemption,
@@ -282,6 +283,87 @@ const codeHash = (email, code) => {
     .createHash("sha256")
     .update(`${String(email).trim().toLowerCase()}|${String(code)}|${secret}`)
     .digest("hex")
+}
+
+const BOOKING_MEMBER_ROLES = { OWNER: "OWNER", GUEST: "GUEST" }
+const BOOKING_MEMBER_STATUSES = {
+  INVITED: "INVITED",
+  ACCEPTED: "ACCEPTED",
+  DECLINED: "DECLINED",
+  REMOVED: "REMOVED",
+}
+const INVITE_TTL_DAYS = Number(process.env.BOOKING_INVITE_TTL_DAYS || 7)
+
+const normalizeEmail = (value) => {
+  if (!value) return null
+  const normalized = String(value).trim().toLowerCase()
+  return normalized || null
+}
+
+const normalizePhone = (value) => {
+  if (!value) return null
+  const normalized = String(value).trim()
+  return normalized || null
+}
+
+const resolveClientUrl = () => {
+  const candidates = [
+    process.env.CLIENT_URL,
+    process.env.WEBAPP_URL,
+    process.env.FRONTEND_URL,
+  ]
+  const url = candidates.find((value) => value && String(value).trim().length > 0)
+  if (!url) return "https://app.insiderbookings.com"
+  return String(url).replace(/\/$/, "")
+}
+
+const buildBookingInviteUrl = (token) => {
+  if (!token) return null
+  const baseUrl = resolveClientUrl()
+  return `${baseUrl}/booking-invite?token=${encodeURIComponent(token)}`
+}
+
+const mapBookingMember = (member) => {
+  if (!member) return null
+  return {
+    id: member.id,
+    userId: member.user_id ?? null,
+    role: member.role ?? null,
+    status: member.status ?? null,
+    invitedEmail: member.invited_email ?? null,
+    invitedPhone: member.invited_phone ?? null,
+    invitedBy: member.invited_by ?? null,
+    acceptedAt: member.accepted_at ?? null,
+    user: member.user
+      ? {
+          id: member.user.id,
+          name: member.user.name,
+          email: member.user.email,
+          phone: member.user.phone ?? null,
+          avatarUrl: member.user.avatar_url ?? null,
+        }
+      : null,
+  }
+}
+
+const ensureBookingOwnerMember = async ({ bookingId, ownerId, transaction }) => {
+  if (!bookingId || !ownerId) return null
+  const existing = await models.BookingUser.findOne({
+    where: { stay_id: bookingId, user_id: ownerId },
+    transaction,
+  })
+  if (existing) return existing
+  return models.BookingUser.create(
+    {
+      stay_id: bookingId,
+      user_id: ownerId,
+      role: BOOKING_MEMBER_ROLES.OWNER,
+      status: BOOKING_MEMBER_STATUSES.ACCEPTED,
+      invited_by: ownerId,
+      accepted_at: new Date(),
+    },
+    { transaction }
+  )
 }
 
 /* ──────────────── Helper – flattener ──────────────────
@@ -1358,9 +1440,9 @@ export const createHomeBooking = async (req, res) => {
       }
       const grossTotal = roundCurrency(Math.max(0, totalBeforeDiscount - referralDiscountAmount))
 
-      const created = await models.Booking.create(
-        {
-          user_id: userId,
+        const created = await models.Booking.create(
+          {
+            user_id: userId,
           source: "HOME",
           inventory_type: "HOME",
           inventory_id: String(homeIdValue),
@@ -1467,12 +1549,18 @@ export const createHomeBooking = async (req, res) => {
             "pricing_snapshot",
             "guest_snapshot",
             "meta",
-          ],
-        }
-      )
+            ],
+          }
+        )
 
-      await models.StayHome.create(
-        {
+        await ensureBookingOwnerMember({
+          bookingId: created.id,
+          ownerId: userId,
+          transaction: tx,
+        })
+
+        await models.StayHome.create(
+          {
           stay_id: created.id,
           home_id: home.id,
           host_id: home.host_id,
@@ -1755,22 +1843,32 @@ export const getBookingsUnified = async (req, res) => {
 
     // 2. Traer bookings preferentemente por user_id; como transiciÃ³n,
     //    incluir tambiÃ©n huÃ©rfanas donde guest_email coincide y user_id es NULL
-    const inventoryFilter =
-      inventoryQuery === "HOME"
-        ? { inventory_type: "HOME" }
-        : inventoryQuery === "HOTEL"
-          ? { inventory_type: { [Op.ne]: "HOME" } }
-          : {}
+      const inventoryFilter =
+        inventoryQuery === "HOME"
+          ? { inventory_type: "HOME" }
+          : inventoryQuery === "HOTEL"
+            ? { inventory_type: { [Op.ne]: "HOME" } }
+            : {}
 
-    const rows = await models.Booking.findAll({
-      where: {
-        ...(status && { status }),
-        ...inventoryFilter,
-        [Op.or]: [
-          { user_id: userId },
-          { user_id: null, guest_email: email },
-        ],
-      },
+      const memberRows = await models.BookingUser.findAll({
+        where: {
+          user_id: userId,
+          status: BOOKING_MEMBER_STATUSES.ACCEPTED,
+        },
+        attributes: ["stay_id"],
+      })
+      const memberStayIds = memberRows.map((row) => row.stay_id).filter(Boolean)
+
+      const rows = await models.Booking.findAll({
+        where: {
+          ...(status && { status }),
+          ...inventoryFilter,
+          [Op.or]: [
+            { user_id: userId },
+            { user_id: null, guest_email: email },
+            ...(memberStayIds.length ? [{ id: { [Op.in]: memberStayIds } }] : []),
+          ],
+        },
       include: STAY_BASE_INCLUDE,
       order: [["check_in", "DESC"]],
       limit: latest ? 1 : Number(limit),
@@ -2087,11 +2185,28 @@ export const getBookingsForStaff = async (req, res) => {
 export const getBookingById = async (req, res) => {
   try {
     const { id } = req.params
+    const userId = Number(req.user?.id)
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+    const role = Number(req.user?.role)
+    const isStaff = role === 1 || role === 100
 
     const booking = await models.Booking.findByPk(id, {
       include: [
         { model: models.User, attributes: ["id", "name", "email"], required: false },
         ...STAY_BASE_INCLUDE,
+        {
+          model: models.BookingUser,
+          as: "members",
+          required: false,
+          include: [
+            {
+              model: models.User,
+              as: "user",
+              attributes: ["id", "name", "email", "phone", "avatar_url"],
+              required: false,
+            },
+          ],
+        },
         {
           model: models.AddOn,
           through: {
@@ -2114,6 +2229,19 @@ export const getBookingById = async (req, res) => {
 
     if (!booking) {
       return res.status(404).json({ error: "Booking not found" })
+    }
+
+    const isOwner = Number(booking.user_id) === userId
+    const isMember = Array.isArray(booking.members)
+      ? booking.members.some(
+          (member) =>
+            Number(member.user_id) === userId &&
+            String(member.status || "").toUpperCase() === BOOKING_MEMBER_STATUSES.ACCEPTED
+        )
+      : false
+    const isHost = Number(booking.homeStay?.host_id) === userId
+    if (!isOwner && !isHost && !isStaff && !isMember) {
+      return res.status(403).json({ error: "Forbidden" })
     }
 
     const addons = booking.AddOns.map((addon) => {
@@ -2182,9 +2310,391 @@ export const getBookingById = async (req, res) => {
       inventoryType: stayView.inventoryType,
       pricingSnapshot: booking.pricing_snapshot ?? null,
       guestSnapshot: booking.guest_snapshot ?? null,
+      members: Array.isArray(booking.members) ? booking.members.map(mapBookingMember) : [],
     })
   } catch (err) {
     console.error("getBookingById:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+/* ---------------------------------------------------------------
+   GET  /api/bookings/invites/:token
+   Public: resolve invite details by token.
+---------------------------------------------------------------- */
+export const getBookingInvite = async (req, res) => {
+  try {
+    const token = String(req.params.token || "").trim()
+    if (!token) return res.status(400).json({ error: "Missing invite token" })
+
+    const member = await models.BookingUser.findOne({
+      where: { invite_token: token },
+      include: [
+        {
+          model: models.Booking,
+          as: "booking",
+          include: STAY_BASE_INCLUDE,
+        },
+        {
+          model: models.User,
+          as: "user",
+          attributes: ["id", "name", "email", "phone", "avatar_url"],
+          required: false,
+        },
+      ],
+    })
+    if (!member) return res.status(404).json({ error: "Invite not found" })
+    if (member.expires_at && new Date(member.expires_at) < new Date()) {
+      return res.status(410).json({ error: "Invite expired" })
+    }
+
+    const booking = member.booking
+    if (!booking) return res.status(404).json({ error: "Booking not found" })
+
+    const obj = booking.toJSON()
+    const channel =
+      obj.inventory_type === "HOME" || obj.source === "HOME"
+        ? "home"
+        : obj.source === "TGX"
+          ? "tgx"
+          : obj.source === "OUTSIDE"
+            ? "outside"
+            : obj.source === "VAULT"
+              ? "vault"
+              : "insider"
+
+    return res.json({
+      booking: mapStay(obj, channel),
+      member: mapBookingMember(member),
+      expiresAt: member.expires_at ?? null,
+    })
+  } catch (err) {
+    console.error("getBookingInvite:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+/* ---------------------------------------------------------------
+   POST /api/bookings/:id/invite { email?, phone? }
+   Owner invites a co-traveler (homes only).
+---------------------------------------------------------------- */
+export const inviteBookingMember = async (req, res) => {
+  try {
+    const bookingId = Number(req.params.id)
+    const userId = Number(req.user?.id)
+    if (!bookingId || !userId) return res.status(401).json({ error: "Unauthorized" })
+
+    const normalizedEmail = normalizeEmail(req.body?.email)
+    const normalizedPhone = normalizePhone(req.body?.phone)
+    if (!normalizedEmail && !normalizedPhone) {
+      return res.status(400).json({ error: "Email or phone is required" })
+    }
+
+    const booking = await models.Booking.findByPk(bookingId, {
+      include: [
+        {
+          model: models.StayHome,
+          as: "homeStay",
+          required: true,
+          include: [
+            {
+              model: models.Home,
+              as: "home",
+              attributes: ["id", "title", "max_guests"],
+              required: false,
+            },
+          ],
+        },
+      ],
+    })
+    if (!booking) return res.status(404).json({ error: "Booking not found" })
+
+    const inventoryType = booking.inventory_type ?? booking.source
+    if (String(inventoryType || "").toUpperCase() !== "HOME") {
+      return res.status(400).json({ error: "Only home bookings support co-travelers" })
+    }
+
+    if (Number(booking.user_id) !== userId) {
+      return res.status(403).json({ error: "Only the booking owner can invite" })
+    }
+
+    const statusLc = String(booking.status || "").toUpperCase()
+    if (statusLc === "CANCELLED") {
+      return res.status(400).json({ error: "Booking is cancelled" })
+    }
+
+    await ensureBookingOwnerMember({ bookingId, ownerId: userId })
+
+    const maxGuests = Number(booking.homeStay?.home?.max_guests ?? 0) || null
+    const activeMembers = await models.BookingUser.count({
+      where: {
+        stay_id: bookingId,
+        status: { [Op.in]: [BOOKING_MEMBER_STATUSES.INVITED, BOOKING_MEMBER_STATUSES.ACCEPTED] },
+      },
+    })
+    if (maxGuests && activeMembers >= maxGuests) {
+      return res.status(409).json({ error: "Co-traveler limit reached for this home" })
+    }
+
+    const userLookup = []
+    if (normalizedEmail) userLookup.push({ email: normalizedEmail })
+    if (normalizedPhone) userLookup.push({ phone: normalizedPhone })
+    const invitedUser =
+      userLookup.length > 0
+        ? await models.User.findOne({ where: { [Op.or]: userLookup } })
+        : null
+
+    if (invitedUser && Number(invitedUser.id) === userId) {
+      return res.status(400).json({ error: "Owner is already part of the booking" })
+    }
+
+    const duplicateWhere = { stay_id: bookingId }
+    if (invitedUser) duplicateWhere.user_id = invitedUser.id
+    else if (normalizedEmail) duplicateWhere.invited_email = normalizedEmail
+    else duplicateWhere.invited_phone = normalizedPhone
+
+    const existing = await models.BookingUser.findOne({
+      where: duplicateWhere,
+      include: [
+        {
+          model: models.User,
+          as: "user",
+          attributes: ["id", "name", "email", "phone", "avatar_url"],
+          required: false,
+        },
+      ],
+    })
+    if (existing) {
+      return res.json({
+        member: mapBookingMember(existing),
+        inviteUrl: buildBookingInviteUrl(existing.invite_token),
+      })
+    }
+
+    const inviteToken = crypto.randomBytes(24).toString("hex")
+    const expiresAt =
+      Number.isFinite(INVITE_TTL_DAYS) && INVITE_TTL_DAYS > 0
+        ? new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000)
+        : null
+
+    const member = await models.BookingUser.create({
+      stay_id: bookingId,
+      user_id: invitedUser?.id ?? null,
+      role: BOOKING_MEMBER_ROLES.GUEST,
+      status: BOOKING_MEMBER_STATUSES.INVITED,
+      invited_email: normalizedEmail,
+      invited_phone: normalizedPhone,
+      invited_by: userId,
+      invite_token: inviteToken,
+      expires_at: expiresAt,
+    })
+
+    const inviteUrl = buildBookingInviteUrl(inviteToken)
+    const homeTitle = booking.homeStay?.home?.title ?? "a home stay"
+    const emailTarget = normalizedEmail ?? invitedUser?.email ?? null
+    if (emailTarget) {
+      const brand = process.env.BRAND_NAME || "Insider Bookings"
+      const subject = `${brand} booking invite`
+      const text = [
+        `You have been invited to join a booking for ${homeTitle}.`,
+        "",
+        `Accept the invite here: ${inviteUrl}`,
+        "",
+        "If you do not have the app yet, download it and open this link again.",
+      ].join("\n")
+      try {
+        await sendMail({
+          to: emailTarget,
+          subject,
+          text,
+          html: `<p>You have been invited to join a booking for <b>${homeTitle}</b>.</p>
+<p><a href="${inviteUrl}">Accept the invite</a></p>
+<p>If you do not have the app yet, download it and open this link again.</p>`,
+        })
+      } catch (mailErr) {
+        console.warn("[booking-invite] email failed:", mailErr?.message || mailErr)
+      }
+    }
+
+    if (invitedUser?.id) {
+      try {
+        await sendPushToUser({
+          userId: invitedUser.id,
+          title: "Booking invite",
+          body: `You were invited to join ${homeTitle}.`,
+          data: {
+            bookingId,
+            inviteToken,
+          },
+        })
+      } catch (pushErr) {
+        console.warn("[booking-invite] push failed:", pushErr?.message || pushErr)
+      }
+    }
+
+    const memberPayload = member.get({ plain: true })
+    memberPayload.user = invitedUser ? invitedUser.get({ plain: true }) : null
+
+    return res.status(201).json({
+      member: mapBookingMember(memberPayload),
+      inviteUrl,
+    })
+  } catch (err) {
+    console.error("inviteBookingMember:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+/* ---------------------------------------------------------------
+   POST /api/bookings/invites/accept { token }
+---------------------------------------------------------------- */
+export const acceptBookingInvite = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id)
+    const token = String(req.body?.token || "").trim()
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+    if (!token) return res.status(400).json({ error: "Missing invite token" })
+
+    const member = await models.BookingUser.findOne({
+      where: { invite_token: token },
+      include: [
+        {
+          model: models.Booking,
+          as: "booking",
+          include: [
+            {
+              model: models.StayHome,
+              as: "homeStay",
+              required: false,
+              include: [
+                { model: models.Home, as: "home", attributes: ["id", "title", "max_guests"] },
+              ],
+            },
+          ],
+        },
+        {
+          model: models.User,
+          as: "user",
+          attributes: ["id", "name", "email", "phone", "avatar_url"],
+          required: false,
+        },
+      ],
+    })
+    if (!member) return res.status(404).json({ error: "Invite not found" })
+    if (member.expires_at && new Date(member.expires_at) < new Date()) {
+      return res.status(410).json({ error: "Invite expired" })
+    }
+
+    const booking = member.booking
+    if (!booking) return res.status(404).json({ error: "Booking not found" })
+
+    const inventoryType = booking.inventory_type ?? booking.source
+    if (String(inventoryType || "").toUpperCase() !== "HOME") {
+      return res.status(400).json({ error: "Invite is not for a home booking" })
+    }
+
+    const statusLc = String(booking.status || "").toUpperCase()
+    if (statusLc === "CANCELLED") {
+      return res.status(400).json({ error: "Booking is cancelled" })
+    }
+
+    if (member.user_id && Number(member.user_id) !== userId) {
+      return res.status(409).json({ error: "Invite already claimed" })
+    }
+
+    if (
+      String(member.status || "").toUpperCase() === BOOKING_MEMBER_STATUSES.DECLINED ||
+      String(member.status || "").toUpperCase() === BOOKING_MEMBER_STATUSES.REMOVED
+    ) {
+      return res.status(409).json({ error: "Invite is no longer active" })
+    }
+
+    await ensureBookingOwnerMember({ bookingId: booking.id, ownerId: booking.user_id })
+
+    await member.update({
+      user_id: userId,
+      status: BOOKING_MEMBER_STATUSES.ACCEPTED,
+      accepted_at: new Date(),
+    })
+
+    const refreshedMember = await models.BookingUser.findByPk(member.id, {
+      include: [
+        {
+          model: models.User,
+          as: "user",
+          attributes: ["id", "name", "email", "phone", "avatar_url"],
+          required: false,
+        },
+      ],
+    })
+
+    const obj = booking.toJSON()
+    const channel =
+      obj.inventory_type === "HOME" || obj.source === "HOME"
+        ? "home"
+        : obj.source === "TGX"
+          ? "tgx"
+          : obj.source === "OUTSIDE"
+            ? "outside"
+            : obj.source === "VAULT"
+              ? "vault"
+              : "insider"
+
+    return res.json({
+      booking: mapStay(obj, channel),
+      member: mapBookingMember(refreshedMember ?? member),
+    })
+  } catch (err) {
+    console.error("acceptBookingInvite:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+/* ---------------------------------------------------------------
+   POST /api/bookings/invites/decline { token }
+---------------------------------------------------------------- */
+export const declineBookingInvite = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id)
+    const token = String(req.body?.token || "").trim()
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+    if (!token) return res.status(400).json({ error: "Missing invite token" })
+
+    const member = await models.BookingUser.findOne({
+      where: { invite_token: token },
+      include: [
+        {
+          model: models.User,
+          as: "user",
+          attributes: ["id", "name", "email", "phone", "avatar_url"],
+          required: false,
+        },
+      ],
+    })
+    if (!member) return res.status(404).json({ error: "Invite not found" })
+    if (member.expires_at && new Date(member.expires_at) < new Date()) {
+      return res.status(410).json({ error: "Invite expired" })
+    }
+
+    if (member.user_id && Number(member.user_id) !== userId) {
+      return res.status(409).json({ error: "Invite already claimed" })
+    }
+
+    await member.update({ status: BOOKING_MEMBER_STATUSES.DECLINED })
+    const refreshedMember = await models.BookingUser.findByPk(member.id, {
+      include: [
+        {
+          model: models.User,
+          as: "user",
+          attributes: ["id", "name", "email", "phone", "avatar_url"],
+          required: false,
+        },
+      ],
+    })
+
+    return res.json({ member: mapBookingMember(refreshedMember ?? member) })
+  } catch (err) {
+    console.error("declineBookingInvite:", err)
     return res.status(500).json({ error: "Server error" })
   }
 }
@@ -2315,6 +2825,7 @@ export const getOutsideBookingWithAddOns = async (req, res) => {
     return res.json({
       id: bk.id,
       bookingConfirmation: bk.external_ref, // usamos external_ref
+      externalRef: bk.external_ref,
       guestName: bk.guest_name,
       guestLastName: bk.meta?.guest_last_name ?? null,
       guestEmail: bk.guest_email,
@@ -2326,6 +2837,8 @@ export const getOutsideBookingWithAddOns = async (req, res) => {
       paymentStatus: String(bk.payment_status).toLowerCase(),
       user: bk.User,
       hotel: hotelPlain,
+      room: bk.Room ?? null,
+      meta: bk.meta ?? null,
       addons,
       source: "OUTSIDE"
     })

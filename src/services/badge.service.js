@@ -72,6 +72,19 @@ const resultMapFromAssignments = (assignments = []) => {
   return map;
 };
 
+const normalizeCancellationPolicy = (value) => {
+  if (!value) return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes("flex")) return "FLEXIBLE";
+  if (normalized.includes("free")) return "FLEXIBLE";
+  if (normalized.includes("moder")) return "MODERATE";
+  if (normalized.includes("firm") || normalized.includes("firme")) return "FIRM";
+  if (normalized.includes("strict") || normalized.includes("estrict")) return "STRICT";
+  if (normalized.includes("non") || normalized.includes("no reembolsable")) return "NON_REFUNDABLE";
+  return normalized.toUpperCase();
+};
+
 const evaluateDerivedHomeBadges = (home) => {
   if (!home) return [];
   const bag = [];
@@ -90,6 +103,17 @@ const evaluateDerivedHomeBadges = (home) => {
     bag.push("home_exceptional_checkin");
   }
 
+  const cancellationPolicyRaw =
+    home.policies?.cancellation_policy ??
+    home.policies?.cancellation ??
+    home.policies?.cancellationPolicy ??
+    home.house_rules_snapshot?.cancellation_policy ??
+    null;
+  const cancellationPolicy = normalizeCancellationPolicy(cancellationPolicyRaw);
+  if (cancellationPolicy === "FLEXIBLE") {
+    bag.push("home_free_cancellation");
+  }
+
   if (home.space_type === "PRIVATE_ROOM") {
     bag.push("home_private_room");
   } else if (home.space_type === "ENTIRE_PLACE") {
@@ -102,14 +126,30 @@ const evaluateDerivedHomeBadges = (home) => {
 const evaluateDerivedHostBadges = (host) => {
   if (!host) return [];
   const meta = host.hostProfile?.metadata ?? host.metadata ?? {};
+  const kycStatus =
+    host.hostProfile?.kyc_status ??
+    meta.kyc_status ??
+    meta.kycStatus ??
+    null;
+  const identityVerified =
+    meta.identity_verified ??
+    meta.identityVerified ??
+    host.email_verified ??
+    false;
+  const isVerified =
+    String(kycStatus || "").toUpperCase() === "APPROVED" || Boolean(identityVerified);
+  const bag = [];
+  if (isVerified) {
+    bag.push("host_verified");
+  }
   const isSuperhost = Boolean(meta.is_superhost ?? meta.superhost ?? host.superhost);
-  if (isSuperhost) return ["host_superhost"];
+  if (isSuperhost) return [...bag, "host_superhost"];
   const rating = Number(meta.overall_rating ?? host.avg_rating ?? 0);
   const stays = Number(meta.completed_stays ?? 0);
   if (rating >= 4.8 && stays >= 10) {
-    return ["host_superhost"];
+    return [...bag, "host_superhost"];
   }
-  return [];
+  return bag;
 };
 
 const mergeDerivedBadges = (map, derivedSlugs = []) => {
