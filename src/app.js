@@ -194,7 +194,7 @@ const PORT = process.env.PORT || 3000;
     if (!allowAlter && ["1", "true", "yes"].includes(alterEnv)) {
       console.warn('[sequelize] alter sync was requested but ignored in this environment');
     }
-    await sequelize.sync({ alter: true });
+    await sequelize.sync({ alter: allowAlter });
     await ensureHomeFavoriteIndexes();
     await ensureDefaultPlatforms();
     initSocketServer(server);

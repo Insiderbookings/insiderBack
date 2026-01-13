@@ -1,6 +1,8 @@
 import { DataTypes } from "sequelize";
 
 export default (sequelize) => {
+    const JSON_TYPE = sequelize.getDialect() === "mysql" ? DataTypes.JSON : DataTypes.JSONB;
+
     const StayIntelligence = sequelize.define(
         "StayIntelligence",
         {
@@ -15,15 +17,15 @@ export default (sequelize) => {
                 unique: true,
             },
             insights: {
-                type: DataTypes.JSONB,
+                type: JSON_TYPE,
                 defaultValue: [],
             },
             preparation: {
-                type: DataTypes.JSONB,
+                type: JSON_TYPE,
                 defaultValue: [],
             },
             weatherTips: {
-                type: DataTypes.JSONB,
+                type: JSON_TYPE,
                 defaultValue: null,
             },
             lastGeneratedAt: {
@@ -31,7 +33,7 @@ export default (sequelize) => {
                 defaultValue: DataTypes.NOW,
             },
             metadata: {
-                type: DataTypes.JSONB,
+                type: JSON_TYPE,
                 defaultValue: {},
             },
         },
