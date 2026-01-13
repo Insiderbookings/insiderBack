@@ -496,20 +496,6 @@ export const getInfluencerStats = async (req, res) => {
       eventRows.forEach((row) => addEarning(row.currency, row.amount, row.status))
     }
 
-    if (models.InfluencerCommission) {
-      const commissionRows = await models.InfluencerCommission.findAll({
-        where: {
-          influencer_user_id: userId,
-          status: { [Op.in]: ["eligible", "hold", "paid"] },
-        },
-        attributes: ["commission_amount", "commission_currency", "status"],
-        limit: 1000,
-      })
-      commissionRows.forEach((row) =>
-        addEarning(row.commission_currency, row.commission_amount, row.status)
-      )
-    }
-
     const incentives = await loadInfluencerIncentives(userId)
 
     // 6) Normalizar ultimas reservas
@@ -524,6 +510,11 @@ export const getInfluencerStats = async (req, res) => {
       payoutStatus: b.payout_status ?? null,
     }))
 
+    const totalNights = bookings.reduce((sum, b) => {
+      const nights = Number(b?.nights)
+      return Number.isFinite(nights) && nights > 0 ? sum + nights : sum
+    }, 0)
+
     // 7) Respuesta
     return res.json({
       user: { id: userId, name: req.user?.name, email: req.user?.email, user_code: req.user?.user_code, role },
@@ -537,7 +528,8 @@ export const getInfluencerStats = async (req, res) => {
       })),
       totals: {
         signupsCount,
-        bookingsCount: bookings.length,
+        bookingsCount: totalNights,
+        bookingsTotal: bookings.length,
         unpaidEarnings: unpaidByCurrency,
         paidEarnings: paidByCurrency,
       },
@@ -679,11 +671,11 @@ export const getInfluencerCommissions = async (req, res) => {
     const where = { influencer_user_id: userId }
     if (["hold", "eligible", "paid", "reversed"].includes(String(status))) where.status = status
 
-    const rows = await models.InfluencerCommission.findAll({
+    const rows = await models.InfluencerEventCommission.findAll({
       where,
       include: [
-        { model: models.Booking, as: "booking" },
-        { model: models.DiscountCode, as: "discountCode", attributes: ["id", "code"] },
+        { model: models.Stay, as: "stay" },
+        { model: models.User, as: "signupUser", attributes: ["id", "name", "email"] },
       ],
       order: [["created_at", "DESC"]],
       limit: 500,
@@ -709,7 +701,7 @@ export const adminCreateInfluencerPayoutBatch = async (req, res) => {
 
     const batchId = payoutBatchId || `IBP-${Date.now().toString(36)}`
     const { Op } = await import("sequelize")
-    const [count] = await models.InfluencerCommission.update(
+    const [count] = await models.InfluencerEventCommission.update(
       { status: "paid", paid_at: new Date(), payout_batch_id: batchId },
       { where: { id: { [Op.in]: ids }, status: { [Op.in]: ["eligible", "hold"] } } }
     )

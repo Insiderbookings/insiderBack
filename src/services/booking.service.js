@@ -386,12 +386,16 @@ export const processBookingCancellation = async ({
     // Reverse Commissions
     if (wasPaid) {
         try {
-            const ic = await models.InfluencerCommission.findOne({ where: { booking_id: booking.id } });
-            if (ic && ic.status !== 'paid') {
-                await ic.update({ status: 'reversed', reversal_reason: 'cancelled' });
+            const rows = await models.InfluencerEventCommission.findAll({
+                where: { stay_id: booking.id },
+            });
+            for (const row of rows) {
+                if (row.status !== "paid") {
+                    await row.update({ status: "reversed", reversal_reason: "cancelled" });
+                }
             }
         } catch (e) {
-            console.warn('cancelBooking: could not reverse influencer commission:', e?.message || e);
+            console.warn("cancelBooking: could not reverse influencer commission:", e?.message || e);
         }
     }
 

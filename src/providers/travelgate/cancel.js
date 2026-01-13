@@ -102,12 +102,14 @@ export const cancel = async (req, res, next) => {
 
     // 4.0-bis) Revertir comisión de influencer si aplica y no fue pagada
     try {
-      const ic = await models.InfluencerCommission.findOne({ where: { stay_id: bk.id } })
-      if (ic && ic.status !== 'paid') {
-        await ic.update({ status: 'reversed', reversal_reason: 'tgx_cancel' })
+      const rows = await models.InfluencerEventCommission.findAll({ where: { stay_id: bk.id } })
+      for (const row of rows) {
+        if (row.status !== "paid") {
+          await row.update({ status: "reversed", reversal_reason: "tgx_cancel" })
+        }
       }
     } catch (e) {
-      console.warn('(INF) Could not reverse influencer commission on TGX cancel:', e?.message || e)
+      console.warn("(INF) Could not reverse influencer event commission on TGX cancel:", e?.message || e)
     }
 
     // 4.1) Guardar cancelReference si lo tenés en el modelo

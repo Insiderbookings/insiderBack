@@ -39,14 +39,38 @@ const referralCouponCapUsd = () => {
   return Number.isFinite(capEnv) && capEnv > 0 ? capEnv : null
 }
 
-const signupBonusAmount = () => {
-  const env = Number(process.env.INFLUENCER_SIGNUP_BONUS_USD)
-  return Number.isFinite(env) && env > 0 ? env : 0.25
+const signupBonusAmount = (upgraded = false) => {
+  const envKey = upgraded
+    ? "INFLUENCER_SIGNUP_BOOKING_BONUS_USD"
+    : "INFLUENCER_SIGNUP_BONUS_USD"
+  const env = Number(process.env[envKey])
+  const fallback = upgraded ? 1 : 0.5
+  return Number.isFinite(env) && env > 0 ? env : fallback
 }
 
-const bookingBonusAmount = () => {
+const bookingBonusPerNightUsd = () => {
   const env = Number(process.env.INFLUENCER_BOOKING_BONUS_USD)
   return Number.isFinite(env) && env > 0 ? env : 2
+}
+
+const parseNights = (nights, checkIn, checkOut) => {
+  const n = Number(nights)
+  if (Number.isFinite(n) && n > 0) return Math.floor(n)
+  if (!checkIn || !checkOut) return null
+  const inDate = new Date(checkIn)
+  const outDate = new Date(checkOut)
+  if (Number.isNaN(inDate.getTime()) || Number.isNaN(outDate.getTime())) return null
+  const ms = outDate.getTime() - inDate.getTime()
+  const days = Math.round(ms / (1000 * 60 * 60 * 24))
+  return days > 0 ? days : null
+}
+
+const getStaySnapshot = async (stayId, transaction) => {
+  if (!stayId || !models.Stay) return null
+  return models.Stay.findByPk(stayId, {
+    attributes: ["id", "nights", "check_in", "check_out", "currency"],
+    transaction,
+  })
 }
 
 const ensureWallet = async (influencerUserId, transaction) => {
@@ -100,15 +124,44 @@ export const findInfluencerByReferralCode = async (code, transaction) => {
   return influencer
 }
 
-const ensureEventCommission = async ({ eventType, influencerUserId, signupUserId = null, stayId = null, currency = "USD", transaction }) => {
+const ensureEventCommission = async ({
+  eventType,
+  influencerUserId,
+  signupUserId = null,
+  stayId = null,
+  nights = null,
+  currency = "USD",
+  transaction,
+}) => {
   if (!models.InfluencerEventCommission) return null
   if (!influencerUserId) return null
-  const where = { event_type: eventType }
+  const where = { event_type: eventType, influencer_user_id: influencerUserId }
   if (eventType === "signup") where.signup_user_id = signupUserId
   if (eventType === "booking") where.stay_id = stayId
 
-  const bonusAmount = eventType === "signup" ? signupBonusAmount() : bookingBonusAmount()
-  if (!bonusAmount) return null
+  let amount = 0
+  let amountCurrency = (currency || "USD").toUpperCase()
+  if (eventType === "signup") {
+    amount = signupBonusAmount(false)
+    amountCurrency = "USD"
+  } else {
+    let stay = null
+    const stayNights = parseNights(nights, null, null)
+    if (!stayNights) {
+      stay = await getStaySnapshot(stayId, transaction)
+    }
+    const resolvedNights = stayNights || parseNights(stay?.nights, stay?.check_in, stay?.check_out)
+    if (!resolvedNights) return null
+    const perNightUsd = bookingBonusPerNightUsd()
+    const totalUsd = perNightUsd * resolvedNights
+    const resolvedCurrency = (currency || stay?.currency || "USD").toUpperCase()
+    amount = toCurrencyFromUsd(totalUsd, resolvedCurrency)
+    amountCurrency = resolvedCurrency
+  }
+  if (!amount) return null
+  if (Number.isFinite(amount)) {
+    amount = Number.parseFloat(amount.toFixed(2))
+  }
 
   const [commission] = await models.InfluencerEventCommission.findOrCreate({
     where,
@@ -117,8 +170,8 @@ const ensureEventCommission = async ({ eventType, influencerUserId, signupUserId
       signup_user_id: signupUserId || null,
       stay_id: stayId || null,
       event_type: eventType,
-      amount: bonusAmount,
-      currency: (currency || "USD").toUpperCase(),
+      amount,
+      currency: amountCurrency,
       status: "eligible",
     },
     transaction,
@@ -189,6 +242,7 @@ export const recordInfluencerEvent = async ({
   influencerUserId,
   signupUserId = null,
   stayId = null,
+  nights = null,
   currency = "USD",
   transaction,
 }) => {
@@ -214,11 +268,45 @@ export const recordInfluencerEvent = async ({
     influencerUserId,
     signupUserId,
     stayId,
+    nights,
     currency,
     transaction,
   })
 
   return { event, created, commission }
+}
+
+export const upgradeSignupBonusOnBooking = async ({
+  influencerUserId,
+  bookingUserId,
+  transaction,
+}) => {
+  if (!models.InfluencerEventCommission || !models.User) return null
+  if (!influencerUserId || !bookingUserId) return null
+  const user = await models.User.findByPk(bookingUserId, {
+    attributes: ["id", "referred_by_influencer_id"],
+    transaction,
+  })
+  if (!user) return null
+  if (Number(user.referred_by_influencer_id) !== Number(influencerUserId)) return null
+
+  const existing = await models.InfluencerEventCommission.findOne({
+    where: {
+      influencer_user_id: influencerUserId,
+      event_type: "signup",
+      signup_user_id: bookingUserId,
+    },
+    transaction,
+  })
+  if (!existing) return null
+  if (existing.status === "paid") return existing
+
+  const targetAmount = signupBonusAmount(true)
+  const currentAmount = Number(existing.amount || 0)
+  if (!Number.isFinite(currentAmount) || currentAmount >= targetAmount) return existing
+
+  await existing.update({ amount: targetAmount, currency: "USD" }, { transaction })
+  return existing
 }
 
 export const linkReferralCodeForUser = async ({ userId, referralCode, transaction }) => {

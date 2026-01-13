@@ -13,7 +13,11 @@ import { resolveVaultBranding } from "../helpers/vaultBranding.js";
 import { emitAdminActivity } from "../websocket/emitter.js";
 import { createThread, postMessage } from "../services/chat.service.js";
 import { generateAndSaveTripIntelligence } from "../services/aiAssistant.service.js";
-import { finalizeReferralRedemption, recordInfluencerEvent } from "../services/referralRewards.service.js";
+import {
+  finalizeReferralRedemption,
+  recordInfluencerEvent,
+  upgradeSignupBonusOnBooking,
+} from "../services/referralRewards.service.js";
 
 dotenv.config()
 
@@ -38,6 +42,30 @@ const safeURL = (maybe, fallback) => {
   }
 };
 const YOUR_DOMAIN = safeURL(process.env.CLIENT_URL, "http://localhost:5173")
+
+const toUtcDay = (value) => {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+};
+
+const diffDays = (checkIn, checkOut) => {
+  const inDay = toUtcDay(checkIn);
+  const outDay = toUtcDay(checkOut);
+  if (inDay == null || outDay == null) return null;
+  const days = Math.round((outDay - inDay) / (1000 * 60 * 60 * 24));
+  return days > 0 ? days : null;
+};
+
+const ensureBookingNights = async (booking) => {
+  const current = Number(booking?.nights);
+  if (Number.isFinite(current) && current > 0) return current;
+  const nights = diffDays(booking?.check_in, booking?.check_out);
+  if (!nights) throw new Error("Invalid booking nights");
+  await booking.update({ nights });
+  return nights;
+};
 const getStayIdFromMeta = (meta = {}) =>
   Number(meta.stayId || meta.stay_id || meta.bookingId || meta.booking_id) || 0;
 
@@ -195,74 +223,25 @@ export const finalizeBookingAfterPayment = async ({ bookingId }) => {
   if (meta.confirmationProcessedAt) return booking;
 
   const influencerId = Number(booking.influencer_user_id) || null;
-  if (influencerId) {
-    try {
-      const existing = await models.InfluencerCommission.findOne({
-        where: { stay_id: booking.id },
-      });
-      if (!existing) {
-        const rateEnv = Number(process.env.INFLUENCER_COMMISSION_PCT);
-        const ratePct = Number.isFinite(rateEnv) && rateEnv > 0 ? rateEnv : 15;
-        const capUsdEnv = Number(process.env.INFLUENCER_COMMISSION_CAP_USD);
-        const capUsd = Number.isFinite(capUsdEnv) && capUsdEnv > 0 ? capUsdEnv : 5;
-        let capAmt = capUsd;
-        try {
-          const ratesStr = process.env.FX_USD_RATES || "{}";
-          const rates = JSON.parse(ratesStr);
-          const r = Number(rates[(booking.currency || "USD").toUpperCase()]);
-          if (Number.isFinite(r) && r > 0) capAmt = capUsd * r;
-        } catch { }
-        const holdDaysEnv = Number(process.env.INFLUENCER_HOLD_DAYS);
-        const holdDays = Number.isFinite(holdDaysEnv) && holdDaysEnv >= 0 ? holdDaysEnv : 3;
-
-        const gross = Number(booking.gross_price || 0);
-        const net = booking.net_cost != null ? Number(booking.net_cost) : null;
-        const markup = net != null ? Math.max(0, gross - Number(net)) : null;
-        const base = markup != null ? markup : gross;
-        const baseType = markup != null ? "markup" : "gross";
-
-        const rawCommission = base * (ratePct / 100);
-        const commissionAmount =
-          Math.round((Math.min(rawCommission, capAmt) + Number.EPSILON) * 100) / 100;
-        const currency = booking.currency || "USD";
-
-        let holdUntil = null;
-        try {
-          const co = booking.check_out ? new Date(booking.check_out) : null;
-          if (co && !isNaN(co)) {
-            co.setDate(co.getDate() + holdDays);
-            holdUntil = co;
-          }
-        } catch { }
-        const useHold =
-          String(process.env.INFLUENCER_USE_HOLD || "").toLowerCase() === "true";
-        await models.InfluencerCommission.create({
-          influencer_user_id: influencerId,
-          stay_id: booking.id,
-          discount_code_id: null,
-          commission_base: baseType,
-          commission_rate_pct: ratePct,
-          commission_amount: commissionAmount,
-          commission_currency: currency,
-          status: useHold && holdUntil ? "hold" : "eligible",
-          hold_until: holdUntil,
-        });
-      }
-    } catch (e) {
-      console.warn("[payments] influencer commission failed:", e?.message || e);
-    }
-  }
 
   let redemption = null;
+  let nightsForEvent = null;
   try {
     await sequelize.transaction(async (tx) => {
+      nightsForEvent = await ensureBookingNights(booking);
       redemption = await finalizeReferralRedemption(booking.id, tx);
       if (influencerId) {
         await recordInfluencerEvent({
           eventType: "booking",
           influencerUserId: influencerId,
           stayId: booking.id,
+          nights: nightsForEvent,
           currency: booking.currency || "USD",
+          transaction: tx,
+        });
+        await upgradeSignupBonusOnBooking({
+          influencerUserId: influencerId,
+          bookingUserId: booking.user_id,
           transaction: tx,
         });
       }
@@ -1304,97 +1283,6 @@ export const confirmPartnerPayment = async (req, res) => {
       },
     });
 
-    const ensureInfluencerEventCommission = async (influencerUserId, eventType, payload = {}) => {
-      if (!models.InfluencerEventCommission) return
-      const influencerId = Number(influencerUserId) || null
-      if (!influencerId) return
-      const { signup_user_id = null, stay_id = null } = payload
-      try {
-        const where = { event_type: eventType }
-        if (eventType === "signup") where.signup_user_id = signup_user_id
-        if (eventType === "booking") where.stay_id = stay_id
-        const bonusEnv =
-          eventType === "signup"
-            ? Number(process.env.INFLUENCER_SIGNUP_BONUS_USD)
-            : Number(process.env.INFLUENCER_BOOKING_BONUS_USD)
-        const defaultAmount = eventType === "signup" ? 0.25 : 2
-        const amount = Number.isFinite(bonusEnv) && bonusEnv > 0 ? bonusEnv : defaultAmount
-        if (!amount) return
-
-        await models.InfluencerEventCommission.findOrCreate({
-          where,
-          defaults: {
-            influencer_user_id: influencerId,
-            event_type: eventType,
-            signup_user_id: signup_user_id || null,
-            stay_id: stay_id || null,
-            amount,
-            currency: (booking.currency || "USD").toUpperCase(),
-            status: "eligible",
-          },
-        })
-      } catch (e) {
-        console.warn("(INF) No se pudo registrar bonus de evento:", e?.message || e)
-      }
-    }
-
-    const ensureInfluencerCommission = async (influencerUserId, discountCodeId = null) => {
-      const influencerId = Number(influencerUserId) || null
-      if (!influencerId) return
-      try {
-        const existing = await models.InfluencerCommission.findOne({ where: { stay_id: booking.id } })
-        if (existing) return
-
-        const rateEnv = Number(process.env.INFLUENCER_COMMISSION_PCT)
-        const ratePct = Number.isFinite(rateEnv) && rateEnv > 0 ? rateEnv : 15
-        const capUsdEnv = Number(process.env.INFLUENCER_COMMISSION_CAP_USD)
-        const capUsd = Number.isFinite(capUsdEnv) && capUsdEnv > 0 ? capUsdEnv : 5
-        let capAmt = capUsd
-        try {
-          const ratesStr = process.env.FX_USD_RATES || "{}"
-          const rates = JSON.parse(ratesStr)
-          const r = Number(rates[(booking.currency || "USD").toUpperCase()])
-          if (Number.isFinite(r) && r > 0) capAmt = capUsd * r
-        } catch { }
-        const holdDaysEnv = Number(process.env.INFLUENCER_HOLD_DAYS)
-        const holdDays = Number.isFinite(holdDaysEnv) && holdDaysEnv >= 0 ? holdDaysEnv : 3
-
-        const gross = Number(booking.gross_price || 0)
-        const net = booking.net_cost != null ? Number(booking.net_cost) : null
-        const markup = net != null ? Math.max(0, gross - Number(net)) : null
-        const base = markup != null ? markup : gross
-        const baseType = markup != null ? "markup" : "gross"
-
-        const rawCommission = base * (ratePct / 100)
-        const commissionAmount =
-          Math.round((Math.min(rawCommission, capAmt) + Number.EPSILON) * 100) / 100
-        const currency = booking.currency || "USD"
-
-        let holdUntil = null
-        try {
-          const co = booking.check_out ? new Date(booking.check_out) : null
-          if (co && !isNaN(co)) {
-            co.setDate(co.getDate() + holdDays)
-            holdUntil = co
-          }
-        } catch { }
-        const useHold = String(process.env.INFLUENCER_USE_HOLD || "").toLowerCase() === "true"
-        await models.InfluencerCommission.create({
-          influencer_user_id: influencerId,
-          stay_id: booking.id,
-          discount_code_id: discountCodeId || null,
-          commission_base: baseType,
-          commission_rate_pct: ratePct,
-          commission_amount: commissionAmount,
-          commission_currency: currency,
-          status: useHold && holdUntil ? "hold" : "eligible",
-          hold_until: holdUntil,
-        })
-      } catch (e) {
-        console.warn("(INF) Could not create InfluencerCommission:", e?.message || e)
-      }
-    }
-
     /* ─────────────────────────────────────────────────────────────
        Finalizar descuento (guardar por el código real)
     ───────────────────────────────────────────────────────────── */
@@ -1458,10 +1346,19 @@ export const confirmPartnerPayment = async (req, res) => {
         // Crear comisión para influencer si el código pertenece a un usuario (no staff)
         if (dc.user_id) {
           try {
-            await ensureInfluencerCommission(dc.user_id, dc.id)
-            await ensureInfluencerEventCommission(dc.user_id, "booking", { stay_id: booking.id })
+            await recordInfluencerEvent({
+              eventType: "booking",
+              influencerUserId: dc.user_id,
+              stayId: booking.id,
+              nights: await ensureBookingNights(booking),
+              currency: booking.currency || "USD",
+            })
+            await upgradeSignupBonusOnBooking({
+              influencerUserId: dc.user_id,
+              bookingUserId: booking.user_id,
+            })
           } catch (e) {
-            console.warn("(INF) No se pudo crear InfluencerCommission (PARTNER):", e?.message || e)
+            console.warn("(INF) No se pudo registrar evento de influencer (PARTNER):", e?.message || e)
           }
         }
       } catch (e) {
@@ -1472,10 +1369,19 @@ export const confirmPartnerPayment = async (req, res) => {
     // Si la reserva tiene un influencer atribuido (sin descuento), crear la comisión
     if (booking.influencer_user_id) {
       try {
-        await ensureInfluencerCommission(booking.influencer_user_id, booking.discount_code_id || null)
-        await ensureInfluencerEventCommission(booking.influencer_user_id, "booking", { stay_id: booking.id })
+        await recordInfluencerEvent({
+          eventType: "booking",
+          influencerUserId: booking.influencer_user_id,
+          stayId: booking.id,
+          nights: await ensureBookingNights(booking),
+          currency: booking.currency || "USD",
+        })
+        await upgradeSignupBonusOnBooking({
+          influencerUserId: booking.influencer_user_id,
+          bookingUserId: booking.user_id,
+        })
       } catch (e) {
-        console.warn("(INF) No se pudo crear InfluencerCommission por referral:", e?.message || e)
+        console.warn("(INF) No se pudo registrar evento de influencer por referral:", e?.message || e)
       }
     }
 

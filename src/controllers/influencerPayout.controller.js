@@ -21,15 +21,13 @@ const eligibleWhere = (now) => ({
   ],
 });
 
-const collectEligibleGroups = (rows, type, map) => {
+const collectEligibleGroups = (rows, map) => {
   rows.forEach((row) => {
     const influencerId = Number(row.influencer_user_id);
     if (!influencerId) return;
-    const amount = type === "event" ? toAmount(row.amount) : toAmount(row.commission_amount);
+    const amount = toAmount(row.amount);
     if (!amount) return;
-    const currency = normalizeCurrency(
-      type === "event" ? row.currency : row.commission_currency
-    );
+    const currency = normalizeCurrency(row.currency);
     const key = `${influencerId}_${currency}`;
     const entry =
       map.get(key) ||
@@ -37,12 +35,10 @@ const collectEligibleGroups = (rows, type, map) => {
         influencerId,
         currency,
         total: 0,
-        commissionIds: [],
         eventIds: [],
       };
     entry.total += amount;
-    if (type === "event") entry.eventIds.push(row.id);
-    else entry.commissionIds.push(row.id);
+    entry.eventIds.push(row.id);
     map.set(key, entry);
   });
 };
@@ -52,28 +48,21 @@ export const getInfluencerPayouts = async (req, res) => {
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    const [commissions, eventCommissions] = await Promise.all([
-      models.InfluencerCommission.findAll({
-        where: { influencer_user_id: userId },
-        order: [["paid_at", "DESC"], ["created_at", "DESC"]],
-        limit: 500,
-      }),
-      models.InfluencerEventCommission.findAll({
-        where: { influencer_user_id: userId },
-        order: [["paid_at", "DESC"], ["created_at", "DESC"]],
-        limit: 500,
-      }),
-    ]);
+    const eventCommissions = await models.InfluencerEventCommission.findAll({
+      where: { influencer_user_id: userId },
+      order: [["paid_at", "DESC"], ["created_at", "DESC"]],
+      limit: 500,
+    });
 
     const paidGroups = new Map();
     const pendingGroups = new Map();
 
-    const collectRow = (row, type) => {
-      const amount = type === "event" ? toAmount(row.amount) : toAmount(row.commission_amount);
+    const collectRow = (row) => {
+      const amount = toAmount(row.amount);
       if (!amount) return;
-      const currency = normalizeCurrency(type === "event" ? row.currency : row.commission_currency);
+      const currency = normalizeCurrency(row.currency);
       if (row.status === "paid") {
-        const key = row.payout_batch_id || `paid_${type}_${row.id}`;
+        const key = row.payout_batch_id || `paid_event_${row.id}`;
         const entry = paidGroups.get(key) || {
           id: key,
           label: "Stripe payout",
@@ -105,8 +94,7 @@ export const getInfluencerPayouts = async (req, res) => {
       }
     };
 
-    commissions.forEach((row) => collectRow(row, "commission"));
-    eventCommissions.forEach((row) => collectRow(row, "event"));
+    eventCommissions.forEach((row) => collectRow(row));
 
     const paidList = Array.from(paidGroups.values()).sort(
       (a, b) => toMillis(b.paidAt) - toMillis(a.paidAt)
@@ -125,25 +113,15 @@ export const processInfluencerPayoutBatch = async ({ limit = 100 } = {}) => {
   const batchId = `INFP-${Date.now().toString(36)}`;
   const groups = new Map();
 
-  const [commissions, eventCommissions] = await Promise.all([
-    models.InfluencerCommission.findAll({
-      where: {
-        ...eligibleWhere(now),
-      },
-      order: [["created_at", "ASC"]],
-      limit: 2000,
-    }),
-    models.InfluencerEventCommission.findAll({
-      where: {
-        ...eligibleWhere(now),
-      },
-      order: [["created_at", "ASC"]],
-      limit: 2000,
-    }),
-  ]);
+  const eventCommissions = await models.InfluencerEventCommission.findAll({
+    where: {
+      ...eligibleWhere(now),
+    },
+    order: [["created_at", "ASC"]],
+    limit: 2000,
+  });
 
-  collectEligibleGroups(commissions, "commission", groups);
-  collectEligibleGroups(eventCommissions, "event", groups);
+  collectEligibleGroups(eventCommissions, groups);
 
   const groupList = Array.from(groups.values()).filter((g) => g.total > 0);
   const limitedGroups = groupList.slice(0, Number(limit) || 100);
@@ -188,14 +166,6 @@ export const processInfluencerPayoutBatch = async ({ limit = 100 } = {}) => {
         payout_batch_id: providerPayoutId,
       };
 
-      if (group.commissionIds.length) {
-        await models.InfluencerCommission.update(updatePayload, {
-          where: {
-            id: { [Op.in]: group.commissionIds },
-            status: { [Op.in]: ["eligible", "hold"] },
-          },
-        });
-      }
       if (group.eventIds.length) {
         await models.InfluencerEventCommission.update(updatePayload, {
           where: {
