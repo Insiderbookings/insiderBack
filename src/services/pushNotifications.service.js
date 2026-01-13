@@ -17,6 +17,8 @@ const buildHeaders = () => {
   const accessToken = process.env.EXPO_PUSH_ACCESS_TOKEN;
   if (accessToken) {
     headers.Authorization = `Bearer ${accessToken}`;
+  } else {
+    console.warn("[push] Warning: EXPO_PUSH_ACCESS_TOKEN is missing in environment variables.");
   }
   return headers;
 };
@@ -77,10 +79,15 @@ export const sendPushToUser = async ({ userId, title, body, data, debug = false 
       });
       await purgeInvalidTokens(batch.map((m) => m.to), results);
     } catch (err) {
-      console.warn("[push] send failed:", err?.message || err);
+      const errorData = err?.response?.data;
+      console.warn("[push] send failed:", {
+        message: err?.message || err,
+        data: errorData || "no_response_data",
+        stack: err?.stack?.split("\n")[0],
+      });
       summary.ok = false;
       summary.errorCount += batch.length;
-      summary.errors.push(err?.message || "request_failed");
+      summary.errors.push(errorData?.errors?.[0]?.message || err?.message || "request_failed");
     }
   }
 
