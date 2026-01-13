@@ -49,14 +49,15 @@ export const sendTestPush = async (req, res) => {
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const { title, body } = req.body || {};
-    await sendPushToUser({
+    const summary = await sendPushToUser({
       userId,
       title: typeof title === "string" && title.trim() ? title.trim() : "Test notification",
       body: typeof body === "string" && body.trim() ? body.trim() : "This is a test push notification.",
       data: { type: "TEST" },
+      debug: true,
     });
 
-    return res.json({ ok: true });
+    return res.json({ ok: true, summary });
   } catch (err) {
     console.error("sendTestPush:", err?.message || err);
     return res.status(500).json({ error: "Server error" });

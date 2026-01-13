@@ -334,9 +334,21 @@ const resolveClientUrl = () => {
   return String(url).replace(/\/$/, "")
 }
 
+const resolveInviteBaseUrl = () => {
+  const candidates = [
+    process.env.BOOKING_INVITE_APP_URL,
+    process.env.APP_DEEPLINK_URL,
+    process.env.MOBILE_APP_URL,
+    process.env.APP_URL,
+  ]
+  const url = candidates.find((value) => value && String(value).trim().length > 0)
+  if (url) return String(url).replace(/\/$/, "")
+  return "https://bookinggpt.app"
+}
+
 const buildBookingInviteUrl = (token) => {
   if (!token) return null
-  const baseUrl = resolveClientUrl()
+  const baseUrl = resolveInviteBaseUrl()
   return `${baseUrl}/booking-invite?token=${encodeURIComponent(token)}`
 }
 
@@ -2325,6 +2337,73 @@ export const getBookingById = async (req, res) => {
     })
   } catch (err) {
     console.error("getBookingById:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+/* ---------------------------------------------------------------
+   GET  /api/bookings/invites
+   Auth: list active booking invites for the current user.
+---------------------------------------------------------------- */
+export const listBookingInvites = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id)
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+
+    const now = new Date()
+    const members = await models.BookingUser.findAll({
+      where: {
+        user_id: userId,
+        status: BOOKING_MEMBER_STATUSES.INVITED,
+        [Op.or]: [{ expires_at: null }, { expires_at: { [Op.gte]: now } }],
+      },
+      include: [
+        {
+          model: models.Booking,
+          as: "booking",
+          required: true,
+          include: STAY_BASE_INCLUDE,
+        },
+        {
+          model: models.User,
+          as: "user",
+          attributes: ["id", "name", "email", "phone", "avatar_url"],
+          required: false,
+        },
+      ],
+      order: [["id", "DESC"]],
+    })
+
+    const invites = members
+      .map((member) => {
+        const booking = member.booking
+        if (!booking) return null
+        const statusLc = String(booking.status || "").toUpperCase()
+        if (statusLc === "CANCELLED") return null
+        const obj = booking.toJSON()
+        const channel =
+          obj.inventory_type === "HOME" || obj.source === "HOME"
+            ? "home"
+            : obj.source === "TGX"
+              ? "tgx"
+              : obj.source === "OUTSIDE"
+                ? "outside"
+                : obj.source === "VAULT"
+                  ? "vault"
+                  : "insider"
+        return {
+          token: member.invite_token ?? null,
+          expiresAt: member.expires_at ?? null,
+          createdAt: member.createdAt ?? member.created_at ?? null,
+          booking: mapStay(obj, channel),
+          member: mapBookingMember(member),
+        }
+      })
+      .filter((invite) => invite?.token)
+
+    return res.json(invites)
+  } catch (err) {
+    console.error("listBookingInvites:", err)
     return res.status(500).json({ error: "Server error" })
   }
 }

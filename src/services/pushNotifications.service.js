@@ -33,12 +33,16 @@ const purgeInvalidTokens = async (tokens = [], responseData = []) => {
   await models.PushToken.destroy({ where: { token: Array.from(invalid) } });
 };
 
-export const sendPushToUser = async ({ userId, title, body, data }) => {
-  if (!userId) return;
+export const sendPushToUser = async ({ userId, title, body, data, debug = false }) => {
+  if (!userId) return debug ? { ok: false, reason: "MISSING_USER" } : undefined;
   const rows = await models.PushToken.findAll({ where: { user_id: userId } });
-  if (!rows.length) return;
+  if (!rows.length) {
+    return debug ? { ok: false, reason: "NO_TOKENS", tokenCount: 0 } : undefined;
+  }
   const tokens = rows.map((row) => row.token).filter(Boolean);
-  if (!tokens.length) return;
+  if (!tokens.length) {
+    return debug ? { ok: false, reason: "NO_TOKENS", tokenCount: 0 } : undefined;
+  }
 
   const messages = tokens.map((token) => ({
     to: token,
@@ -48,13 +52,39 @@ export const sendPushToUser = async ({ userId, title, body, data }) => {
   }));
 
   const headers = buildHeaders();
+  const summary = {
+    ok: true,
+    tokenCount: tokens.length,
+    batches: 0,
+    okCount: 0,
+    errorCount: 0,
+    errors: [],
+  };
   for (const batch of chunk(messages)) {
+    summary.batches += 1;
     try {
       const response = await axios.post(EXPO_PUSH_URL, batch, { headers });
       const results = Array.isArray(response?.data?.data) ? response.data.data : [];
+      results.forEach((item) => {
+        if (item?.status === "ok") {
+          summary.okCount += 1;
+        } else if (item?.status === "error") {
+          summary.errorCount += 1;
+          if (item?.details?.error) {
+            summary.errors.push(item.details.error);
+          }
+        }
+      });
       await purgeInvalidTokens(batch.map((m) => m.to), results);
     } catch (err) {
       console.warn("[push] send failed:", err?.message || err);
+      summary.ok = false;
+      summary.errorCount += batch.length;
+      summary.errors.push(err?.message || "request_failed");
     }
   }
+
+  if (!debug) return;
+  if (summary.errors.length > 5) summary.errors = summary.errors.slice(0, 5);
+  return summary;
 };

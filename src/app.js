@@ -170,7 +170,17 @@ if (__allowed.length > 0) {
   })
 }
 
+app.use("/api/places", (req, _res, next) => {
+  console.log("[api] places hit", req.method, req.originalUrl)
+  return next()
+})
+
 app.use("/api", router);          // incluye /payments/* menos /webhook
+
+app.use("/api/places", (req, res) => {
+  console.warn("[api] places 404", req.method, req.originalUrl)
+  return res.status(404).json({ error: "Places route not found" })
+})
 
 
 

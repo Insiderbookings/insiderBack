@@ -10,6 +10,7 @@ import {
   getBookingsForUser,
   getBookingsForStaff,
   getBookingById,
+  listBookingInvites,
   getBookingInvite,
   inviteBookingMember,
   acceptBookingInvite,
@@ -46,6 +47,7 @@ router.get("/guest", authenticateGuest, listGuestBookings)
 router.post("/link", authenticate, linkGuestBookingsToUser)
 
 /* ---- Booking invites (homes only) ---- */
+router.get("/invites", authenticate, listBookingInvites)
 router.get("/invites/:token", getBookingInvite)
 router.post("/invites/accept", authenticate, acceptBookingInvite)
 router.post("/invites/decline", authenticate, declineBookingInvite)
