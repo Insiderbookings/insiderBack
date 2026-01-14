@@ -309,6 +309,46 @@ export const upgradeSignupBonusOnBooking = async ({
   return existing
 }
 
+export const downgradeSignupBonusOnBookingCancel = async ({
+  influencerUserId,
+  bookingUserId,
+  cancelledBookingId = null,
+  transaction,
+}) => {
+  if (!models.InfluencerEventCommission || !models.Booking) return null
+  if (!influencerUserId || !bookingUserId) return null
+
+  const existing = await models.InfluencerEventCommission.findOne({
+    where: {
+      influencer_user_id: influencerUserId,
+      event_type: "signup",
+      signup_user_id: bookingUserId,
+    },
+    transaction,
+  })
+  if (!existing) return null
+  if (existing.status === "paid") return existing
+
+  const targetAmount = signupBonusAmount(false)
+  const currentAmount = Number(existing.amount || 0)
+  if (!Number.isFinite(currentAmount) || currentAmount <= targetAmount) return existing
+
+  const otherPaidBooking = await models.Booking.findOne({
+    where: {
+      user_id: bookingUserId,
+      influencer_user_id: influencerUserId,
+      ...(cancelledBookingId ? { id: { [Op.ne]: cancelledBookingId } } : {}),
+      status: { [Op.notIn]: ["CANCELLED"] },
+      payment_status: "PAID",
+    },
+    transaction,
+  })
+  if (otherPaidBooking) return existing
+
+  await existing.update({ amount: targetAmount, currency: "USD" }, { transaction })
+  return existing
+}
+
 export const linkReferralCodeForUser = async ({ userId, referralCode, transaction }) => {
   const code = normalizeCode(referralCode)
   if (!code) throw new ReferralError("Referral code is required", 400)
