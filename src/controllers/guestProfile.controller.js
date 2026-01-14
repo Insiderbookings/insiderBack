@@ -138,10 +138,10 @@ export const getGuestProfile = async (req, res) => {
         publishedAt: r.published_at || r.created_at,
         author: r.author
           ? {
-              id: r.author.id,
-              name: r.author.name,
-              avatarUrl: r.author.avatar_url,
-            }
+            id: r.author.id,
+            name: r.author.name,
+            avatarUrl: r.author.avatar_url,
+          }
           : null,
       })),
     })
@@ -183,9 +183,20 @@ export const updateGuestProfile = async (req, res) => {
     }
 
     await profile.update(updates)
-    if (avatarUrl !== undefined) {
+
+    const userUpdates = {}
+    if (avatarUrl !== undefined) userUpdates.avatar_url = avatarUrl || null
+    // [MODIFIED] Allow updating name if provided
+    if (req.body.name && typeof req.body.name === 'string') {
+      const newName = req.body.name.trim();
+      if (newName.length > 0) {
+        userUpdates.name = newName;
+      }
+    }
+
+    if (Object.keys(userUpdates).length > 0) {
       await models.User.update(
-        { avatar_url: avatarUrl || null },
+        userUpdates,
         { where: { id: userId } },
       )
     }
