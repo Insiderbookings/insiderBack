@@ -1,6 +1,7 @@
 import { cancelTGX } from "./services/booking.service.js"
 import models from "../../models/index.js"
 import { sendCancellationEmail } from "../../emailTemplates/cancel-email.js"
+import { downgradeSignupBonusOnBookingCancel } from "../../services/referralRewards.service.js"
 
 export const cancel = async (req, res, next) => {
   console.log(req.body)
@@ -110,6 +111,24 @@ export const cancel = async (req, res, next) => {
       }
     } catch (e) {
       console.warn("(INF) Could not reverse influencer event commission on TGX cancel:", e?.message || e)
+    }
+
+    const wasPaid = bk.payment_status === "PAID"
+    const influencerId =
+      Number(bk.influencer_user_id) || Number(bk.meta?.referral?.influencerUserId) || null
+    if (wasPaid && influencerId && bk.user_id) {
+      try {
+        await models.sequelize.transaction((tx) =>
+          downgradeSignupBonusOnBookingCancel({
+            influencerUserId: influencerId,
+            bookingUserId: bk.user_id,
+            cancelledBookingId: bk.id,
+            transaction: tx,
+          })
+        )
+      } catch (e) {
+        console.warn("(INF) Could not downgrade signup bonus on TGX cancel:", e?.message || e)
+      }
     }
 
     // 4.1) Guardar cancelReference si lo tenés en el modelo

@@ -2,7 +2,10 @@
 import { Op } from "sequelize";
 import models, { sequelize } from "../models/index.js";
 import { sendCancellationEmail } from "../emailTemplates/cancel-email.js";
-import { reverseReferralRedemption } from "../services/referralRewards.service.js";
+import {
+    downgradeSignupBonusOnBookingCancel,
+    reverseReferralRedemption,
+} from "../services/referralRewards.service.js";
 import crypto from "crypto";
 
 // ──────────────── Helper – count nights ───────────── */
@@ -396,6 +399,28 @@ export const processBookingCancellation = async ({
             }
         } catch (e) {
             console.warn("cancelBooking: could not reverse influencer commission:", e?.message || e);
+        }
+
+        const influencerId =
+            Number(booking.influencer_user_id) ||
+            Number(booking.meta?.referral?.influencerUserId) ||
+            null;
+        if (influencerId && booking.user_id) {
+            try {
+                await sequelize.transaction((tx) =>
+                    downgradeSignupBonusOnBookingCancel({
+                        influencerUserId: influencerId,
+                        bookingUserId: booking.user_id,
+                        cancelledBookingId: booking.id,
+                        transaction: tx,
+                    })
+                );
+            } catch (e) {
+                console.warn(
+                    "cancelBooking: could not downgrade signup bonus:",
+                    e?.message || e
+                );
+            }
         }
     }
 
