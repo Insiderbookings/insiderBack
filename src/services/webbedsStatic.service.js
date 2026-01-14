@@ -837,14 +837,42 @@ export const syncWebbedsCities = async ({ countryCode, dryRun = false } = {}) =>
     )
   }
 
+  const fallbackCountryCode = countryCode != null ? Number(countryCode) : null
+  const countryUpserts = new Map()
+  cities.forEach((city) => {
+    const resolvedCountryCode =
+      toNumberOrNull(city.countryCode) ?? fallbackCountryCode
+    if (!resolvedCountryCode) return
+    const resolvedCountryName =
+      city.countryName ?? countryNameCache?.get(resolvedCountryCode) ?? null
+    if (!resolvedCountryName) return
+    countryUpserts.set(resolvedCountryCode, resolvedCountryName)
+  })
+
   const tx = await sequelize.transaction()
   try {
+    if (countryUpserts.size) {
+      const operations = Array.from(countryUpserts.entries()).map(
+        ([code, name]) =>
+          models.WebbedsCountry.upsert(
+            {
+              code,
+              name,
+            },
+            { transaction: tx },
+          ),
+      )
+      await Promise.all(operations)
+      countryUpserts.forEach((name, code) => {
+        countryNameCache.set(code, name)
+      })
+    }
+
     const operations = cities.map((city) => {
       const code = Number(city.code) || null
       if (!code) return null
       const resolvedCountryCode =
-        Number(city.countryCode) ||
-        (countryCode != null ? Number(countryCode) : null)
+        toNumberOrNull(city.countryCode) ?? fallbackCountryCode
       if (!resolvedCountryCode) {
         console.warn("[webbeds][static] city missing country code", {
           cityCode: code,

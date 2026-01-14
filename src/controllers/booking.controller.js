@@ -484,6 +484,115 @@ const buildHomePayload = (homeStay) => {
   }
 }
 
+const hasAddressFields = (address) => {
+  if (!address) return false
+  return Object.values(address).some((value) => value != null && value !== "")
+}
+
+const buildLocationFromAddress = (address) => {
+  if (!address) return null
+  const parts = [
+    address.address_line1,
+    address.city,
+    address.state,
+    address.country,
+  ]
+    .map((part) => (part ? String(part).trim() : null))
+    .filter(Boolean)
+  return parts.length ? parts.join(", ") : null
+}
+
+const buildMediaFromUrls = (urls) => {
+  if (!Array.isArray(urls)) return []
+  return urls
+    .map((url, index) => (url ? { url, is_cover: index === 0, order: index } : null))
+    .filter(Boolean)
+}
+
+const applyHomeSnapshotFallback = (homePayload, inventorySnapshot) => {
+  if (!homePayload && !inventorySnapshot) return null
+  if (!inventorySnapshot) return homePayload
+
+  const snapshot = toPlain(inventorySnapshot) ?? {}
+  const snapshotHome = toPlain(snapshot.home ?? snapshot.home_snapshot) ?? null
+  const snapshotHomeId =
+    snapshotHome?.id ?? snapshot.homeId ?? snapshot.home_id ?? null
+  const hasHomeSnapshot =
+    Boolean(snapshotHome) ||
+    snapshotHomeId != null ||
+    snapshot?.propertyType ||
+    snapshot?.spaceType ||
+    snapshot?.coverImage ||
+    Array.isArray(snapshot?.photos)
+
+  if (!hasHomeSnapshot) return homePayload
+
+  const base = homePayload ? { ...homePayload } : {}
+  const snapshotAddress = toPlain(snapshotHome?.address ?? snapshot.address) ?? null
+  const snapshotLocation = snapshotHome?.locationText ?? snapshot.location ?? null
+  const snapshotMedia = Array.isArray(snapshotHome?.media)
+    ? snapshotHome.media.map(toPlain)
+    : null
+  const snapshotPhotos = Array.isArray(snapshotHome?.photos)
+    ? snapshotHome.photos
+    : Array.isArray(snapshot?.photos)
+      ? snapshot.photos
+      : null
+  const snapshotCover =
+    snapshotHome?.coverImage ??
+    snapshot.coverImage ??
+    snapshot.image ??
+    pickCoverImage(snapshotMedia) ??
+    (Array.isArray(snapshotPhotos) && snapshotPhotos.length ? snapshotPhotos[0] : null)
+
+  if (!base.id && snapshotHomeId != null) base.id = snapshotHomeId
+  if (!base.title && (snapshotHome?.title || snapshot.title)) {
+    base.title = snapshotHome?.title ?? snapshot.title ?? null
+  }
+  if (!base.coverImage && snapshotCover) base.coverImage = snapshotCover
+
+  const hasMedia = Array.isArray(base.media) && base.media.length > 0
+  if (!hasMedia) {
+    if (snapshotMedia?.length) {
+      base.media = snapshotMedia
+    } else if (snapshotPhotos?.length) {
+      base.media = buildMediaFromUrls(snapshotPhotos)
+    }
+  }
+
+  if (!hasAddressFields(base.address) && snapshotAddress) {
+    base.address = snapshotAddress
+  }
+
+  if (!base.locationText || !String(base.locationText).trim()) {
+    const locationText =
+      snapshotLocation ?? buildLocationFromAddress(snapshotAddress)
+    if (locationText) base.locationText = locationText
+  }
+
+  if (!base.propertyType && (snapshotHome?.propertyType || snapshot.propertyType)) {
+    base.propertyType = snapshotHome?.propertyType ?? snapshot.propertyType ?? null
+  }
+  if (!base.spaceType && (snapshotHome?.spaceType || snapshot.spaceType)) {
+    base.spaceType = snapshotHome?.spaceType ?? snapshot.spaceType ?? null
+  }
+
+  if (base.maxGuests == null && snapshotHome?.stats?.maxGuests != null) {
+    base.maxGuests = snapshotHome.stats.maxGuests
+  }
+  if (base.bedrooms == null && snapshotHome?.stats?.bedrooms != null) {
+    base.bedrooms = snapshotHome.stats.bedrooms
+  }
+  if (base.beds == null && snapshotHome?.stats?.beds != null) {
+    base.beds = snapshotHome.stats.beds
+  }
+  if (base.bathrooms == null && snapshotHome?.stats?.bathrooms != null) {
+    base.bathrooms = snapshotHome.stats.bathrooms
+  }
+
+  return base
+}
+
 const mergeValues = (base, updates) => {
   if (!base && !updates) return null
   const result = base ? { ...base } : {}
@@ -540,7 +649,8 @@ const mapStay = (row, source) => {
   const room = toPlain(row.Room ?? row.room ?? roomFromStay) ?? null
   const tgxMeta = toPlain(row.tgxMeta) ?? null
   const stayHome = toPlain(row.homeStay ?? row.StayHome ?? row.stayHome) ?? null
-  const homePayload = stayHome ? buildHomePayload(stayHome) : null
+  let homePayload = stayHome ? buildHomePayload(stayHome) : null
+  homePayload = applyHomeSnapshotFallback(homePayload, inventorySnapshot)
   const cancellationPolicy =
     row.meta?.cancellationPolicy ??
     row.meta?.cancellation_policy ??
@@ -1664,78 +1774,6 @@ export const createHomeBooking = async (req, res) => {
       homeSnapshotName: home.title,
       homeSnapshotImage: coverImageUrl,
     }).catch((err) => console.error("booking auto prompt dispatch error:", err))
-
-    try {
-      const guestLine = [adultsCount, childrenCount, infantsCount]
-        .map((count, index) => {
-          if (!count) return null
-          if (index === 0) return `${count} ${count === 1 ? "adult" : "adults"}`
-          if (index === 1) return `${count} ${count === 1 ? "child" : "children"}`
-          return `${count} ${count === 1 ? "infant" : "infants"}`
-        })
-        .filter(Boolean)
-        .join(", ")
-      const detailLines = [
-        home.title ? `Listing: ${home.title}` : null,
-        normalizedCheckIn ? `Check-in: ${normalizedCheckIn}` : null,
-        normalizedCheckOut ? `Check-out: ${normalizedCheckOut}` : null,
-        guestLine ? `Guests: ${guestLine}` : null,
-        bookingView?.id ? `Booking ID: ${bookingView.id}` : null,
-        `Status: ${String(bookingView?.status || "PENDING").toUpperCase()}`,
-      ].filter(Boolean)
-
-      const baseMetadata = {
-        notificationTitle: "Booking created",
-        notificationSender: "BookingGPT",
-        notificationType: "BOOKING_CREATED",
-        notificationBody: "Your booking request has been created.",
-        senderName: "BookingGPT",
-      }
-
-      const thread = await createThread({
-        guestUserId: userId,
-        hostUserId: home.host_id,
-        homeId: home.id,
-        reserveId: bookingView.id,
-        checkIn: normalizedCheckIn,
-        checkOut: normalizedCheckOut,
-        homeSnapshotName: home.title,
-        homeSnapshotImage: coverImageUrl,
-      })
-
-      const guestMessage = [
-        "Your booking request has been created.",
-        ...detailLines,
-        "We will notify you when it is confirmed.",
-      ].join("\n")
-
-      const hostMessage = [
-        `${guestNameFinal} has requested to book your listing ${home.title || ""}.`.trim(),
-        ...detailLines,
-        "Review the reservation request in your Host dashboard.",
-      ].join("\n")
-
-      await Promise.allSettled([
-        postMessage({
-          chatId: thread.id,
-          senderId: null,
-          senderRole: "SYSTEM",
-          type: "SYSTEM",
-          body: guestMessage,
-          metadata: { ...baseMetadata, audience: "GUEST" },
-        }),
-        postMessage({
-          chatId: thread.id,
-          senderId: null,
-          senderRole: "SYSTEM",
-          type: "SYSTEM",
-          body: hostMessage,
-          metadata: { ...baseMetadata, audience: "HOST" },
-        }),
-      ])
-    } catch (notifyErr) {
-      console.warn("[HOME BOOKING] notification dispatch failed:", notifyErr?.message || notifyErr)
-    }
 
     const homeAddress = [
       home.address?.address_line1,

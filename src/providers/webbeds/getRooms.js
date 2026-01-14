@@ -298,6 +298,41 @@ const parsePropertyFees = (rateBasis) => {
   }))
 }
 
+const parseSpecials = (node) => {
+  if (!node) return []
+  const raw = node?.special ?? node?.specialItem ?? node?.item ?? node
+  return ensureArray(raw)
+    .map((entry) => {
+      if (!entry) return null
+      if (typeof entry === "string" || typeof entry === "number") return String(entry)
+      return (
+        getText(entry?.description ?? entry?.["@_description"] ?? entry?.name ?? entry) ??
+        null
+      )
+    })
+    .filter(Boolean)
+}
+
+const parseIncludedMeals = (includingNode) => {
+  if (!includingNode) return []
+  const raw = includingNode?.includedMeal ?? includingNode?.meal ?? includingNode
+  return ensureArray(raw)
+    .map((meal) => {
+      if (!meal) return null
+      const mealType = meal?.mealType ?? meal?.mealtype ?? null
+      const mealName = getText(meal?.mealName ?? meal?.name ?? meal)
+      const mealTypeName = getText(mealType)
+      const mealTypeCode = mealType?.["@_code"] ?? mealType?.["@_id"] ?? null
+      return {
+        runno: meal?.["@_runno"] ?? null,
+        mealName: mealName ?? null,
+        mealTypeName: mealTypeName ?? null,
+        mealTypeCode: mealTypeCode != null ? String(mealTypeCode) : null,
+      }
+    })
+    .filter((meal) => meal.mealName || meal.mealTypeName)
+}
+
 const parseChildrenAges = (value) => {
   if (!value) return null
   if (Array.isArray(value)) {
@@ -345,7 +380,7 @@ const resolveValidForOccupancyFlag = (node) => {
   return null
 }
 
-const parseRateBases = (rateBasesNode, requestedCurrency) => {
+const parseRateBases = (rateBasesNode, requestedCurrency, roomTypeSpecials = []) => {
   const rateBases = ensureArray(rateBasesNode?.rateBasis ?? rateBasesNode)
   return rateBases.map((rateBasis) => {
     const rateType = rateBasis?.rateType ?? {}
@@ -365,6 +400,20 @@ const parseRateBases = (rateBasesNode, requestedCurrency) => {
       getText(rateBasis?.total?.formatted) ??
       getText(rateBasis?.totalMinimumSelling?.formatted) ??
       getText(rateBasis?.totalMinimumSellingFormatted)
+
+    const specials = parseSpecials(rateBasis?.specials)
+    const mergedSpecials = specials.length ? specials : roomTypeSpecials
+    const dateEntries = ensureArray(rateBasis?.dates?.date)
+    const includedMealsRaw = dateEntries.flatMap((date) => parseIncludedMeals(date?.including))
+    const uniqueMeals = []
+    const seenMeals = new Set()
+    includedMealsRaw.forEach((meal) => {
+      const key = `${meal.mealTypeCode ?? ""}|${meal.mealName ?? ""}|${meal.mealTypeName ?? ""}`
+      if (seenMeals.has(key)) return
+      seenMeals.add(key)
+      uniqueMeals.push(meal)
+    })
+    const primaryMeal = uniqueMeals[0] ?? null
 
     return {
       id: rateBasis?.["@_id"] ?? null,
@@ -414,7 +463,11 @@ const parseRateBases = (rateBasesNode, requestedCurrency) => {
       totalTaxes: toNumber(rateBasis?.totalTaxes),
       totalFee: toNumber(rateBasis?.totalFee),
       propertyFees: parsePropertyFees(rateBasis),
-      dates: ensureArray(rateBasis?.dates?.date).map((date) => ({
+      specials: mergedSpecials,
+      includedMeals: uniqueMeals,
+      includedMeal: primaryMeal,
+      mealPlan: primaryMeal?.mealName ?? primaryMeal?.mealTypeName ?? null,
+      dates: dateEntries.map((date) => ({
         datetime: date?.["@_datetime"] ?? date?.datetime ?? null,
         day: date?.["@_day"] ?? date?.day ?? null,
         wday: date?.["@_wday"] ?? date?.wday ?? null,
@@ -429,6 +482,7 @@ const parseRateBases = (rateBasesNode, requestedCurrency) => {
         priceMinimumSellingFormatted: getText(date?.priceMinimumSelling?.formatted),
         freeStay: normalizeBoolean(date?.freeStay),
         dayOnRequest: normalizeBoolean(date?.dayOnRequest),
+        includedMeals: parseIncludedMeals(date?.including),
       })),
       leftToSell: toNumber(rateBasis?.leftToSell),
       tariffNotes: getText(rateBasis?.tariffNotes),
@@ -450,7 +504,8 @@ const parseRoomTypes = (roomNode, requestedCurrency) => {
       maxChildren: toNumber(roomType?.roomInfo?.maxChildren),
     },
     specialsCount: toNumber(roomType?.specials?.["@_count"]),
-    rateBases: parseRateBases(roomType?.rateBases, requestedCurrency),
+    specials: parseSpecials(roomType?.specials),
+    rateBases: parseRateBases(roomType?.rateBases, requestedCurrency, parseSpecials(roomType?.specials)),
   }))
 }
 

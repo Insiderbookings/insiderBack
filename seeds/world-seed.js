@@ -96,6 +96,88 @@ const ensureAllowedMedia = (url) => {
 
 const unique = (items) => Array.from(new Set(items));
 
+const toPlain = (value) => {
+  if (!value) return null;
+  if (typeof value.toJSON === "function") {
+    try {
+      return value.toJSON();
+    } catch {
+      return value;
+    }
+  }
+  return value;
+};
+
+const buildLocationText = (address) => {
+  if (!address) return null;
+  const parts = [
+    address.address_line1,
+    address.city,
+    address.state,
+    address.country,
+  ]
+    .map((part) => (part ? String(part).trim() : null))
+    .filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
+};
+
+const pickCoverFromMedia = (media) => {
+  if (!Array.isArray(media) || !media.length) return null;
+  const normalized = media.map(toPlain);
+  const cover =
+    normalized.find((item) => item?.is_cover) ??
+    normalized.find((item) => Number(item?.order) === 0) ??
+    normalized[0];
+  return cover?.url ?? null;
+};
+
+const buildHomeSnapshot = ({ home, address, media }) => {
+  const homePlain = toPlain(home) ?? {};
+  const addressPlain = toPlain(address);
+  const mediaPlain = Array.isArray(media) ? media.map(toPlain) : [];
+  const locationText = buildLocationText(addressPlain);
+  const coverImage = pickCoverFromMedia(mediaPlain);
+  const photos = mediaPlain.map((item) => item?.url).filter(Boolean);
+  const addressPayload = addressPlain
+    ? {
+        address_line1: addressPlain.address_line1 ?? null,
+        city: addressPlain.city ?? null,
+        state: addressPlain.state ?? null,
+        country: addressPlain.country ?? null,
+        latitude: addressPlain.latitude ?? null,
+        longitude: addressPlain.longitude ?? null,
+      }
+    : null;
+
+  return {
+    homeId: homePlain.id ?? null,
+    title: homePlain.title ?? null,
+    coverImage: coverImage ?? null,
+    photos,
+    location: locationText ?? null,
+    city: addressPlain?.city ?? null,
+    country: addressPlain?.country ?? null,
+    address: addressPayload,
+    home: {
+      id: homePlain.id ?? null,
+      title: homePlain.title ?? null,
+      coverImage: coverImage ?? null,
+      photos,
+      address: addressPayload,
+      locationText,
+      stats: {
+        maxGuests: homePlain.max_guests ?? null,
+        bedrooms: homePlain.bedrooms ?? null,
+        beds: homePlain.beds ?? null,
+        bathrooms:
+          homePlain.bathrooms != null ? Number(homePlain.bathrooms) : null,
+      },
+      propertyType: homePlain.property_type ?? null,
+      spaceType: homePlain.space_type ?? null,
+    },
+  };
+};
+
 const pickMediaForHome = (city, index) => {
   const cityMedia = CITY_MEDIA[city] || [];
   const cover = cityMedia[index % cityMedia.length] || INTERIOR_MEDIA[index % INTERIOR_MEDIA.length];
@@ -394,6 +476,43 @@ async function main() {
           validate: false,
         });
       }
+  }
+
+    const homeAddresses = await models.HomeAddress.findAll({
+      where: { home_id: homes.map((home) => home.id) },
+      transaction: tx,
+    });
+    const homeMedia = await models.HomeMedia.findAll({
+      where: { home_id: homes.map((home) => home.id) },
+      transaction: tx,
+    });
+    const addressByHomeId = new Map(
+      homeAddresses.map((address) => [address.home_id, address]),
+    );
+    const mediaByHomeId = new Map();
+    for (const media of homeMedia) {
+      const list = mediaByHomeId.get(media.home_id) || [];
+      list.push(media);
+      mediaByHomeId.set(media.home_id, list);
+    }
+    for (const [homeId, list] of mediaByHomeId.entries()) {
+      list.sort((a, b) => {
+        const orderA = Number.isFinite(Number(a?.order)) ? Number(a.order) : 9999;
+        const orderB = Number.isFinite(Number(b?.order)) ? Number(b.order) : 9999;
+        return orderA - orderB;
+      });
+      mediaByHomeId.set(homeId, list);
+    }
+    const homeSnapshots = new Map();
+    for (const home of homes) {
+      homeSnapshots.set(
+        home.id,
+        buildHomeSnapshot({
+          home,
+          address: addressByHomeId.get(home.id) ?? null,
+          media: mediaByHomeId.get(home.id) ?? [],
+        }),
+      );
     }
 
     const existingHomeBookings = await models.Booking.findAll({
@@ -419,6 +538,7 @@ async function main() {
       paymentStatus,
       influencerId,
       priceBase,
+      homeSnapshot,
     }) => {
       const checkIn = addDays(now, startOffsetDays);
       const checkOut = addDays(checkIn, nights);
@@ -446,6 +566,7 @@ async function main() {
         gross_price: priceBase,
         currency: "USD",
         booked_at: addDays(checkIn, -10),
+        inventory_snapshot: homeSnapshot ?? null,
       });
     };
 
@@ -454,6 +575,7 @@ async function main() {
       const travelerPast = travelers[i % travelers.length];
       const travelerFuture = travelers[(i + 7) % travelers.length];
       const influencer = influencers.length && i % 4 === 0 ? influencers[i % influencers.length] : null;
+      const homeSnapshot = homeSnapshots.get(home.id) ?? null;
 
       pushHomeBooking({
         home,
@@ -464,6 +586,7 @@ async function main() {
         paymentStatus: "PAID",
         influencerId: influencer?.id || null,
         priceBase: 520 + (i % 5) * 25,
+        homeSnapshot,
       });
 
       pushHomeBooking({
@@ -475,21 +598,44 @@ async function main() {
         paymentStatus: "PENDING",
         influencerId: influencer?.id || null,
         priceBase: 480 + (i % 5) * 20,
+        homeSnapshot,
       });
     }
 
-    const homeBookings = bookingsPayload.length
-      ? await models.Booking.bulkCreate(bookingsPayload, {
-          transaction: tx,
-          validate: false,
-        })
-      : [];
+    if (bookingsPayload.length) {
+      await models.Booking.bulkCreate(bookingsPayload, {
+        transaction: tx,
+        validate: false,
+      });
+    }
 
-    for (const booking of homeBookings) {
+    const bookingRows = await models.Booking.findAll({
+      where: { inventory_type: "HOME", inventory_id: homes.map((home) => String(home.id)) },
+      transaction: tx,
+    });
+
+    for (const booking of bookingRows) {
       const homeId = Number(booking.inventory_id);
       if (!Number.isFinite(homeId)) continue;
       const home = homes.find((h) => h.id === homeId);
       if (!home) continue;
+
+      const snapshot = homeSnapshots.get(homeId) ?? null;
+      const existingSnapshot = booking.inventory_snapshot ?? booking.inventorySnapshot ?? null;
+      const hasHomeSnapshot =
+        existingSnapshot?.home ||
+        existingSnapshot?.homeId != null ||
+        existingSnapshot?.home_id != null ||
+        existingSnapshot?.title ||
+        existingSnapshot?.coverImage ||
+        Array.isArray(existingSnapshot?.photos);
+      if (snapshot && !hasHomeSnapshot) {
+        await booking.update(
+          { inventory_snapshot: snapshot },
+          { transaction: tx },
+        );
+      }
+
       const stayExists = await models.StayHome.findOne({
         where: { stay_id: booking.id, home_id: home.id },
         transaction: tx,
@@ -499,6 +645,75 @@ async function main() {
         { stay_id: booking.id, home_id: home.id, host_id: home.host_id },
         { transaction: tx },
       );
+    }
+
+    for (const booking of bookingRows) {
+      const homeId = Number(booking.inventory_id);
+      if (!Number.isFinite(homeId)) continue;
+      const home = homes.find((h) => h.id === homeId);
+      if (!home) continue;
+
+      const snapshot = homeSnapshots.get(homeId) ?? null;
+      const snapshotHome = snapshot?.home ?? null;
+      const snapshotName =
+        snapshotHome?.title ?? snapshot?.title ?? home.title ?? null;
+      const snapshotImage =
+        snapshotHome?.coverImage ?? snapshot?.coverImage ?? null;
+
+      const [thread] = await models.ChatThread.findOrCreate({
+        where: {
+          guest_user_id: booking.user_id,
+          host_user_id: home.host_id,
+          reserve_id: booking.id,
+          home_id: homeId,
+        },
+        defaults: {
+          guest_user_id: booking.user_id,
+          host_user_id: home.host_id,
+          reserve_id: booking.id,
+          home_id: homeId,
+          status: "OPEN",
+          check_in: booking.check_in,
+          check_out: booking.check_out,
+          home_snapshot_name: snapshotName,
+          home_snapshot_image: snapshotImage,
+          last_message_at: new Date(),
+        },
+        transaction: tx,
+      });
+
+      const threadUpdates = {};
+      if (!thread.home_snapshot_name && snapshotName) {
+        threadUpdates.home_snapshot_name = snapshotName;
+      }
+      if (!thread.home_snapshot_image && snapshotImage) {
+        threadUpdates.home_snapshot_image = snapshotImage;
+      }
+      if (!thread.check_in && booking.check_in) {
+        threadUpdates.check_in = booking.check_in;
+      }
+      if (!thread.check_out && booking.check_out) {
+        threadUpdates.check_out = booking.check_out;
+      }
+      if (Object.keys(threadUpdates).length) {
+        await thread.update(threadUpdates, { transaction: tx });
+      }
+
+      const participantRows = [
+        { user_id: booking.user_id, role: "GUEST" },
+        { user_id: home.host_id, role: "HOST" },
+      ];
+      for (const participant of participantRows) {
+        await models.ChatParticipant.findOrCreate({
+          where: { chat_id: thread.id, user_id: participant.user_id },
+          defaults: {
+            chat_id: thread.id,
+            user_id: participant.user_id,
+            role: participant.role,
+          },
+          transaction: tx,
+        });
+      }
     }
 
     await tx.commit();

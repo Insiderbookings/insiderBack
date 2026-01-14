@@ -613,6 +613,7 @@ export class FlowOrchestratorService {
       specialRequest,
       rooms: roomsOverride,
       sendCommunicationTo,
+      customerReference: customerReferenceRaw,
     } = body || {};
     const idempotencyKey = body?.idempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
@@ -663,8 +664,8 @@ export class FlowOrchestratorService {
         hasChangedOccupancy && occupancyOverride?.extraBed != null
           ? Number(occupancyOverride.extraBed) || 0
           : room.extraBed;
-      const actualAdults = hasChangedOccupancy ? adjustedAdults : originalAdults;
-      const actualChildren = hasChangedOccupancy ? adjustedChildren : originalChildren;
+      const actualAdults = originalAdults;
+      const actualChildren = originalChildren;
 
       return {
         ...room,
@@ -679,6 +680,11 @@ export class FlowOrchestratorService {
       };
     });
 
+    const customerReference =
+      customerReferenceRaw ??
+      body?.customer_reference ??
+      `FLOW-${flowId}`;
+
     const payload = buildSaveBookingPayload({
       checkIn: context.fromDate,
       checkOut: context.toDate,
@@ -692,6 +698,7 @@ export class FlowOrchestratorService {
       passengers,
       voucherRemark,
       specialRequest,
+      customerReference,
     });
 
     const { result, requestXml, responseXml, metadata } = await this.client.send("savebooking", payload, {

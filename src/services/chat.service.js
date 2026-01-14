@@ -199,10 +199,8 @@ const ensureSnapshot = async ({
     include: [
       {
         association: "media",
-        attributes: ["url", "cover"],
-        where: { cover: true },
+        attributes: ["url", "is_cover", "order"],
         required: false,
-        limit: 1,
       },
     ],
     transaction,
@@ -212,8 +210,13 @@ const ensureSnapshot = async ({
     return { name: snapshotName ?? null, image: snapshotImage ?? null };
   }
 
-  const cover =
-    home.media?.length && home.media[0]?.url ? home.media[0].url : null;
+  const media = Array.isArray(home.media) ? home.media : [];
+  const coverMedia =
+    media.find((item) => item?.is_cover) ||
+    media.find((item) => Number(item?.order) === 0) ||
+    media[0] ||
+    null;
+  const cover = coverMedia?.url ?? null;
 
   return {
     name: snapshotName ?? home.title ?? null,
@@ -857,14 +860,49 @@ const mapThreadForUser = async ({ thread, userId }) => {
       attributes: ["id", "name", "email", "avatar_url", "role"],
     }));
 
+  let snapshotName = thread.home_snapshot_name ?? null;
+  let snapshotImage = thread.home_snapshot_image ?? null;
+  if ((!snapshotName || !snapshotImage) && thread.home_id) {
+    const home = await Home.findByPk(thread.home_id, {
+      attributes: ["id", "title"],
+      include: [
+        {
+          association: "media",
+          attributes: ["url", "is_cover", "order"],
+          required: false,
+        },
+      ],
+    });
+    if (home) {
+      const media = Array.isArray(home.media) ? home.media : [];
+      const coverMedia =
+        media.find((item) => item?.is_cover) ||
+        media.find((item) => Number(item?.order) === 0) ||
+        media[0] ||
+        null;
+      snapshotName = snapshotName ?? home.title ?? null;
+      snapshotImage = snapshotImage ?? coverMedia?.url ?? null;
+      const updates = {};
+      if (!thread.home_snapshot_name && snapshotName) {
+        updates.home_snapshot_name = snapshotName;
+      }
+      if (!thread.home_snapshot_image && snapshotImage) {
+        updates.home_snapshot_image = snapshotImage;
+      }
+      if (Object.keys(updates).length) {
+        await ChatThread.update(updates, { where: { id: thread.id } });
+      }
+    }
+  }
+
   return {
     id: thread.id,
     status: thread.status,
     reserveId: thread.reserve_id,
     homeId: thread.home_id,
     homeSnapshot: {
-      name: thread.home_snapshot_name,
-      image: thread.home_snapshot_image,
+      name: snapshotName,
+      image: snapshotImage,
     },
     checkIn: thread.check_in,
     checkOut: thread.check_out,

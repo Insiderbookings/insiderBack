@@ -25,6 +25,7 @@ import { startBookingCleanupScheduler } from "./services/bookingCleanupScheduler
 import ensureHomeFavoriteIndexes from "./utils/ensureHomeFavoriteIndexes.js";
 import { initSocketServer } from "./websocket/index.js";
 import diagnoseForeignKeyError from "./utils/diagnoseForeignKeyError.js";
+import { warmSalutationsCache } from "./providers/webbeds/salutations.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -197,6 +198,7 @@ const PORT = process.env.PORT || 3000;
     await sequelize.sync({ alter: allowAlter });
     await ensureHomeFavoriteIndexes();
     await ensureDefaultPlatforms();
+    await warmSalutationsCache();
     initSocketServer(server);
     startPayoutScheduler();
     startInfluencerPayoutScheduler();

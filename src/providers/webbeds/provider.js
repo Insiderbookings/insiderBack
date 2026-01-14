@@ -628,6 +628,7 @@ export class WebbedsProvider extends HotelProvider {
       passengers,
       voucherRemark,
       specialRequest,
+      customerReference,
     } = req.body || {}
 
     try {
@@ -691,6 +692,7 @@ export class WebbedsProvider extends HotelProvider {
         passengers,
         voucherRemark,
         specialRequest,
+        customerReference,
       })
 
       const { result } = await this.client.send("savebooking", payload, {

@@ -1,4 +1,9 @@
 import dayjs from "dayjs"
+import {
+  ensureSalutationsCacheWarm,
+  getDefaultSalutationId,
+  resolveSalutationId,
+} from "./salutations.js"
 
 const ensureArray = (value) => {
   if (!value) return []
@@ -38,15 +43,22 @@ const normalizeBoolean = (value) => {
 }
 
 const getSalutation = (p) => {
-  // Map strings to integers if necessary.
-  // Assumption: 1=Mr, 2=Mrs, 3=Ms. Default to 1 (Mr) if unknown.
-  if (typeof p.salutation === "number") return p.salutation
-  if (typeof p.title === "number") return p.title
+  ensureSalutationsCacheWarm()
 
-  const t = (p.title || p.salutation || "").toLowerCase()
-  if (t.includes("mrs")) return 2
-  if (t.includes("miss") || t.includes("ms")) return 3
-  return 1 // Default Mr
+  const direct =
+    resolveSalutationId(
+      p.salutationId ?? p.salutation_id ?? p.salutationCode ?? p.salutation,
+    ) ??
+    resolveSalutationId(p.title) ??
+    resolveSalutationId(p.type ?? p.passengerType)
+
+  if (direct != null) return direct
+
+  const fallbackRaw =
+    process.env.WEBBEDS_DEFAULT_SALUTATION_ID ??
+    process.env.WEBBEDS_SALUTATION_DEFAULT
+
+  return resolveSalutationId(fallbackRaw) ?? getDefaultSalutationId()
 }
 
 const validateRoomsOccupancy = (rooms = []) => {

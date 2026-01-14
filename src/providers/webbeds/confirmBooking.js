@@ -1,4 +1,9 @@
 import { WebbedsError } from "./client.js"
+import {
+  ensureSalutationsCacheWarm,
+  getDefaultSalutationId,
+  resolveSalutationId,
+} from "./salutations.js"
 
 import dayjs from "dayjs"
 
@@ -38,12 +43,22 @@ const toNumber = (value) => {
 }
 
 const getSalutation = (p) => {
-  if (typeof p.salutation === "number") return p.salutation
-  if (typeof p.title === "number") return p.title
-  const t = (p.title || p.salutation || "").toLowerCase()
-  if (t.includes("mrs")) return 2
-  if (t.includes("miss") || t.includes("ms")) return 3
-  return 1
+  ensureSalutationsCacheWarm()
+
+  const direct =
+    resolveSalutationId(
+      p.salutationId ?? p.salutation_id ?? p.salutationCode ?? p.salutation,
+    ) ??
+    resolveSalutationId(p.title) ??
+    resolveSalutationId(p.type ?? p.passengerType)
+
+  if (direct != null) return direct
+
+  const fallbackRaw =
+    process.env.WEBBEDS_DEFAULT_SALUTATION_ID ??
+    process.env.WEBBEDS_SALUTATION_DEFAULT
+
+  return resolveSalutationId(fallbackRaw) ?? getDefaultSalutationId()
 }
 
 const buildPassengersDetails = (passengers = []) => {

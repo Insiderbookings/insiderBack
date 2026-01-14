@@ -108,6 +108,23 @@ const presentUser = (user) => {
 
 const normalizeAppleBool = (value) => value === true || value === "true";
 
+const isAppleRelayEmail = (value) =>
+  typeof value === "string" && /@privaterelay\.appleid\.com$/i.test(value.trim());
+
+const isPlaceholderAppleName = (name, email, providerSub) => {
+  if (!name) return true;
+  const trimmed = String(name).trim();
+  if (!trimmed) return true;
+  if (/^apple user$/i.test(trimmed)) return true;
+  if (providerSub && trimmed === String(providerSub)) return true;
+  if (email) {
+    const local = String(email).split("@")[0];
+    if (local && trimmed === local) return true;
+  }
+  if (/^[a-f0-9]{10,}$/i.test(trimmed)) return true;
+  return false;
+};
+
 const resolveAppleName = (fullName, fallbackEmail) => {
   if (typeof fullName === "string" && fullName.trim()) return fullName.trim();
   if (fullName && typeof fullName === "object") {
@@ -117,7 +134,14 @@ const resolveAppleName = (fullName, fallbackEmail) => {
       .filter(Boolean);
     if (parts.length) return parts.join(" ");
   }
-  if (fallbackEmail) return String(fallbackEmail).split("@")[0];
+  if (fallbackEmail) {
+    const email = String(fallbackEmail).trim();
+    if (email) {
+      if (isAppleRelayEmail(email)) return "Apple User";
+      const local = email.split("@")[0];
+      if (/[a-zA-Z]/.test(local)) return local;
+    }
+  }
   return "Apple User";
 };
 
@@ -1010,7 +1034,7 @@ export const appleExchange = async (req, res) => {
           provider_sub: sub,
         };
         if (emailVerified && !user.email_verified) updates.email_verified = true;
-        if (!user.name) {
+        if (fullName && isPlaceholderAppleName(user.name, email || user.email, sub)) {
           updates.name = resolveAppleName(fullName, email || user.email);
         }
         await user.update(updates);
@@ -1034,7 +1058,9 @@ export const appleExchange = async (req, res) => {
       const updates = {};
       if (!user.email && email) updates.email = email;
       if (emailVerified && !user.email_verified) updates.email_verified = true;
-      if (!user.name && fullName) updates.name = resolveAppleName(fullName, email || user.email);
+      if (fullName && isPlaceholderAppleName(user.name, email || user.email, sub)) {
+        updates.name = resolveAppleName(fullName, email || user.email);
+      }
       if (Object.keys(updates).length) {
         await user.update(updates);
       }

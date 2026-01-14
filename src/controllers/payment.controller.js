@@ -82,10 +82,15 @@ const dispatchHomeBookingConfirmation = async (booking) => {
         include: [
           {
             association: "media",
-            attributes: ["url", "cover"],
-            where: { cover: true },
+            attributes: ["url", "is_cover", "order"],
             required: false,
+            separate: true,
             limit: 1,
+            order: [
+              ["is_cover", "DESC"],
+              ["order", "ASC"],
+              ["id", "ASC"],
+            ],
           },
         ],
       },

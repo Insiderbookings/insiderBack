@@ -51,6 +51,7 @@ export const sendPushToUser = async ({ userId, title, body, data, debug = false 
     title: title || "New message",
     body: body || "You have a new message.",
     data: data || {},
+    channelId: "default",
   }));
 
   const headers = buildHeaders();
@@ -62,6 +63,7 @@ export const sendPushToUser = async ({ userId, title, body, data, debug = false 
     errorCount: 0,
     errors: [],
   };
+  if (debug) console.log("[push] Sending to tokens:", tokens);
   for (const batch of chunk(messages)) {
     summary.batches += 1;
     try {

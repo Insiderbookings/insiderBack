@@ -21,6 +21,18 @@ const maskPhone = (phone = "") => {
   return `***${tail}`
 }
 
+const parseCsvList = (value) => {
+  if (!value) return []
+  return Array.from(
+    new Set(
+      String(value)
+        .split(",")
+        .map((token) => token.trim())
+        .filter(Boolean),
+    ),
+  )
+}
+
 export const search = (req, res, next) => provider.search(req, res, next)
 export const getRooms = (req, res, next) => provider.getRooms(req, res, next)
 export const saveBooking = (req, res, next) => provider.saveBooking(req, res, next)
@@ -300,10 +312,22 @@ export const createPaymentIntent = async (req, res, next) => {
 
 export const listStaticHotels = async (req, res, next) => {
   try {
-    const { cityCode, countryCode, q, limit = 20, offset = 0, preferred, hotelId } = req.query
+    const {
+      cityCode,
+      countryCode,
+      q,
+      limit = 20,
+      offset = 0,
+      preferred,
+      hotelId,
+      hotelIds,
+    } = req.query
 
     const where = {}
-    if (hotelId) {
+    const hotelIdList = parseCsvList(hotelIds)
+    if (hotelIdList.length) {
+      where.hotel_id = { [Op.in]: hotelIdList }
+    } else if (hotelId) {
       where.hotel_id = String(hotelId).trim()
     }
     if (cityCode) {
@@ -319,7 +343,8 @@ export const listStaticHotels = async (req, res, next) => {
       where.preferred = true
     }
 
-    const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20))
+    const limitBase = Number(limit) || (hotelIdList.length ? hotelIdList.length : 20)
+    const safeLimit = Math.min(100, Math.max(1, limitBase))
     const safeOffset = Math.max(0, Number(offset) || 0)
 
     const { rows, count } = await models.WebbedsHotel.findAndCountAll({
