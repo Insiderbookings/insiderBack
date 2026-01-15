@@ -2,6 +2,8 @@
 import sequelize from "../config/database.js";
 
 /* ---------- Importar modelos ---------- */
+import ItineraryDayModel from "./ItineraryDay.js";
+import ItineraryItemModel from "./ItineraryItem.js";
 import UserModel from "./User.js";
 import StaffRoleModel from "./StaffRole.js";
 import StaffModel from "./Staff.js";
@@ -233,6 +235,8 @@ const models = {
   StayIntelligence: StayIntelligenceModel(sequelize),
   PushToken: PushTokenModel(sequelize),
   RefreshToken: RefreshTokenModel(sequelize),
+  ItineraryDay: ItineraryDayModel(sequelize),
+  ItineraryItem: ItineraryItemModel(sequelize),
 };
 
 /* ---------- Ejecutar asociaciones ---------- */

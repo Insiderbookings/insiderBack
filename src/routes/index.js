@@ -31,6 +31,7 @@ import analyticsRoutes from "./analytics.routes.js"
 import intelligenceRoutes from "./intelligence.routes.js"
 import placesRoutes from "./places.routes.js"
 import pushRoutes from "./push.routes.js"
+import itineraryRoutes from "./itinerary.routes.js"; // NEW
 
 const router = Router()
 
