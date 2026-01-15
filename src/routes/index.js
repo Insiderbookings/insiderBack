@@ -31,7 +31,8 @@ import analyticsRoutes from "./analytics.routes.js"
 import intelligenceRoutes from "./intelligence.routes.js"
 import placesRoutes from "./places.routes.js"
 import pushRoutes from "./push.routes.js"
-import itineraryRoutes from "./itinerary.routes.js"; // NEW
+import itineraryRoutes from "./itinerary.routes.js";
+import errorRoutes from "./error.routes.js";
 
 const router = Router()
 
@@ -66,6 +67,7 @@ router.use("/flows", flowsRoutes)
 router.use("/support", supportRoutes)
 router.use("/analytics", analyticsRoutes)
 router.use("/intelligence", intelligenceRoutes)
+router.use("/admin/errors", errorRoutes)
 router.use("/places", placesRoutes)
 router.use("/push", pushRoutes)
 

@@ -115,6 +115,8 @@ import AnalyticsEventModel from "./AnalyticsEvent.js";
 import StayIntelligenceModel from "./StayIntelligence.js";
 import PushTokenModel from "./PushToken.js";
 import RefreshTokenModel from "./RefreshToken.js";
+import ErrorLogModel from "./ErrorLog.js";
+import ErrorConfigModel from "./ErrorConfig.js";
 
 /* ---------- Construir objetos ---------- */
 const Stay = StayModel(sequelize);
@@ -237,6 +239,8 @@ const models = {
   RefreshToken: RefreshTokenModel(sequelize),
   ItineraryDay: ItineraryDayModel(sequelize),
   ItineraryItem: ItineraryItemModel(sequelize),
+  ErrorLog: ErrorLogModel(sequelize),
+  ErrorConfig: ErrorConfigModel(sequelize),
 };
 
 /* ---------- Ejecutar asociaciones ---------- */
