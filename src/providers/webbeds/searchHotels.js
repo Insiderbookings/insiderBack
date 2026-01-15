@@ -340,7 +340,7 @@ const parsePropertyFees = (rateBasis) => {
     name: fee?.["@_name"] ?? null,
     description: fee?.["@_description"] ?? null,
     includedInPrice: normalizeBoolean(fee?.["@_includedinprice"]),
-    amount: toNumber(fee?.["#"]),
+    amount: toNumber(fee?.["#"] ?? fee?.["#text"] ?? fee?.text),
     currency: fee?.["@_currencyshort"] ?? null,
     type: fee?.["@_description"] ?? null,
   }))
