@@ -679,6 +679,19 @@ export class WebbedsProvider extends HotelProvider {
         defaultCountryCode,
       )
 
+      const requestId = this.getRequestId(req)
+      const customerReferenceRaw =
+        customerReference ??
+        req.body?.customer_reference ??
+        null
+      const customerReferenceValue =
+        customerReferenceRaw == null
+          ? ""
+          : String(customerReferenceRaw).trim()
+      const resolvedCustomerReference =
+        customerReferenceValue ||
+        (requestId ? `REQ-${requestId}` : `REQ-${Date.now()}`)
+
       const payload = buildSaveBookingPayload({
         checkIn,
         checkOut,
@@ -692,11 +705,11 @@ export class WebbedsProvider extends HotelProvider {
         passengers,
         voucherRemark,
         specialRequest,
-        customerReference,
+        customerReference: resolvedCustomerReference,
       })
 
       const { result } = await this.client.send("savebooking", payload, {
-        requestId: this.getRequestId(req),
+        requestId,
       })
 
       const mapped = mapSaveBookingResponse(result)

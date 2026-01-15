@@ -680,10 +680,16 @@ export class FlowOrchestratorService {
       };
     });
 
-    const customerReference =
+    const customerReferenceRawValue =
       customerReferenceRaw ??
       body?.customer_reference ??
-      `FLOW-${flowId}`;
+      null;
+    const customerReferenceNormalized =
+      customerReferenceRawValue == null
+        ? ""
+        : String(customerReferenceRawValue).trim();
+    const customerReference =
+      customerReferenceNormalized || `FLOW-${flowId}`;
 
     const payload = buildSaveBookingPayload({
       checkIn: context.fromDate,
@@ -950,7 +956,7 @@ export class FlowOrchestratorService {
     const paymentMethod = process.env.WEBBEDS_PAYMENT_METHOD || "CC_PAYMENT_NET";
     const payload = buildBookItineraryPayload({
       bookingCode: flow.itinerary_booking_code,
-      bookingType: 1,
+      bookingType: 2,
       confirm: "yes",
       payment: {
         paymentMethod,

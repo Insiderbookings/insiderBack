@@ -10,6 +10,7 @@ import {
   getBookingsForUser,
   getBookingsForStaff,
   getBookingById,
+  saveHotelConfirmationSnapshot,
   listBookingInvites,
   getBookingInvite,
   inviteBookingMember,
@@ -65,6 +66,7 @@ router.get("/staff/me", authenticate, authorizeStaff, getBookingsForStaff)
 
 /* ---- Single booking / cancel ---- */
 router.get("/:id",              authenticate, getBookingById)
+router.post("/:id/confirmation-snapshot", authenticate, requireVerifiedEmail, saveHotelConfirmationSnapshot)
 router.put("/:id/cancel",       authenticate, cancelBooking)
 router.put("/:id/confirm",      authenticate, requireVerifiedEmail, confirmBooking)
 

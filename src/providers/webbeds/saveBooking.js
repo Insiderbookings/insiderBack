@@ -108,7 +108,6 @@ const buildRoomsNode = ({
   nationality,
   residence,
   passengers = [],
-  customerReference,
 }) => {
   const roomEntries = ensureArray(rooms)
   if (!roomEntries.length) {
@@ -207,8 +206,6 @@ const buildRoomsNode = ({
         passengerNationality: room.nationality || nationality || null,
         passengerCountryOfResidence: room.residence || residence || null,
 
-        customerReference: customerReference || null,
-
         // Pass rateBasis (the integer code)? It's not in confirmBookingRoomType explicitly 
         // as 'rateBasis'. But roomType has 'rateBasis'. 
         // confirmBookingRoomType DOES NOT extend roomType in XSD. It redefines fields.
@@ -262,22 +259,24 @@ export const buildSaveBookingPayload = ({
   // Booker email
   // const sendCommunicationTo = contact.email || null
 
+  const customerReferenceValue =
+    customerReference == null ? null : String(customerReference).trim()
+
   const roomsNode = buildRoomsNode({
     rooms,
     rateBasis,
     nationality,
     residence,
     passengers,
-    customerReference
   })
 
-  // Structure: fromDate, toDate, currency, productId, sendCommunicationTo, customerReference, rooms
+  // Structure: fromDate, toDate, currency, productId, customerReference, rooms (order matters for XSD)
   const bookingDetails = {
     fromDate,
     toDate,
     currency: currency || "520",
     productId,
-    customerReference,
+    ...(customerReferenceValue ? { customerReference: customerReferenceValue } : {}),
     rooms: roomsNode,
   }
 

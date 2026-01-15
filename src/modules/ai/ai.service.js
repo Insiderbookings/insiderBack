@@ -498,7 +498,7 @@ export const runAiTurn = async ({
     plan: mergedPlan,
     inventory,
     trip,
-    weather,
+    weather: resolvedWeather,
     state: updatedState,
     intent: resolvedIntent,
     nextAction: resolvedNextAction,

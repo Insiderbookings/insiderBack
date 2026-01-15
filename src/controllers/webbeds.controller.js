@@ -2,8 +2,18 @@ import { Op } from "sequelize"
 import models from "../models/index.js"
 import { WebbedsProvider } from "../providers/webbeds/provider.js"
 import { formatStaticHotel } from "../utils/webbedsMapper.js"
+import { listSalutations } from "../providers/webbeds/salutations.js"
 
 const provider = new WebbedsProvider()
+const getStripeClient = async () => {
+  const { default: Stripe } = await import("stripe")
+  return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" })
+}
+
+const isPrivilegedUser = (user) => {
+  const role = Number(user?.role)
+  return role === 1 || role === 100
+}
 
 const maskEmail = (email = "") => {
   const value = String(email || "").trim()
@@ -273,19 +283,17 @@ export const createPaymentIntent = async (req, res, next) => {
     }
 
     // 2. Create Stripe Payment Intent
-    const paymentIntent = await import("stripe").then(m => {
-      const Stripe = m.default
-      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" })
-      return stripe.paymentIntents.create({
-        amount: Math.round(amountNumber * 100), // cents
-        currency: currency.toLowerCase(),
-        metadata: {
-          bookingId: String(localBooking.id), // Link to LOCAL booking
-          webbedsId: String(bookingId),
-          source: "WEBBEDS"
-        },
-        automatic_payment_methods: { enabled: true },
-      })
+    const stripe = await getStripeClient()
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amountNumber * 100), // cents
+      currency: currency.toLowerCase(),
+      metadata: {
+        bookingId: String(localBooking.id), // Link to LOCAL booking
+        webbedsId: String(bookingId),
+        source: "WEBBEDS",
+      },
+      capture_method: "manual",
+      automatic_payment_methods: { enabled: true },
     })
     console.info(`${logPrefix} payment intent created`, { paymentIntentId: paymentIntent.id })
 
@@ -305,6 +313,105 @@ export const createPaymentIntent = async (req, res, next) => {
 
   } catch (error) {
     console.error("[webbeds] createPaymentIntent error", error)
+    next(error)
+  }
+}
+
+export const capturePaymentIntent = async (req, res, next) => {
+  try {
+    const { paymentIntentId, localBookingId } = req.body || {}
+    if (!paymentIntentId && !localBookingId) {
+      return res.status(400).json({ error: "Missing paymentIntentId or localBookingId" })
+    }
+
+    let booking = null
+    if (localBookingId) {
+      booking = await models.Booking.findByPk(localBookingId)
+    }
+    if (!booking && paymentIntentId) {
+      booking = await models.Booking.findOne({ where: { payment_intent_id: paymentIntentId } })
+    }
+    if (booking?.user_id && req.user?.id && booking.user_id !== req.user.id && !isPrivilegedUser(req.user)) {
+      return res.status(403).json({ error: "Forbidden" })
+    }
+
+    const stripe = await getStripeClient()
+    const intentId = paymentIntentId || booking?.payment_intent_id
+    if (!intentId) return res.status(404).json({ error: "Payment intent not found" })
+
+    const pi = await stripe.paymentIntents.retrieve(intentId)
+    let captureResult = null
+    if (pi.status === "requires_capture") {
+      captureResult = await stripe.paymentIntents.capture(intentId)
+    }
+
+    if (booking) {
+      const updates = { payment_status: "PAID" }
+      if (booking.status !== "CONFIRMED" && booking.status !== "COMPLETED") {
+        updates.status = "CONFIRMED"
+      }
+      if (!booking.booked_at) {
+        updates.booked_at = new Date()
+      }
+      await booking.update(updates)
+    }
+
+    return res.json({
+      paymentIntentId: intentId,
+      status: captureResult?.status || pi.status,
+      bookingId: booking?.id || null,
+    })
+  } catch (error) {
+    console.error("[webbeds] capturePaymentIntent error", error)
+    next(error)
+  }
+}
+
+export const cancelPaymentIntent = async (req, res, next) => {
+  try {
+    const { paymentIntentId, localBookingId, reason } = req.body || {}
+    if (!paymentIntentId && !localBookingId) {
+      return res.status(400).json({ error: "Missing paymentIntentId or localBookingId" })
+    }
+
+    let booking = null
+    if (localBookingId) {
+      booking = await models.Booking.findByPk(localBookingId)
+    }
+    if (!booking && paymentIntentId) {
+      booking = await models.Booking.findOne({ where: { payment_intent_id: paymentIntentId } })
+    }
+    if (booking?.user_id && req.user?.id && booking.user_id !== req.user.id && !isPrivilegedUser(req.user)) {
+      return res.status(403).json({ error: "Forbidden" })
+    }
+
+    const stripe = await getStripeClient()
+    const intentId = paymentIntentId || booking?.payment_intent_id
+    if (!intentId) return res.status(404).json({ error: "Payment intent not found" })
+
+    const pi = await stripe.paymentIntents.retrieve(intentId)
+    let cancelResult = null
+    if (pi.status !== "canceled") {
+      cancelResult = await stripe.paymentIntents.cancel(intentId, {
+        cancellation_reason: reason || "failed_booking",
+      })
+    }
+
+    if (booking) {
+      const updates = { payment_status: "UNPAID" }
+      if (booking.status !== "CONFIRMED" && booking.status !== "COMPLETED") {
+        updates.status = "CANCELLED"
+      }
+      await booking.update(updates)
+    }
+
+    return res.json({
+      paymentIntentId: intentId,
+      status: cancelResult?.status || pi.status,
+      bookingId: booking?.id || null,
+    })
+  } catch (error) {
+    console.error("[webbeds] cancelPaymentIntent error", error)
     next(error)
   }
 }
@@ -582,6 +689,17 @@ export const listHotelClassifications = async (_req, res, next) => {
       name: row.name,
       runno: row.runno ?? null,
     }))
+    return res.json({ items })
+  } catch (error) {
+    return next(error)
+  }
+}
+
+export const listSalutationsCatalog = async (req, res, next) => {
+  try {
+    const forceRefresh =
+      String(req.query?.refresh || "").toLowerCase() === "true"
+    const items = await listSalutations({ forceRefresh })
     return res.json({ items })
   } catch (error) {
     return next(error)

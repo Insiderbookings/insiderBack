@@ -21,17 +21,55 @@ const SALUTATION_IDS = {
   "sir/madam": 3801,
 }
 
+const SALUTATION_LABELS = {
+  child: "Child",
+  dr: "Dr.",
+  madame: "Madame",
+  mademoiselle: "Mademoiselle",
+  messrs: "Messrs.",
+  miss: "Miss",
+  monsieur: "Monsieur",
+  mr: "Mr.",
+  mrs: "Mrs.",
+  ms: "Ms.",
+  sir: "Sir",
+  "sir/madam": "Sir/Madam",
+}
+
+const SALUTATION_ORDER = [
+  "child",
+  "dr",
+  "madame",
+  "mademoiselle",
+  "messrs",
+  "miss",
+  "monsieur",
+  "mr",
+  "mrs",
+  "ms",
+  "sir",
+  "sir/madam",
+]
+
 const normalizeSalutationKey = (value) =>
   String(value || "")
     .trim()
     .toLowerCase()
     .replace(/[^a-z/]/g, "")
 
+let salutationIdSet = new Set(Object.values(SALUTATION_IDS))
+let salutationsOptions = null
+
 const resolveSalutationIdFromMap = (map, value) => {
   if (value == null || value === "") return null
-  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return salutationIdSet.has(value) ? value : null
+  }
   const text = String(value).trim()
-  if (/^\d+$/.test(text)) return Number(text)
+  if (/^\d+$/.test(text)) {
+    const numeric = Number(text)
+    return salutationIdSet.has(numeric) ? numeric : null
+  }
   const key = normalizeSalutationKey(text)
   return map?.get(key) ?? SALUTATION_IDS[key] ?? null
 }
@@ -59,8 +97,18 @@ const extractOptions = (result) => {
   return ensureArray(node?.option ?? node)
 }
 
+const buildFallbackOptions = () =>
+  SALUTATION_ORDER.map((key, idx) => ({
+    value: SALUTATION_IDS[key],
+    label: SALUTATION_LABELS[key] ?? key,
+    key,
+    runno: idx,
+  }))
+
 const buildCache = (options) => {
   const map = new Map()
+  const idSet = new Set(Object.values(SALUTATION_IDS))
+  const normalizedOptions = []
   ensureArray(options).forEach((option) => {
     if (!option) return
     const rawValue =
@@ -73,15 +121,30 @@ const buildCache = (options) => {
     if (rawValue == null) return
     const value = Number(rawValue)
     if (!Number.isFinite(value)) return
+    idSet.add(value)
     const label =
       typeof option === "string"
         ? option
         : option?.["#text"] ?? option?.text ?? option?.name ?? null
-    if (!label) return
-    const key = normalizeSalutationKey(label)
-    if (!key) return
-    map.set(key, value)
+    if (label) {
+      const key = normalizeSalutationKey(label)
+      if (key) {
+        map.set(key, value)
+        normalizedOptions.push({
+          value,
+          label: String(label).trim(),
+          key,
+          runno: option?.["@_runno"] ?? option?.runno ?? normalizedOptions.length,
+        })
+      }
+    }
   })
+  salutationIdSet = idSet
+  const sortedOptions = normalizedOptions
+    .filter((item) => item.label && Number.isFinite(item.value))
+    .sort((a, b) => Number(a.runno) - Number(b.runno))
+    .map(({ runno, ...rest }) => rest)
+  salutationsOptions = sortedOptions.length ? sortedOptions : buildFallbackOptions()
   return map
 }
 
@@ -143,3 +206,15 @@ export const resolveSalutationId = (value) =>
   resolveSalutationIdFromMap(salutationsCache, value)
 
 export const getDefaultSalutationId = () => SALUTATION_IDS.mr
+
+export const listSalutations = async ({ forceRefresh = false } = {}) => {
+  if (forceRefresh) {
+    await refreshSalutationsCache({ force: true })
+  } else {
+    ensureSalutationsCacheWarm()
+  }
+  if (!salutationsOptions || !salutationsOptions.length) {
+    salutationsOptions = buildFallbackOptions()
+  }
+  return salutationsOptions
+}

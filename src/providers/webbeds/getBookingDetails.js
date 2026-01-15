@@ -37,6 +37,21 @@ const parseFormattedPrice = (node) => {
     return toText(node)
 }
 
+const parsePropertyFees = (node) => {
+    if (!node) return []
+    const fees = ensureArray(node?.propertyFee ?? node)
+    return fees.map((fee) => ({
+        name: fee?.["@_name"] ?? fee?.name ?? null,
+        description: fee?.["@_description"] ?? fee?.description ?? null,
+        includedInPrice: normalizeBoolean(
+            fee?.["@_includedinprice"] ?? fee?.includedinprice ?? fee?.includedInPrice
+        ),
+        currency: fee?.["@_currencyshort"] ?? fee?.currencyshort ?? fee?.currency ?? null,
+        amount: parseFormattedPrice(fee),
+        formatted: toText(fee?.formatted ?? fee?.["#text"] ?? fee?.text ?? fee),
+    }))
+}
+
 export const buildGetBookingDetailsPayload = ({ bookingId, bookingCode, bookingType } = {}) => {
     const code = bookingCode || bookingId
     if (!code) {
@@ -174,9 +189,19 @@ export const mapGetBookingDetailsResponse = (result) => {
             totals: {
                 tax: parseFormattedPrice(product?.totalTaxes),
                 fee: parseFormattedPrice(product?.totalFee),
+                propertyFees: parsePropertyFees(product?.propertyFees),
             },
 
-            extraMeals
+            notes: {
+                tariff:
+                    toText(product?.tariffNotes) ??
+                    toText(product?.tariffNote) ??
+                    toText(product?.rateNotes) ??
+                    toText(product?.notes) ??
+                    null,
+            },
+
+            extraMeals,
         }
     }
 }

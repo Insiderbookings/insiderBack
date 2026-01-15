@@ -99,6 +99,119 @@ const roundCurrency = (value) => {
   return Math.round((numeric + Number.EPSILON) * 100) / 100
 }
 
+const trimText = (value, max = 500) => {
+  if (value == null) return null
+  const text = String(value).trim()
+  if (!text) return null
+  return text.length > max ? text.slice(0, max) : text
+}
+
+const sanitizeStringArray = (values, limit = 20, max = 120) => {
+  if (!Array.isArray(values)) return []
+  return values
+    .map((value) => trimText(value, max))
+    .filter(Boolean)
+    .slice(0, limit)
+}
+
+const sanitizeConfirmationSnapshot = (raw = {}) => {
+  const bookingCodes = raw.bookingCodes || {}
+  const hotel = raw.hotel || {}
+  const room = raw.room || {}
+  const rate = raw.rate || {}
+  const policies = raw.policies || {}
+  const traveler = raw.traveler || {}
+  const stay = raw.stay || {}
+  const totals = raw.totals || {}
+  const payment = raw.payment || {}
+
+  const cancellationRules = Array.isArray(policies.cancellationRules)
+    ? policies.cancellationRules.slice(0, 10).map((rule) => ({
+        from: trimText(rule?.from, 120),
+        to: trimText(rule?.to, 120),
+        charge: trimText(rule?.charge, 120),
+      }))
+    : []
+
+  const propertyFees = Array.isArray(policies.propertyFees)
+    ? policies.propertyFees.slice(0, 15).map((fee) => ({
+        name: trimText(fee?.name, 120),
+        description: trimText(fee?.description, 200),
+        amount: fee?.amount ?? fee?.formatted ?? null,
+        currency: trimText(fee?.currency, 10),
+        includedInPrice: fee?.includedInPrice ?? fee?.includedinprice ?? null,
+      }))
+    : []
+
+  return {
+    bookingCodes: {
+      voucherId: trimText(bookingCodes?.voucherId, 120),
+      bookingReference: trimText(bookingCodes?.bookingReference, 120),
+      itineraryNumber: trimText(bookingCodes?.itineraryNumber, 120),
+      externalRef: trimText(bookingCodes?.externalRef, 120),
+    },
+    hotel: {
+      id: trimText(hotel?.id, 80),
+      name: trimText(hotel?.name, 200),
+      address: trimText(hotel?.address, 300),
+      phone: trimText(hotel?.phone, 80),
+      city: trimText(hotel?.city, 120),
+      country: trimText(hotel?.country, 120),
+    },
+    room: {
+      name: trimText(room?.name, 200),
+      roomTypeCode: trimText(room?.roomTypeCode, 80),
+    },
+    rate: {
+      rateBasis: trimText(rate?.rateBasis, 200),
+      mealPlan: Array.isArray(rate?.mealPlan)
+        ? sanitizeStringArray(rate.mealPlan, 8, 120)
+        : trimText(rate?.mealPlan, 200),
+      specials: sanitizeStringArray(rate?.specials, 10, 160),
+      tariffNotes: trimText(rate?.tariffNotes, 4000),
+      refundable: rate?.refundable ?? null,
+      nonRefundable: rate?.nonRefundable ?? null,
+      cancelRestricted: rate?.cancelRestricted ?? null,
+      amendRestricted: rate?.amendRestricted ?? null,
+      paymentMode: trimText(rate?.paymentMode, 120),
+    },
+    policies: {
+      cancellationRules,
+      taxes: policies?.taxes ?? null,
+      fees: policies?.fees ?? null,
+      propertyFees,
+    },
+    traveler: {
+      leadGuestName: trimText(traveler?.leadGuestName, 200),
+      email: trimText(traveler?.email, 200),
+      phone: trimText(traveler?.phone, 80),
+      nationality: trimText(traveler?.nationality, 120),
+      residence: trimText(traveler?.residence, 120),
+      salutation: trimText(traveler?.salutation, 80),
+    },
+    stay: {
+      checkIn: trimText(stay?.checkIn, 40),
+      checkOut: trimText(stay?.checkOut, 40),
+      nights: stay?.nights ?? null,
+      guests: {
+        adults: stay?.guests?.adults ?? null,
+        children: stay?.guests?.children ?? null,
+        childrenAges: Array.isArray(stay?.guests?.childrenAges)
+          ? stay.guests.childrenAges.slice(0, 6)
+          : null,
+      },
+    },
+    totals: {
+      total: totals?.total ?? null,
+      currency: trimText(totals?.currency, 10),
+    },
+    payment: {
+      method: trimText(payment?.method, 80),
+      label: trimText(payment?.label, 120),
+    },
+  }
+}
+
 const resolveHomePricingConfig = ({ pricing = {}, capacity = null }) => {
   const basePrice = Number.parseFloat(pricing.base_price ?? 0) * 1.1
   if (!Number.isFinite(basePrice) || basePrice <= 0) {
@@ -2375,6 +2488,47 @@ export const getBookingById = async (req, res) => {
     })
   } catch (err) {
     console.error("getBookingById:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+}
+
+export const saveHotelConfirmationSnapshot = async (req, res) => {
+  try {
+    const { id } = req.params
+    const userId = Number(req.user?.id)
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+    if (!id) return res.status(400).json({ error: "Missing booking id" })
+
+    const booking = await models.Booking.findByPk(id)
+    if (!booking) return res.status(404).json({ error: "Booking not found" })
+
+    const role = Number(req.user?.role)
+    const isStaff = role === 1 || role === 100
+    if (!isStaff && Number(booking.user_id) !== userId) {
+      return res.status(403).json({ error: "Forbidden" })
+    }
+
+    const inventoryType = String(booking.inventory_type || "").toUpperCase()
+    if (inventoryType === "HOME") {
+      return res.status(400).json({ error: "Confirmation snapshot is only for hotel bookings" })
+    }
+
+    const rawSnapshot = req.body?.snapshot ?? req.body
+    if (!rawSnapshot || typeof rawSnapshot !== "object") {
+      return res.status(400).json({ error: "Invalid snapshot payload" })
+    }
+
+    const sanitized = sanitizeConfirmationSnapshot(rawSnapshot)
+    const pricingSnapshot =
+      booking.pricing_snapshot && typeof booking.pricing_snapshot === "object"
+        ? { ...booking.pricing_snapshot }
+        : {}
+    pricingSnapshot.confirmationSnapshot = sanitized
+    await booking.update({ pricing_snapshot: pricingSnapshot })
+
+    return res.json({ success: true, confirmationSnapshot: sanitized })
+  } catch (err) {
+    console.error("saveHotelConfirmationSnapshot:", err)
     return res.status(500).json({ error: "Server error" })
   }
 }
