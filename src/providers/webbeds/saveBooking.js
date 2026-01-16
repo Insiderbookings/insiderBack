@@ -90,6 +90,13 @@ const buildPassengersDetails = (passengers = []) => {
   const entries = ensureArray(passengers)
   if (!entries.length) return null
 
+  const isLeading = (value) => {
+    if (value === true) return true
+    if (value === false || value == null) return false
+    const normalized = String(value).trim().toLowerCase()
+    return ["yes", "y", "true", "1"].includes(normalized)
+  }
+
   // XSD confirmBookingRoomType -> passengersDetails -> passenger (maxOccurs unbounded)
   // passenger -> salutation(int), firstName(str), lastName(str), leading(attr, opt)
   return {
@@ -97,7 +104,7 @@ const buildPassengersDetails = (passengers = []) => {
       salutation: getSalutation(p),
       firstName: p.firstName || p.givenName || "Guest",
       lastName: p.lastName || p.surname || "Name",
-      "@leading": p.leading ? "yes" : "no"
+      "@leading": isLeading(p.leading) ? "yes" : "no"
     }))
   }
 }
@@ -122,11 +129,27 @@ const buildRoomsNode = ({
     if (Array.isArray(room.passengers) && room.passengers.length) {
       return room.passengers
     }
-    const neededAdults = Math.max(1, toNumber(room.adults) || 1)
-    const slice = globalPassengers.slice(passengerCursor, passengerCursor + neededAdults)
-    passengerCursor += neededAdults
+    const neededAdults = Math.max(
+      1,
+      toNumber(room.actualAdults) || toNumber(room.adults) || 1,
+    )
+    const actualChildrenAges = ensureArray(
+      room.actualChildren ||
+      room.actualChildrenAges ||
+      room.actualKids ||
+      room.actualChildrenAge ||
+      room.actualChildrenAges ||
+      room.children ||
+      room.childrenAges ||
+      room.kids,
+    )
+      .map((age) => toNumber(age))
+      .filter((age) => Number.isFinite(age))
+    const neededTotal = neededAdults + actualChildrenAges.length
+    const slice = globalPassengers.slice(passengerCursor, passengerCursor + neededTotal)
+    passengerCursor += neededTotal
     // Si no hay suficientes, rellena con placeholders
-    const placeholders = Array.from({ length: Math.max(0, neededAdults - slice.length) }).map((_, i) => ({
+    const placeholders = Array.from({ length: Math.max(0, neededTotal - slice.length) }).map((_, i) => ({
       firstName: "Guest",
       lastName: `R${roomIdx + 1}P${i + 1}`,
       leading: false,

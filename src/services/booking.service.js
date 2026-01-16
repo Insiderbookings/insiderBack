@@ -7,6 +7,10 @@ import {
     reverseReferralRedemption,
 } from "../services/referralRewards.service.js";
 import crypto from "crypto";
+import { getWebbedsConfig } from "../providers/webbeds/config.js";
+import { createWebbedsClient } from "../providers/webbeds/client.js";
+import { buildCancelBookingPayload, mapCancelBookingResponse } from "../providers/webbeds/cancelBooking.js";
+import { mapWebbedsError } from "../utils/webbedsErrorMapper.js";
 
 // ──────────────── Helper – count nights ───────────── */
 const diffDays = (from, to) =>
@@ -62,6 +66,28 @@ const roundCurrency = (value) => {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return 0;
     return Math.round((numeric + Number.EPSILON) * 100) / 100;
+};
+
+const ensureArray = (value) => {
+    if (!value) return [];
+    return Array.isArray(value) ? value : [value];
+};
+
+const parseAmount = (value) => {
+    if (value == null) return null;
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    const cleaned = String(value).replace(/[^0-9.-]/g, "");
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeBookingCode = (value) => {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    if (/^\d+$/.test(text)) return text;
+    const match = text.match(/(\d{6,})$/);
+    return match ? match[1] : null;
 };
 
 const buildHomeCancellationQuote = ({
@@ -179,7 +205,10 @@ export const processBookingCancellation = async ({
 }) => {
     const booking = await models.Booking.findOne({
         where: { id: bookingId },
-        include: [{ model: models.StayHome, as: "homeStay", required: false }],
+        include: [
+            { model: models.StayHome, as: "homeStay", required: false },
+            { model: models.StayHotel, as: "hotelStay", required: false },
+        ],
     });
 
     if (!booking) throw { status: 404, message: "Booking not found" };
@@ -196,6 +225,11 @@ export const processBookingCancellation = async ({
     const isHomeBooking =
         String(booking.inventory_type || "").toUpperCase() === "HOME" ||
         String(booking.source || "").toUpperCase() === "HOME";
+    const isWebbedsBooking =
+        !isHomeBooking &&
+        String(booking.inventory_type || "").toUpperCase() === "LOCAL_HOTEL" &&
+        String(booking.source || "").toUpperCase() === "PARTNER" &&
+        String(booking.external_ref || "").trim().length > 0;
     const wasPaid = String(booking.payment_status || "").toUpperCase() === "PAID";
     const refundCurrency = booking.currency || "USD";
     let cancellationMeta = null;
@@ -300,13 +334,170 @@ export const processBookingCancellation = async ({
             cancelledAt: new Date().toISOString(),
             bySupport,
         };
+    } else if (isWebbedsBooking) {
+        const confirmationCodes =
+            booking.pricing_snapshot?.confirmationSnapshot?.bookingCodes ?? {};
+        const bookingCode =
+            normalizeBookingCode(confirmationCodes.externalRef) ??
+            normalizeBookingCode(confirmationCodes.voucherId) ??
+            normalizeBookingCode(confirmationCodes.bookingReference) ??
+            normalizeBookingCode(confirmationCodes.itineraryNumber) ??
+            normalizeBookingCode(booking.pricing_snapshot?.bookingCode) ??
+            normalizeBookingCode(booking.pricing_snapshot?.bookingReferenceNumber) ??
+            normalizeBookingCode(booking.external_ref);
+        if (!bookingCode) {
+            throw { status: 400, message: "Missing booking reference" };
+        }
+
+        const paidAmount = roundCurrency(Number(booking.gross_price) || 0);
+        let cancelQuote = null;
+        let cancelResult = null;
+        let penaltyApplied = 0;
+        let penaltyCurrency = null;
+        let paymentBalance = paidAmount;
+
+        try {
+            const client = createWebbedsClient(getWebbedsConfig());
+            const quotePayload = buildCancelBookingPayload({
+                bookingCode,
+                bookingType: 1,
+                confirm: "no",
+                reason,
+                services: [],
+            });
+            const quoteResponse = await client.send("cancelbooking", quotePayload, {
+                requestId: `cancel-${booking.id}`,
+                productOverride: null,
+            });
+            cancelQuote = mapCancelBookingResponse(quoteResponse.result);
+
+            const penalties = ensureArray(
+                cancelQuote?.services?.[0]?.cancellationPenalties,
+            );
+            const penaltyValues = penalties
+                .map((penalty) =>
+                    parseAmount(penalty?.charge ?? penalty?.chargeFormatted),
+                )
+                .filter((value) => Number.isFinite(value));
+            penaltyApplied = penaltyValues.length ? Math.max(...penaltyValues) : 0;
+            penaltyApplied = roundCurrency(penaltyApplied);
+            penaltyCurrency =
+                penalties.find((penalty) => {
+                    const value = parseAmount(penalty?.charge ?? penalty?.chargeFormatted);
+                    return Number.isFinite(value) && roundCurrency(value) === penaltyApplied;
+                })?.currencyShort ??
+                penalties[0]?.currencyShort ??
+                penalties[0]?.currency ??
+                null;
+
+            paymentBalance = Math.max(0, roundCurrency(paidAmount - penaltyApplied));
+
+            const confirmPayload = buildCancelBookingPayload({
+                bookingCode,
+                bookingType: 1,
+                confirm: "yes",
+                reason,
+                services: [
+                    {
+                        penaltyApplied,
+                        paymentBalance,
+                    },
+                ],
+            });
+            const cancelResponse = await client.send("cancelbooking", confirmPayload, {
+                requestId: `cancel-confirm-${booking.id}`,
+                productOverride: null,
+            });
+            cancelResult = mapCancelBookingResponse(cancelResponse.result);
+        } catch (error) {
+            if (error?.name === "WebbedsError") {
+                const mapped = mapWebbedsError(error.code, error.details);
+                throw {
+                    status: mapped.retryable ? 502 : 400,
+                    message: mapped.userMessage,
+                };
+            }
+            throw error;
+        }
+
+        if (refundOverride === true) {
+            refundPercent = 100;
+            refundAmount = wasPaid ? paidAmount : 0;
+        } else {
+            refundAmount = wasPaid ? paymentBalance : 0;
+            refundPercent =
+                paidAmount > 0 ? roundCurrency((refundAmount / paidAmount) * 100) : 0;
+        }
+
+        let stripeRefundId = null;
+        let stripeRefundStatus = null;
+        let paymentIntentStatus = null;
+        let paymentIntentCanceled = false;
+
+        if (booking.payment_intent_id) {
+            const stripe = await getStripeClient();
+            if (!stripe) throw { status: 500, message: "Stripe is not configured" };
+
+            const refundCents = Math.round(refundAmount * 100);
+            const paymentIntent = await stripe.paymentIntents.retrieve(
+                booking.payment_intent_id,
+            );
+            paymentIntentStatus = paymentIntent?.status || null;
+
+            if (refundCents > 0 && paymentIntent?.status === "succeeded") {
+                const refund = await stripe.refunds.create({
+                    payment_intent: booking.payment_intent_id,
+                    amount: refundCents,
+                    metadata: {
+                        stayId: String(booking.id),
+                        reason: reason,
+                        source: "WEBBEDS",
+                    },
+                });
+                stripeRefundId = refund.id;
+                stripeRefundStatus = refund.status;
+            } else if (paymentIntent?.status === "requires_capture") {
+                await stripe.paymentIntents.cancel(booking.payment_intent_id, {
+                    cancellation_reason: "requested_by_customer",
+                });
+                paymentIntentCanceled = true;
+            }
+        }
+
+        nextPaymentStatus =
+            refundAmount > 0 || stripeRefundId
+                ? "REFUNDED"
+                : paymentIntentCanceled
+                    ? "REFUNDED"
+                    : wasPaid
+                        ? "PAID"
+                        : "UNPAID";
+
+        cancellationMeta = {
+            policy: refundOverride ? "ADMIN_OVERRIDE" : "WEBBEDS",
+            bookingCodeUsed: bookingCode,
+            refundPercent,
+            refundAmount,
+            currency: refundCurrency,
+            penaltyApplied,
+            penaltyCurrency,
+            paymentBalance,
+            cancelQuote,
+            cancelResult,
+            paymentIntentStatus,
+            refundId: stripeRefundId,
+            refundStatus: stripeRefundStatus,
+            paymentIntentCanceled,
+            cancelledAt: new Date().toISOString(),
+            bySupport,
+        };
     } else {
         // Hotel Legacy Logic
         const hoursUntilCI = (new Date(booking.check_in) - new Date()) / 36e5;
         if (hoursUntilCI < 24 && !bySupport)
             throw { status: 400, message: "Cannot cancel booking less than 24 hours before check-in" };
         nextPaymentStatus = wasPaid ? "REFUNDED" : "UNPAID";
-        // NOTE: Refunds for Hotels are manual or handled differently in legacy code, 
+        // NOTE: Refunds for Hotels are manual or handled differently in legacy code,
         // assuming default behavior here for now or Admin should use specific tools.
         // If admin override is ON, we assume full refund is desired even for hotels.
         if (refundOverride && wasPaid) {

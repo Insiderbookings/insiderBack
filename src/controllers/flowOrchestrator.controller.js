@@ -1,4 +1,5 @@
 import FlowOrchestratorService from "../services/flowOrchestrator.service.js";
+import { mapWebbedsError } from "../utils/webbedsErrorMapper.js";
 
 const service = new FlowOrchestratorService();
 
@@ -14,12 +15,16 @@ const wrap = (handler) => async (req, res, next) => {
     }
     const payload = { error: error.message || "Unexpected error" };
     if (isWebbedsError) {
+      const mapped = mapWebbedsError(error.code, error.details);
       payload.command = error.command ?? null;
       payload.code = error.code ?? null;
       payload.details = error.details ?? null;
       payload.extraDetails = error.extraDetails ?? null;
       payload.httpStatus = error.httpStatus ?? null;
       payload.metadata = error.metadata ?? null;
+      payload.errorKey = mapped.errorKey;
+      payload.userMessage = mapped.userMessage;
+      payload.retryable = mapped.retryable;
     }
     return res.status(status).json(payload);
   }

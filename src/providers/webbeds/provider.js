@@ -17,9 +17,24 @@ import {
   mapBookItineraryResponse,
 } from "./bookItinerary.js"
 import { tokenizeCard } from "./rezpayments.js"
+import { mapWebbedsError } from "../../utils/webbedsErrorMapper.js"
 
 const MAX_HOTEL_IDS_PER_REQUEST = 50
 const DEFAULT_HOTEL_ID_CONCURRENCY = 4
+const verboseLogs = process.env.WEBBEDS_VERBOSE_LOGS === "true"
+
+const buildWebbedsErrorPayload = (error, extraPayload = {}) => {
+  const mapped = mapWebbedsError(error?.code, error?.details)
+  return {
+    success: false,
+    code: error?.code ?? null,
+    message: error?.details ?? error?.message ?? "WebBeds request failed",
+    errorKey: mapped.errorKey,
+    userMessage: mapped.userMessage,
+    retryable: mapped.retryable,
+    ...extraPayload,
+  }
+}
 
 const parseCsvList = (value) => {
   if (!value) return []
@@ -438,14 +453,15 @@ export class WebbedsProvider extends HotelProvider {
           metadata: error.metadata,
           requestXml: error.requestXml,
         })
-        return res.status(400).json({
-          success: false,
-          code: error.code,
-          message: error.details,
-          extra: error.extraDetails,
-          xsdMessages,
-          metadata: error.metadata,
-        })
+        return res
+          .status(400)
+          .json(
+            buildWebbedsErrorPayload(error, {
+              extra: error.extraDetails,
+              xsdMessages,
+              metadata: error.metadata,
+            }),
+          )
       } else {
         console.error("[webbeds] unexpected error", error)
       }
@@ -534,39 +550,45 @@ export class WebbedsProvider extends HotelProvider {
         req,
       })
 
-      console.info("[webbeds] getRooms request", {
-        hotelCode: resolvedHotelCode,
-        checkIn,
-        checkOut,
-        currency: normalizeCurrency(currency),
-        occupancies,
-        rateBasis: resolveRateBasis(rateBasis),
-        roomTypeCode,
-        selectedRateBasis,
-        allocationDetails: allocationDetails ? "[provided]" : null,
-        nationality,
-        residence,
-      })
+      if (verboseLogs) {
+        console.info("[webbeds] getRooms request", {
+          hotelCode: resolvedHotelCode,
+          checkIn,
+          checkOut,
+          currency: normalizeCurrency(currency),
+          occupancies,
+          rateBasis: resolveRateBasis(rateBasis),
+          roomTypeCode,
+          selectedRateBasis,
+          allocationDetails: allocationDetails ? "[provided]" : null,
+          nationality,
+          residence,
+        })
+      }
 
       const { result } = await this.client.send("getrooms", payload, {
         requestId: this.getRequestId(req),
         productOverride: "hotel",
       })
-      console.info("[webbeds] getRooms result", {
-        hotelId: result?.hotel?.["@_id"] ?? result?.hotel?.id ?? null,
-        currency: result?.currencyShort ?? null,
-        roomsCount:
-          Array.isArray(result?.hotel?.rooms?.room) && result.hotel.rooms.room.length
-            ? result.hotel.rooms.room.length
-            : result?.hotel?.rooms?.room
-              ? 1
-              : 0,
-      })
+      if (verboseLogs) {
+        console.info("[webbeds] getRooms result", {
+          hotelId: result?.hotel?.["@_id"] ?? result?.hotel?.id ?? null,
+          currency: result?.currencyShort ?? null,
+          roomsCount:
+            Array.isArray(result?.hotel?.rooms?.room) && result.hotel.rooms.room.length
+              ? result.hotel.rooms.room.length
+              : result?.hotel?.rooms?.room
+                ? 1
+                : 0,
+        })
+      }
       const mapped = mapGetRoomsResponse(result)
-      try {
-        console.log("[webbeds] getRooms mapped payload:", JSON.stringify(mapped, null, 2))
-      } catch {
-        console.log("[webbeds] getRooms mapped payload: [unserializable]")
+      if (verboseLogs) {
+        try {
+          console.log("[webbeds] getRooms mapped payload:", JSON.stringify(mapped, null, 2))
+        } catch {
+          console.log("[webbeds] getRooms mapped payload: [unserializable]")
+        }
       }
       return res.json(mapped)
     } catch (error) {
@@ -599,14 +621,15 @@ export class WebbedsProvider extends HotelProvider {
           })
         }
         // Respuesta clara al cliente para otros errores de Webbeds
-        return res.status(400).json({
-          success: false,
-          code: error.code,
-          message: error.details,
-          extra: error.extraDetails,
-          metadata: error.metadata,
-          xsdMessages,
-        })
+        return res
+          .status(400)
+          .json(
+            buildWebbedsErrorPayload(error, {
+              extra: error.extraDetails,
+              metadata: error.metadata,
+              xsdMessages,
+            }),
+          )
       } else {
         console.error("[webbeds] unexpected error", error)
       }
@@ -733,14 +756,15 @@ export class WebbedsProvider extends HotelProvider {
         if (xsdMessages) {
           console.error("[webbeds] XSD VALIDATION DETAILS:", JSON.stringify(xsdMessages, null, 2))
         }
-        return res.status(400).json({
-          success: false,
-          code: error.code,
-          message: error.details,
-          extra: error.extraDetails,
-          xsdMessages,
-          metadata: error.metadata,
-        })
+        return res
+          .status(400)
+          .json(
+            buildWebbedsErrorPayload(error, {
+              extra: error.extraDetails,
+              xsdMessages,
+              metadata: error.metadata,
+            }),
+          )
       } else {
         console.error("[webbeds] unexpected error", error)
       }
@@ -864,13 +888,14 @@ export class WebbedsProvider extends HotelProvider {
           metadata: error.metadata,
         })
         // Respuesta clara al cliente con el detalle que envía Webbeds
-        return res.status(400).json({
-          success: false,
-          code: error.code,
-          message: error.details,
-          extra: error.extraDetails,
-          metadata: error.metadata,
-        })
+        return res
+          .status(400)
+          .json(
+            buildWebbedsErrorPayload(error, {
+              extra: error.extraDetails,
+              metadata: error.metadata,
+            }),
+          )
       } else {
         console.error("[webbeds] unexpected error", error)
       }
@@ -914,6 +939,14 @@ export class WebbedsProvider extends HotelProvider {
           extra: error.extraDetails,
           metadata: error.metadata,
         })
+        return res
+          .status(400)
+          .json(
+            buildWebbedsErrorPayload(error, {
+              extra: error.extraDetails,
+              metadata: error.metadata,
+            }),
+          )
       } else {
         console.error("[webbeds] unexpected error", error)
       }
@@ -1027,13 +1060,14 @@ export class WebbedsProvider extends HotelProvider {
           extra: error.extraDetails,
           metadata: error.metadata,
         })
-        return res.status(400).json({
-          success: false,
-          code: error.code,
-          message: error.details,
-          extra: error.extraDetails,
-          metadata: error.metadata,
-        })
+        return res
+          .status(400)
+          .json(
+            buildWebbedsErrorPayload(error, {
+              extra: error.extraDetails,
+              metadata: error.metadata,
+            }),
+          )
       } else {
         console.error("[webbeds] unexpected error", error)
       }
@@ -1095,6 +1129,14 @@ export class WebbedsProvider extends HotelProvider {
           extra: error.extraDetails,
           metadata: error.metadata,
         })
+        return res
+          .status(400)
+          .json(
+            buildWebbedsErrorPayload(error, {
+              extra: error.extraDetails,
+              metadata: error.metadata,
+            }),
+          )
       } else {
         console.error("[webbeds] unexpected error", error)
       }
@@ -1143,6 +1185,14 @@ export class WebbedsProvider extends HotelProvider {
           extra: error.extraDetails,
           metadata: error.metadata,
         })
+        return res
+          .status(400)
+          .json(
+            buildWebbedsErrorPayload(error, {
+              extra: error.extraDetails,
+              metadata: error.metadata,
+            }),
+          )
       } else {
         console.error("[webbeds] unexpected error", error)
       }
@@ -1173,6 +1223,14 @@ export class WebbedsProvider extends HotelProvider {
           extra: error.extraDetails,
           metadata: error.metadata,
         })
+        return res
+          .status(400)
+          .json(
+            buildWebbedsErrorPayload(error, {
+              extra: error.extraDetails,
+              metadata: error.metadata,
+            }),
+          )
       }
       return next(error)
     }
@@ -1206,6 +1264,14 @@ export class WebbedsProvider extends HotelProvider {
           extra: error.extraDetails,
           metadata: error.metadata,
         })
+        return res
+          .status(400)
+          .json(
+            buildWebbedsErrorPayload(error, {
+              extra: error.extraDetails,
+              metadata: error.metadata,
+            }),
+          )
       }
       return next(error)
     }
@@ -1237,11 +1303,13 @@ export class WebbedsProvider extends HotelProvider {
       requestAttributes,
     })
 
-    console.log("[webbeds] --- request build start ---")
-    console.log("[webbeds] payload:", JSON.stringify(payload, null, 2))
-    console.log("[webbeds] request attributes:", requestAttributes)
-    console.log("[webbeds] request XML:", requestXml)
-    console.log("[webbeds] --- request build end ---")
+    if (verboseLogs) {
+      console.log("[webbeds] --- request build start ---")
+      console.log("[webbeds] payload:", JSON.stringify(payload, null, 2))
+      console.log("[webbeds] request attributes:", requestAttributes)
+      console.log("[webbeds] request XML:", requestXml)
+      console.log("[webbeds] --- request build end ---")
+    }
 
     const { result } = await this.client.send("searchhotels", payload, {
       requestId: this.getRequestId(req),
@@ -1280,9 +1348,11 @@ export class WebbedsProvider extends HotelProvider {
 
     const batches = chunkArray(hotelIds)
     const concurrency = resolveHotelIdConcurrency()
-    console.log(
-      `[webbeds] hotelId mode: executing ${batches.length} request(s) for ${hotelIds.length} hotels (concurrency=${concurrency})`,
-    )
+    if (verboseLogs) {
+      console.log(
+        `[webbeds] hotelId mode: executing ${batches.length} request(s) for ${hotelIds.length} hotels (concurrency=${concurrency})`,
+      )
+    }
 
     const batchResults = await runBatchesWithLimit(batches, concurrency, async (batch) => {
       const { payload, requestAttributes } = buildSearchHotelsPayload({

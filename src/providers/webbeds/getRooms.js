@@ -298,19 +298,174 @@ const parsePropertyFees = (rateBasis) => {
   }))
 }
 
-const parseSpecials = (node) => {
+const normalizeSpecialType = (value) => {
+  const text = getText(value)
+  return text ? String(text).trim() : null
+}
+
+const buildSpecialLabel = (special) => {
+  if (!special) return null
+  const type = normalizeSpecialType(special?.type)
+  const name = getText(special?.specialName ?? special?.name ?? special?.label)
+  const description = getText(special?.description ?? special?.notes)
+  const stay = toNumber(special?.stay)
+  const pay = toNumber(special?.pay)
+  const discount = toNumber(special?.discount)
+  const discountedNights = toNumber(special?.discountedNights)
+
+  switch (type) {
+    case "stayXPayYPromotion":
+      if (Number.isFinite(stay) && Number.isFinite(pay)) {
+        return `Stay ${stay} pay ${pay}`
+      }
+      return name ?? "Stay & pay offer"
+    case "stayXGetDiscountPromotion":
+      if (Number.isFinite(discount) && Number.isFinite(stay)) {
+        return `Stay ${stay} get ${discount}% off`
+      }
+      if (Number.isFinite(discount)) {
+        return `${discount}% off`
+      }
+      return name ?? "Discounted stay"
+    case "discountOnSubsequentNightsPromotion":
+      if (Number.isFinite(discountedNights)) {
+        const discountLabel = Number.isFinite(discount) ? `${discount}% ` : ""
+        return `Discount ${discountLabel}on ${discountedNights} night(s)`
+      }
+      return name ?? "Discount on nights"
+    case "freeMealUpgradePromotion":
+      return name ?? "Free meal upgrade"
+    case "freeUpgradePromotion":
+      return name ?? "Free room upgrade"
+    case "honeymoonPromotion":
+      return name ?? "Honeymoon offer"
+    case "anniversaryPromotion":
+      return name ?? "Anniversary offer"
+    default:
+      return name ?? description ?? type
+  }
+}
+
+const parseSpecialCatalog = (node) => {
   if (!node) return []
   const raw = node?.special ?? node?.specialItem ?? node?.item ?? node
   return ensureArray(raw)
+    .map((entry, idx) => {
+      if (!entry) return null
+      if (typeof entry === "string" || typeof entry === "number") {
+        const label = String(entry).trim()
+        return label
+          ? {
+              runno: idx,
+              label,
+            }
+          : null
+      }
+      const runno = toNumber(entry?.["@_runno"]) ?? idx
+      const special = {
+        runno,
+        type: normalizeSpecialType(entry?.type),
+        specialName: getText(entry?.specialName ?? entry?.name),
+        condition: getText(entry?.condition),
+        description: getText(entry?.description),
+        notes: getText(entry?.notes),
+        stay: toNumber(entry?.stay),
+        pay: toNumber(entry?.pay),
+        discount: toNumber(entry?.discount),
+        discountedNights: toNumber(entry?.discountedNights),
+        upgradeToMealId: getText(entry?.upgradeToMealId),
+        upgradeToRoomId: getText(entry?.upgradeToRoomId),
+      }
+      const label = buildSpecialLabel(special)
+      return {
+        ...special,
+        label,
+      }
+    })
+    .filter((entry) => entry && (entry.label || entry.specialName || entry.description || entry.type))
+}
+
+const summarizeSpecials = (specials) => {
+  if (!specials) return []
+  const seen = new Set()
+  return ensureArray(specials)
     .map((entry) => {
       if (!entry) return null
-      if (typeof entry === "string" || typeof entry === "number") return String(entry)
+      if (typeof entry === "string") return entry.trim()
       return (
-        getText(entry?.description ?? entry?.["@_description"] ?? entry?.name ?? entry) ??
-        null
+        getText(
+          entry?.label ??
+            entry?.specialName ??
+            entry?.name ??
+            entry?.description ??
+            entry?.notes ??
+            entry?.type,
+        ) ?? null
       )
     })
+    .filter((label) => {
+      if (!label) return false
+      const key = label.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
+const parseSpecialsApplied = (node) => {
+  if (!node) return []
+  const raw = node?.special ?? node?.specials ?? node?.item ?? node
+  return ensureArray(raw)
+    .map((entry) => toNumber(getText(entry)))
+    .filter((value) => Number.isFinite(value))
+}
+
+const resolveAppliedSpecials = (catalog, indices) => {
+  if (!Array.isArray(catalog) || !catalog.length || !Array.isArray(indices)) return []
+  const byRunno = new Map(
+    catalog.map((special, idx) => [special?.runno ?? idx, special]),
+  )
+  return indices
+    .map((idx) => byRunno.get(idx) ?? catalog[idx])
     .filter(Boolean)
+}
+
+const buildDailySpecials = (dateEntries = []) => {
+  const dates = ensureArray(dateEntries)
+  if (!dates.length) return []
+  const freeStayNights = dates.filter((date) => normalizeBoolean(date?.freeStay)).length
+  const discountValues = dates
+    .map((date) => toNumber(getText(date?.discount ?? date?.["@_discount"])))
+    .filter((value) => Number.isFinite(value))
+  const freeUpgradeHits = dates
+    .map((date) =>
+      getText(date?.freeUpgrade ?? date?.["@_freeUpgrade"] ?? date?.freeUpgradeName),
+    )
+    .filter(Boolean)
+
+  const specials = []
+  if (freeStayNights > 0) {
+    specials.push({
+      type: "freeStay",
+      stay: freeStayNights,
+      label: `Free night${freeStayNights > 1 ? "s" : ""}`,
+    })
+  }
+  if (discountValues.length) {
+    const maxDiscount = Math.max(...discountValues)
+    specials.push({
+      type: "discount",
+      discount: maxDiscount,
+      label: `${maxDiscount}% off`,
+    })
+  }
+  if (freeUpgradeHits.length) {
+    specials.push({
+      type: "freeUpgrade",
+      label: "Free upgrade",
+    })
+  }
+  return specials
 }
 
 const parseIncludedMeals = (includingNode) => {
@@ -380,7 +535,7 @@ const resolveValidForOccupancyFlag = (node) => {
   return null
 }
 
-const parseRateBases = (rateBasesNode, requestedCurrency, roomTypeSpecials = []) => {
+const parseRateBases = (rateBasesNode, requestedCurrency, roomTypeSpecialsCatalog = []) => {
   const rateBases = ensureArray(rateBasesNode?.rateBasis ?? rateBasesNode)
   return rateBases.map((rateBasis) => {
     const rateType = rateBasis?.rateType ?? {}
@@ -401,9 +556,15 @@ const parseRateBases = (rateBasesNode, requestedCurrency, roomTypeSpecials = [])
       getText(rateBasis?.totalMinimumSelling?.formatted) ??
       getText(rateBasis?.totalMinimumSellingFormatted)
 
-    const specials = parseSpecials(rateBasis?.specials)
-    const mergedSpecials = specials.length ? specials : roomTypeSpecials
     const dateEntries = ensureArray(rateBasis?.dates?.date)
+    const rateSpecialsCatalog = parseSpecialCatalog(rateBasis?.specials)
+    const specialsCatalog =
+      rateSpecialsCatalog.length ? rateSpecialsCatalog : roomTypeSpecialsCatalog
+    const specialsAppliedIndices = parseSpecialsApplied(rateBasis?.specialsApplied)
+    const appliedSpecials = resolveAppliedSpecials(specialsCatalog, specialsAppliedIndices)
+    const dailySpecials = buildDailySpecials(dateEntries)
+    const finalAppliedSpecials = appliedSpecials.length ? appliedSpecials : dailySpecials
+    const promotionSummary = summarizeSpecials(finalAppliedSpecials)
     const includedMealsRaw = dateEntries.flatMap((date) => parseIncludedMeals(date?.including))
     const uniqueMeals = []
     const seenMeals = new Set()
@@ -463,7 +624,9 @@ const parseRateBases = (rateBasesNode, requestedCurrency, roomTypeSpecials = [])
       totalTaxes: toNumber(rateBasis?.totalTaxes),
       totalFee: toNumber(rateBasis?.totalFee),
       propertyFees: parsePropertyFees(rateBasis),
-      specials: mergedSpecials,
+      specials: promotionSummary,
+      specialsApplied: specialsAppliedIndices,
+      appliedSpecials: finalAppliedSpecials,
       includedMeals: uniqueMeals,
       includedMeal: primaryMeal,
       mealPlan: primaryMeal?.mealName ?? primaryMeal?.mealTypeName ?? null,
@@ -480,7 +643,11 @@ const parseRateBases = (rateBasesNode, requestedCurrency, roomTypeSpecials = [])
           getText(date?.price),
         priceMinimumSelling: toNumber(date?.priceMinimumSelling),
         priceMinimumSellingFormatted: getText(date?.priceMinimumSelling?.formatted),
+        discount: toNumber(getText(date?.discount ?? date?.["@_discount"])),
         freeStay: normalizeBoolean(date?.freeStay),
+        freeUpgrade: getText(
+          date?.freeUpgrade ?? date?.["@_freeUpgrade"] ?? date?.freeUpgradeName,
+        ),
         dayOnRequest: normalizeBoolean(date?.dayOnRequest),
         includedMeals: parseIncludedMeals(date?.including),
       })),
@@ -499,13 +666,22 @@ const parseRoomTypes = (roomNode, requestedCurrency) => {
     twin: normalizeBoolean(roomType?.twin),
     roomInfo: {
       maxOccupancy: toNumber(roomType?.roomInfo?.maxOccupancy ?? roomType?.maxOccupancy),
+      maxAdultWithChildren: toNumber(
+        roomType?.roomInfo?.maxAdultWithChildren ?? roomType?.maxAdultWithChildren,
+      ),
+      minChildAge: toNumber(roomType?.roomInfo?.minChildAge ?? roomType?.minChildAge),
+      maxChildAge: toNumber(roomType?.roomInfo?.maxChildAge ?? roomType?.maxChildAge),
       maxAdults: toNumber(roomType?.roomInfo?.maxAdults ?? roomType?.roomInfo?.maxAdult),
       maxExtraBed: toNumber(roomType?.roomInfo?.maxExtraBed),
       maxChildren: toNumber(roomType?.roomInfo?.maxChildren),
     },
     specialsCount: toNumber(roomType?.specials?.["@_count"]),
-    specials: parseSpecials(roomType?.specials),
-    rateBases: parseRateBases(roomType?.rateBases, requestedCurrency, parseSpecials(roomType?.specials)),
+    specials: summarizeSpecials(parseSpecialCatalog(roomType?.specials)),
+    rateBases: parseRateBases(
+      roomType?.rateBases,
+      requestedCurrency,
+      parseSpecialCatalog(roomType?.specials),
+    ),
   }))
 }
 

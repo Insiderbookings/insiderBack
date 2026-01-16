@@ -273,6 +273,36 @@ const findRateBasisMatch = (mappedHotel, roomTypeCode, rateBasisId) => {
   return null;
 };
 
+const attachOfferTokensToRooms = (mapped, offers = []) => {
+  if (!mapped?.hotel?.rooms || !Array.isArray(offers) || !offers.length) return mapped;
+  const offerMap = new Map();
+  offers.forEach((offer) => {
+    const key = `${String(offer?.roomTypeCode ?? "")}:${String(offer?.rateBasisId ?? "")}`;
+    if (!offerMap.has(key)) {
+      offerMap.set(key, offer?.offerToken ?? null);
+    }
+  });
+  const rooms = ensureArray(mapped.hotel.rooms).map((room) => ({
+    ...room,
+    roomTypes: ensureArray(room?.roomTypes).map((roomType) => ({
+      ...roomType,
+      rateBases: ensureArray(roomType?.rateBases).map((rateBasis) => ({
+        ...rateBasis,
+        offerToken:
+          offerMap.get(`${String(roomType?.roomTypeCode ?? "")}:${String(rateBasis?.id ?? "")}`) ??
+          null,
+      })),
+    })),
+  }));
+  return {
+    ...mapped,
+    hotel: {
+      ...mapped.hotel,
+      rooms,
+    },
+  };
+};
+
 const createWebbedsClientSafe = () => {
   const config = getWebbedsConfig();
   return createWebbedsClient(config);
@@ -492,6 +522,7 @@ export class FlowOrchestratorService {
         cityCode: cityCode ?? null,
       },
     });
+    console.info("[flows] started", { flowId });
 
     await logStep({
       flowId,
@@ -504,7 +535,8 @@ export class FlowOrchestratorService {
       responseXml,
     });
 
-    return { flowId, offers, flow: serializeFlow(flow) };
+    const responsePayload = attachOfferTokensToRooms(mapped, offers);
+    return { flowId, offers, flow: serializeFlow(flow), ...responsePayload };
   }
   async select({ body }) {
     const { flowId, offerToken } = body || {};
@@ -628,7 +660,35 @@ export class FlowOrchestratorService {
 
     const context = flow.search_context || {};
     const roomsPayload = parseRoomArray(roomsOverride || context.rooms);
-    const occupancyOverride = flow.selected_offer?.validForOccupancyDetails ?? null;
+    const parseChangedOccupancy = (value) => {
+      if (!value) return null;
+      const text = String(value).trim();
+      if (!text) return null;
+      const [adultsRaw, childrenRaw, agesRaw, extraBedRaw] = text.split(",");
+      const adults = toNumberSafe(adultsRaw);
+      const children = toNumberSafe(childrenRaw);
+      const childrenAges = agesRaw
+        ? agesRaw
+          .split("_")
+          .map((age) => toNumberSafe(age))
+          .filter((age) => Number.isFinite(age))
+        : null;
+      const extraBed = toNumberSafe(extraBedRaw);
+      const details = {
+        adults,
+        children,
+        childrenAges,
+        extraBed,
+      };
+      const cleaned = Object.fromEntries(
+        Object.entries(details).filter(([, val]) => val !== null && val !== undefined),
+      );
+      return Object.keys(cleaned).length ? cleaned : null;
+    };
+
+    const occupancyOverride =
+      flow.selected_offer?.validForOccupancyDetails ??
+      parseChangedOccupancy(flow.selected_offer?.changedOccupancyValue);
     const hasChangedOccupancy =
       Boolean(flow.selected_offer?.changedOccupancy) || Boolean(occupancyOverride);
 

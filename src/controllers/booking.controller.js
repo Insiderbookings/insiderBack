@@ -114,6 +114,28 @@ const sanitizeStringArray = (values, limit = 20, max = 120) => {
     .slice(0, limit)
 }
 
+const resolveSpecialLabels = (rate) => {
+  if (Array.isArray(rate?.specials) && rate.specials.length) {
+    return rate.specials
+  }
+  if (!Array.isArray(rate?.appliedSpecials)) return []
+  return rate.appliedSpecials
+    .map((entry) => {
+      if (!entry) return null
+      if (typeof entry === "string") return entry
+      return (
+        entry?.label ??
+        entry?.specialName ??
+        entry?.name ??
+        entry?.description ??
+        entry?.notes ??
+        entry?.type ??
+        null
+      )
+    })
+    .filter(Boolean)
+}
+
 const sanitizeConfirmationSnapshot = (raw = {}) => {
   const bookingCodes = raw.bookingCodes || {}
   const hotel = raw.hotel || {}
@@ -167,7 +189,7 @@ const sanitizeConfirmationSnapshot = (raw = {}) => {
       mealPlan: Array.isArray(rate?.mealPlan)
         ? sanitizeStringArray(rate.mealPlan, 8, 120)
         : trimText(rate?.mealPlan, 200),
-      specials: sanitizeStringArray(rate?.specials, 10, 160),
+      specials: sanitizeStringArray(resolveSpecialLabels(rate), 10, 160),
       tariffNotes: trimText(rate?.tariffNotes, 4000),
       refundable: rate?.refundable ?? null,
       nonRefundable: rate?.nonRefundable ?? null,
@@ -2003,12 +2025,13 @@ export const createHomeBooking = async (req, res) => {
 
 export const getBookingsUnified = async (req, res) => {
   try {
-    const { latest, status, limit = 50, offset = 0 } = req.query
+    const { latest, status, includeCancelled, limit = 50, offset = 0 } = req.query
     const inventoryQuery = typeof req.query.inventory === "string"
       ? req.query.inventory.trim().toUpperCase()
       : null
 
     const userId = req.user.id
+    const includeCancelledFlag = String(includeCancelled || "").toLowerCase() === "true"
 
     // 1. Buscar usuario
     const user = await models.User.findByPk(userId)
@@ -2035,6 +2058,9 @@ export const getBookingsUnified = async (req, res) => {
 
       const rows = await models.Booking.findAll({
         where: {
+          ...(!includeCancelledFlag && !status
+            ? { status: { [Op.ne]: "CANCELLED" } }
+            : {}),
           ...(status && { status }),
           ...inventoryFilter,
           [Op.or]: [
@@ -2207,12 +2233,17 @@ export const verifyGuestAccess = async (req, res) => {
 ---------------------------------------------------------------- */
 export const listGuestBookings = async (req, res) => {
   try {
-    const { latest } = req.query
+    const { latest, includeCancelled } = req.query
     const email = req.guest?.email
     if (!email) return res.status(401).json({ error: "Unauthorized" })
 
     const rows = await models.Booking.findAll({
-      where: { guest_email: email },
+      where: {
+        guest_email: email,
+        ...(String(includeCancelled || "").toLowerCase() === "true"
+          ? {}
+          : { status: { [Op.ne]: "CANCELLED" } }),
+      },
       order: [["check_in", "DESC"]],
       limit: latest ? 1 : 50,
       include: STAY_BASE_INCLUDE,
@@ -2274,8 +2305,15 @@ export const linkGuestBookingsToUser = async (req, res) => {
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const getBookingsForUser = async (req, res) => {
   try {
-    const { status, limit = 50, offset = 0 } = req.query
-    const where = { user_id: req.user.id, outside: false, ...(status && { status }) }
+    const { status, includeCancelled, limit = 50, offset = 0 } = req.query
+    const where = {
+      user_id: req.user.id,
+      outside: false,
+      ...(status && { status }),
+      ...(!status && String(includeCancelled || "").toLowerCase() !== "true"
+        ? { status: { [Op.ne]: "CANCELLED" } }
+        : {}),
+    }
 
     const rows = await models.Booking.findAll({
       where,

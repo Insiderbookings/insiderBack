@@ -392,9 +392,23 @@ export const cancelPaymentIntent = async (req, res, next) => {
     const pi = await stripe.paymentIntents.retrieve(intentId)
     let cancelResult = null
     if (pi.status !== "canceled") {
-      cancelResult = await stripe.paymentIntents.cancel(intentId, {
-        cancellation_reason: reason || "failed_booking",
-      })
+      const normalizedReason = String(reason || "").trim().toLowerCase()
+      const reasonMap = {
+        failed_booking: "abandoned",
+        failedbooking: "abandoned",
+      }
+      const allowedReasons = new Set([
+        "duplicate",
+        "fraudulent",
+        "requested_by_customer",
+        "abandoned",
+      ])
+      const mappedReason = reasonMap[normalizedReason] || normalizedReason
+      const cancelParams =
+        mappedReason && allowedReasons.has(mappedReason)
+          ? { cancellation_reason: mappedReason }
+          : undefined
+      cancelResult = await stripe.paymentIntents.cancel(intentId, cancelParams)
     }
 
     if (booking) {

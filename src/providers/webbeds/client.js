@@ -32,9 +32,11 @@ class WebbedsError extends Error {
   }
 }
 
+const verboseLogs = process.env.WEBBEDS_VERBOSE_LOGS === "true"
+const noop = () => {}
 const defaultLogger = {
-  debug: (...args) => console.debug(...args),
-  info: (...args) => console.info(...args),
+  debug: verboseLogs ? (...args) => console.debug(...args) : noop,
+  info: verboseLogs ? (...args) => console.info(...args) : noop,
   warn: (...args) => console.warn(...args),
   error: (...args) => console.error(...args),
 }

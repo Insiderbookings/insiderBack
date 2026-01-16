@@ -64,12 +64,20 @@ const getSalutation = (p) => {
 const buildPassengersDetails = (passengers = []) => {
   const entries = ensureArray(passengers)
   if (!entries.length) return null
+  const isLeading = (value, idx) => {
+    if (value === true) return true
+    if (value === false || value == null) return idx === 0
+    const normalized = String(value).trim().toLowerCase()
+    if (["yes", "y", "true", "1"].includes(normalized)) return true
+    if (["no", "n", "false", "0"].includes(normalized)) return false
+    return idx === 0
+  }
   return {
     passenger: entries.map((p, idx) => ({
       salutation: getSalutation(p),
       firstName: p.firstName || p.givenName || "Guest",
       lastName: p.lastName || p.surname || "Name",
-      "@leading": p.leading || idx === 0 ? "yes" : "no",
+      "@leading": isLeading(p.leading, idx) ? "yes" : "no",
     })),
   }
 }
@@ -100,9 +108,18 @@ const buildRoomsNode = ({
           .map((age, childIdx) => `<child runno="${childIdx}">${String(age)}</child>`)
           .join("")
       }
-      const actualChildrenNode = { "@no": String(children.length) }
-      if (children.length) {
-        actualChildrenNode["#raw"] = children
+      const actualChildrenAges = ensureArray(
+        room.actualChildren ||
+        room.actualChildrenAges ||
+        room.actualKids ||
+        room.actualChildrenAge ||
+        room.actualChildrenAges,
+      ).map((age) => (age == null ? null : String(age)))
+        .filter((age) => age !== null && age !== undefined && age !== "")
+      const actualChildrenResolved = actualChildrenAges.length ? actualChildrenAges : children
+      const actualChildrenNode = { "@no": String(actualChildrenResolved.length) }
+      if (actualChildrenResolved.length) {
+        actualChildrenNode["#raw"] = actualChildrenResolved
           .map((age, childIdx) => `<actualChild runno="${childIdx}">${String(age)}</actualChild>`)
           .join("")
       }
@@ -114,10 +131,24 @@ const buildRoomsNode = ({
         roomPassengers = room.passengers
       } else {
         // fallback: repartir por adultos usando el cursor global
-        const neededAdults = Math.max(1, toNumber(room.adults) || 1)
-        const slice = passengers.slice(passengerCursor, passengerCursor + neededAdults)
-        passengerCursor += neededAdults
-        const placeholders = Array.from({ length: Math.max(0, neededAdults - slice.length) }).map((_, i) => ({
+        const neededAdults = Math.max(
+          1,
+          toNumber(room.actualAdults) || toNumber(room.adults) || 1,
+        )
+        const actualChildrenAges = ensureArray(
+          room.actualChildren ||
+          room.actualChildrenAges ||
+          room.actualKids ||
+          room.actualChildrenAge ||
+          room.actualChildrenAges ||
+          room.children ||
+          room.childrenAges ||
+          room.kids,
+        ).map((age) => toNumber(age)).filter((age) => Number.isFinite(age))
+        const neededTotal = neededAdults + actualChildrenAges.length
+        const slice = passengers.slice(passengerCursor, passengerCursor + neededTotal)
+        passengerCursor += neededTotal
+        const placeholders = Array.from({ length: Math.max(0, neededTotal - slice.length) }).map((_, i) => ({
           firstName: "Guest",
           lastName: `R${idx + 1}P${i + 1}`,
           leading: false,
@@ -127,13 +158,13 @@ const buildRoomsNode = ({
 
       // Asegura al menos un leading="yes" por room
       const hasLeading = roomPassengers.some(
-        (pax) => String(pax.leading).toLowerCase() === "yes" || pax.leading === true,
+        (pax) => String(pax.leading).trim().toLowerCase() === "yes" || pax.leading === true,
       )
       if (!hasLeading && roomPassengers.length) {
         roomPassengers[0] = { ...roomPassengers[0], leading: "yes" }
       }
       roomPassengers = roomPassengers.map((pax, paxIdx) => {
-        if (paxIdx === 0 && String(pax.leading).toLowerCase() === "yes") return pax
+        if (paxIdx === 0 && String(pax.leading).trim().toLowerCase() === "yes") return pax
         if (pax.leading === undefined) return { ...pax, leading: "no" }
         return pax
       })
@@ -146,7 +177,9 @@ const buildRoomsNode = ({
         selectedRateBasis: room.selectedRateBasis || "0",
         allocationDetails: room.allocationDetails || "",
         adultsCode: String(Math.max(1, toNumber(room.adults) || 1)),
-        actualAdults: String(Math.max(1, toNumber(room.adults) || 1)),
+        actualAdults: String(
+          Math.max(1, toNumber(room.actualAdults) || toNumber(room.adults) || 1),
+        ),
         children: childrenNode,
         actualChildren: actualChildrenNode,
         extraBed: String(room.extraBed != null ? room.extraBed : 0),
