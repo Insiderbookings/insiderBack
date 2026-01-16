@@ -69,6 +69,9 @@ export const updateErrorConfig = async (req, res) => {
         config.enableEmailAlerts = enableEmailAlerts;
         config.alertEmails = alertEmails; // Setter handles array/string conversion if logic is in model
         config.alertOnStatusCodes = alertOnStatusCodes;
+        if (req.body.notificationRules) {
+            config.notificationRules = req.body.notificationRules;
+        }
 
         await config.save();
         res.json(config);

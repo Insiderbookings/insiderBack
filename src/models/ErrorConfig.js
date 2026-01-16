@@ -36,6 +36,16 @@ export default (sequelize) => {
             type: DataTypes.JSON, // Array of status codes, e.g. [500, 503]
             defaultValue: [500],
         },
+        notificationRules: {
+            type: DataTypes.JSON,
+            defaultValue: []
+            /*
+               Structure: [
+                 { id: 'uuid', name: 'Dev Team', emails: ['dev@ex.com'], statusCodes: [500, 503] },
+                 { id: 'uuid', name: 'Content Team', emails: ['content@ex.com'], statusCodes: [404] }
+               ]
+            */
+        },
         minIntervalMinutes: {
             type: DataTypes.INTEGER,
             defaultValue: 15, // Minimum time between duplicate alerts
