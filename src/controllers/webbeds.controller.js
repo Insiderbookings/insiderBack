@@ -465,7 +465,8 @@ export const listStaticHotels = async (req, res, next) => {
     }
 
     const limitBase = Number(limit) || (hotelIdList.length ? hotelIdList.length : 20)
-    const safeLimit = Math.min(100, Math.max(1, limitBase))
+    const maxLimit = hotelIdList.length || hotelId ? 100 : 25
+    const safeLimit = Math.min(maxLimit, Math.max(1, limitBase))
     const safeOffset = Math.max(0, Number(offset) || 0)
 
     const { rows, count } = await models.WebbedsHotel.findAndCountAll({
