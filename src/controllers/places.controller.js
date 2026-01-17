@@ -1,5 +1,12 @@
 import axios from "axios";
 
+const shouldLogPlaces = String(process.env.PLACES_DEBUG || "").toLowerCase() === "true";
+const maskKey = (key) => {
+  if (!key || typeof key !== "string") return null;
+  if (key.length <= 8) return `${key.slice(0, 2)}...`;
+  return `${key.slice(0, 4)}...${key.slice(-4)}`;
+};
+
 const getPlacesApiKey = () =>
   process.env.GOOGLE_PLACES_API_KEY ||
   process.env.GOOGLE_MAPS_API_KEY ||
@@ -32,10 +39,28 @@ export const autocompletePlaces = async (req, res) => {
       params.components = `country:${req.query.country.trim()}`;
     }
 
+    if (shouldLogPlaces) {
+      console.log("[places.autocomplete] request", {
+        inputLength: input.length,
+        hasSessionToken: Boolean(params.sessiontoken),
+        language: params.language || null,
+        country: params.components || null,
+        key: maskKey(apiKey),
+      });
+    }
+
     const { data } = await axios.get("https://maps.googleapis.com/maps/api/place/autocomplete/json", {
       params,
       timeout: 4000,
     });
+
+    if (shouldLogPlaces) {
+      console.log("[places.autocomplete] response", {
+        status: data?.status || null,
+        errorMessage: data?.error_message || null,
+        predictionsCount: Array.isArray(data?.predictions) ? data.predictions.length : 0,
+      });
+    }
 
     const predictions = Array.isArray(data?.predictions)
       ? data.predictions.map((pred, index) => ({
@@ -48,7 +73,11 @@ export const autocompletePlaces = async (req, res) => {
 
     return res.json({ predictions });
   } catch (err) {
-    console.error("[autocompletePlaces]", err?.message || err);
+    console.error("[autocompletePlaces]", {
+      message: err?.message || err,
+      status: err?.response?.status || null,
+      errorMessage: err?.response?.data?.error_message || err?.response?.data?.error || null,
+    });
     return res.status(500).json({ error: "Unable to load places" });
   }
 };
@@ -88,13 +117,21 @@ export const geocodePlace = async (req, res) => {
         key: apiKey,
       };
       if (language) findParams.language = language;
-      const { data: findData } = await axios.get(
-        "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
-        {
-          params: findParams,
-          timeout: 4000,
-        }
-      );
+    if (shouldLogPlaces) {
+      console.log("[places.geocode] findplace request", {
+        hasQuery: Boolean(query),
+        language,
+        key: maskKey(apiKey),
+      });
+    }
+
+    const { data: findData } = await axios.get(
+      "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+      {
+        params: findParams,
+        timeout: 4000,
+      }
+    );
       const candidate = Array.isArray(findData?.candidates) ? findData.candidates[0] : null;
       resolvedPlaceId = candidate?.place_id || "";
       console.log("[places.geocode] findplace status", findData?.status || "NO_STATUS");
@@ -109,6 +146,14 @@ export const geocodePlace = async (req, res) => {
       key: apiKey,
     };
     if (language) detailsParams.language = language;
+
+    if (shouldLogPlaces) {
+      console.log("[places.geocode] details request", {
+        placeId: resolvedPlaceId || null,
+        language,
+        key: maskKey(apiKey),
+      });
+    }
 
     const { data: detailsData } = await axios.get(
       "https://maps.googleapis.com/maps/api/place/details/json",
@@ -146,6 +191,15 @@ export const geocodePlace = async (req, res) => {
     } else {
       geocodeParams.address = query;
     }
+    if (shouldLogPlaces) {
+      console.log("[places.geocode] geocode request", {
+        placeId: resolvedPlaceId || null,
+        hasQuery: Boolean(query),
+        language,
+        key: maskKey(apiKey),
+      });
+    }
+
     const { data: geocodeData } = await axios.get(
       "https://maps.googleapis.com/maps/api/geocode/json",
       {
@@ -173,7 +227,11 @@ export const geocodePlace = async (req, res) => {
       status: geocodeData?.status || "OK",
     });
   } catch (err) {
-    console.error("[geocodePlace]", err?.message || err);
+    console.error("[geocodePlace]", {
+      message: err?.message || err,
+      status: err?.response?.status || null,
+      errorMessage: err?.response?.data?.error_message || err?.response?.data?.error || null,
+    });
     return res.status(500).json({ error: "Unable to geocode place" });
   }
 };
