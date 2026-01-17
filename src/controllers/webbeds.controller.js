@@ -3,8 +3,17 @@ import models from "../models/index.js"
 import { WebbedsProvider } from "../providers/webbeds/provider.js"
 import { formatStaticHotel } from "../utils/webbedsMapper.js"
 import { listSalutations } from "../providers/webbeds/salutations.js"
+import cache from "../services/cache.js"
 
 const provider = new WebbedsProvider()
+const STATIC_HOTELS_CACHE_TTL_SECONDS = Math.max(
+  30,
+  Number(process.env.WEBBEDS_STATIC_HOTELS_CACHE_TTL_SECONDS || 300),
+)
+const STATIC_HOTELS_CACHE_DISABLED = process.env.WEBBEDS_STATIC_HOTELS_CACHE_DISABLED === "true"
+
+const buildStaticHotelsCacheKey = (payload = {}) =>
+  `webbeds:static-hotels:${JSON.stringify(payload)}`
 const getStripeClient = async () => {
   const { default: Stripe } = await import("stripe")
   return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" })
@@ -442,6 +451,7 @@ export const listStaticHotels = async (req, res, next) => {
       preferred,
       hotelId,
       hotelIds,
+      lite,
     } = req.query
 
     const where = {}
@@ -464,38 +474,68 @@ export const listStaticHotels = async (req, res, next) => {
       where.preferred = true
     }
 
+    const useLite = String(lite || "").trim().toLowerCase() === "true"
     const limitBase = Number(limit) || (hotelIdList.length ? hotelIdList.length : 20)
     const maxLimit = hotelIdList.length || hotelId ? 100 : 25
     const safeLimit = Math.min(maxLimit, Math.max(1, limitBase))
     const safeOffset = Math.max(0, Number(offset) || 0)
 
+    const cacheKey = STATIC_HOTELS_CACHE_DISABLED
+      ? null
+      : buildStaticHotelsCacheKey({
+          cityCode: cityCode ? String(cityCode).trim() : null,
+          countryCode: countryCode ? String(countryCode).trim() : null,
+          q: q ? String(q).trim().toLowerCase() : null,
+          preferred: preferred === "true",
+          hotelId: hotelId ? String(hotelId).trim() : null,
+          hotelIds: hotelIdList.length ? hotelIdList : null,
+          limit: safeLimit,
+          offset: safeOffset,
+          lite: useLite,
+        })
+
+    if (cacheKey) {
+      const cached = await cache.get(cacheKey)
+      if (cached) {
+        res.set("Cache-Control", `private, max-age=${STATIC_HOTELS_CACHE_TTL_SECONDS}`)
+        res.set("X-Cache", "HIT")
+        return res.json(cached)
+      }
+    }
+
+    const staticHotelAttributesLite = [
+      "hotel_id",
+      "name",
+      "city_name",
+      "city_code",
+      "country_name",
+      "country_code",
+      "address",
+      "full_address",
+      "lat",
+      "lng",
+      "rating",
+      "priority",
+      "preferred",
+      "exclusive",
+      "chain",
+      "chain_code",
+      "classification_code",
+      "images",
+    ]
+
+    const staticHotelAttributesFull = [
+      ...staticHotelAttributesLite,
+      "amenities",
+      "leisure",
+      "business",
+      "descriptions",
+      "room_static",
+    ]
+
     const { rows, count } = await models.WebbedsHotel.findAndCountAll({
       where,
-      attributes: [
-        "hotel_id",
-        "name",
-        "city_name",
-        "city_code",
-        "country_name",
-        "country_code",
-        "address",
-        "full_address",
-        "lat",
-        "lng",
-        "rating",
-        "priority",
-        "preferred",
-        "exclusive",
-        "chain",
-        "chain_code",
-        "classification_code",
-        "images",
-        "amenities",
-        "leisure",
-        "business",
-        "descriptions",
-        "room_static",
-      ],
+      attributes: useLite ? staticHotelAttributesLite : staticHotelAttributesFull,
       include: [
         {
           model: models.WebbedsHotelChain,
@@ -516,14 +556,21 @@ export const listStaticHotels = async (req, res, next) => {
       offset: safeOffset,
     })
 
-    return res.json({
+    const responsePayload = {
       items: rows.map(formatStaticHotel),
       pagination: {
         total: count,
         limit: safeLimit,
         offset: safeOffset,
       },
-    })
+    }
+
+    if (cacheKey) {
+      await cache.set(cacheKey, responsePayload, STATIC_HOTELS_CACHE_TTL_SECONDS)
+    }
+    res.set("Cache-Control", `private, max-age=${STATIC_HOTELS_CACHE_TTL_SECONDS}`)
+    res.set("X-Cache", "MISS")
+    return res.json(responsePayload)
   } catch (error) {
     return next(error)
   }
