@@ -2302,6 +2302,96 @@ paths:
         "200":
           $ref: "#/components/responses/Ok"
 
+  /api/favorites/hotels/lists:
+    get:
+      tags: [Favorites]
+      summary: List hotel favorite lists
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+    post:
+      tags: [Favorites]
+      summary: Create hotel favorite list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/favorites/hotels/lists/{listId}:
+    get:
+      tags: [Favorites]
+      summary: Get hotel favorite list detail
+      parameters:
+        - name: listId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/favorites/hotels/lists/{listId}/items:
+    post:
+      tags: [Favorites]
+      summary: Add hotel favorite to list
+      parameters:
+        - name: listId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenericRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/favorites/hotels/lists/{listId}/items/{hotelId}:
+    delete:
+      tags: [Favorites]
+      summary: Remove hotel favorite from list
+      parameters:
+        - name: listId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: hotelId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/favorites/hotels/recent:
+    get:
+      tags: [Favorites]
+      summary: Get recent hotel views
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/favorites/hotels/recent/{hotelId}:
+    post:
+      tags: [Favorites]
+      summary: Record recent hotel view
+      parameters:
+        - name: hotelId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
   /api/reviews/home/{homeId}:
     get:
       tags: [Reviews]

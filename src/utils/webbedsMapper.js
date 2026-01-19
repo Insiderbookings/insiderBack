@@ -31,11 +31,11 @@ const pickCoverImage = (imagesPayload) => {
   return found?.url ?? null;
 };
 
-const extractImages = (imagesPayload) => {
+const extractImages = (imagesPayload, limit = null) => {
   if (!imagesPayload) return [];
   const hotelImages = imagesPayload?.hotelImages ?? imagesPayload;
   const imageList = ensureArray(hotelImages?.image);
-  return imageList
+  const normalized = imageList
     .map((img) => {
       if (!img) return null;
       if (typeof img === "string") return { url: img, categoryName: "General" };
@@ -46,6 +46,11 @@ const extractImages = (imagesPayload) => {
       };
     })
     .filter((img) => img?.url);
+  if (limit == null) return normalized;
+  const safeLimit = Number(limit);
+  if (!Number.isFinite(safeLimit)) return normalized;
+  if (safeLimit <= 0) return [];
+  return normalized.slice(0, safeLimit);
 };
 
 const extractAmenities = (node, categoryName) => {
@@ -91,11 +96,14 @@ const extractGeoLocations = (geoPayload) => {
     .filter((geo) => geo?.name);
 };
 
-export const formatStaticHotel = (hotel) => {
+export const formatStaticHotel = (hotel, options = {}) => {
   if (!hotel) return null;
   const plain = hotel.get ? hotel.get({ plain: true }) : hotel;
   const coverImage = pickCoverImage(plain.images);
-  const allImages = extractImages(plain.images);
+  const imageLimitRaw = options?.imageLimit;
+  const imageLimitValue = imageLimitRaw == null ? null : Number(imageLimitRaw);
+  const imageLimit = Number.isFinite(imageLimitValue) ? imageLimitValue : null;
+  const allImages = extractImages(plain.images, imageLimit);
 
   const amenitiesGeneral = extractAmenities(plain.amenities, "amenitieItem");
   const amenitiesLeisure = extractAmenities(plain.leisure, "leisureItem");

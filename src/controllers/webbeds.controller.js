@@ -452,6 +452,7 @@ export const listStaticHotels = async (req, res, next) => {
       hotelId,
       hotelIds,
       lite,
+      imagesLimit,
     } = req.query
 
     const where = {}
@@ -479,6 +480,10 @@ export const listStaticHotels = async (req, res, next) => {
     const maxLimit = hotelIdList.length || hotelId ? 100 : 25
     const safeLimit = Math.min(maxLimit, Math.max(1, limitBase))
     const safeOffset = Math.max(0, Number(offset) || 0)
+    const imagesLimitValue = Number(imagesLimit)
+    const safeImagesLimit = Number.isFinite(imagesLimitValue)
+      ? Math.max(0, Math.min(imagesLimitValue, 200))
+      : null
 
     const cacheKey = STATIC_HOTELS_CACHE_DISABLED
       ? null
@@ -492,6 +497,7 @@ export const listStaticHotels = async (req, res, next) => {
           limit: safeLimit,
           offset: safeOffset,
           lite: useLite,
+          imagesLimit: safeImagesLimit,
         })
 
     if (cacheKey) {
@@ -557,7 +563,7 @@ export const listStaticHotels = async (req, res, next) => {
     })
 
     const responsePayload = {
-      items: rows.map(formatStaticHotel),
+      items: rows.map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit })),
       pagination: {
         total: count,
         limit: safeLimit,

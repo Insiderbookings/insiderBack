@@ -70,6 +70,9 @@ import GuestProfileModel from "./GuestProfile.js";
 import HomeFavoriteModel from "./HomeFavorite.js";
 import HomeFavoriteListModel from "./HomeFavoriteList.js";
 import HomeRecentViewModel from "./HomeRecentView.js";
+import HotelFavoriteModel from "./HotelFavorite.js";
+import HotelFavoriteListModel from "./HotelFavoriteList.js";
+import HotelRecentViewModel from "./HotelRecentView.js";
 import TaxRateModel from "./TaxRate.js";
 import WebbedsCountryModel from "./WebbedsCountry.js";
 import WebbedsCityModel from "./WebbedsCity.js";
@@ -195,6 +198,9 @@ const models = {
   HomeFavorite: HomeFavoriteModel(sequelize),
   HomeFavoriteList: HomeFavoriteListModel(sequelize),
   HomeRecentView: HomeRecentViewModel(sequelize),
+  HotelFavorite: HotelFavoriteModel(sequelize),
+  HotelFavoriteList: HotelFavoriteListModel(sequelize),
+  HotelRecentView: HotelRecentViewModel(sequelize),
   TaxRate: TaxRateModel(sequelize),
   HostProfile: HostProfileModel(sequelize),
   GuestProfile: GuestProfileModel(sequelize),

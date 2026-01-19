@@ -199,6 +199,13 @@ export default (sequelize) => {
         onDelete: "CASCADE",
       });
     }
+    if (models.HotelFavorite) {
+      User.hasMany(models.HotelFavorite, {
+        foreignKey: "user_id",
+        as: "hotelFavorites",
+        onDelete: "CASCADE",
+      });
+    }
     if (models.PayoutAccount) {
       User.hasOne(models.PayoutAccount, {
         foreignKey: "user_id",

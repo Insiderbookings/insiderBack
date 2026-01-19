@@ -89,6 +89,20 @@ export default (sequelize) => {
         targetKey: "code",
       })
     }
+    if (models.HotelFavorite) {
+      WebbedsHotel.hasMany(models.HotelFavorite, {
+        foreignKey: "hotel_id",
+        sourceKey: "hotel_id",
+        as: "favorites",
+      })
+    }
+    if (models.HotelRecentView) {
+      WebbedsHotel.hasMany(models.HotelRecentView, {
+        foreignKey: "hotel_id",
+        sourceKey: "hotel_id",
+        as: "recentViews",
+      })
+    }
   }
 
   return WebbedsHotel
