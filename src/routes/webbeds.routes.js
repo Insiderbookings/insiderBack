@@ -40,7 +40,7 @@ router.post("/confirmbooking", authenticate, requireVerifiedEmail, confirmBookin
 router.post("/cancelbooking", authenticate, cancelBooking)
 router.post("/deleteitinerary", authenticate, deleteItinerary)
 router.get("/booking", authenticate, getBookingDetails)
-router.get("/static/hotels", authenticate, listStaticHotels)
+router.get("/static/hotels", listStaticHotels)
 router.get("/countries", authenticate, listCountries)
 router.get("/cities", authenticate, listCities)
 router.get("/ratebasis", authenticate, listRateBasis)
