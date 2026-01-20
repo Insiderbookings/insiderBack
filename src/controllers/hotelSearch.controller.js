@@ -313,6 +313,13 @@ export const searchHotels = async (req, res, next) => {
       hotelIds: hotelIds.length ? hotelIds.join(",") : undefined,
       passengerNationality: req.query.passengerNationality,
       passengerCountryOfResidence: req.query.passengerCountryOfResidence,
+      priceMin: req.query.priceMin ?? req.query.minPrice ?? req.query.price_from ?? req.query.priceFrom,
+      priceMax: req.query.priceMax ?? req.query.maxPrice ?? req.query.price_to ?? req.query.priceTo,
+      ratingMin: req.query.ratingMin ?? req.query.minRating ?? req.query.hotelRateMin,
+      ratingMax: req.query.ratingMax ?? req.query.maxRating ?? req.query.hotelRateMax,
+      amenities: req.query.amenities ?? req.query.amenityIds,
+      roomAmenity: req.query.roomAmenity ?? req.query.roomAmenityIds,
+      chain: req.query.chain ?? req.query.chainIds,
       lite: normalizeBoolean(lite),
       fetchAll: useFetchAll,
     }

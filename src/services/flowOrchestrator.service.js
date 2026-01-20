@@ -36,6 +36,8 @@ const STEP_COMMAND = {
   CANCEL_YES: "cancelbooking",
 };
 
+const FLOW_VERBOSE_LOGS = process.env.WEBBEDS_VERBOSE_LOGS === "true";
+
 const ensureArray = (value) => {
   if (!value) return [];
   return Array.isArray(value) ? value : [value];
@@ -431,6 +433,64 @@ export class FlowOrchestratorService {
     const mapped = mapGetRoomsResponse(result);
     const hotel = mapped?.hotel || {};
     const roomsList = ensureArray(hotel.rooms);
+    if (FLOW_VERBOSE_LOGS) {
+      const roomTypes = roomsList.flatMap((room) => ensureArray(room?.roomTypes));
+      const rateBases = roomTypes.flatMap((roomType) => ensureArray(roomType?.rateBases));
+      const sampleRate =
+        rateBases.find((rate) => {
+          if (!rate) return false;
+          if (ensureArray(rate?.appliedSpecials ?? rate?.specials).length) return true;
+          if (ensureArray(rate?.cancellationRules).length) return true;
+          if (ensureArray(rate?.includedMeals).length) return true;
+          if (rate?.includedMeal || rate?.mealPlan) return true;
+          return false;
+        }) ?? rateBases[0] ?? null;
+      const specials = ensureArray(sampleRate?.appliedSpecials ?? sampleRate?.specials)
+        .map((special) =>
+          special?.label ??
+          special?.specialName ??
+          special?.name ??
+          special?.description ??
+          special,
+        )
+        .filter(Boolean)
+        .slice(0, 3);
+      const cancellationSample = ensureArray(sampleRate?.cancellationRules)
+        .slice(0, 2)
+        .map((rule) => ({
+          from: rule?.fromDateDetails ?? rule?.fromDate ?? null,
+          to: rule?.toDateDetails ?? rule?.toDate ?? null,
+          charge:
+            rule?.formatted ??
+            rule?.cancelCharge?.formatted ??
+            rule?.amendCharge?.formatted ??
+            rule?.cancelCharge ??
+            rule?.charge ??
+            null,
+          currency: rule?.currency ?? null,
+        }));
+      console.info("[flows] getrooms mapped summary", {
+        hotelId: hotel.id ?? resolvedHotelCode,
+        currency: mapped.currency ?? currency ?? null,
+        roomsCount: roomsList.length,
+        roomTypesCount: roomTypes.length,
+        rateBasesCount: rateBases.length,
+        sampleRate: sampleRate
+          ? {
+              id: sampleRate.id ?? null,
+              total: sampleRate.total ?? null,
+              totalFormatted: sampleRate.totalFormatted ?? null,
+              totalMinimumSelling: sampleRate.totalMinimumSelling ?? null,
+              totalInRequestedCurrency: sampleRate.totalInRequestedCurrency ?? null,
+              specials,
+              mealPlan: sampleRate.mealPlan ?? sampleRate.includedMeal?.mealName ?? null,
+              includedMealsCount: ensureArray(sampleRate.includedMeals).length,
+              cancellationRulesCount: ensureArray(sampleRate.cancellationRules).length,
+              cancellationSample,
+            }
+          : null,
+      });
+    }
     const offers = [];
     roomsList.forEach((room) => {
       ensureArray(room.roomTypes).forEach((roomType) => {

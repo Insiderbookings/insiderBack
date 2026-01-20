@@ -1,6 +1,7 @@
 import { Router } from "express"
 import {
   listStaticHotels,
+  listExploreHotels,
   search,
   getRooms,
   saveBooking,
@@ -41,6 +42,7 @@ router.post("/cancelbooking", authenticate, cancelBooking)
 router.post("/deleteitinerary", authenticate, deleteItinerary)
 router.get("/booking", authenticate, getBookingDetails)
 router.get("/static/hotels", listStaticHotels)
+router.get("/explore", listExploreHotels)
 router.get("/countries", authenticate, listCountries)
 router.get("/cities", authenticate, listCities)
 router.get("/ratebasis", authenticate, listRateBasis)

@@ -189,6 +189,21 @@ export async function searchTGX(criteria, settings, filter = null, captureLabel 
 /* ── 4. Mapper para el front ───────────────────────────────────────────────────────────────── */
 export function mapSearchOptions(search) {
   if (!search?.options?.length) return []
+
+  const mapDateRangeItems = (items = []) =>
+    items.map((item) => ({
+      code: item.code ?? null,
+      name: item.name ?? null,
+      start: item.start ?? null,
+      end: item.end ?? null,
+    }))
+
+  const mapBeds = (beds = []) =>
+    beds.map((bed) => ({
+      type: bed.type ?? null,
+      count: bed.count ?? null,
+    }))
+
   return search.options.map((option) => ({
     rateKey: option.id,
     hotelCode: option.hotelCode,
@@ -206,6 +221,9 @@ export function mapSearchOptions(search) {
         refundable: room.refundable,
         price: room.roomPrice?.price?.net,
         currency: room.roomPrice?.price?.currency,
+        promotions: mapDateRangeItems(room.promotions),
+        ratePlans: mapDateRangeItems(room.ratePlans),
+        beds: mapBeds(room.beds),
       })) ?? [],
     cancelPolicy: option.cancelPolicy,
     rateRules: option.rateRules,

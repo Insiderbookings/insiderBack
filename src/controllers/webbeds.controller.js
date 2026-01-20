@@ -1,9 +1,10 @@
-import { Op } from "sequelize"
+import { Op, literal } from "sequelize"
 import models from "../models/index.js"
 import { WebbedsProvider } from "../providers/webbeds/provider.js"
 import { formatStaticHotel } from "../utils/webbedsMapper.js"
 import { listSalutations } from "../providers/webbeds/salutations.js"
 import cache from "../services/cache.js"
+import { resolveGeoFromRequest } from "../utils/geoLocation.js"
 
 const provider = new WebbedsProvider()
 const STATIC_HOTELS_CACHE_TTL_SECONDS = Math.max(
@@ -11,9 +12,35 @@ const STATIC_HOTELS_CACHE_TTL_SECONDS = Math.max(
   Number(process.env.WEBBEDS_STATIC_HOTELS_CACHE_TTL_SECONDS || 300),
 )
 const STATIC_HOTELS_CACHE_DISABLED = process.env.WEBBEDS_STATIC_HOTELS_CACHE_DISABLED === "true"
+const EXPLORE_HOTELS_CACHE_DISABLED = process.env.WEBBEDS_EXPLORE_CACHE_DISABLED === "true"
+const EXPLORE_HOTELS_CACHE_TTL_SECONDS = Math.max(
+  30,
+  Number(process.env.WEBBEDS_EXPLORE_CACHE_TTL_SECONDS || STATIC_HOTELS_CACHE_TTL_SECONDS),
+)
+const EXPLORE_DEFAULT_CITY_CODE = String(
+  process.env.WEBBEDS_EXPLORE_DEFAULT_CITY_CODE || "364",
+).trim()
+const EXPLORE_DEFAULT_LIMIT = Math.max(
+  20,
+  Number(process.env.WEBBEDS_EXPLORE_DEFAULT_LIMIT || 120),
+)
+const EXPLORE_DEFAULT_RADIUS_KM = Math.max(
+  5,
+  Number(process.env.WEBBEDS_EXPLORE_RADIUS_KM || 60),
+)
+const EXPLORE_MAX_RESULTS = Math.max(
+  20,
+  Number(process.env.WEBBEDS_EXPLORE_MAX_RESULTS || 200),
+)
+const EXPLORE_GEO_BUCKET_PRECISION = Math.min(
+  4,
+  Math.max(0, Number(process.env.WEBBEDS_EXPLORE_GEO_BUCKET_PRECISION || 2)),
+)
 
 const buildStaticHotelsCacheKey = (payload = {}) =>
   `webbeds:static-hotels:${JSON.stringify(payload)}`
+const buildExploreHotelsCacheKey = (payload = {}) =>
+  `webbeds:explore-hotels:${JSON.stringify(payload)}`
 const getStripeClient = async () => {
   const { default: Stripe } = await import("stripe")
   return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" })
@@ -51,6 +78,110 @@ const parseCsvList = (value) => {
     ),
   )
 }
+
+const parseCoordinate = (value) => {
+  if (value == null || value === "") return null
+  const num = Number(value)
+  if (!Number.isFinite(num)) return null
+  if (num < -180 || num > 180) return null
+  return num
+}
+
+const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value))
+
+const roundCoordinate = (value, precision) => {
+  const factor = Math.pow(10, precision)
+  return Math.round(value * factor) / factor
+}
+
+const resolveExploreCoordinates = (req) => {
+  const lat = parseCoordinate(req.query?.lat)
+  const lng = parseCoordinate(req.query?.lng)
+  if (lat != null && lng != null) {
+    return { lat, lng, source: "query" }
+  }
+  const geo = resolveGeoFromRequest(req)
+  const geoLat = parseCoordinate(geo?.latitude)
+  const geoLng = parseCoordinate(geo?.longitude)
+  if (geoLat != null && geoLng != null) {
+    return { lat: geoLat, lng: geoLng, source: "ip", geo }
+  }
+  return null
+}
+
+const computeGeoBounds = (lat, lng, radiusKm) => {
+  const safeLat = Number(lat)
+  const safeLng = Number(lng)
+  const safeRadius = Math.max(1, Number(radiusKm) || 0)
+  const latRad = (safeLat * Math.PI) / 180
+  const kmPerDeg = 111.32
+  const deltaLat = safeRadius / kmPerDeg
+  const cosLat = Math.cos(latRad)
+  const deltaLng = cosLat === 0 ? 180 : safeRadius / (kmPerDeg * Math.max(0.0001, Math.abs(cosLat)))
+  return {
+    minLat: safeLat - deltaLat,
+    maxLat: safeLat + deltaLat,
+    minLng: safeLng - deltaLng,
+    maxLng: safeLng + deltaLng,
+  }
+}
+
+const buildDistanceLiteral = (lat, lng) => {
+  const safeLat = Number(lat)
+  const safeLng = Number(lng)
+  return literal(
+    `6371 * acos(` +
+    `cos(radians(${safeLat})) * cos(radians(lat)) * cos(radians(lng) - radians(${safeLng})) + ` +
+    `sin(radians(${safeLat})) * sin(radians(lat))` +
+    `)`,
+  )
+}
+
+const STATIC_HOTEL_ATTRIBUTES_LITE = [
+  "hotel_id",
+  "name",
+  "city_name",
+  "city_code",
+  "country_name",
+  "country_code",
+  "address",
+  "full_address",
+  "lat",
+  "lng",
+  "rating",
+  "priority",
+  "preferred",
+  "exclusive",
+  "chain",
+  "chain_code",
+  "classification_code",
+  "images",
+]
+
+const STATIC_HOTEL_ATTRIBUTES_FULL = [
+  ...STATIC_HOTEL_ATTRIBUTES_LITE,
+  "amenities",
+  "leisure",
+  "business",
+  "descriptions",
+  "room_static",
+]
+
+const getStaticHotelAttributes = (useLite) =>
+  useLite ? STATIC_HOTEL_ATTRIBUTES_LITE : STATIC_HOTEL_ATTRIBUTES_FULL
+
+const getStaticHotelIncludes = () => [
+  {
+    model: models.WebbedsHotelChain,
+    as: "chainCatalog",
+    attributes: ["code", "name"],
+  },
+  {
+    model: models.WebbedsHotelClassification,
+    as: "classification",
+    attributes: ["code", "name"],
+  },
+]
 
 export const search = (req, res, next) => provider.search(req, res, next)
 export const getRooms = (req, res, next) => provider.getRooms(req, res, next)
@@ -509,51 +640,10 @@ export const listStaticHotels = async (req, res, next) => {
       }
     }
 
-    const staticHotelAttributesLite = [
-      "hotel_id",
-      "name",
-      "city_name",
-      "city_code",
-      "country_name",
-      "country_code",
-      "address",
-      "full_address",
-      "lat",
-      "lng",
-      "rating",
-      "priority",
-      "preferred",
-      "exclusive",
-      "chain",
-      "chain_code",
-      "classification_code",
-      "images",
-    ]
-
-    const staticHotelAttributesFull = [
-      ...staticHotelAttributesLite,
-      "amenities",
-      "leisure",
-      "business",
-      "descriptions",
-      "room_static",
-    ]
-
     const { rows, count } = await models.WebbedsHotel.findAndCountAll({
       where,
-      attributes: useLite ? staticHotelAttributesLite : staticHotelAttributesFull,
-      include: [
-        {
-          model: models.WebbedsHotelChain,
-          as: "chainCatalog",
-          attributes: ["code", "name"],
-        },
-        {
-          model: models.WebbedsHotelClassification,
-          as: "classification",
-          attributes: ["code", "name"],
-        },
-      ],
+      attributes: getStaticHotelAttributes(useLite),
+      include: getStaticHotelIncludes(),
       order: [
         ["priority", "DESC"],
         ["name", "ASC"],
@@ -575,6 +665,184 @@ export const listStaticHotels = async (req, res, next) => {
       await cache.set(cacheKey, responsePayload, STATIC_HOTELS_CACHE_TTL_SECONDS)
     }
     res.set("Cache-Control", `private, max-age=${STATIC_HOTELS_CACHE_TTL_SECONDS}`)
+    res.set("X-Cache", "MISS")
+    return res.json(responsePayload)
+  } catch (error) {
+    return next(error)
+  }
+}
+
+export const listExploreHotels = async (req, res, next) => {
+  try {
+    const {
+      limit,
+      offset,
+      lite,
+      imagesLimit,
+      radiusKm,
+      fallbackCityCode,
+      cityCode,
+    } = req.query
+
+    const useLite = String(lite || "").trim().toLowerCase() === "true"
+    const limitBase = Number(limit) || EXPLORE_DEFAULT_LIMIT
+    const safeLimit = clampNumber(limitBase, 1, EXPLORE_MAX_RESULTS)
+    const safeOffset = clampNumber(Number(offset) || 0, 0, EXPLORE_MAX_RESULTS)
+    const targetCount = Math.min(EXPLORE_MAX_RESULTS, safeLimit + safeOffset)
+    const imagesLimitValue = Number(imagesLimit)
+    const safeImagesLimit = Number.isFinite(imagesLimitValue)
+      ? Math.max(0, Math.min(imagesLimitValue, 200))
+      : null
+    const resolvedFallbackCity = String(
+      fallbackCityCode || cityCode || EXPLORE_DEFAULT_CITY_CODE || "",
+    ).trim() || null
+
+    const coords = resolveExploreCoordinates(req)
+    const radiusBase = Number(radiusKm)
+    const safeRadius = clampNumber(
+      Number.isFinite(radiusBase) ? radiusBase : EXPLORE_DEFAULT_RADIUS_KM,
+      5,
+      500,
+    )
+    const bucketLat = coords
+      ? roundCoordinate(coords.lat, EXPLORE_GEO_BUCKET_PRECISION)
+      : null
+    const bucketLng = coords
+      ? roundCoordinate(coords.lng, EXPLORE_GEO_BUCKET_PRECISION)
+      : null
+
+    const cacheKey = EXPLORE_HOTELS_CACHE_DISABLED
+      ? null
+      : buildExploreHotelsCacheKey({
+          lat: bucketLat,
+          lng: bucketLng,
+          limit: safeLimit,
+          offset: safeOffset,
+          radiusKm: safeRadius,
+          fallbackCityCode: resolvedFallbackCity,
+          lite: useLite,
+          imagesLimit: safeImagesLimit,
+        })
+
+    if (cacheKey) {
+      const cached = await cache.get(cacheKey)
+      if (cached) {
+        res.set("Cache-Control", `private, max-age=${EXPLORE_HOTELS_CACHE_TTL_SECONDS}`)
+        res.set("X-Cache", "HIT")
+        return res.json(cached)
+      }
+    }
+
+    const attributes = getStaticHotelAttributes(useLite)
+    const include = getStaticHotelIncludes()
+    const selectedRows = []
+    const seen = new Set()
+
+    const pushRows = (rows = []) => {
+      for (const row of rows) {
+        if (!row) continue
+        const id = row?.hotel_id ?? row?.get?.("hotel_id")
+        const key = id == null ? null : String(id)
+        if (key && seen.has(key)) continue
+        if (key) seen.add(key)
+        selectedRows.push(row)
+        if (selectedRows.length >= targetCount) break
+      }
+    }
+
+    let primaryCityCode = null
+    if (coords) {
+      const bounds = computeGeoBounds(coords.lat, coords.lng, safeRadius)
+      const distanceLiteral = buildDistanceLiteral(coords.lat, coords.lng)
+      const maxCandidates = Math.min(1500, Math.max(targetCount * 5, 200))
+
+      const nearbyRows = await models.WebbedsHotel.findAll({
+        where: {
+          lat: { [Op.not]: null, [Op.between]: [bounds.minLat, bounds.maxLat] },
+          lng: { [Op.not]: null, [Op.between]: [bounds.minLng, bounds.maxLng] },
+        },
+        attributes: [...attributes, [distanceLiteral, "distance_km"]],
+        include,
+        order: [[distanceLiteral, "ASC"], ["priority", "DESC"], ["name", "ASC"]],
+        limit: maxCandidates,
+      })
+
+      pushRows(nearbyRows)
+      primaryCityCode = nearbyRows?.[0]?.city_code ?? null
+    }
+
+    if (selectedRows.length < targetCount && primaryCityCode) {
+      const cityRows = await models.WebbedsHotel.findAll({
+        where: { city_code: String(primaryCityCode).trim() },
+        attributes,
+        include,
+        order: [["priority", "DESC"], ["rating", "DESC"], ["name", "ASC"]],
+        limit: Math.min(targetCount * 2, EXPLORE_MAX_RESULTS),
+      })
+      pushRows(cityRows)
+    }
+
+    if (selectedRows.length < targetCount && resolvedFallbackCity) {
+      const fallbackRows = await models.WebbedsHotel.findAll({
+        where: { city_code: String(resolvedFallbackCity).trim() },
+        attributes,
+        include,
+        order: [["priority", "DESC"], ["rating", "DESC"], ["name", "ASC"]],
+        limit: Math.min(targetCount * 2, EXPLORE_MAX_RESULTS),
+      })
+      pushRows(fallbackRows)
+    }
+
+    if (selectedRows.length < targetCount) {
+      const globalRows = await models.WebbedsHotel.findAll({
+        attributes,
+        include,
+        order: [["priority", "DESC"], ["rating", "DESC"], ["name", "ASC"]],
+        limit: Math.min(targetCount * 2, EXPLORE_MAX_RESULTS),
+      })
+      pushRows(globalRows)
+    }
+
+    const pageRows = selectedRows.slice(safeOffset, safeOffset + safeLimit)
+    const items = pageRows
+      .map((row) => {
+        const item = formatStaticHotel(row, { imageLimit: safeImagesLimit })
+        if (!item) return null
+        const distanceValue = row?.get ? row.get("distance_km") : row?.distance_km
+        const distanceNum = Number(distanceValue)
+        if (Number.isFinite(distanceNum)) {
+          item.distanceKm = distanceNum
+        }
+        return item
+      })
+      .filter(Boolean)
+
+    const responsePayload = {
+      items,
+      pagination: {
+        total: safeOffset + items.length,
+        limit: safeLimit,
+        offset: safeOffset,
+      },
+      meta: {
+        source: coords?.source || "default",
+        location: coords
+          ? {
+              lat: coords.lat,
+              lng: coords.lng,
+              city: coords.geo?.city ?? null,
+              region: coords.geo?.region ?? null,
+              country: coords.geo?.country ?? null,
+            }
+          : null,
+        radiusKm: safeRadius,
+      },
+    }
+
+    if (cacheKey) {
+      await cache.set(cacheKey, responsePayload, EXPLORE_HOTELS_CACHE_TTL_SECONDS)
+    }
+    res.set("Cache-Control", `private, max-age=${EXPLORE_HOTELS_CACHE_TTL_SECONDS}`)
     res.set("X-Cache", "MISS")
     return res.json(responsePayload)
   } catch (error) {
