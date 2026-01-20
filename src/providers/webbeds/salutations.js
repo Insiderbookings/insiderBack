@@ -6,7 +6,7 @@ const ensureArray = (value) => {
   return Array.isArray(value) ? value : [value]
 }
 
-const SALUTATION_IDS = {
+export const SALUTATION_IDS = {
   child: 14632,
   dr: 558,
   madame: 1671,

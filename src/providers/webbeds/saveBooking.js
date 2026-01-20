@@ -3,6 +3,7 @@ import {
   ensureSalutationsCacheWarm,
   getDefaultSalutationId,
   resolveSalutationId,
+  SALUTATION_IDS,
 } from "./salutations.js"
 
 const ensureArray = (value) => {
@@ -125,6 +126,12 @@ const buildRoomsNode = ({
   // Distribuye pasajeros globales entre rooms cuando no vienen por-room.
   const globalPassengers = ensureArray(passengers)
   let passengerCursor = 0
+  /* 
+    Logic updated:
+    1. Distinguish Adult slots vs Child slots based on neededAdults vs actualChildrenAges
+    2. Fill Adult slots with global passengers or Adult Placeholders
+    3. Fill Child slots with remaining global passengers (if any) or Child Placeholders (with Child ID)
+  */
   const assignPassengersForRoom = (roomIdx, room) => {
     if (Array.isArray(room.passengers) && room.passengers.length) {
       return room.passengers
@@ -145,16 +152,46 @@ const buildRoomsNode = ({
     )
       .map((age) => toNumber(age))
       .filter((age) => Number.isFinite(age))
-    const neededTotal = neededAdults + actualChildrenAges.length
-    const slice = globalPassengers.slice(passengerCursor, passengerCursor + neededTotal)
-    passengerCursor += neededTotal
-    // Si no hay suficientes, rellena con placeholders
-    const placeholders = Array.from({ length: Math.max(0, neededTotal - slice.length) }).map((_, i) => ({
-      firstName: "Guest",
-      lastName: `R${roomIdx + 1}P${i + 1}`,
-      leading: false,
-    }))
-    return [...slice, ...placeholders]
+
+    const assigned = []
+
+    // 1. Assign Adults
+    for (let i = 0; i < neededAdults; i++) {
+      const p = globalPassengers[passengerCursor]
+      if (p) {
+        passengerCursor++
+        assigned.push(p)
+      } else {
+        assigned.push({
+          firstName: "Guest",
+          lastName: `R${roomIdx + 1}A${i + 1}`,
+          leading: false,
+          // Adult: fallback logic in buildPassengersDetails handles salutation
+        })
+      }
+    }
+
+    // 2. Assign Children
+    const childCount = actualChildrenAges.length
+    for (let i = 0; i < childCount; i++) {
+      const p = globalPassengers[passengerCursor]
+      if (p) {
+        passengerCursor++
+        // If user was provided for a child slot, we trust what we got, 
+        // but maybe we should ensure salutation is valid for child? 
+        // For now, let's assume if it is a "child" slot, we might need to enforce salutation
+        // if none provided. But buildPassengersDetails resolves it.
+        assigned.push(p)
+      } else {
+        assigned.push({
+          firstName: "Child",
+          lastName: `Guest ${i + 1}`,
+          leading: false,
+          salutation: SALUTATION_IDS.child, // Force Child ID
+        })
+      }
+    }
+    return assigned
   }
 
   // Marca al menos un leading="yes" por habitación (requerido por XSD)

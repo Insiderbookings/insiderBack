@@ -30,7 +30,10 @@ const wrap = (handler) => async (req, res, next) => {
   }
 };
 
-export const startFlow = wrap((req) => service.start({ body: req.body, req }));
+export const startFlow = wrap((req) => {
+  console.log("[DEBUG] startFlow raw body:", JSON.stringify(req.body, null, 2));
+  return service.start({ body: req.body, req });
+});
 export const selectFlow = wrap((req) => service.select({ body: req.body, req }));
 export const blockFlow = wrap((req) => service.block({ body: req.body, req }));
 export const saveBookingFlow = wrap((req) => service.saveBooking({ body: req.body, req }));

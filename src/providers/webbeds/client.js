@@ -33,7 +33,7 @@ class WebbedsError extends Error {
 }
 
 const verboseLogs = process.env.WEBBEDS_VERBOSE_LOGS === "true"
-const noop = () => {}
+const noop = () => { }
 const defaultLogger = {
   debug: verboseLogs ? (...args) => console.debug(...args) : noop,
   info: verboseLogs ? (...args) => console.info(...args) : noop,
@@ -262,6 +262,8 @@ export const createWebbedsClient = ({
     const requestBody = useCompression
       ? await gzip(envelopeXml)
       : Buffer.from(envelopeXml, "utf8")
+
+    console.log(`[WebBeds] Sending XML (${command}):`, maskSensitiveXml(envelopeXml)); // Added Log
 
     const xmlBytes = Buffer.byteLength(envelopeXml, "utf8")
     const gzBytes = requestBody.length

@@ -356,9 +356,9 @@ const parseSpecialCatalog = (node) => {
         const label = String(entry).trim()
         return label
           ? {
-              runno: idx,
-              label,
-            }
+            runno: idx,
+            label,
+          }
           : null
       }
       const runno = toNumber(entry?.["@_runno"]) ?? idx
@@ -395,11 +395,11 @@ const summarizeSpecials = (specials) => {
       return (
         getText(
           entry?.label ??
-            entry?.specialName ??
-            entry?.name ??
-            entry?.description ??
-            entry?.notes ??
-            entry?.type,
+          entry?.specialName ??
+          entry?.name ??
+          entry?.description ??
+          entry?.notes ??
+          entry?.type,
         ) ?? null
       )
     })

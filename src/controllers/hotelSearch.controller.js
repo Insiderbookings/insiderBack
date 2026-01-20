@@ -75,6 +75,36 @@ const resolveSafeLimit = (limit) =>
 const resolveSafeOffset = (offset) =>
   Math.max(0, Number(offset) || 0)
 
+const resolveRatingCodes = async (minStr, maxStr) => {
+  const min = parseInt(minStr) || 0
+  const max = parseInt(maxStr) || 5
+  // If requesting full range, effectively no filter needed (unless we want to exclude non-rated)
+  // But let's filter to be safe if params are present.
+
+  const all = await models.WebbedsHotelClassification.findAll({
+    attributes: ["code", "name"],
+    raw: true,
+  })
+
+  const codes = all.filter((c) => {
+    // Strategy 1: Count asterisks
+    let stars = (c.name.match(/\*/g) || []).length
+
+    // Strategy 2: If no asterisks, try to find a leading number
+    if (stars === 0) {
+      const match = c.name.match(/^(\d+)(\s|$)/)
+      if (match) {
+        stars = parseInt(match[1], 10)
+      }
+    }
+
+    if (stars === 0) return false // unrated or unknown
+    return stars >= min && stars <= max
+  }).map((c) => String(c.code))
+
+  return codes
+}
+
 const normalizeBoolean = (value) => {
   if (value === undefined || value === null || value === "") return false
   if (typeof value === "boolean") return value
@@ -137,18 +167,38 @@ const reduceToLite = (items = []) =>
     }
   })
 
-const fetchHotelIdsByName = async (query, limit = DEFAULT_LIMIT, offset = 0) => {
+const fetchHotelIdsByName = async (query, limit = DEFAULT_LIMIT, offset = 0, filters = {}) => {
   const trimmed = String(query || "").trim()
   if (!trimmed) return []
   const safeLimit = resolveSafeLimit(limit)
   const safeOffset = resolveSafeOffset(offset)
+
+  const where = {
+    name: { [Op.iLike]: `%${trimmed}%` },
+  }
+
+  // Apply Filters
+  // Apply Filters
+  if (filters.ratingCodes && filters.ratingCodes.length > 0) {
+    where.rating = { [Op.in]: filters.ratingCodes }
+  }
+  if (filters.ratingMin && !filters.ratingCodes) {
+    // Fallback if no codes resolved (shouldn't happen if resolveRatingCodes works, but safe to keep or remove legacy)
+    // Removing legacy string comparison as it is incorrect.
+  }
+  if (filters.chain && filters.chain.length > 0) {
+    where.chain_code = { [Op.in]: filters.chain }
+  }
+
+  console.log("[fetchHotelIdsByName] filters:", JSON.stringify(filters))
+  console.log("[fetchHotelIdsByName] where:", JSON.stringify(where))
+
   const rows = await models.WebbedsHotel.findAll({
-    where: {
-      name: { [Op.iLike]: `%${trimmed}%` },
-    },
-    attributes: ["hotel_id", "priority", "name"],
+    where,
+    attributes: ["hotel_id", "priority", "name", "rating"],
     order: [
       ["priority", "DESC"],
+      ["rating", "DESC"],
       ["name", "ASC"],
     ],
     limit: safeLimit,
@@ -158,15 +208,27 @@ const fetchHotelIdsByName = async (query, limit = DEFAULT_LIMIT, offset = 0) => 
   return rows.map((row) => String(row.hotel_id)).filter(Boolean)
 }
 
-const fetchAllHotelIdsByCity = async (cityCode) => {
+const fetchAllHotelIdsByCity = async (cityCode, filters = {}) => {
   if (!cityCode) return []
+
+  const where = {
+    city_code: String(cityCode).trim(),
+  }
+
+  // Apply Filters
+  if (filters.ratingCodes && filters.ratingCodes.length > 0) {
+    where.rating = { [Op.in]: filters.ratingCodes }
+  }
+  if (filters.chain && filters.chain.length > 0) {
+    where.chain_code = { [Op.in]: filters.chain }
+  }
+
   const rows = await models.WebbedsHotel.findAll({
-    where: {
-      city_code: String(cityCode).trim(),
-    },
-    attributes: ["hotel_id", "priority", "name"],
+    where,
+    attributes: ["hotel_id", "priority", "name", "rating"],
     order: [
       ["priority", "DESC"],
+      ["rating", "DESC"],
       ["name", "ASC"],
     ],
     raw: true,
@@ -174,17 +236,32 @@ const fetchAllHotelIdsByCity = async (cityCode) => {
   return rows.map((row) => String(row.hotel_id)).filter(Boolean)
 }
 
-const fetchHotelIdsByCity = async (cityCode, limit = DEFAULT_LIMIT, offset = 0) => {
+const fetchHotelIdsByCity = async (cityCode, limit = DEFAULT_LIMIT, offset = 0, filters = {}) => {
   if (!cityCode) return []
   const safeLimit = resolveSafeLimit(limit)
   const safeOffset = resolveSafeOffset(offset)
+
+  const where = {
+    city_code: String(cityCode).trim(),
+  }
+
+  // Apply Filters
+  if (filters.ratingCodes && filters.ratingCodes.length > 0) {
+    where.rating = { [Op.in]: filters.ratingCodes }
+  }
+  if (filters.chain && filters.chain.length > 0) {
+    where.chain_code = { [Op.in]: filters.chain }
+  }
+
+  console.log("[fetchHotelIdsByCity] filters:", JSON.stringify(filters))
+  console.log("[fetchHotelIdsByCity] where:", JSON.stringify(where))
+
   const rows = await models.WebbedsHotel.findAll({
-    where: {
-      city_code: String(cityCode).trim(),
-    },
-    attributes: ["hotel_id", "priority", "name"],
+    where,
+    attributes: ["hotel_id", "priority", "name", "rating"],
     order: [
       ["priority", "DESC"],
+      ["rating", "DESC"],
       ["name", "ASC"],
     ],
     limit: safeLimit,
@@ -266,17 +343,42 @@ export const searchHotels = async (req, res, next) => {
         ? String(countryCode).trim()
         : null
 
+    const priceMin = req.query.priceMin ?? req.query.minPrice ?? req.query.price_from ?? req.query.priceFrom
+    const priceMax = req.query.priceMax ?? req.query.maxPrice ?? req.query.price_to ?? req.query.priceTo
+    const ratingMin = req.query.ratingMin ?? req.query.minRating ?? req.query.hotelRateMin
+    const ratingMax = req.query.ratingMax ?? req.query.maxRating ?? req.query.hotelRateMax
+    const amenities = req.query.amenities ?? req.query.amenityIds
+    const roomAmenity = req.query.roomAmenity ?? req.query.roomAmenityIds
+    const chain = req.query.chain ?? req.query.chainIds
+
+    // Parse DB Filters
+    const dbFilters = {}
+    if (chain) dbFilters.chain = parseCsvList(chain)
+
+    if (ratingMin || ratingMax) {
+      const codes = await resolveRatingCodes(ratingMin, ratingMax)
+      if (codes.length > 0) {
+        dbFilters.ratingCodes = codes
+      } else {
+        // If user asked for ratings but we found no matching codes, 
+        // we should probably return empty or rely on the fact that empty ratingCodes means no filter in 'where'?
+        // Actually, if codes is empty but user asked for filter, we should return NO results.
+        // Let's pass a special value or empty array to force no match.
+        dbFilters.ratingCodes = ["-1"] // Impossible code
+      }
+    }
+
     let hotelIds = []
     let fallback = null
     if (resolvedCityCode) {
       hotelIds = useFetchAll
-        ? await fetchAllHotelIdsByCity(resolvedCityCode)
-        : await fetchHotelIdsByCity(resolvedCityCode, safeLimit, safeOffset)
+        ? await fetchAllHotelIdsByCity(resolvedCityCode, dbFilters)
+        : await fetchHotelIdsByCity(resolvedCityCode, safeLimit, safeOffset, dbFilters)
       if (hotelIds.length) {
         fallback = "city"
       }
     } else {
-      hotelIds = await fetchHotelIdsByName(searchQuery, safeLimit, safeOffset)
+      hotelIds = await fetchHotelIdsByName(searchQuery, safeLimit, safeOffset, dbFilters)
       if (hotelIds.length) {
         fallback = "static-name"
       }
@@ -313,13 +415,10 @@ export const searchHotels = async (req, res, next) => {
       hotelIds: hotelIds.length ? hotelIds.join(",") : undefined,
       passengerNationality: req.query.passengerNationality,
       passengerCountryOfResidence: req.query.passengerCountryOfResidence,
-      priceMin: req.query.priceMin ?? req.query.minPrice ?? req.query.price_from ?? req.query.priceFrom,
-      priceMax: req.query.priceMax ?? req.query.maxPrice ?? req.query.price_to ?? req.query.priceTo,
-      ratingMin: req.query.ratingMin ?? req.query.minRating ?? req.query.hotelRateMin,
-      ratingMax: req.query.ratingMax ?? req.query.maxRating ?? req.query.hotelRateMax,
-      amenities: req.query.amenities ?? req.query.amenityIds,
-      roomAmenity: req.query.roomAmenity ?? req.query.roomAmenityIds,
-      chain: req.query.chain ?? req.query.chainIds,
+      priceMin,
+      priceMax,
+      amenities,
+      roomAmenity,
       lite: normalizeBoolean(lite),
       fetchAll: useFetchAll,
     }

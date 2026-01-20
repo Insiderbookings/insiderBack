@@ -413,7 +413,10 @@ export class FlowOrchestratorService {
     }
 
     const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102";
+
+    console.log("[DEBUG] service.start input rooms:", JSON.stringify(rooms, null, 2));
     const occupancies = serializeRoomsParam(rooms);
+    console.log("[DEBUG] service.start serialized occupancies:", occupancies);
 
     const payload = buildGetRoomsPayload({
       checkIn: fromDate,
@@ -477,17 +480,17 @@ export class FlowOrchestratorService {
         rateBasesCount: rateBases.length,
         sampleRate: sampleRate
           ? {
-              id: sampleRate.id ?? null,
-              total: sampleRate.total ?? null,
-              totalFormatted: sampleRate.totalFormatted ?? null,
-              totalMinimumSelling: sampleRate.totalMinimumSelling ?? null,
-              totalInRequestedCurrency: sampleRate.totalInRequestedCurrency ?? null,
-              specials,
-              mealPlan: sampleRate.mealPlan ?? sampleRate.includedMeal?.mealName ?? null,
-              includedMealsCount: ensureArray(sampleRate.includedMeals).length,
-              cancellationRulesCount: ensureArray(sampleRate.cancellationRules).length,
-              cancellationSample,
-            }
+            id: sampleRate.id ?? null,
+            total: sampleRate.total ?? null,
+            totalFormatted: sampleRate.totalFormatted ?? null,
+            totalMinimumSelling: sampleRate.totalMinimumSelling ?? null,
+            totalInRequestedCurrency: sampleRate.totalInRequestedCurrency ?? null,
+            specials,
+            mealPlan: sampleRate.mealPlan ?? sampleRate.includedMeal?.mealName ?? null,
+            includedMealsCount: ensureArray(sampleRate.includedMeals).length,
+            cancellationRulesCount: ensureArray(sampleRate.cancellationRules).length,
+            cancellationSample,
+          }
           : null,
       });
     }
@@ -769,21 +772,32 @@ export class FlowOrchestratorService {
       return roomChildren;
     };
 
-    const roomsForSave = roomsPayload.map((room) => {
-      const originalAdults = Math.max(1, Number(room.adults) || 1);
-      const originalChildren = ensureArray(room.children).map((age) => Number(age)).filter((age) => !Number.isNaN(age));
+    const roomsForSave = roomsPayload.map((room, idx) => {
+      // Use the ORIGINAL search context for Actual adults/children
+      // This preserves "1 Adult + 1 Child" even if we are billing "2 Adults"
+      const originalContextRoom = context.rooms?.[idx] || room;
+      const originalAdults = Math.max(1, Number(originalContextRoom.adults) || 1);
+      const originalChildren = ensureArray(originalContextRoom.children).map((age) => Number(age)).filter((age) => !Number.isNaN(age));
 
+      const billingAdults = Math.max(1, Number(room.adults) || 1);
+      const billingChildren = ensureArray(room.children).map((age) => Number(age));
+
+      // AdultsCode/Children = Billing Occupancy (from payload or override)
       const adjustedAdults =
         hasChangedOccupancy && Number.isFinite(occupancyOverride?.adults)
           ? Math.max(1, Number(occupancyOverride.adults))
-          : originalAdults;
+          : billingAdults;
+
       const adjustedChildren = hasChangedOccupancy
-        ? resolveChildrenAges(originalChildren, occupancyOverride)
-        : originalChildren;
+        ? resolveChildrenAges(billingChildren, occupancyOverride)
+        : billingChildren;
+
       const adjustedExtraBed =
         hasChangedOccupancy && occupancyOverride?.extraBed != null
           ? Number(occupancyOverride.extraBed) || 0
           : room.extraBed;
+
+      // Actual = Original Search
       const actualAdults = originalAdults;
       const actualChildren = originalChildren;
 
