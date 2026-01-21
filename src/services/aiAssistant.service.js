@@ -7,6 +7,7 @@ import { getLocalNews } from "../modules/ai/tools/tool.news.js";
 const DEFAULT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini";
 const apiKey = process.env.OPENAI_API_KEY;
 let openaiClient = null;
+const TRIP_HUB_OPENAI_TIMEOUT_MS = Number(process.env.TRIP_HUB_OPENAI_TIMEOUT_MS) || 25000;
 
 const ensureClient = () => {
   if (!apiKey) return null;
@@ -14,6 +15,20 @@ const ensureClient = () => {
     openaiClient = new OpenAI({ apiKey });
   }
   return openaiClient;
+};
+
+const withTimeout = (promise, ms, label) => {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`${label} timed out after ${ms}ms`);
+      err.code = "OPENAI_TIMEOUT";
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 };
 
 export const isAssistantEnabled = () => Boolean(apiKey);
@@ -593,7 +608,14 @@ export const extractSearchPlan = async (messages = []) => {
  */
 export const generateTripAddons = async ({ tripContext, location, lang = "en" }) => {
   const client = ensureClient();
-  if (!client) return { insights: [], preparation: [] };
+  const TRIP_HUB_DEBUG = process.env.TRIP_HUB_DEBUG === "true";
+  const debugTripHub = (...args) => {
+    if (TRIP_HUB_DEBUG) console.log("[tripHub.debug]", ...args);
+  };
+  if (!client) {
+    debugTripHub("addons.missing_client", { hasTripContext: Boolean(tripContext) });
+    return { insights: [], preparation: [] };
+  }
 
   const city = location?.city || tripContext?.location?.city || "your destination";
   const stay = tripContext?.stayName || "your stay";
@@ -646,19 +668,37 @@ export const generateTripAddons = async ({ tripContext, location, lang = "en" })
     `House Rules: ${rules}.\n`;
 
   try {
+    debugTripHub("addons.request", {
+      city,
+      stay,
+      lang,
+      hasAmenities: Array.isArray(amenities) && amenities.length > 0,
+      hasRules: Boolean(rules),
+      hasNews: newsHeadlines.length > 0,
+    });
+    const requestStartedAt = Date.now();
+    debugTripHub("addons.request.start", {
+      model: DEFAULT_MODEL,
+      timeoutMs: TRIP_HUB_OPENAI_TIMEOUT_MS,
+    });
     const userPrompt = `Provide deep intelligence for my ${type} at ${stay} in ${city}. Include time-specific advice, local events (pulse), a local phrase (lingo), curated local suggestions (Food, Drinks, Activities), and a smart 3-day itinerary. Focus on unique local experiences. \n` +
       (amenities.length ? `Amenities available: ${amenities.join(", ")}. ` : "") +
       (rules ? `House rules: ${rules}.` : "") +
       (newsHeadlines.length ? `\nREAL NEWS HEADLINES (Use these for Local Pulse):\n${newsHeadlines.join("\n")}` : "");
 
-    const completion = await client.chat.completions.create({
-      model: DEFAULT_MODEL,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemMessage },
-        { role: "user", content: userPrompt },
-      ],
-    });
+    const completion = await withTimeout(
+      client.chat.completions.create({
+        model: DEFAULT_MODEL,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemMessage },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+      TRIP_HUB_OPENAI_TIMEOUT_MS,
+      "TripHub OpenAI"
+    );
+    debugTripHub("addons.request.done", { durationMs: Date.now() - requestStartedAt });
 
     const payload = completion.choices?.[0]?.message?.content;
     if (!payload) return { insights: [], preparation: [] };
@@ -667,7 +707,7 @@ export const generateTripAddons = async ({ tripContext, location, lang = "en" })
     const resolvedLocalPulse =
       newsHeadlines.length && Array.isArray(parsed.localPulse) ? parsed.localPulse : [];
 
-    return {
+    const result = {
       insights: Array.isArray(parsed.insights) ? parsed.insights : [],
       preparation: Array.isArray(parsed.preparation) ? parsed.preparation : [],
       timeContext: parsed.timeContext || null,
@@ -676,8 +716,24 @@ export const generateTripAddons = async ({ tripContext, location, lang = "en" })
       suggestions: parsed.suggestions || [],
       itinerary: Array.isArray(parsed.itinerary) ? parsed.itinerary : [],
     };
+    debugTripHub("addons.response", {
+      insights: result.insights.length,
+      preparation: result.preparation.length,
+      hasTimeContext: Boolean(result.timeContext),
+      localPulse: result.localPulse.length,
+      hasLocalLingo: Boolean(result.localLingo),
+      suggestions: Array.isArray(result.suggestions) ? result.suggestions.length : 0,
+      itinerary: result.itinerary.length,
+    });
+    return result;
   } catch (err) {
     console.error("[aiAssistant] generateTripAddons failed", err);
+    if (process.env.TRIP_HUB_DEBUG === "true") {
+      console.error("[tripHub.debug] addons.error", {
+        message: err?.message || String(err),
+        code: err?.code || null,
+      });
+    }
     return { insights: [], preparation: [] };
   }
 };
@@ -687,6 +743,10 @@ export const generateTripAddons = async ({ tripContext, location, lang = "en" })
  */
 export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lang = "en" }) => {
   const startedAt = Date.now();
+  const TRIP_HUB_DEBUG = process.env.TRIP_HUB_DEBUG === "true";
+  const debugTripHub = (...args) => {
+    if (TRIP_HUB_DEBUG) console.log("[tripHub.debug]", ...args);
+  };
   try {
     const { StayIntelligence, Stay } = models;
     const location = tripContext?.location || {};
@@ -697,6 +757,13 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
       location,
       lang
     });
+    debugTripHub("intelligence.addons", {
+      stayId,
+      insights: addons.insights?.length || 0,
+      preparation: addons.preparation?.length || 0,
+      suggestions: Array.isArray(addons.suggestions) ? addons.suggestions.length : 0,
+      itinerary: addons.itinerary?.length || 0,
+    });
 
     // 2. Fetch Weather
     let weather = null;
@@ -705,6 +772,7 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
     } catch (wErr) {
       console.warn("[aiAssistant] background weather fetch failed", wErr?.message);
     }
+    debugTripHub("intelligence.weather", { stayId, hasWeather: Boolean(weather) });
 
     // 3. Upsert intelligence record (Manual check to avoid ON CONFLICT errors if constraint missing)
     let record = await StayIntelligence.findOne({ where: { stayId } });
@@ -716,6 +784,7 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
       localPulse: addons.localPulse,
       localLingo: addons.localLingo,
       suggestions: addons.suggestions,
+      itinerary: addons.itinerary,
     };
     const alreadyNotified = Boolean(
       baseMetadata.tripHubReadyNotifiedAt || baseMetadata.tripHubReadyNotified
@@ -737,6 +806,7 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
         lastGeneratedAt: new Date(),
       });
     }
+    debugTripHub("intelligence.saved", { stayId, isNewRecord });
 
     if (!alreadyNotified) {
       try {

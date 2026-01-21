@@ -81,6 +81,24 @@ const parseAmount = (value) => {
     return Number.isFinite(parsed) ? parsed : null;
 };
 
+const sanitizeAmountText = (value) => {
+    if (value == null) return null;
+    const cleaned = String(value).trim();
+    if (!cleaned) return null;
+    const sanitized = cleaned.replace(/[^0-9.-]/g, "");
+    return sanitized || null;
+};
+
+const formatAmountForWebbeds = (value, decimals = 4) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return null;
+    const factor = 10 ** decimals;
+    const rounded = Math.round((numeric + Number.EPSILON) * factor) / factor;
+    let text = rounded.toFixed(decimals);
+    text = text.replace(/\.?0+$/, "");
+    return text;
+};
+
 const normalizeBookingCode = (value) => {
     if (!value) return null;
     const text = String(value).trim();
@@ -349,12 +367,14 @@ export const processBookingCancellation = async ({
             throw { status: 400, message: "Missing booking reference" };
         }
 
-        const paidAmount = roundCurrency(Number(booking.gross_price) || 0);
+        const paidAmount = Number(booking.gross_price) || 0;
         let cancelQuote = null;
         let cancelResult = null;
         let penaltyApplied = 0;
         let penaltyCurrency = null;
         let paymentBalance = paidAmount;
+        let penaltyAppliedRaw = null;
+        let paymentBalanceRaw = null;
 
         try {
             const client = createWebbedsClient(getWebbedsConfig());
@@ -374,23 +394,44 @@ export const processBookingCancellation = async ({
             const penalties = ensureArray(
                 cancelQuote?.services?.[0]?.cancellationPenalties,
             );
-            const penaltyValues = penalties
-                .map((penalty) =>
-                    parseAmount(penalty?.charge ?? penalty?.chargeFormatted),
-                )
-                .filter((value) => Number.isFinite(value));
-            penaltyApplied = penaltyValues.length ? Math.max(...penaltyValues) : 0;
-            penaltyApplied = roundCurrency(penaltyApplied);
+            const penaltyCandidates = penalties
+                .map((penalty) => {
+                    const raw = sanitizeAmountText(
+                        penalty?.charge ?? penalty?.chargeFormatted,
+                    );
+                    const amount = parseAmount(raw);
+                    if (!Number.isFinite(amount)) return null;
+                    return {
+                        amount,
+                        raw,
+                        currencyShort: penalty?.currencyShort,
+                        currency: penalty?.currency,
+                    };
+                })
+                .filter(Boolean);
+
+            const selectedPenalty = penaltyCandidates.reduce(
+                (current, candidate) =>
+                    !current || candidate.amount > current.amount ? candidate : current,
+                null,
+            );
+
+            penaltyApplied = selectedPenalty?.amount ?? 0;
+            penaltyAppliedRaw =
+                selectedPenalty?.raw ?? formatAmountForWebbeds(penaltyApplied);
             penaltyCurrency =
-                penalties.find((penalty) => {
-                    const value = parseAmount(penalty?.charge ?? penalty?.chargeFormatted);
-                    return Number.isFinite(value) && roundCurrency(value) === penaltyApplied;
-                })?.currencyShort ??
+                selectedPenalty?.currencyShort ??
+                selectedPenalty?.currency ??
                 penalties[0]?.currencyShort ??
                 penalties[0]?.currency ??
                 null;
 
-            paymentBalance = Math.max(0, roundCurrency(paidAmount - penaltyApplied));
+            paymentBalance = Math.max(0, paidAmount - penaltyApplied);
+            paymentBalanceRaw = formatAmountForWebbeds(paymentBalance);
+            if (paymentBalanceRaw) {
+                const parsedBalance = parseAmount(paymentBalanceRaw);
+                if (Number.isFinite(parsedBalance)) paymentBalance = parsedBalance;
+            }
 
             const confirmPayload = buildCancelBookingPayload({
                 bookingCode,
@@ -399,8 +440,8 @@ export const processBookingCancellation = async ({
                 reason,
                 services: [
                     {
-                        penaltyApplied,
-                        paymentBalance,
+                        penaltyApplied: penaltyAppliedRaw ?? penaltyApplied,
+                        paymentBalance: paymentBalanceRaw ?? paymentBalance,
                     },
                 ],
             });
