@@ -749,11 +749,15 @@ export class FlowOrchestratorService {
       return Object.keys(cleaned).length ? cleaned : null;
     };
 
+    const parsedChangedOccupancy = parseChangedOccupancy(
+      flow.selected_offer?.changedOccupancyValue,
+    );
     const occupancyOverride =
-      flow.selected_offer?.validForOccupancyDetails ??
-      parseChangedOccupancy(flow.selected_offer?.changedOccupancyValue);
+      parsedChangedOccupancy ?? flow.selected_offer?.validForOccupancyDetails;
     const hasChangedOccupancy =
-      Boolean(flow.selected_offer?.changedOccupancy) || Boolean(occupancyOverride);
+      Boolean(flow.selected_offer?.changedOccupancy) ||
+      Boolean(parsedChangedOccupancy) ||
+      Boolean(occupancyOverride);
 
     const resolveChildrenAges = (roomChildren, override) => {
       if (!override) return roomChildren;

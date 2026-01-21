@@ -109,6 +109,19 @@ const buildAdvancedConditionsFromQuery = (query = {}) => {
     })
   }
 
+  const normalizeBetweenRange = (min, max, { minFallback, maxFallback } = {}) => {
+    const hasMin = min !== undefined && min !== null && min !== ""
+    const hasMax = max !== undefined && max !== null && max !== ""
+    if (!hasMin && !hasMax) return { min: null, max: null }
+    if (hasMin && !hasMax && maxFallback !== undefined && maxFallback !== null && maxFallback !== "") {
+      return { min, max: maxFallback }
+    }
+    if (!hasMin && hasMax && minFallback !== undefined && minFallback !== null && minFallback !== "") {
+      return { min: minFallback, max }
+    }
+    return { min, max }
+  }
+
   // Price band
   addBetween(
     "price",
@@ -148,11 +161,12 @@ const buildAdvancedConditionsFromQuery = (query = {}) => {
   addIn("attraction", query.attraction ?? query.attractionIds ?? query.attractions)
 
   // Ratings
-  addBetween(
-    "rating",
+  const ratingRange = normalizeBetweenRange(
     query.ratingMin ?? query.minRating ?? query.hotelRateMin,
     query.ratingMax ?? query.maxRating ?? query.hotelRateMax,
+    { minFallback: "1", maxFallback: "5" },
   )
+  addBetween("rating", ratingRange.min, ratingRange.max)
 
   // Hotel meta
   addBetween(
