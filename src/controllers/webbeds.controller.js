@@ -611,10 +611,10 @@ export const listStaticHotels = async (req, res, next) => {
     const maxLimit = hotelIdList.length || hotelId ? 100 : 25
     const safeLimit = Math.min(maxLimit, Math.max(1, limitBase))
     const safeOffset = Math.max(0, Number(offset) || 0)
-    const imagesLimitValue = Number(imagesLimit)
-    const safeImagesLimit = Number.isFinite(imagesLimitValue)
-      ? Math.max(0, Math.min(imagesLimitValue, 200))
-      : null
+      const imagesLimitValue = Number(imagesLimit)
+      const safeImagesLimit = Number.isFinite(imagesLimitValue)
+        ? Math.max(0, Math.min(imagesLimitValue, 200))
+        : (useLite ? 1 : null)
 
     const cacheKey = STATIC_HOTELS_CACHE_DISABLED
       ? null
@@ -689,10 +689,10 @@ export const listExploreHotels = async (req, res, next) => {
     const safeLimit = clampNumber(limitBase, 1, EXPLORE_MAX_RESULTS)
     const safeOffset = clampNumber(Number(offset) || 0, 0, EXPLORE_MAX_RESULTS)
     const targetCount = Math.min(EXPLORE_MAX_RESULTS, safeLimit + safeOffset)
-    const imagesLimitValue = Number(imagesLimit)
-    const safeImagesLimit = Number.isFinite(imagesLimitValue)
-      ? Math.max(0, Math.min(imagesLimitValue, 200))
-      : null
+      const imagesLimitValue = Number(imagesLimit)
+      const safeImagesLimit = Number.isFinite(imagesLimitValue)
+        ? Math.max(0, Math.min(imagesLimitValue, 200))
+        : (useLite ? 1 : null)
     const resolvedFallbackCity = String(
       fallbackCityCode || cityCode || EXPLORE_DEFAULT_CITY_CODE || "",
     ).trim() || null
