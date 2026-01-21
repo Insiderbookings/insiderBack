@@ -37,8 +37,8 @@ const swaggerDemoToken = (() => {
   if (!raw) return "Bearer <pega-tu-token>";
   return raw.toLowerCase().startsWith("bearer ") ? raw : `Bearer ${raw}`;
 })();
-const swaggerAuthUser = process.env.SWAGGER_USER || null;
-const swaggerAuthPassword = process.env.SWAGGER_PASSWORD || null;
+const swaggerAuthUser = process.env.SWAGGER_USER || "insiderbookings";
+const swaggerAuthPassword = process.env.SWAGGER_PASSWORD || "Insider1234#";
 const ensureSwaggerAuth = (() => {
   if (!swaggerAuthUser || !swaggerAuthPassword) return (req, _res, next) => next();
   return (req, res, next) => {
