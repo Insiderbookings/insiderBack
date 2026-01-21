@@ -23,12 +23,9 @@ const SPANISH_HINTS = [
   " gracias",
   " por favor",
   " buenas",
-  " buen día",
   " buen dia",
   " alojamiento",
-  " dónde",
   " donde",
-  " habitación",
   " habitacion",
   " buscar",
   " necesito",
@@ -42,7 +39,7 @@ const detectLanguageFromText = (text = "", fallback = "en") => {
   const normalized = (text || "").trim().toLowerCase();
   if (!normalized) return fallback || "en";
   const padded = ` ${normalized} `;
-  const hasSpanishChars = /[ñáéíóúü¡¿]/i.test(text);
+  const hasSpanishChars = /[\u00f1\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00a1\u00bf]/i.test(text);
   if (hasSpanishChars) return "es";
   if (SPANISH_HINTS.some((hint) => padded.includes(hint))) return "es";
   if (ENGLISH_HINTS.some((hint) => padded.includes(hint))) return "en";
@@ -51,7 +48,7 @@ const detectLanguageFromText = (text = "", fallback = "en") => {
 
 const languageInstruction = (lang) =>
   lang === "es"
-    ? "Responde en español neutro (ajusta modismos si corresponde)."
+    ? "Responde en espanol neutro (ajusta modismos si corresponde)."
     : "Reply in neutral English (and mirror idioms if needed).";
 
 const pickLanguageText = (lang, english, spanish) => (lang === "es" ? spanish : english);
@@ -97,7 +94,7 @@ const describeWeatherCode = (code, lang) => {
   return (map[value] && map[value][lang]) || (lang === "es" ? "condiciones variables" : "variable conditions");
 };
 
-const isWeatherQuestion = (text = "") => /(clima|tiempo|weather|temperatura|pronostico|pronóstico)/i.test(text);
+const isWeatherQuestion = (text = "") => /(clima|tiempo|weather|temperatura|pronostico)/i.test(text);
 
 const sanitizeMessages = (messages = []) =>
   messages
@@ -306,6 +303,12 @@ const nonNegativeNumberOrNull = (value) => {
   return numeric >= 0 ? numeric : null;
 };
 
+const normalizeDateString = (value) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
 const sanitizeListingTypes = (value) => {
   const allowed = new Set(["HOMES", "HOTELS"]);
   if (!Array.isArray(value) || !value.length) return [...defaultPlan.listingTypes];
@@ -322,6 +325,21 @@ const normalizeSortBy = (value) => {
   return allowed.has(normalized) ? normalized : defaultPlan.sortBy;
 };
 
+const normalizeIntent = (value, fallback) => {
+  const allowed = new Set(["SEARCH", "SMALL_TALK", "HELP", "TRIP"]);
+  if (!value || typeof value !== "string") return fallback;
+  const normalized = value.trim().toUpperCase();
+  return allowed.has(normalized) ? normalized : fallback;
+};
+
+const normalizeLanguage = (value, fallback) => {
+  if (!value || typeof value !== "string") return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (normalized.startsWith("es")) return "es";
+  if (normalized.startsWith("en")) return "en";
+  return fallback;
+};
+
 const normalizeBooleanFlag = (value, fallback = false) => {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") {
@@ -330,7 +348,7 @@ const normalizeBooleanFlag = (value, fallback = false) => {
   }
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
-    if (["true", "1", "yes", "si", "sí"].includes(normalized)) return true;
+    if (["true", "1", "yes", "si"].includes(normalized)) return true;
     if (["false", "0", "no"].includes(normalized)) return false;
   }
   return fallback;
@@ -518,19 +536,30 @@ const mergePlan = (raw, { contextText = "" } = {}) => {
     defaultPlan.hotelFilters.minRating;
   hotelFilters.minRating = resolvedMinRating;
 
+  const rawDates = raw.dates || {};
+  const normalizedDates = {
+    ...defaultPlan.dates,
+    ...rawDates,
+  };
+  normalizedDates.checkIn = normalizeDateString(rawDates.checkIn ?? normalizedDates.checkIn);
+  normalizedDates.checkOut = normalizeDateString(rawDates.checkOut ?? normalizedDates.checkOut);
+  normalizedDates.flexible = normalizeBooleanFlag(rawDates.flexible, defaultPlan.dates.flexible);
+
   const { amenities, ...rawPlan } = raw;
   return {
     ...defaultPlan,
     ...rawPlan,
+    intent: normalizeIntent(raw.intent, defaultPlan.intent),
     listingTypes: sanitizeListingTypes(raw.listingTypes),
     location: mergedLocation,
-    dates: { ...defaultPlan.dates, ...(raw.dates || {}) },
+    dates: normalizedDates,
     guests: { ...defaultPlan.guests, ...(raw.guests || {}) },
     homeFilters,
     hotelFilters,
     budget: { ...defaultPlan.budget, ...(raw.budget || {}) },
     sortBy: normalizeSortBy(raw.sortBy),
     limit: positiveIntegerOrNull(raw.limit) ?? defaultPlan.limit,
+    language: normalizeLanguage(raw.language, defaultPlan.language),
     notes: Array.isArray(raw.notes) ? raw.notes.filter(Boolean) : [],
   };
 };
@@ -554,8 +583,8 @@ export const extractSearchPlan = async (messages = []) => {
     const parsed = JSON.parse(payload);
     return mergePlan(parsed, { contextText: latestUserMessage });
   } catch (err) {
-    console.error("[aiAssistant] generate reply failed", err?.message || err);
-    return { reply: "I index an error. Please try again.", followUps: [] };
+    console.error("[aiAssistant] extractSearchPlan failed", err?.message || err);
+    return mergePlan(defaultPlan, { contextText: latestUserMessage });
   }
 };
 
@@ -800,10 +829,10 @@ export const generateAssistantReply = async ({
     const description = describeWeatherCode(weather.current.weatherCode, targetLanguage);
     const parts = [];
     if (Number.isFinite(temp)) {
-      parts.push(targetLanguage === "es" ? `temperatura ${temp}°C` : `temperature ${temp}°C`);
+      parts.push(targetLanguage === "es" ? `temperatura ${temp}C` : `temperature ${temp}C`);
     }
     if (Number.isFinite(feels)) {
-      parts.push(targetLanguage === "es" ? `sensacion ${feels}°C` : `feels like ${feels}°C`);
+      parts.push(targetLanguage === "es" ? `sensacion ${feels}C` : `feels like ${feels}C`);
     }
     if (Number.isFinite(wind)) {
       parts.push(targetLanguage === "es" ? `viento ${wind} km/h` : `wind ${wind} km/h`);
@@ -934,11 +963,11 @@ export const generateAssistantReply = async ({
         reply: pickLanguageText(
           targetLanguage,
           "I can help you look for homes (houses, apartments, cabins) and hotels. What are you looking for?",
-          "Puedo ayudarte a buscar casas, departamentos, cabañas y hoteles. ¿Qué estás buscando?"
+          "Puedo ayudarte a buscar casas, departamentos, cabanas y hoteles. Que estas buscando?"
         ),
         followUps:
           targetLanguage === "es"
-            ? ["Buscar una casa", "Necesito un hotel", "¿Qué comodidades hay?"]
+            ? ["Buscar una casa", "Necesito un hotel", "Que comodidades hay?"]
             : ["Looking for a house", "Need a hotel", "What amenities are available?"],
       };
     } else {
@@ -946,11 +975,11 @@ export const generateAssistantReply = async ({
         reply: pickLanguageText(
           targetLanguage,
           "Hello! I am your travel assistant. How can I help you today?",
-          "¡Hola! Soy tu asistente de viajes. ¿En qué puedo ayudarte hoy?"
+          "Hola! Soy tu asistente de viajes. En que puedo ayudarte hoy?"
         ),
         followUps:
           targetLanguage === "es"
-            ? ["Buscar alojamiento", "¿Qué puedes hacer?", "Ver opciones disponibles"]
+            ? ["Buscar alojamiento", "Que puedes hacer?", "Ver opciones disponibles"]
             : ["Search accommodation", "What can you do?", "See available options"],
       };
     }
@@ -1095,7 +1124,7 @@ export const generateAssistantReply = async ({
         reply: pickLanguageText(
           targetLanguage,
           "I can help you find homes and hotels. Tell me what you need and I'll show you options.",
-          "Puedo ayudarte a encontrar casas y hoteles. Contame qué necesitás y te muestro opciones."
+          "Puedo ayudarte a encontrar casas y hoteles. Contame que necesitas y te muestro opciones."
         ),
         followUps: [],
       };
@@ -1104,7 +1133,7 @@ export const generateAssistantReply = async ({
         reply: pickLanguageText(
           targetLanguage,
           "Hello! How can I help you today?",
-          "Hola, ¿en qué puedo ayudarte hoy?"
+          "Hola, en que puedo ayudarte hoy?"
         ),
         followUps: [],
       };

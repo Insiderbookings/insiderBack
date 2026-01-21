@@ -262,7 +262,7 @@ const extractWeatherLocationText = (text) => {
   const normalized = String(text || "").trim();
   if (!normalized) return "";
   const match =
-    normalized.match(/(?:clima|tiempo|weather|temperatura|pronostico|pronóstico)\s*(?:en|in)\s+(.+)/i) ||
+    normalized.match(/(?:clima|tiempo|weather|temperatura|pronostico)\s*(?:en|in)\s+(.+)/i) ||
     normalized.match(/\b(?:en|in)\s+(.+)/i);
   if (!match) return "";
   const raw = match[1] || "";
@@ -337,6 +337,8 @@ export const runAiTurn = async ({
   uiEvent,
   context,
 } = {}) => {
+  const startedAt = Date.now();
+  const timings = {};
   if (!AI_FLAGS.chatEnabled) {
     return {
       inventory: buildEmptyInventory(),
@@ -366,7 +368,9 @@ export const runAiTurn = async ({
   const incomingTripContext = normalizeTripContext(context?.trip ?? context?.tripContext ?? context);
   const userContext = context && typeof context === "object" ? context : null;
 
+  const planStart = Date.now();
   const planCandidate = await extractSearchPlan(normalizedMessages);
+  timings.planMs = Date.now() - planStart;
   const { state: nextState, plan: mergedPlanRaw } = applyPlanToState(existingState, planCandidate);
   const planWithUi = applyUiEventToPlan(mergedPlanRaw, uiEvent);
   const mergedPlan = applyPlanDefaults(planWithUi, nextState);
@@ -387,7 +391,7 @@ export const runAiTurn = async ({
     uiEvent,
     tripContext: nextState.tripContext,
   });
-  const wantsWeather = /(clima|tiempo|weather|temperatura|pronostico|pronóstico)/i.test(latestUserMessage);
+  const wantsWeather = /(clima|tiempo|weather|temperatura|pronostico)/i.test(latestUserMessage);
   const resolvedLocation = wantsWeather
     ? await resolveWeatherLocation({
       text: latestUserMessage,
@@ -409,14 +413,17 @@ export const runAiTurn = async ({
 
   let inventory = buildEmptyInventory();
   if (resolvedNextAction === "RUN_SEARCH") {
+    const searchStart = Date.now();
     inventory = await searchStays(mergedPlan, {
       limit: limits,
       maxResults: AI_LIMITS.maxResults,
     });
+    timings.searchMs = Date.now() - searchStart;
   }
 
   let trip = null;
   if (tripRequest) {
+    const tripStart = Date.now();
     const location = await resolveTripLocation(nextState.tripContext, nextState, mergedPlan, userContext);
     if (location) {
       const suggestions = await buildTripSuggestions({ request: tripRequest, location });
@@ -453,6 +460,7 @@ export const runAiTurn = async ({
         mergedPlan.intent = INTENTS.TRIP;
       }
     }
+    timings.tripMs = Date.now() - tripStart;
   }
 
   const updatedState = updateStageFromAction(nextState, resolvedNextAction);
@@ -467,6 +475,7 @@ export const runAiTurn = async ({
     };
   }
 
+  const renderStart = Date.now();
   const rendered = await renderAssistantPayload({
     plan: mergedPlan,
     messages: normalizedMessages,
@@ -478,6 +487,8 @@ export const runAiTurn = async ({
     weather: resolvedWeather,
     missing: outcome.missing,
   });
+  timings.renderMs = Date.now() - renderStart;
+  timings.totalMs = Date.now() - startedAt;
 
   logAiEvent("turn", {
     sessionId,
@@ -488,6 +499,7 @@ export const runAiTurn = async ({
     homes: inventory.homes?.length || 0,
     hotels: inventory.hotels?.length || 0,
     trip: trip ? trip.suggestions?.length || 0 : 0,
+    timings,
   });
 
   return {

@@ -114,15 +114,15 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
     const partsEs = [];
     const partsEn = [];
     if (missingDest) {
-      partsEs.push("a dónde querés ir");
+      partsEs.push("a donde queres ir");
       partsEn.push("where you want to go");
     }
     if (missingDates) {
-      partsEs.push("cuándo");
+      partsEs.push("cuando");
       partsEn.push("when");
     }
     if (missingGuests) {
-      partsEs.push("cuántos son");
+      partsEs.push("cuantos son");
       partsEn.push("how many guests");
     }
 
