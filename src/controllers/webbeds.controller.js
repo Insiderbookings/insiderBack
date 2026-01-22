@@ -5,6 +5,9 @@ import { formatStaticHotel } from "../utils/webbedsMapper.js"
 import { listSalutations } from "../providers/webbeds/salutations.js"
 import cache from "../services/cache.js"
 import { resolveGeoFromRequest } from "../utils/geoLocation.js"
+import { sendBookingEmail } from "../emailTemplates/booking-email.js"
+import { triggerBookingAutoPrompts, PROMPT_TRIGGERS } from "../services/chat.service.js"
+import { convertCurrency } from "../services/currency.service.js"
 
 const provider = new WebbedsProvider()
 const STATIC_HOTELS_CACHE_TTL_SECONDS = Math.max(
@@ -198,8 +201,8 @@ export const createPaymentIntent = async (req, res, next) => {
   try {
     const {
       bookingId, // Webbeds Booking ID
-      amount,
-      currency = "USD",
+      amount, // USD Amount from WebBeds
+      currency = "USD", // Target currency requested by frontend
       hotelId,
       checkIn,
       checkOut,
@@ -256,11 +259,22 @@ export const createPaymentIntent = async (req, res, next) => {
     const booking_ref = `WB-${Date.now().toString(36).toUpperCase()}`
 
     // Convert amounts
-    const amountNumber = Number(amount)
-    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+    // logic: WebBeds provides cost in USD. We convert to 'currency' (User's currency)
+    const amountUsd = Number(amount)
+    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
       console.warn(`${logPrefix} invalid amount`, { amount })
       return res.status(400).json({ error: "Invalid amount" })
     }
+
+    const { amount: finalAmount, rate: appliedRate, currency: finalCurrency } =
+      await convertCurrency(amountUsd, currency)
+
+    console.info(`${logPrefix} currency conversion`, {
+      base: amountUsd,
+      target: finalAmount,
+      currency: finalCurrency,
+      rate: appliedRate
+    })
 
     const guestAdultsRaw = guests?.adults ?? req.body?.adults
     const guestChildrenRaw = guests?.children ?? req.body?.children
@@ -303,29 +317,29 @@ export const createPaymentIntent = async (req, res, next) => {
         null
       const hotelSnapshot = staticPayload
         ? {
-            id: staticPayload.id,
-            name: staticPayload.name,
-            city: staticPayload.city,
-            country: staticPayload.country,
-            rating: staticPayload.rating ?? null,
-            address: staticPayload.address ?? null,
-            geoPoint: staticPayload.geoPoint ?? null,
-            image: staticPayload.coverImage ?? null,
-            chain: staticPayload.chain ?? null,
-            classification: staticPayload.classification ?? null,
-          }
+          id: staticPayload.id,
+          name: staticPayload.name,
+          city: staticPayload.city,
+          country: staticPayload.country,
+          rating: staticPayload.rating ?? null,
+          address: staticPayload.address ?? null,
+          geoPoint: staticPayload.geoPoint ?? null,
+          image: staticPayload.coverImage ?? null,
+          chain: staticPayload.chain ?? null,
+          classification: staticPayload.classification ?? null,
+        }
         : {
-            id: hotelIdValue,
-            name: null,
-            city: null,
-            country: null,
-            rating: null,
-            address: null,
-            geoPoint: null,
-            image: null,
-            chain: null,
-            classification: null,
-          }
+          id: hotelIdValue,
+          name: null,
+          city: null,
+          country: null,
+          rating: null,
+          address: null,
+          geoPoint: null,
+          image: null,
+          chain: null,
+          classification: null,
+        }
 
       inventorySnapshot = {
         hotelId: hotelIdValue,
@@ -371,8 +385,9 @@ export const createPaymentIntent = async (req, res, next) => {
 
       status: "PENDING",
       payment_status: "UNPAID",
-      gross_price: amountNumber,
-      currency: currency,
+      payment_status: "UNPAID",
+      gross_price: finalAmount,
+      currency: finalCurrency,
 
       meta: {
         hotelId,
@@ -383,12 +398,14 @@ export const createPaymentIntent = async (req, res, next) => {
         guests: { adults, children },
         ...(referral.influencerId
           ? {
-              referral: {
-                influencerUserId: referral.influencerId,
-                code: referral.code || null,
-              },
-            }
+            referral: {
+              influencerUserId: referral.influencerId,
+              code: referral.code || null,
+            },
+          }
           : {}),
+        basePriceUsd: amountUsd,
+        exchangeRate: appliedRate,
       },
       inventory_snapshot: inventorySnapshot,
       guest_snapshot: guestSnapshot,
@@ -425,8 +442,8 @@ export const createPaymentIntent = async (req, res, next) => {
     // 2. Create Stripe Payment Intent
     const stripe = await getStripeClient()
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amountNumber * 100), // cents
-      currency: currency.toLowerCase(),
+      amount: Math.round(finalAmount * 100), // cents
+      currency: finalCurrency.toLowerCase(),
       metadata: {
         bookingId: String(localBooking.id), // Link to LOCAL booking
         webbedsId: String(bookingId),
@@ -494,6 +511,63 @@ export const capturePaymentIntent = async (req, res, next) => {
         updates.booked_at = new Date()
       }
       await booking.update(updates)
+
+      // --- NOTIFICATIONS (Email & Chat) ---
+      try {
+        const hotelId = booking.inventory_id
+        const hotelName = booking.meta?.hotelName || "Hotel"
+        const hotelImage = booking.meta?.hotelImage
+        const addressText = booking.meta?.location || "Hotel Location"
+        const checkInDate = new Date(booking.check_in)
+        const checkOutDate = new Date(booking.check_out)
+        const nightsCount = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24))
+
+        // 1. Send Booking Email
+        await sendBookingEmail(
+          {
+            id: booking.id,
+            bookingCode: booking.booking_ref || booking.id,
+            guestName: booking.guest_name,
+            guests: { adults: booking.adults, children: booking.children },
+            roomsCount: 1,
+            checkIn: booking.check_in,
+            checkOut: booking.check_out,
+            hotel: {
+              name: hotelName,
+              address: addressText,
+              city: null, // extracted if available in meta
+              country: null,
+            },
+            currency: booking.currency || "USD",
+            totals: {
+              total: Number(booking.gross_price || 0),
+              nights: nightsCount,
+            },
+          },
+          booking.guest_email
+        ).catch(err => console.error("[webbeds] sendBookingEmail failed", err))
+
+        // 2. Trigger Chat Auto-Prompts (using Support Bot)
+        const supportUserId = process.env.HOTEL_SUPPORT_USER_ID
+        if (supportUserId && booking.user_id) {
+          triggerBookingAutoPrompts({
+            trigger: PROMPT_TRIGGERS.BOOKING_CREATED,
+            guestUserId: booking.user_id,
+            hostUserId: Number(supportUserId), // The system/bot user
+            homeId: null, // It's a hotel
+            reserveId: booking.id,
+            checkIn: booking.check_in,
+            checkOut: booking.check_out,
+            homeSnapshotName: hotelName,
+            homeSnapshotImage: hotelImage,
+          }).catch(err => console.error("[webbeds] triggerBookingAutoPrompts failed", err))
+        } else {
+          console.warn("[webbeds] Skipped chat prompts: missing HOTEL_SUPPORT_USER_ID or booking.user_id")
+        }
+
+      } catch (notifyErr) {
+        console.error("[webbeds] Notification error", notifyErr)
+      }
     }
 
     return res.json({
@@ -611,25 +685,25 @@ export const listStaticHotels = async (req, res, next) => {
     const maxLimit = hotelIdList.length || hotelId ? 100 : 25
     const safeLimit = Math.min(maxLimit, Math.max(1, limitBase))
     const safeOffset = Math.max(0, Number(offset) || 0)
-      const imagesLimitValue = Number(imagesLimit)
-      const safeImagesLimit = Number.isFinite(imagesLimitValue)
-        ? Math.max(0, Math.min(imagesLimitValue, 200))
-        : (useLite ? 1 : null)
+    const imagesLimitValue = Number(imagesLimit)
+    const safeImagesLimit = Number.isFinite(imagesLimitValue)
+      ? Math.max(0, Math.min(imagesLimitValue, 200))
+      : (useLite ? 1 : null)
 
     const cacheKey = STATIC_HOTELS_CACHE_DISABLED
       ? null
       : buildStaticHotelsCacheKey({
-          cityCode: cityCode ? String(cityCode).trim() : null,
-          countryCode: countryCode ? String(countryCode).trim() : null,
-          q: q ? String(q).trim().toLowerCase() : null,
-          preferred: preferred === "true",
-          hotelId: hotelId ? String(hotelId).trim() : null,
-          hotelIds: hotelIdList.length ? hotelIdList : null,
-          limit: safeLimit,
-          offset: safeOffset,
-          lite: useLite,
-          imagesLimit: safeImagesLimit,
-        })
+        cityCode: cityCode ? String(cityCode).trim() : null,
+        countryCode: countryCode ? String(countryCode).trim() : null,
+        q: q ? String(q).trim().toLowerCase() : null,
+        preferred: preferred === "true",
+        hotelId: hotelId ? String(hotelId).trim() : null,
+        hotelIds: hotelIdList.length ? hotelIdList : null,
+        limit: safeLimit,
+        offset: safeOffset,
+        lite: useLite,
+        imagesLimit: safeImagesLimit,
+      })
 
     if (cacheKey) {
       const cached = await cache.get(cacheKey)
@@ -689,10 +763,10 @@ export const listExploreHotels = async (req, res, next) => {
     const safeLimit = clampNumber(limitBase, 1, EXPLORE_MAX_RESULTS)
     const safeOffset = clampNumber(Number(offset) || 0, 0, EXPLORE_MAX_RESULTS)
     const targetCount = Math.min(EXPLORE_MAX_RESULTS, safeLimit + safeOffset)
-      const imagesLimitValue = Number(imagesLimit)
-      const safeImagesLimit = Number.isFinite(imagesLimitValue)
-        ? Math.max(0, Math.min(imagesLimitValue, 200))
-        : (useLite ? 1 : null)
+    const imagesLimitValue = Number(imagesLimit)
+    const safeImagesLimit = Number.isFinite(imagesLimitValue)
+      ? Math.max(0, Math.min(imagesLimitValue, 200))
+      : (useLite ? 1 : null)
     const resolvedFallbackCity = String(
       fallbackCityCode || cityCode || EXPLORE_DEFAULT_CITY_CODE || "",
     ).trim() || null
@@ -714,15 +788,15 @@ export const listExploreHotels = async (req, res, next) => {
     const cacheKey = EXPLORE_HOTELS_CACHE_DISABLED
       ? null
       : buildExploreHotelsCacheKey({
-          lat: bucketLat,
-          lng: bucketLng,
-          limit: safeLimit,
-          offset: safeOffset,
-          radiusKm: safeRadius,
-          fallbackCityCode: resolvedFallbackCity,
-          lite: useLite,
-          imagesLimit: safeImagesLimit,
-        })
+        lat: bucketLat,
+        lng: bucketLng,
+        limit: safeLimit,
+        offset: safeOffset,
+        radiusKm: safeRadius,
+        fallbackCityCode: resolvedFallbackCity,
+        lite: useLite,
+        imagesLimit: safeImagesLimit,
+      })
 
     if (cacheKey) {
       const cached = await cache.get(cacheKey)
@@ -828,12 +902,12 @@ export const listExploreHotels = async (req, res, next) => {
         source: coords?.source || "default",
         location: coords
           ? {
-              lat: coords.lat,
-              lng: coords.lng,
-              city: coords.geo?.city ?? null,
-              region: coords.geo?.region ?? null,
-              country: coords.geo?.country ?? null,
-            }
+            lat: coords.lat,
+            lng: coords.lng,
+            city: coords.geo?.city ?? null,
+            region: coords.geo?.region ?? null,
+            country: coords.geo?.country ?? null,
+          }
           : null,
         radiusKm: safeRadius,
       },
