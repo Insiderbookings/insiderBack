@@ -90,6 +90,30 @@ const PLACE_CATEGORIES = [
     label: "Clothing",
     keywords: ["ropa", "clothing", "fashion", "boutique", "zapatos", "shoe", "moda"],
   },
+  {
+    id: "pharmacy",
+    type: "pharmacy",
+    label: "Pharmacy",
+    keywords: ["farmacia", "farmacias", "pharmacy", "pharmacies", "medicina", "medicinas"],
+  },
+  {
+    id: "grocery",
+    type: "grocery_or_supermarket",
+    label: "Groceries",
+    keywords: ["supermercado", "super", "grocery", "groceries", "market", "mercado"],
+  },
+  {
+    id: "hospital",
+    type: "hospital",
+    label: "Hospital",
+    keywords: ["hospital", "clinica", "clinics", "clinic", "emergencia", "emergency"],
+  },
+  {
+    id: "atm",
+    type: "atm",
+    label: "ATM",
+    keywords: ["atm", "cajero", "cajeros", "cash", "dinero"],
+  },
 ];
 
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
@@ -160,7 +184,7 @@ const extractTripRequest = ({ text, uiEvent, tripContext }) => {
     normalized
   );
   const wantsNearby =
-    /(cerca|near|nearby|lugares|places|restaurant|restaurante|comida|shopping|compras|ropa|attraction|atraccion)/i.test(
+    /(cerca|near|nearby|lugares|places|restaurant|restaurante|comida|shopping|compras|ropa|attraction|atraccion|farmacia|pharmacy|supermercado|grocery|hospital|clinica|atm|cajero)/i.test(
       normalized
     );
 
@@ -170,6 +194,10 @@ const extractTripRequest = ({ text, uiEvent, tripContext }) => {
   else if (/(parque|park)/i.test(normalized)) specificKeyword = "park";
   else if (/(cafe|coffee)/i.test(normalized)) specificKeyword = "cafe";
   else if (/(bar|pub)/i.test(normalized)) specificKeyword = "bar";
+  else if (/(farmacia|pharmacy)/i.test(normalized)) specificKeyword = "pharmacy";
+  else if (/(supermercado|grocery|market)/i.test(normalized)) specificKeyword = "grocery store";
+  else if (/(hospital|clinica|clinic|emergency)/i.test(normalized)) specificKeyword = "hospital";
+  else if (/(atm|cajero|cash)/i.test(normalized)) specificKeyword = "atm";
   else if (/(sushi|pizza|burger|pasta)/i.test(normalized)) specificKeyword = normalized.match(/(sushi|pizza|burger|pasta)/i)[0];
 
   const keyword = /(vegano|vegan|vegetarian|veg)/i.test(normalized) ? "vegan" : specificKeyword;

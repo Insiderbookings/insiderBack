@@ -1,4 +1,6 @@
 import { generateTripAddons, generateAndSaveTripIntelligence } from "../services/aiAssistant.service.js";
+import { buildTripHubContext } from "../services/tripHubContext.service.js";
+import { getTripWeather } from "../services/tripHubWeather.service.js";
 import { runAiTurn } from "../modules/ai/ai.service.js";
 import models from "../models/index.js";
 
@@ -183,5 +185,239 @@ export const consultWidget = async (req, res) => {
     } catch (error) {
         console.error("[IntelligenceController] Consult Error:", error);
         return res.status(500).json({ error: "Consultation failed" });
+    }
+};
+
+/**
+ * Refreshes weather for a trip hub (cached by location).
+ */
+export const refreshTripWeather = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        if (!bookingId) return res.status(400).json({ error: "Missing bookingId" });
+
+        const booking = await models.Booking.findByPk(bookingId, {
+            include: [
+                {
+                    model: models.StayHotel,
+                    as: "hotelStay",
+                    required: false,
+                    include: [
+                        {
+                            model: models.Hotel,
+                            as: "hotel",
+                            attributes: ["id", "name", "city", "country", "image", "lat", "lng", "address"],
+                        },
+                        {
+                            model: models.WebbedsHotel,
+                            as: "webbedsHotel",
+                            attributes: [
+                                "hotel_id",
+                                "name",
+                                "city_name",
+                                "country_name",
+                                "address",
+                                "lat",
+                                "lng",
+                            ],
+                        },
+                    ],
+                },
+                {
+                    model: models.StayHome,
+                    as: "homeStay",
+                    required: false,
+                    include: [
+                        {
+                            model: models.Home,
+                            as: "home",
+                            attributes: ["id", "title", "host_id"],
+                            include: [
+                                {
+                                    model: models.HomeAddress,
+                                    as: "address",
+                                    attributes: [
+                                        "address_line1",
+                                        "address_line2",
+                                        "city",
+                                        "state",
+                                        "country",
+                                        "latitude",
+                                        "longitude",
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+        const intelligence = await models.StayIntelligence.findOne({ where: { stayId: bookingId } });
+        const context = buildTripHubContext({ booking, intelligence });
+        const locationPayload = {
+            ...(context?.tripContext?.location || {}),
+            locationText: context?.tripContext?.locationText || null,
+        };
+        const force = req.query?.force === "true" || req.body?.force === true;
+
+        const { weather, cached, cacheKey } = await getTripWeather({
+            location: locationPayload,
+            timeZone: context?.derived?.timeZone || null,
+            force,
+        });
+
+        if (weather) {
+            if (intelligence) {
+                const metadata = intelligence.metadata || {};
+                await intelligence.update({
+                    metadata: { ...metadata, weather },
+                    lastGeneratedAt: intelligence.lastGeneratedAt || new Date(),
+                });
+            } else {
+                await models.StayIntelligence.create({
+                    stayId: bookingId,
+                    insights: [],
+                    preparation: [],
+                    metadata: { weather },
+                    lastGeneratedAt: new Date(),
+                });
+            }
+        }
+
+        return res.json({
+            bookingId,
+            cached,
+            cacheKey,
+            weather: weather || null,
+        });
+    } catch (error) {
+        console.error("[IntelligenceController] refreshTripWeather error:", error);
+        return res.status(500).json({ error: "Failed to refresh weather" });
+    }
+};
+
+/**
+ * Debug endpoint to validate trip hub context assembly.
+ */
+export const getTripHubContext = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const userId = Number(req.user?.id);
+        if (!bookingId) return res.status(400).json({ error: "Missing bookingId" });
+        const role = Number(req.user?.role);
+        const isStaff = role === 1 || role === 100;
+
+        const booking = await models.Booking.findByPk(bookingId, {
+            include: [
+                {
+                    model: models.StayHotel,
+                    as: "hotelStay",
+                    required: false,
+                    include: [
+                        {
+                            model: models.Hotel,
+                            as: "hotel",
+                            attributes: ["id", "name", "city", "country", "image", "lat", "lng", "address"],
+                        },
+                        {
+                            model: models.WebbedsHotel,
+                            as: "webbedsHotel",
+                            attributes: [
+                                "hotel_id",
+                                "name",
+                                "city_name",
+                                "country_name",
+                                "address",
+                                "lat",
+                                "lng",
+                                "images",
+                                "hotel_check_in",
+                                "hotel_check_out",
+                            ],
+                        },
+                    ],
+                },
+                {
+                    model: models.StayHome,
+                    as: "homeStay",
+                    required: false,
+                    include: [
+                        {
+                            model: models.Home,
+                            as: "home",
+                            attributes: ["id", "title", "host_id"],
+                            include: [
+                                {
+                                    model: models.HomeAddress,
+                                    as: "address",
+                                    attributes: [
+                                        "address_line1",
+                                        "address_line2",
+                                        "city",
+                                        "state",
+                                        "country",
+                                        "latitude",
+                                        "longitude",
+                                    ],
+                                },
+                                {
+                                    model: models.HomeMedia,
+                                    as: "media",
+                                    attributes: ["url", "is_cover", "order"],
+                                    separate: true,
+                                    limit: 4,
+                                    order: [
+                                        ["is_cover", "DESC"],
+                                        ["order", "ASC"],
+                                        ["id", "ASC"],
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    model: models.BookingUser,
+                    as: "members",
+                    required: false,
+                    attributes: ["user_id", "status"],
+                },
+            ],
+        });
+
+        if (!booking) {
+            return res.status(404).json({ error: "Booking not found" });
+        }
+
+        if (Number.isFinite(userId)) {
+            const isOwner = Number(booking.user_id) === userId;
+            const isHost = Number(booking.homeStay?.host_id) === userId;
+            const isMember = Array.isArray(booking.members)
+                ? booking.members.some(
+                    (member) =>
+                        Number(member.user_id) === userId &&
+                        String(member.status || "").toUpperCase() === "ACCEPTED"
+                )
+                : false;
+
+            if (!isOwner && !isHost && !isStaff && !isMember) {
+                return res.status(403).json({ error: "Forbidden" });
+            }
+        }
+
+        const intelligence = await models.StayIntelligence.findOne({ where: { stayId: bookingId } });
+        const includeSuggestions = req.query?.includeSuggestions === "true";
+        const context = buildTripHubContext({ booking, intelligence });
+        if (includeSuggestions) {
+            const metadata = intelligence?.metadata || {};
+            context.suggestions = Array.isArray(metadata.suggestions) ? metadata.suggestions : [];
+        }
+        return res.json(context);
+    } catch (error) {
+        console.error("[IntelligenceController] getTripHubContext error:", error);
+        return res.status(500).json({ error: "Failed to fetch trip hub context" });
     }
 };

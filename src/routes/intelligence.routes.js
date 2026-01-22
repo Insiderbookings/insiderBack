@@ -11,6 +11,18 @@ const router = express.Router();
 router.post("/trip/:bookingId", authenticate, IntelligenceController.getTripIntelligence);
 
 /**
+ * @route POST /api/intelligence/trip/:bookingId/refresh-weather
+ * @desc Refresh cached weather for a trip
+ */
+router.post("/trip/:bookingId/refresh-weather", authenticate, IntelligenceController.refreshTripWeather);
+
+/**
+ * @route GET /api/intelligence/trip/:bookingId/context
+ * @desc Debug trip hub context assembly
+ */
+router.get("/trip/:bookingId/context", IntelligenceController.getTripHubContext);
+
+/**
  * @route POST /api/intelligence/consult
  * @desc Consult the AI from a specific widget context
  */

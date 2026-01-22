@@ -90,12 +90,40 @@ const normalizePlace = (item, origin) => {
   };
 };
 
+const fetchPlaceDetailsPhoto = async (placeId) => {
+  if (!placeId) return null;
+  const apiKey =
+    process.env.GOOGLE_PLACES_API_KEY ||
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.GOOGLE_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const { data } = await axios.get("https://maps.googleapis.com/maps/api/place/details/json", {
+      params: {
+        place_id: placeId,
+        key: apiKey,
+        fields: "photos",
+      },
+      timeout: 5000,
+    });
+    const photos = Array.isArray(data?.result?.photos) ? data.result.photos : [];
+    const ref = photos[0]?.photo_reference;
+    if (!ref) return null;
+    return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${ref}&key=${apiKey}`;
+  } catch (err) {
+    console.warn("[ai] places details failed", err?.message || err);
+    return null;
+  }
+};
+
 export const getNearbyPlaces = async ({
   location,
   radiusKm,
   type,
   keyword,
   limit = 6,
+  hydratePhotos = false,
 } = {}) => {
   const apiKey =
     process.env.GOOGLE_PLACES_API_KEY ||
@@ -124,6 +152,19 @@ export const getNearbyPlaces = async ({
     const items = data.results
       .map((item) => normalizePlace(item, coords))
       .filter(Boolean);
+
+    if (hydratePhotos) {
+      const withPhoto = [];
+      for (const item of items) {
+        if (!item.photoUrl && item.id) {
+          const detailPhoto = await fetchPlaceDetailsPhoto(item.id);
+          if (detailPhoto) item.photoUrl = detailPhoto;
+        }
+        withPhoto.push(item);
+      }
+      return withPhoto.slice(0, Math.max(1, Math.min(10, Number(limit) || 6)));
+    }
+
     const sorted = items.sort((a, b) => {
       if (a.distanceKm != null && b.distanceKm != null) {
         return a.distanceKm - b.distanceKm;

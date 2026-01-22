@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import models from "../models/index.js";
 import { sendPushToUser } from "./pushNotifications.service.js";
 import { getWeatherSummary } from "../modules/ai/tools/tool.weather.js";
+import { getNearbyPlaces } from "../modules/ai/tools/tool.places.js";
 import { getLocalNews } from "../modules/ai/tools/tool.news.js";
 
 const DEFAULT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini";
@@ -65,6 +66,36 @@ const languageInstruction = (lang) =>
   lang === "es"
     ? "Responde en espanol neutro (ajusta modismos si corresponde)."
     : "Reply in neutral English (and mirror idioms if needed).";
+
+const PLACE_SUGGESTION_CATEGORIES = [
+  { id: "food", title: "Where to Eat", type: "restaurant" },
+  { id: "drinks", title: "Drinks & Nightlife", type: "bar" },
+  { id: "things", title: "Things to Do", type: "tourist_attraction" },
+  { id: "pharmacy", title: "Pharmacies", type: "pharmacy" },
+  { id: "grocery", title: "Groceries", type: "grocery_or_supermarket" },
+  { id: "hospital", title: "Hospitals", type: "hospital" },
+  { id: "atm", title: "ATMs", type: "atm" },
+];
+
+const buildPlaceSuggestions = async ({ location, limit = 6 } = {}) => {
+  if (!location) return [];
+  const groups = await Promise.all(
+    PLACE_SUGGESTION_CATEGORIES.map(async (category) => {
+      const items = await getNearbyPlaces({
+        location,
+        type: category.type,
+        limit,
+        hydratePhotos: true,
+      });
+      return {
+        id: category.id,
+        title: category.title,
+        items,
+      };
+    })
+  );
+  return groups.filter((group) => Array.isArray(group.items) && group.items.length);
+};
 
 const pickLanguageText = (lang, english, spanish) => (lang === "es" ? spanish : english);
 
@@ -757,11 +788,13 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
       location,
       lang
     });
+    const placeSuggestions = await buildPlaceSuggestions({ location });
     debugTripHub("intelligence.addons", {
       stayId,
       insights: addons.insights?.length || 0,
       preparation: addons.preparation?.length || 0,
       suggestions: Array.isArray(addons.suggestions) ? addons.suggestions.length : 0,
+      placeSuggestions: Array.isArray(placeSuggestions) ? placeSuggestions.length : 0,
       itinerary: addons.itinerary?.length || 0,
     });
 
@@ -783,7 +816,7 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
       timeContext: addons.timeContext,
       localPulse: addons.localPulse,
       localLingo: addons.localLingo,
-      suggestions: addons.suggestions,
+      suggestions: placeSuggestions.length ? placeSuggestions : addons.suggestions,
       itinerary: addons.itinerary,
     };
     const alreadyNotified = Boolean(
