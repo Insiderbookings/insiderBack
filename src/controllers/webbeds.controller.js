@@ -8,6 +8,7 @@ import { resolveGeoFromRequest } from "../utils/geoLocation.js"
 import { sendBookingEmail } from "../emailTemplates/booking-email.js"
 import { triggerBookingAutoPrompts, PROMPT_TRIGGERS } from "../services/chat.service.js"
 import { convertCurrency } from "../services/currency.service.js"
+import { planReferralFirstBookingDiscount } from "../services/referralRewards.service.js"
 
 const provider = new WebbedsProvider()
 const STATIC_HOTELS_CACHE_TTL_SECONDS = Math.max(
@@ -68,6 +69,12 @@ const maskPhone = (phone = "") => {
   if (!value) return null
   const tail = value.slice(-2)
   return `***${tail}`
+}
+
+const roundCurrency = (value) => {
+  const numeric = Number(value || 0)
+  if (!Number.isFinite(numeric)) return 0
+  return Number.parseFloat(numeric.toFixed(2))
 }
 
 const parseCsvList = (value) => {
@@ -364,6 +371,23 @@ export const createPaymentIntent = async (req, res, next) => {
       children,
     }
 
+    const totalBeforeDiscount = roundCurrency(finalAmount)
+    let referralFirstBookingPlan = null
+    let referralFirstBookingDiscount = 0
+    if (referral.influencerId && req.user?.id) {
+      referralFirstBookingPlan = await planReferralFirstBookingDiscount({
+        influencerUserId: referral.influencerId,
+        userId: req.user.id,
+        totalBeforeDiscount,
+        currency: finalCurrency,
+      })
+      referralFirstBookingDiscount = referralFirstBookingPlan?.apply
+        ? referralFirstBookingPlan.discountAmount
+        : 0
+    }
+    const totalDiscountAmount = roundCurrency(referralFirstBookingDiscount)
+    const grossTotal = roundCurrency(Math.max(0, totalBeforeDiscount - totalDiscountAmount))
+
     const localBooking = await models.Booking.create({
       booking_ref,
       user_id: req.user?.id || null,
@@ -386,8 +410,22 @@ export const createPaymentIntent = async (req, res, next) => {
       status: "PENDING",
       payment_status: "UNPAID",
       payment_status: "UNPAID",
-      gross_price: finalAmount,
+      gross_price: grossTotal,
       currency: finalCurrency,
+      pricing_snapshot: {
+        totalBeforeDiscount,
+        referralFirstBooking: referralFirstBookingPlan?.apply
+          ? {
+            pct: referralFirstBookingPlan.pct,
+            amount: roundCurrency(referralFirstBookingDiscount),
+            currency: referralFirstBookingPlan.currency,
+            applied: true,
+          }
+          : null,
+        totalDiscountAmount,
+        total: grossTotal,
+        currency: finalCurrency,
+      },
 
       meta: {
         hotelId,
@@ -401,6 +439,16 @@ export const createPaymentIntent = async (req, res, next) => {
             referral: {
               influencerUserId: referral.influencerId,
               code: referral.code || null,
+            },
+          }
+          : {}),
+        ...(referralFirstBookingPlan?.apply
+          ? {
+            referralFirstBooking: {
+              pct: referralFirstBookingPlan.pct,
+              amount: roundCurrency(referralFirstBookingDiscount),
+              currency: referralFirstBookingPlan.currency,
+              applied: true,
             },
           }
           : {}),
@@ -442,7 +490,7 @@ export const createPaymentIntent = async (req, res, next) => {
     // 2. Create Stripe Payment Intent
     const stripe = await getStripeClient()
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(finalAmount * 100), // cents
+      amount: Math.round(grossTotal * 100), // cents
       currency: finalCurrency.toLowerCase(),
       metadata: {
         bookingId: String(localBooking.id), // Link to LOCAL booking
@@ -465,7 +513,21 @@ export const createPaymentIntent = async (req, res, next) => {
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
       localBookingId: localBooking.id,
-      bookingRef: booking_ref
+      bookingRef: booking_ref,
+      pricingSnapshot: {
+        totalBeforeDiscount,
+        referralFirstBooking: referralFirstBookingPlan?.apply
+          ? {
+            pct: referralFirstBookingPlan.pct,
+            amount: roundCurrency(referralFirstBookingDiscount),
+            currency: referralFirstBookingPlan.currency,
+            applied: true,
+          }
+          : null,
+        totalDiscountAmount,
+        total: grossTotal,
+        currency: finalCurrency,
+      },
     })
 
   } catch (error) {
