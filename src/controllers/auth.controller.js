@@ -29,6 +29,7 @@ const REFRESH_TOKEN_TTL_SECONDS = REFRESH_TOKEN_DAYS * 24 * 60 * 60;
 const REFRESH_COOKIE_NAME = process.env.REFRESH_COOKIE_NAME || "insider_rt";
 const REFRESH_COOKIE_DOMAIN = process.env.REFRESH_COOKIE_DOMAIN || ".insiderbookings.com";
 const IS_PROD = process.env.NODE_ENV === "production";
+const DEBUG_AUTH_LOGIN_TOKEN = process.env.DEBUG_AUTH_LOGIN_TOKEN === "true";
 const EMAIL_VERIFICATION_TTL_MINUTES_RAW = Number(process.env.EMAIL_VERIFICATION_TTL_MINUTES);
 const EMAIL_VERIFICATION_TTL_MINUTES =
   Number.isFinite(EMAIL_VERIFICATION_TTL_MINUTES_RAW) && EMAIL_VERIFICATION_TTL_MINUTES_RAW > 0
@@ -77,6 +78,11 @@ const USER_INCLUDES = [
   { model: models.HostProfile, as: "hostProfile" },
   { model: models.GuestProfile, as: "guestProfile" },
 ];
+
+const logLoginToken = (label, token) => {
+  if (!DEBUG_AUTH_LOGIN_TOKEN || !token) return;
+  console.log(`[auth.login] ${label}:`, token);
+};
 
 const presentUser = (user) => {
   if (!user) return null;
@@ -475,6 +481,7 @@ export const loginStaff = async (req, res) => {
       roleName: staff.role.name,
       roleId: staff.role.id,
     });
+    logLoginToken("staff", token);
 
     /* 5. Respuesta */
     console.log(hotels, "hotels");
@@ -543,6 +550,7 @@ export const registerUser = async (req, res) => {
         at: referral.at ? referral.at.toISOString?.() ?? referral.at : null,
       },
     })
+    logLoginToken("register", accessToken);
     const safeUser = await loadSafeUser(user.id)
 
     // Emit real-time activity to Admin Dashboard
@@ -603,13 +611,10 @@ export const loginUser = async (req, res) => {
     await ensureGuestProfile(user.id);
     await user.update({ last_login_at: new Date() });
     const { accessToken, refreshToken } = await issueUserSession({ user, req, res });
-    if (process.env.NODE_ENV != "production") {
-      console.log("[loginUser] issued token:", accessToken);
-    }
+    logLoginToken("set-password", accessToken);
+    logLoginToken("apple", accessToken);
+    logLoginToken("user", accessToken);
     const safeUser = await loadSafeUser(user.id);
-    if (process.env.NODE_ENV != "production") {
-      console.log("[loginUser] response user:", JSON.stringify(safeUser, null, 2));
-    }
     const response = { token: accessToken, user: safeUser };
     if (shouldExposeRefreshToken(req)) response.refreshToken = refreshToken;
     return res.json(response);
@@ -942,6 +947,7 @@ export const googleExchange = async (req, res) => {
 
     // 4) Emitir JWT (mismo formato que login local)
     const { accessToken, refreshToken } = await issueUserSession({ user, req, res })
+    logLoginToken("google", accessToken);
     const safeUser = await loadSafeUser(user.id)
 
     if (isNew) {
@@ -1311,6 +1317,9 @@ export const refreshSession = async (req, res) => {
   const safeUser = await loadSafeUser(userId);
   const response = { token: accessToken, user: safeUser };
   if (shouldExposeRefreshToken(req)) response.refreshToken = nextRefreshToken;
+  if (process.env.DEBUG_AUTH_REFRESH_TOKEN === "true") {
+    console.log("[auth.refresh] accessToken:", accessToken);
+  }
   return res.json(response);
 };
 

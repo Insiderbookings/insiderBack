@@ -346,6 +346,11 @@ export class WebbedsProvider extends HotelProvider {
         countryCode,
         rateBasis,
       } = req.query
+      const defaultCurrencyCode = process.env.WEBBEDS_DEFAULT_CURRENCY_CODE || "520"
+      const normalizeCurrency = () => {
+        // WebBeds account is USD-only; force USD currency code (520) for all search requests.
+        return defaultCurrencyCode
+      }
 
       const resolveRateBasis = (value) => {
         const parsed = Number(value)
@@ -388,7 +393,7 @@ export class WebbedsProvider extends HotelProvider {
       const payloadOptions = {
         checkIn,
         checkOut,
-        currency,
+        currency: normalizeCurrency(),
         occupancies,
         nationality,
         residence,
@@ -507,14 +512,9 @@ export class WebbedsProvider extends HotelProvider {
 
       const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102"
       const defaultCurrencyCode = process.env.WEBBEDS_DEFAULT_CURRENCY_CODE || "520"
-      const normalizeCurrency = (value) => {
-        const str = String(value ?? "").trim()
-        if (/^\d+$/.test(str) && Number(str) > 0) return str
-        const upper = str.toUpperCase()
-        if (upper === "USD") return "520"
-        if (upper === "EUR") return "978"
-        if (upper === "GBP") return "826"
-        return defaultCurrencyCode
+      const normalizeCurrency = () => {
+        // WebBeds account is USD-only; force USD currency code (520) for all requests.
+        return "520"
       }
       const ensureNumericCode = (value, fallback) => {
         if (value === undefined || value === null || value === "") {
@@ -676,14 +676,9 @@ export class WebbedsProvider extends HotelProvider {
 
       const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102"
       const defaultCurrencyCode = process.env.WEBBEDS_DEFAULT_CURRENCY_CODE || "520"
-      const normalizeCurrency = (value) => {
-        const str = String(value ?? "").trim()
-        if (/^\d+$/.test(str) && Number(str) > 0) return str
-        const upper = str.toUpperCase()
-        if (upper === "USD") return "520"
-        if (upper === "EUR") return "978"
-        if (upper === "GBP") return "826"
-        return defaultCurrencyCode
+      const normalizeCurrency = () => {
+        // WebBeds account is USD-only; force USD currency code (520) for all requests.
+        return "520"
       }
       const ensureNumericCode = (value, fallback) => {
         if (value === undefined || value === null || value === "") {

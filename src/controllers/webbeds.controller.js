@@ -8,8 +8,13 @@ import { resolveGeoFromRequest } from "../utils/geoLocation.js"
 import { sendBookingEmail } from "../emailTemplates/booking-email.js"
 import { triggerBookingAutoPrompts, PROMPT_TRIGGERS } from "../services/chat.service.js"
 import { convertCurrency } from "../services/currency.service.js"
+import { resolveEnabledCurrency } from "../services/currencySettings.service.js"
 
 const provider = new WebbedsProvider()
+const STRIPE_FX_DEBUG = process.env.STRIPE_FX_DEBUG === "true"
+const logStripeFxDebug = (...args) => {
+  if (STRIPE_FX_DEBUG) console.log("[stripe.fx]", ...args)
+}
 const STATIC_HOTELS_CACHE_TTL_SECONDS = Math.max(
   30,
   Number(process.env.WEBBEDS_STATIC_HOTELS_CACHE_TTL_SECONDS || 300),
@@ -203,6 +208,7 @@ export const createPaymentIntent = async (req, res, next) => {
       bookingId, // Webbeds Booking ID
       amount, // USD Amount from WebBeds
       currency = "USD", // Target currency requested by frontend
+      flowId,
       hotelId,
       checkIn,
       checkOut,
@@ -217,11 +223,15 @@ export const createPaymentIntent = async (req, res, next) => {
       req.headers["x-correlation-id"] ||
       `webbeds-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
     const logPrefix = `[webbeds] createPaymentIntent ${requestTag}`
+    const requestedCurrency = currency
+    const resolvedCurrency = await resolveEnabledCurrency(requestedCurrency)
 
     console.info(`${logPrefix} request`, {
       bookingId,
       amount,
-      currency,
+      currency: resolvedCurrency,
+      requestedCurrency,
+      flowId,
       hotelId,
       checkIn,
       checkOut,
@@ -266,14 +276,226 @@ export const createPaymentIntent = async (req, res, next) => {
       return res.status(400).json({ error: "Invalid amount" })
     }
 
-    const { amount: finalAmount, rate: appliedRate, currency: finalCurrency } =
-      await convertCurrency(amountUsd, currency)
+    const stripe = await getStripeClient()
+    const stripeFxEnabled =
+      String(process.env.STRIPE_FX_QUOTES_ENABLED || "false").toLowerCase() === "true"
+    const stripeFxLockDuration =
+      process.env.STRIPE_FX_QUOTES_LOCK_DURATION || "five_minutes"
+    const stripeFxToCurrency = String(
+      process.env.STRIPE_FX_QUOTES_TO_CURRENCY || "USD",
+    ).toLowerCase()
+    const stripeFxVersionRaw = process.env.STRIPE_FX_QUOTES_VERSION || ""
+    const stripeFxVersion = stripeFxVersionRaw.replace(/^['"]|['"]$/g, "") || null
+    const fxQuoteTtlSeconds = Number(process.env.FX_QUOTE_TTL_SECONDS || 900)
+
+    logStripeFxDebug("config", {
+      enabled: stripeFxEnabled,
+      lockDuration: stripeFxLockDuration,
+      toCurrency: stripeFxToCurrency,
+      version: stripeFxVersion || null,
+    })
+
+    const createStripeFxQuote = async (fromCurrency, lockDurationOverride) => {
+      const lockDuration = lockDurationOverride || stripeFxLockDuration
+      const payload = {
+        from_currencies: [String(fromCurrency).toLowerCase()],
+        to_currency: stripeFxToCurrency,
+        lock_duration: lockDuration,
+        usage: { type: "payment" },
+      }
+      logStripeFxDebug("quote.request", {
+        fromCurrency: payload.from_currencies?.[0] || null,
+        toCurrency: payload.to_currency,
+        lockDuration: payload.lock_duration,
+      })
+      const options = stripeFxVersion
+        ? { apiVersion: stripeFxVersion }
+        : undefined
+      const response = await stripe.rawRequest("POST", "/v1/fx_quotes", payload, options)
+      const body = response?.body || response?.data || response
+      logStripeFxDebug("quote.response", {
+        id: body?.id || null,
+        created: body?.created || null,
+        lockExpiresAt: body?.lock_expires_at || null,
+        currencies: body?.rates ? Object.keys(body.rates) : null,
+      })
+      return body
+    }
+
+    let finalAmount = null
+    let appliedRate = null
+    let finalCurrency = null
+    let rateSource = null
+    let rateDate = null
+    let fxQuoteUsed = false
+    let stripeFxQuoteId = null
+    let stripeFxExpiresAt = null
+    let stripeFxBaseRate = null
+    let stripeFxFeeRate = null
+    let stripeFxReferenceRate = null
+    let stripeFxReferenceProvider = null
+    let flow = null
+    if (flowId) {
+      flow = await models.BookingFlow.findByPk(flowId)
+    }
+
+    const extractSupportedLockDurations = (message) => {
+      if (!message) return []
+      const matches = String(message).match(/\"([a-z_]+)\"/gi)
+      if (!matches) return []
+      return matches
+        .map((value) => value.replace(/\"/g, "").trim())
+        .filter(Boolean)
+    }
+
+    const pickFallbackLockDuration = (supported) => {
+      if (!Array.isArray(supported) || supported.length === 0) return null
+      if (supported.includes("none")) return "none"
+      return supported[0]
+    }
+
+    const requestStripeFxQuote = async (fromCurrency) => {
+      try {
+        return await createStripeFxQuote(fromCurrency)
+      } catch (error) {
+        const supported = extractSupportedLockDurations(error?.message)
+        const fallbackDuration = pickFallbackLockDuration(supported)
+        if (fallbackDuration && fallbackDuration !== stripeFxLockDuration) {
+          logStripeFxDebug("quote.retry", {
+            reason: "unsupported_lock_duration",
+            fallbackDuration,
+            supported,
+          })
+          return await createStripeFxQuote(fromCurrency, fallbackDuration)
+        }
+        throw error
+      }
+    }
+
+    if (stripeFxEnabled && resolvedCurrency && String(resolvedCurrency).toUpperCase() !== "USD") {
+      try {
+        const stripeFx = await requestStripeFxQuote(resolvedCurrency)
+        const rateEntry =
+          stripeFx?.rates?.[String(resolvedCurrency).toLowerCase()] ||
+          stripeFx?.rates?.[String(resolvedCurrency).toUpperCase()] ||
+          null
+        const rateDetails = rateEntry?.rate_details || {}
+        const exchangeRate = Number(rateEntry?.exchange_rate || rateEntry?.rate || null)
+        if (Number.isFinite(exchangeRate) && exchangeRate > 0) {
+          finalAmount = amountUsd / exchangeRate
+          appliedRate = exchangeRate
+          finalCurrency = String(resolvedCurrency).toUpperCase()
+          rateSource = "stripe_fx"
+          rateDate = stripeFx?.created
+            ? new Date(Number(stripeFx.created) * 1000).toISOString()
+            : null
+          fxQuoteUsed = true
+          stripeFxQuoteId = stripeFx?.id || null
+          stripeFxExpiresAt = stripeFx?.lock_expires_at || null
+          stripeFxBaseRate = Number(rateDetails?.base_rate || rateEntry?.base_rate || null)
+          stripeFxFeeRate = Number(
+            rateDetails?.fx_fee_rate || rateEntry?.fx_fee_rate || rateEntry?.fee_rate || null,
+          )
+          stripeFxReferenceRate = Number(rateDetails?.reference_rate || null)
+          stripeFxReferenceProvider = rateDetails?.reference_rate_provider || null
+          logStripeFxDebug("quote.applied", {
+            quoteId: stripeFxQuoteId,
+            exchangeRate,
+            baseRate: stripeFxBaseRate,
+            feeRate: stripeFxFeeRate,
+            referenceRate: stripeFxReferenceRate,
+            referenceProvider: stripeFxReferenceProvider,
+            expiresAt: stripeFxExpiresAt || null,
+            targetCurrency: finalCurrency,
+          })
+        }
+      } catch (error) {
+        console.warn(`${logPrefix} stripe fx quote failed`, error?.message || error)
+        logStripeFxDebug("quote.error", { message: error?.message || error })
+      }
+    } else {
+      logStripeFxDebug("quote.skip", {
+        enabled: stripeFxEnabled,
+        resolvedCurrency: resolvedCurrency || null,
+      })
+    }
+
+    if (!finalAmount || !finalCurrency) {
+      if (flowId) {
+        const fxQuote = flow?.pricing_snapshot_priced?.fxQuote ?? null
+        if (fxQuote?.amount && fxQuote?.currency) {
+          const expiresAt = fxQuote.expiresAt ? Date.parse(fxQuote.expiresAt) : null
+          if (expiresAt && Date.now() > expiresAt) {
+            return res.status(409).json({ error: "FX quote expired", code: "FX_QUOTE_EXPIRED" })
+          }
+          finalAmount = Number(fxQuote.amount)
+          appliedRate = Number(fxQuote.rate) || null
+          finalCurrency = String(fxQuote.currency || fxQuote.targetCurrency || currency).toUpperCase()
+          rateSource = fxQuote.source || null
+          rateDate = fxQuote.rateDate || null
+          fxQuoteUsed = true
+          logStripeFxDebug("fallback.flowQuote", {
+            flowId,
+            amount: finalAmount,
+            currency: finalCurrency,
+            rate: appliedRate,
+            rateDate,
+          })
+        }
+      }
+    }
+
+    if (!finalAmount || !finalCurrency) {
+      const converted = await convertCurrency(amountUsd, resolvedCurrency)
+      finalAmount = converted.amount
+      appliedRate = converted.rate
+      finalCurrency = converted.currency
+      rateSource = converted.source
+      rateDate = converted.rateDate
+      logStripeFxDebug("fallback.cache", {
+        amount: finalAmount,
+        currency: finalCurrency,
+        rate: appliedRate,
+        rateDate,
+        source: rateSource,
+      })
+      if (flow && finalCurrency && Number.isFinite(appliedRate) && finalAmount) {
+        const existingFxQuote = flow.pricing_snapshot_priced?.fxQuote ?? null
+        const existingExpiresAt = existingFxQuote?.expiresAt
+          ? Date.parse(existingFxQuote.expiresAt)
+          : null
+        const isExpired = existingExpiresAt && Date.now() > existingExpiresAt
+        if (!existingFxQuote || isExpired) {
+          const pricingSnapshot =
+            flow.pricing_snapshot_priced && typeof flow.pricing_snapshot_priced === "object"
+              ? { ...flow.pricing_snapshot_priced }
+              : {}
+          const expiresAt = new Date(Date.now() + fxQuoteTtlSeconds * 1000).toISOString()
+          pricingSnapshot.fxQuote = {
+            baseCurrency: "USD",
+            targetCurrency: finalCurrency,
+            rate: appliedRate,
+            amount: finalAmount,
+            source: rateSource || null,
+            rateDate: rateDate || null,
+            expiresAt,
+          }
+          flow.pricing_snapshot_priced = pricingSnapshot
+          await flow.save()
+        }
+      }
+    }
 
     console.info(`${logPrefix} currency conversion`, {
       base: amountUsd,
       target: finalAmount,
       currency: finalCurrency,
-      rate: appliedRate
+      rate: appliedRate,
+      source: rateSource,
+      rateDate,
+      fxQuoteUsed,
+      requestedCurrency,
+      resolvedCurrency,
     })
 
     const guestAdultsRaw = guests?.adults ?? req.body?.adults
@@ -406,6 +628,16 @@ export const createPaymentIntent = async (req, res, next) => {
           : {}),
         basePriceUsd: amountUsd,
         exchangeRate: appliedRate,
+        exchangeRateSource: rateSource || null,
+        exchangeRateDate: rateDate || null,
+        fxQuoteUsed,
+        stripeFxQuoteId,
+        stripeFxRate: stripeFxQuoteId ? appliedRate : null,
+        stripeFxBaseRate,
+        stripeFxFeeRate,
+        stripeFxReferenceRate,
+        stripeFxReferenceProvider,
+        stripeFxExpiresAt,
       },
       inventory_snapshot: inventorySnapshot,
       guest_snapshot: guestSnapshot,
@@ -440,10 +672,35 @@ export const createPaymentIntent = async (req, res, next) => {
     }
 
     // 2. Create Stripe Payment Intent
-    const stripe = await getStripeClient()
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(finalAmount * 100), // cents
-      currency: finalCurrency.toLowerCase(),
+    const zeroDecimalCurrencies = new Set([
+      "BIF",
+      "CLP",
+      "DJF",
+      "GNF",
+      "JPY",
+      "KMF",
+      "KRW",
+      "MGA",
+      "PYG",
+      "RWF",
+      "UGX",
+      "VND",
+      "VUV",
+      "XAF",
+      "XOF",
+      "XPF",
+    ])
+    const threeDecimalCurrencies = new Set(["BHD", "JOD", "KWD", "OMR", "TND"])
+    const currencyUpper = String(finalCurrency || "USD").toUpperCase()
+    const minorUnit = threeDecimalCurrencies.has(currencyUpper)
+      ? 3
+      : zeroDecimalCurrencies.has(currencyUpper)
+        ? 0
+        : 2
+    const amountForStripe = Math.round(finalAmount * Math.pow(10, minorUnit))
+    const paymentIntentParams = {
+      amount: amountForStripe,
+      currency: currencyUpper.toLowerCase(),
       metadata: {
         bookingId: String(localBooking.id), // Link to LOCAL booking
         webbedsId: String(bookingId),
@@ -451,6 +708,30 @@ export const createPaymentIntent = async (req, res, next) => {
       },
       capture_method: "manual",
       automatic_payment_methods: { enabled: true },
+    }
+
+    if (stripeFxQuoteId) {
+      paymentIntentParams.fx_quote = stripeFxQuoteId
+    }
+
+    const paymentIntentOptions =
+      stripeFxQuoteId && stripeFxVersion ? { apiVersion: stripeFxVersion } : undefined
+    logStripeFxDebug("paymentIntent.create", {
+      amount: amountForStripe,
+      currency: currencyUpper.toLowerCase(),
+      fxQuote: stripeFxQuoteId || null,
+      apiVersion: paymentIntentOptions?.apiVersion || null,
+    })
+
+    const paymentIntent = await stripe.paymentIntents.create(
+      paymentIntentParams,
+      paymentIntentOptions,
+    )
+    logStripeFxDebug("paymentIntent.created", {
+      id: paymentIntent?.id || null,
+      currency: paymentIntent?.currency || null,
+      amount: paymentIntent?.amount || null,
+      fxQuote: paymentIntent?.fx_quote || stripeFxQuoteId || null,
     })
     console.info(`${logPrefix} payment intent created`, { paymentIntentId: paymentIntent.id })
 

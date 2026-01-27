@@ -88,6 +88,7 @@ import WebbedsRoomAmenityCatalogModel from "./WebbedsRoomAmenityCatalog.js";
 import WebbedsHotelChainModel from "./WebbedsHotelChain.js";
 import WebbedsHotelClassificationModel from "./WebbedsHotelClassification.js";
 import WebbedsRateBasisModel from "./WebbedsRateBasis.js";
+import CurrencySettingModel from "./CurrencySetting.js";
 
 import WcTenantFactory from "./WcTenant.js";
 import WcAccountFactory from "./WcAccount.js";
@@ -218,6 +219,7 @@ const models = {
   WebbedsHotelChain: WebbedsHotelChainModel(sequelize),
   WebbedsHotelClassification: WebbedsHotelClassificationModel(sequelize),
   WebbedsRateBasis: WebbedsRateBasisModel(sequelize),
+  CurrencySetting: CurrencySettingModel(sequelize),
 
   WcTenant: WcTenantFactory(sequelize),
   WcAccount: WcAccountFactory(sequelize),

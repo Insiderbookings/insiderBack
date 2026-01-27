@@ -4,6 +4,7 @@ import { sendPushToUser } from "./pushNotifications.service.js";
 import { getWeatherSummary } from "../modules/ai/tools/tool.weather.js";
 import { getNearbyPlaces } from "../modules/ai/tools/tool.places.js";
 import { getLocalNews } from "../modules/ai/tools/tool.news.js";
+import { enqueueTripHubEnsure } from "./tripHubPacksQueue.service.js";
 
 const DEFAULT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini";
 const apiKey = process.env.OPENAI_API_KEY;
@@ -781,6 +782,15 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
   try {
     const { StayIntelligence, Stay } = models;
     const location = tripContext?.location || {};
+    const tripContextSnapshot = tripContext
+      ? {
+          stayName: tripContext.stayName ?? null,
+          locationText: tripContext.locationText ?? null,
+          location: tripContext.location ?? null,
+          dates: tripContext.dates ?? null,
+          inventoryType: tripContext.inventoryType ?? null,
+        }
+      : null;
 
     // 1. Generate core addons
     const addons = await generateTripAddons({
@@ -801,7 +811,9 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
     // 2. Fetch Weather
     let weather = null;
     try {
-      weather = await getWeatherSummary({ location });
+      const startDate = tripContext?.dates?.checkIn || null;
+      const endDate = tripContext?.dates?.checkOut || null;
+      weather = await getWeatherSummary({ location, startDate, endDate });
     } catch (wErr) {
       console.warn("[aiAssistant] background weather fetch failed", wErr?.message);
     }
@@ -818,6 +830,7 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
       localLingo: addons.localLingo,
       suggestions: placeSuggestions.length ? placeSuggestions : addons.suggestions,
       itinerary: addons.itinerary,
+      tripContext: tripContextSnapshot,
     };
     const alreadyNotified = Boolean(
       baseMetadata.tripHubReadyNotifiedAt || baseMetadata.tripHubReadyNotified
@@ -863,6 +876,15 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
       } catch (pushErr) {
         console.warn("[aiAssistant] Trip hub push failed:", pushErr?.message || pushErr);
       }
+    }
+
+    try {
+      await enqueueTripHubEnsure({
+        tripContext: tripContextSnapshot || tripContext,
+        timeZone: weather?.timeZone || null,
+      });
+    } catch (packErr) {
+      console.warn("[aiAssistant] trip hub packs enqueue failed:", packErr?.message || packErr);
     }
 
     console.log("[perf] tripHub.generate", {

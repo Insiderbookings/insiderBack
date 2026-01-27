@@ -347,6 +347,9 @@ export const createWebbedsClient = ({
       try {
         parsedPayload = parseResponse(responseXml)
       } catch (error) {
+        if (error instanceof WebbedsError && !error.requestXml) {
+          error.requestXml = envelopeXml
+        }
         logger.warn(`[webbeds] ${attemptLabel} result (failed)`, {
           tID: headerTid,
           httpStatus: status,
