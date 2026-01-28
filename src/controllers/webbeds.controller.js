@@ -29,12 +29,25 @@ const EXPLORE_HOTELS_CACHE_TTL_SECONDS = Math.max(
   30,
   Number(process.env.WEBBEDS_EXPLORE_CACHE_TTL_SECONDS || STATIC_HOTELS_CACHE_TTL_SECONDS),
 )
+const EXPLORE_COLLECTIONS_CACHE_DISABLED = process.env.WEBBEDS_EXPLORE_COLLECTIONS_CACHE_DISABLED === "true"
+const EXPLORE_COLLECTIONS_CACHE_TTL_SECONDS = Math.max(
+  30,
+  Number(process.env.WEBBEDS_EXPLORE_COLLECTIONS_CACHE_TTL_SECONDS || EXPLORE_HOTELS_CACHE_TTL_SECONDS),
+)
 const EXPLORE_DEFAULT_CITY_CODE = String(
   process.env.WEBBEDS_EXPLORE_DEFAULT_CITY_CODE || "364",
 ).trim()
 const EXPLORE_DEFAULT_LIMIT = Math.max(
   20,
   Number(process.env.WEBBEDS_EXPLORE_DEFAULT_LIMIT || 120),
+)
+const EXPLORE_COLLECTIONS_DEFAULT_SECTIONS = Math.max(
+  3,
+  Number(process.env.WEBBEDS_EXPLORE_COLLECTIONS_SECTIONS || 5),
+)
+const EXPLORE_COLLECTIONS_DEFAULT_LIMIT = Math.max(
+  4,
+  Number(process.env.WEBBEDS_EXPLORE_COLLECTIONS_LIMIT || 10),
 )
 const EXPLORE_DEFAULT_RADIUS_KM = Math.max(
   5,
@@ -53,6 +66,8 @@ const buildStaticHotelsCacheKey = (payload = {}) =>
   `webbeds:static-hotels:${JSON.stringify(payload)}`
 const buildExploreHotelsCacheKey = (payload = {}) =>
   `webbeds:explore-hotels:${JSON.stringify(payload)}`
+const buildExploreCollectionsCacheKey = (payload = {}) =>
+  `webbeds:explore-collections:${JSON.stringify(payload)}`
 const getStripeClient = async () => {
   const { default: Stripe } = await import("stripe")
   return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" })
@@ -1031,6 +1046,77 @@ export const listStaticHotels = async (req, res, next) => {
   }
 }
 
+const resolveFallbackCityCodes = () => {
+  const envList = parseCsvList(process.env.WEBBEDS_EXPLORE_FALLBACK_CITIES)
+  return envList.length ? envList : []
+}
+
+const fetchCityMetaByCode = async (cityCode) => {
+  if (!cityCode) return null
+  const row = await models.WebbedsHotel.findOne({
+    where: { city_code: String(cityCode).trim() },
+    attributes: ["city_code", "city_name", "country_name"],
+    order: [["priority", "DESC"]],
+  })
+  if (!row) return null
+  return {
+    cityCode: String(row.city_code),
+    cityName: row.city_name || null,
+    countryName: row.country_name || null,
+  }
+}
+
+const getNearbyCityBuckets = async (coords, radiusKm, limit) => {
+  if (!coords) return []
+  const bounds = computeGeoBounds(coords.lat, coords.lng, radiusKm)
+  const distanceLiteral = buildDistanceLiteral(coords.lat, coords.lng)
+  const rows = await models.WebbedsHotel.findAll({
+    where: {
+      lat: { [Op.not]: null, [Op.between]: [bounds.minLat, bounds.maxLat] },
+      lng: { [Op.not]: null, [Op.between]: [bounds.minLng, bounds.maxLng] },
+    },
+    attributes: [
+      "city_code",
+      "city_name",
+      "country_name",
+      [distanceLiteral, "distance_km"],
+      [literal("MAX(priority)"), "priority_score"],
+    ],
+    group: ["city_code", "city_name", "country_name"],
+    order: [[literal("distance_km"), "ASC"], [literal("priority_score"), "DESC"]],
+    limit: Math.max(limit * 2, limit),
+  })
+  return rows
+    .map((row) => ({
+      cityCode: row.city_code ? String(row.city_code) : null,
+      cityName: row.city_name || null,
+      countryName: row.country_name || null,
+    }))
+    .filter((item) => item.cityCode)
+}
+
+const getTopGlobalCities = async (limit) => {
+  const rows = await models.WebbedsHotel.findAll({
+    attributes: [
+      "city_code",
+      "city_name",
+      "country_name",
+      [literal("MAX(priority)"), "priority_score"],
+      [literal("COUNT(hotel_id)"), "hotel_count"],
+    ],
+    group: ["city_code", "city_name", "country_name"],
+    order: [[literal("priority_score"), "DESC"], [literal("hotel_count"), "DESC"]],
+    limit: Math.max(limit * 2, limit),
+  })
+  return rows
+    .map((row) => ({
+      cityCode: row.city_code ? String(row.city_code) : null,
+      cityName: row.city_name || null,
+      countryName: row.country_name || null,
+    }))
+    .filter((item) => item.cityCode)
+}
+
 export const listExploreHotels = async (req, res, next) => {
   try {
     const {
@@ -1202,6 +1288,170 @@ export const listExploreHotels = async (req, res, next) => {
       await cache.set(cacheKey, responsePayload, EXPLORE_HOTELS_CACHE_TTL_SECONDS)
     }
     res.set("Cache-Control", `private, max-age=${EXPLORE_HOTELS_CACHE_TTL_SECONDS}`)
+    res.set("X-Cache", "MISS")
+    return res.json(responsePayload)
+  } catch (error) {
+    return next(error)
+  }
+}
+
+export const listExploreCollections = async (req, res, next) => {
+  try {
+    const {
+      sections,
+      limitPerSection,
+      lite,
+      imagesLimit,
+      radiusKm,
+      fallbackCities,
+      fallbackCityCode,
+    } = req.query
+
+    const useLite = String(lite || "").trim().toLowerCase() === "true"
+    const safeSections = clampNumber(
+      Number(sections) || EXPLORE_COLLECTIONS_DEFAULT_SECTIONS,
+      1,
+      12,
+    )
+    const perSection = clampNumber(
+      Number(limitPerSection) || EXPLORE_COLLECTIONS_DEFAULT_LIMIT,
+      3,
+      30,
+    )
+    const imagesLimitValue = Number(imagesLimit)
+    const safeImagesLimit = Number.isFinite(imagesLimitValue)
+      ? Math.max(0, Math.min(imagesLimitValue, 200))
+      : (useLite ? 1 : null)
+    const radiusBase = Number(radiusKm)
+    const safeRadius = clampNumber(
+      Number.isFinite(radiusBase) ? radiusBase : EXPLORE_DEFAULT_RADIUS_KM,
+      5,
+      500,
+    )
+
+    const coords = resolveExploreCoordinates(req)
+    const bucketLat = coords
+      ? roundCoordinate(coords.lat, EXPLORE_GEO_BUCKET_PRECISION)
+      : null
+    const bucketLng = coords
+      ? roundCoordinate(coords.lng, EXPLORE_GEO_BUCKET_PRECISION)
+      : null
+
+    const fallbackCodes = parseCsvList(fallbackCities).length
+      ? parseCsvList(fallbackCities)
+      : resolveFallbackCityCodes()
+    const resolvedFallbackCity = String(
+      fallbackCityCode || EXPLORE_DEFAULT_CITY_CODE || "",
+    ).trim() || null
+
+    const cacheKey = EXPLORE_COLLECTIONS_CACHE_DISABLED
+      ? null
+      : buildExploreCollectionsCacheKey({
+        lat: bucketLat,
+        lng: bucketLng,
+        sections: safeSections,
+        limitPerSection: perSection,
+        radiusKm: safeRadius,
+        fallbackCities: fallbackCodes.length ? fallbackCodes : null,
+        fallbackCityCode: resolvedFallbackCity,
+        lite: useLite,
+        imagesLimit: safeImagesLimit,
+      })
+
+    if (cacheKey) {
+      const cached = await cache.get(cacheKey)
+      if (cached) {
+        res.set("Cache-Control", `private, max-age=${EXPLORE_COLLECTIONS_CACHE_TTL_SECONDS}`)
+        res.set("X-Cache", "HIT")
+        return res.json(cached)
+      }
+    }
+
+    const cityBuckets = []
+    const seenCities = new Set()
+
+    const pushCity = (entry) => {
+      if (!entry?.cityCode) return
+      const key = String(entry.cityCode)
+      if (seenCities.has(key)) return
+      seenCities.add(key)
+      cityBuckets.push(entry)
+    }
+
+    const nearbyCities = await getNearbyCityBuckets(coords, safeRadius, safeSections)
+    nearbyCities.forEach(pushCity)
+
+    if (cityBuckets.length < safeSections && fallbackCodes.length) {
+      for (const code of fallbackCodes) {
+        if (cityBuckets.length >= safeSections) break
+        const meta = await fetchCityMetaByCode(code)
+        if (meta) pushCity(meta)
+      }
+    }
+
+    if (cityBuckets.length < safeSections && resolvedFallbackCity) {
+      const meta = await fetchCityMetaByCode(resolvedFallbackCity)
+      if (meta) pushCity(meta)
+    }
+
+    if (cityBuckets.length < safeSections) {
+      const globalCities = await getTopGlobalCities(safeSections)
+      globalCities.forEach(pushCity)
+    }
+
+    const attributes = getStaticHotelAttributes(useLite)
+    const include = getStaticHotelIncludes()
+    const sectionsPayload = []
+
+    for (const entry of cityBuckets.slice(0, safeSections)) {
+      const code = String(entry.cityCode).trim()
+      if (!code) continue
+      const rows = await models.WebbedsHotel.findAll({
+        where: { city_code: code },
+        attributes,
+        include,
+        order: [["priority", "DESC"], ["rating", "DESC"], ["name", "ASC"]],
+        limit: perSection,
+      })
+      const items = rows
+        .map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit }))
+        .filter(Boolean)
+      if (!items.length) continue
+      const cityLabel = entry.cityName || entry.countryName || "Explore"
+      sectionsPayload.push({
+        id: `city-${code}`,
+        title: `Explore ${cityLabel}`,
+        cityCode: code,
+        location: {
+          city: entry.cityName || null,
+          country: entry.countryName || null,
+        },
+        data: items,
+      })
+    }
+
+    const responsePayload = {
+      sections: sectionsPayload,
+      meta: {
+        source: coords?.source || "default",
+        location: coords
+          ? {
+            lat: coords.lat,
+            lng: coords.lng,
+            city: coords.geo?.city ?? null,
+            region: coords.geo?.region ?? null,
+            country: coords.geo?.country ?? null,
+          }
+          : null,
+        radiusKm: safeRadius,
+        fallbackUsed: sectionsPayload.length === 0,
+      },
+    }
+
+    if (cacheKey) {
+      await cache.set(cacheKey, responsePayload, EXPLORE_COLLECTIONS_CACHE_TTL_SECONDS)
+    }
+    res.set("Cache-Control", `private, max-age=${EXPLORE_COLLECTIONS_CACHE_TTL_SECONDS}`)
     res.set("X-Cache", "MISS")
     return res.json(responsePayload)
   } catch (error) {

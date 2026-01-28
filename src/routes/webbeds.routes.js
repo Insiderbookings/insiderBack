@@ -2,6 +2,7 @@ import { Router } from "express"
 import {
   listStaticHotels,
   listExploreHotels,
+  listExploreCollections,
   search,
   getRooms,
   saveBooking,
@@ -44,6 +45,7 @@ router.post("/deleteitinerary", authenticate, deleteItinerary)
 router.get("/booking", authenticate, getBookingDetails)
 router.get("/static/hotels", listStaticHotels)
 router.get("/explore", listExploreHotels)
+router.get("/explore/collections", listExploreCollections)
 router.get("/image", proxyWebbedsImage)
 router.get("/countries", authenticate, listCountries)
 router.get("/cities", authenticate, listCities)
