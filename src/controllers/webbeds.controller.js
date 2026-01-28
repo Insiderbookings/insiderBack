@@ -8,6 +8,8 @@ import { resolveGeoFromRequest } from "../utils/geoLocation.js"
 import { sendBookingEmail } from "../emailTemplates/booking-email.js"
 import { triggerBookingAutoPrompts, PROMPT_TRIGGERS } from "../services/chat.service.js"
 import { convertCurrency } from "../services/currency.service.js"
+import { Readable } from "stream"
+import { pipeline } from "stream/promises"
 
 const provider = new WebbedsProvider()
 const STATIC_HOTELS_CACHE_TTL_SECONDS = Math.max(
@@ -1113,5 +1115,47 @@ export const listSalutationsCatalog = async (req, res, next) => {
     return res.json({ items })
   } catch (error) {
     return next(error)
+  }
+}
+
+const WEBBEDS_IMAGE_HOSTS = new Set(["static-images.webbeds.com"])
+
+export const proxyWebbedsImage = async (req, res) => {
+  try {
+    const rawUrl = String(req.query?.url || "").trim()
+    if (!rawUrl) {
+      return res.status(400).json({ error: "Missing image url" })
+    }
+
+    let parsed
+    try {
+      parsed = new URL(rawUrl)
+    } catch {
+      return res.status(400).json({ error: "Invalid image url" })
+    }
+
+    if (parsed.protocol !== "https:" || !WEBBEDS_IMAGE_HOSTS.has(parsed.hostname)) {
+      return res.status(403).json({ error: "Host not allowed" })
+    }
+
+    const response = await fetch(parsed.toString())
+    if (!response.ok) {
+      return res.status(response.status).end()
+    }
+
+    const contentType = response.headers.get("content-type")
+    if (contentType) {
+      res.setHeader("Content-Type", contentType)
+    }
+    res.setHeader("Cache-Control", "public, max-age=86400")
+
+    if (!response.body) {
+      return res.status(502).json({ error: "Empty image response" })
+    }
+
+    await pipeline(Readable.fromWeb(response.body), res)
+  } catch (error) {
+    console.error("[webbeds] image proxy failed", error)
+    return res.status(500).json({ error: "Image proxy failed" })
   }
 }

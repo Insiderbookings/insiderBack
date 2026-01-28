@@ -13,6 +13,7 @@ import {
   listHotelChains,
   listHotelClassifications,
   listSalutationsCatalog,
+  proxyWebbedsImage,
   confirmBooking,
   bookItineraryRecheck,
   bookItineraryPreauth,
@@ -43,6 +44,7 @@ router.post("/deleteitinerary", authenticate, deleteItinerary)
 router.get("/booking", authenticate, getBookingDetails)
 router.get("/static/hotels", listStaticHotels)
 router.get("/explore", listExploreHotels)
+router.get("/image", proxyWebbedsImage)
 router.get("/countries", authenticate, listCountries)
 router.get("/cities", authenticate, listCities)
 router.get("/ratebasis", authenticate, listRateBasis)
