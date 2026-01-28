@@ -34,6 +34,7 @@ import placesRoutes from "./places.routes.js"
 import pushRoutes from "./push.routes.js"
 import itineraryRoutes from "./itinerary.routes.js";
 import errorRoutes from "./error.routes.js";
+import currencyRoutes from "./currency.routes.js";
 
 const router = Router()
 
@@ -72,5 +73,6 @@ router.use("/intelligence", intelligenceRoutes)
 router.use("/admin/errors", errorRoutes)
 router.use("/places", placesRoutes)
 router.use("/push", pushRoutes)
+router.use("/currency", currencyRoutes)
 
 export default router

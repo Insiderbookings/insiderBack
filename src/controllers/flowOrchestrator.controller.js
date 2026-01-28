@@ -1,5 +1,6 @@
 import FlowOrchestratorService from "../services/flowOrchestrator.service.js";
 import { mapWebbedsError } from "../utils/webbedsErrorMapper.js";
+import { logCurrencyDebug } from "../utils/currencyDebug.js";
 
 const service = new FlowOrchestratorService();
 
@@ -31,7 +32,15 @@ const wrap = (handler) => async (req, res, next) => {
 };
 
 export const startFlow = wrap((req) => {
-  console.log("[DEBUG] startFlow raw body:", JSON.stringify(req.body, null, 2));
+  logCurrencyDebug("flows.start.request", {
+    userId: req.user?.id ?? null,
+    currency: req.body?.currency ?? null,
+    hotelId: req.body?.hotelId ?? req.body?.productId ?? null,
+    fromDate: req.body?.fromDate ?? null,
+    toDate: req.body?.toDate ?? null,
+    rooms: req.body?.rooms ?? null,
+    headersCurrency: req.headers?.["x-currency"] ?? null,
+  });
   return service.start({ body: req.body, req });
 });
 export const selectFlow = wrap((req) => service.select({ body: req.body, req }));

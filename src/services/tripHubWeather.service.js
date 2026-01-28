@@ -21,7 +21,7 @@ const roundCoord = (value, precision) => {
   return Math.round(numeric * factor) / factor;
 };
 
-const buildWeatherCacheKey = (location, precision = DEFAULT_COORD_PRECISION) => {
+const buildWeatherCacheKey = (location, precision = DEFAULT_COORD_PRECISION, startDate, endDate) => {
   if (!location) return null;
   const lat =
     toNumber(location.lat) ??
@@ -39,7 +39,9 @@ const buildWeatherCacheKey = (location, precision = DEFAULT_COORD_PRECISION) => 
   if (Number.isFinite(lat) && Number.isFinite(lng)) {
     const roundedLat = roundCoord(lat, precision);
     const roundedLng = roundCoord(lng, precision);
-    return `triphub:weather:${roundedLat}:${roundedLng}`;
+    const range =
+      startDate && endDate ? `:${String(startDate)}:${String(endDate)}` : "";
+    return `triphub:weather:${roundedLat}:${roundedLng}${range}`;
   }
 
   const locationText =
@@ -47,7 +49,11 @@ const buildWeatherCacheKey = (location, precision = DEFAULT_COORD_PRECISION) => 
     normalizeText(location.address) ||
     normalizeText(location.city) ||
     normalizeText(location.country);
-  if (locationText) return `triphub:weather:${locationText}`;
+  if (locationText) {
+    const range =
+      startDate && endDate ? `:${String(startDate)}:${String(endDate)}` : "";
+    return `triphub:weather:${locationText}${range}`;
+  }
 
   return null;
 };
@@ -55,10 +61,12 @@ const buildWeatherCacheKey = (location, precision = DEFAULT_COORD_PRECISION) => 
 export const getTripWeather = async ({
   location,
   timeZone,
+  startDate,
+  endDate,
   ttlSeconds = DEFAULT_TTL_SECONDS,
   force = false,
 } = {}) => {
-  const cacheKey = buildWeatherCacheKey(location);
+  const cacheKey = buildWeatherCacheKey(location, DEFAULT_COORD_PRECISION, startDate, endDate);
   if (cacheKey && !force) {
     const cached = await cache.get(cacheKey);
     if (cached) {
@@ -66,7 +74,7 @@ export const getTripWeather = async ({
     }
   }
 
-  const weather = await getWeatherSummary({ location, timeZone });
+  const weather = await getWeatherSummary({ location, timeZone, startDate, endDate });
   if (weather && cacheKey) {
     await cache.set(cacheKey, weather, ttlSeconds);
   }

@@ -11,6 +11,9 @@ import {
 } from "../providers/webbeds/bookItinerary.js";
 import { buildCancelBookingPayload, mapCancelBookingResponse } from "../providers/webbeds/cancelBooking.js";
 import { tokenizeCard } from "../providers/webbeds/rezpayments.js";
+import { logCurrencyDebug } from "../utils/currencyDebug.js";
+import { convertCurrency } from "./currency.service.js";
+import { resolveEnabledCurrency } from "./currencySettings.service.js";
 
 const FLOW_STATUSES = {
   STARTED: "STARTED",
@@ -73,8 +76,9 @@ const getText = (value) => {
   return null;
 };
 
+const REDACT_XML = process.env.WEBBEDS_REDACT_XML !== "false";
 const redactXml = (xml) => {
-  if (!xml) return xml;
+  if (!xml || !REDACT_XML) return xml;
   return xml
     .replace(/<password>.*?<\/password>/gi, "<password>***redacted***</password>")
     .replace(/<token>.*?<\/token>/gi, "<token>***redacted***</token>")
@@ -145,15 +149,9 @@ const parseRoomArray = (rooms) => {
     });
 };
 
-const normalizeCurrency = (value) => {
-  const defaultCurrencyCode = process.env.WEBBEDS_DEFAULT_CURRENCY_CODE || "520";
-  const str = String(value ?? "").trim();
-  if (/^\d+$/.test(str) && Number(str) > 0) return str;
-  const upper = str.toUpperCase();
-  if (upper === "USD") return "520";
-  if (upper === "EUR") return "978";
-  if (upper === "GBP") return "826";
-  return defaultCurrencyCode;
+const normalizeCurrency = () => {
+  // WebBeds account is USD-only; force USD currency code (520) for all requests.
+  return "520";
 };
 const normalizeRateBasis = (value) => {
   if (value === undefined || value === null || value === "") return "-1";
@@ -414,9 +412,14 @@ export class FlowOrchestratorService {
 
     const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102";
 
-    console.log("[DEBUG] service.start input rooms:", JSON.stringify(rooms, null, 2));
+    logCurrencyDebug("flows.start.input", {
+      currency,
+      rooms,
+      fromDate,
+      toDate,
+    });
     const occupancies = serializeRoomsParam(rooms);
-    console.log("[DEBUG] service.start serialized occupancies:", occupancies);
+    logCurrencyDebug("flows.start.occupancies", { occupancies });
 
     const payload = buildGetRoomsPayload({
       checkIn: fromDate,
@@ -428,12 +431,29 @@ export class FlowOrchestratorService {
       residence: ensureNumericCode(passengerCountryOfResidence, defaultCountryCode),
       hotelId: resolvedHotelCode,
     });
+    logCurrencyDebug("flows.start.payload", {
+      currencyInput: currency ?? null,
+      currencyNormalized: payload.currency ?? null,
+      rateBasis: payload.rateBasis ?? null,
+      hotelId: resolvedHotelCode,
+    });
 
     const { result, requestXml, responseXml, metadata } = await this.client.send("getrooms", payload, {
       requestId: getRequestId(req),
       productOverride: "hotel",
     });
     const mapped = mapGetRoomsResponse(result);
+    const sampleRateCurrency = (() => {
+      const roomsList = ensureArray(mapped?.hotel?.rooms);
+      const roomTypes = roomsList.flatMap((room) => ensureArray(room?.roomTypes));
+      const rateBases = roomTypes.flatMap((roomType) => ensureArray(roomType?.rateBases));
+      const sampleRate = rateBases[0] ?? null;
+      return sampleRate?.currency ?? sampleRate?.currencyShort ?? null;
+    })();
+    logCurrencyDebug("flows.start.response", {
+      responseCurrency: mapped?.currency ?? null,
+      sampleRateCurrency,
+    });
     const hotel = mapped?.hotel || {};
     const roomsList = ensureArray(hotel.rooms);
     if (FLOW_VERBOSE_LOGS) {
@@ -894,11 +914,32 @@ export class FlowOrchestratorService {
       services: [],
     });
 
-    const { result, requestXml, responseXml, metadata } = await this.client.send(
-      "bookitinerary",
-      payload,
-      { requestId: getRequestId(req), productOverride: null },
-    );
+    let result;
+    let requestXml;
+    let responseXml;
+    let metadata;
+    try {
+      ({ result, requestXml, responseXml, metadata } = await this.client.send(
+        "bookitinerary",
+        payload,
+        { requestId: getRequestId(req), productOverride: null },
+      ));
+    } catch (error) {
+      await logStep({
+        flowId,
+        step: "BOOK_NO",
+        command: STEP_COMMAND.BOOK_NO,
+        tid: error?.metadata?.transactionId,
+        success: false,
+        errorClass: error?.name,
+        errorCode: error?.code ?? error?.httpStatus,
+        allocationIn: flow.allocation_current,
+        requestXml: error?.requestXml,
+        responseXml: error?.responseXml,
+        idempotencyKey,
+      });
+      throw error;
+    }
     const mapped = mapBookItineraryResponse(result);
     const productNode = Array.isArray(result?.product) ? result.product[0] : result?.product;
     const allocationIn = flow.allocation_current;
@@ -913,8 +954,10 @@ export class FlowOrchestratorService {
       null;
 
     flow.allocation_current = newAllocation;
+    const baseCurrency =
+      mapped.currencyShort ?? flow.search_context?.currency ?? flow.pricing_snapshot_priced?.currency ?? null;
     flow.pricing_snapshot_priced = {
-      currency: mapped.currencyShort ?? flow.search_context?.currency ?? null,
+      currency: baseCurrency,
       price: priceValue != null ? Number(priceValue) : null,
       serviceCode: flow.service_reference_number ?? mapped.services?.[0]?.returnedServiceCode ?? null,
       allocationDetails: newAllocation,
@@ -925,8 +968,58 @@ export class FlowOrchestratorService {
         priceFormatted: getText(productNode?.servicePrice?.formatted ?? productNode?.price?.formatted),
       },
     };
+
+    const requestedCurrency = body?.currency ? String(body.currency).trim().toUpperCase() : null;
+    const targetCurrency = requestedCurrency ? await resolveEnabledCurrency(requestedCurrency) : null;
+    const priceUsd = flow.pricing_snapshot_priced?.price;
+    const baseCurrencyNormalized = baseCurrency ? String(baseCurrency).toUpperCase() : null;
+    const baseIsUsd =
+      baseCurrencyNormalized === "USD" ||
+      baseCurrencyNormalized === "840" ||
+      baseCurrencyNormalized === "520";
+    logCurrencyDebug("flows.price.input", {
+      flowId,
+      priceUsd,
+      baseCurrency: baseCurrencyNormalized,
+      requestedCurrency,
+      resolvedCurrency: targetCurrency,
+      baseIsUsd,
+      hasPrice: Number.isFinite(priceUsd),
+    });
+    if (
+      targetCurrency &&
+      baseIsUsd &&
+      Number.isFinite(priceUsd) &&
+      priceUsd > 0
+    ) {
+      try {
+        const ttlSeconds = Number(process.env.FX_QUOTE_TTL_SECONDS || 900);
+        const now = Date.now();
+        const fx = await convertCurrency(priceUsd, targetCurrency);
+        flow.pricing_snapshot_priced.fxQuote = {
+          baseCurrency: "USD",
+          targetCurrency: fx.currency,
+          rate: fx.rate,
+          amount: fx.amount,
+          source: fx.source || null,
+          rateDate: fx.rateDate || null,
+          expiresAt: new Date(now + ttlSeconds * 1000).toISOString(),
+        };
+        logCurrencyDebug("flows.price.fxQuote", {
+          flowId,
+          fxQuote: flow.pricing_snapshot_priced.fxQuote,
+        });
+      } catch (error) {
+        console.warn("[flows] FX quote failed", error?.message || error);
+      }
+    }
     flow.status = FLOW_STATUSES.PRICED;
     await flow.save();
+
+    logCurrencyDebug("flows.price.output", {
+      flowId,
+      pricing: flow.pricing_snapshot_priced,
+    });
 
     await logStep({
       flowId,
@@ -1019,11 +1112,32 @@ export class FlowOrchestratorService {
       services,
     });
 
-    const { result, requestXml, responseXml, metadata } = await this.client.send(
-      "bookitinerary",
-      payload,
-      { requestId: getRequestId(req), productOverride: null },
-    );
+    let result;
+    let requestXml;
+    let responseXml;
+    let metadata;
+    try {
+      ({ result, requestXml, responseXml, metadata } = await this.client.send(
+        "bookitinerary",
+        payload,
+        { requestId: getRequestId(req), productOverride: null },
+      ));
+    } catch (error) {
+      await logStep({
+        flowId,
+        step: "PREAUTH",
+        command: STEP_COMMAND.PREAUTH,
+        tid: error?.metadata?.transactionId,
+        success: false,
+        errorClass: error?.name,
+        errorCode: error?.code ?? error?.httpStatus,
+        allocationIn: flow.allocation_current,
+        requestXml: error?.requestXml,
+        responseXml: error?.responseXml,
+        idempotencyKey,
+      });
+      throw error;
+    }
     const mapped = mapBookItineraryResponse(result);
     const allocationIn = flow.allocation_current;
     const newAllocation = pickAllocationFromResult(result) || allocationIn;

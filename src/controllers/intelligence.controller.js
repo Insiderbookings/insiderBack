@@ -1,6 +1,8 @@
 import { generateTripAddons, generateAndSaveTripIntelligence } from "../services/aiAssistant.service.js";
 import { buildTripHubContext } from "../services/tripHubContext.service.js";
 import { getTripWeather } from "../services/tripHubWeather.service.js";
+import { getTripHubRecommendationsFromCache } from "../services/tripHubPacks.service.js";
+import { enqueueTripHubEnsure } from "../services/tripHubPacksQueue.service.js";
 import { runAiTurn } from "../modules/ai/ai.service.js";
 import models from "../models/index.js";
 
@@ -35,6 +37,81 @@ const shouldAttemptRegen = (metadata) => {
     const lastAttempt = new Date(raw).getTime();
     if (!Number.isFinite(lastAttempt)) return true;
     return Date.now() - lastAttempt > 10 * 60 * 1000;
+};
+
+const hasCoords = (location) =>
+    Boolean(location && Number.isFinite(Number(location.lat)) && Number.isFinite(Number(location.lng)));
+
+const resolveTripContextForPacks = async ({ bookingId, tripContext, intelligence }) => {
+    if (tripContext && hasCoords(tripContext.location)) {
+        return {
+            tripContext,
+            timeZone: intelligence?.metadata?.weather?.timeZone || null,
+        };
+    }
+    if (!bookingId) {
+        return tripContext
+            ? { tripContext, timeZone: intelligence?.metadata?.weather?.timeZone || null }
+            : null;
+    }
+    const booking = await models.Booking.findByPk(bookingId, {
+        include: [
+            {
+                model: models.StayHotel,
+                as: "hotelStay",
+                required: false,
+                include: [
+                    {
+                        model: models.Hotel,
+                        as: "hotel",
+                        attributes: ["id", "name", "city", "country", "image", "lat", "lng", "address"],
+                    },
+                    {
+                        model: models.WebbedsHotel,
+                        as: "webbedsHotel",
+                        attributes: ["hotel_id", "name", "city_name", "country_name", "address", "lat", "lng"],
+                    },
+                ],
+            },
+            {
+                model: models.StayHome,
+                as: "homeStay",
+                required: false,
+                include: [
+                    {
+                        model: models.Home,
+                        as: "home",
+                        attributes: ["id", "title", "host_id", "amenities", "house_rules"],
+                        include: [
+                            {
+                                model: models.HomeAddress,
+                                as: "address",
+                                attributes: [
+                                    "address_line1",
+                                    "address_line2",
+                                    "city",
+                                    "state",
+                                    "country",
+                                    "latitude",
+                                    "longitude",
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+    });
+    if (!booking) {
+        return tripContext
+            ? { tripContext, timeZone: intelligence?.metadata?.weather?.timeZone || null }
+            : null;
+    }
+    const context = buildTripHubContext({ booking, intelligence });
+    return {
+        tripContext: context?.tripContext || tripContext || null,
+        timeZone: context?.derived?.timeZone || intelligence?.metadata?.weather?.timeZone || null,
+    };
 };
 
 /**
@@ -90,14 +167,62 @@ export const getTripIntelligence = async (req, res) => {
                 } catch (regenMetaErr) {
                     console.warn("[IntelligenceController] regen metadata update failed", regenMetaErr?.message || regenMetaErr);
                 }
-                const regenerated = await generateAndSaveTripIntelligence({
+                generateAndSaveTripIntelligence({
                     stayId: bookingId,
                     tripContext,
                     lang: lang || "en",
+                })
+                    .then((regenerated) => {
+                        if (regenerated) debugTripHub("fetch.regen.complete", { bookingId });
+                    })
+                    .catch((err) =>
+                        console.warn("[IntelligenceController] regen background failed", err?.message || err)
+                    );
+            }
+
+            const resolved = await resolveTripContextForPacks({
+                bookingId,
+                tripContext,
+                intelligence,
+            });
+            const resolvedTripContext = resolved?.tripContext || null;
+            const resolvedTimeZone = resolved?.timeZone || null;
+            let packResult = null;
+            if (resolvedTripContext) {
+                packResult = await getTripHubRecommendationsFromCache({
+                    tripContext: resolvedTripContext,
+                    timeZone: resolvedTimeZone,
                 });
-                if (regenerated) {
-                    intelligence = regenerated;
-                    debugTripHub("fetch.regen.complete", { bookingId });
+                if (!packResult) {
+                    enqueueTripHubEnsure({
+                        tripContext: resolvedTripContext,
+                        timeZone: resolvedTimeZone,
+                    }).catch((err) =>
+                        console.warn("[tripHub] ensure packs failed:", err?.message || err)
+                    );
+                }
+                if (packResult?.suggestions?.length) {
+                    const shouldPersist =
+                        !metadata.packKeys ||
+                        metadata.packKeys?.baseKey !== packResult.packKeys?.baseKey ||
+                        metadata.packKeys?.deltaKey !== packResult.packKeys?.deltaKey;
+                    if (shouldPersist) {
+                        try {
+                            await intelligence.update({
+                                metadata: {
+                                    ...metadata,
+                                    suggestions: packResult.suggestions,
+                                    packKeys: packResult.packKeys,
+                                    packBucket: packResult.bucket,
+                                    packH3: packResult.h3,
+                                    packUpdatedAt: new Date().toISOString(),
+                                },
+                                lastGeneratedAt: intelligence.lastGeneratedAt || new Date(),
+                            });
+                        } catch (packUpdateErr) {
+                            console.warn("[tripHub] pack metadata update failed:", packUpdateErr?.message || packUpdateErr);
+                        }
+                    }
                 }
             }
 
@@ -115,43 +240,92 @@ export const getTripIntelligence = async (req, res) => {
                     timeContext: intelligence.metadata?.timeContext || null,
                     localPulse: intelligence.metadata?.localPulse || [],
                     localLingo: intelligence.metadata?.localLingo || null,
-                    suggestions: intelligence.metadata?.suggestions || [],
+                    suggestions: packResult?.suggestions?.length
+                        ? packResult.suggestions
+                        : intelligence.metadata?.suggestions || [],
                     itinerary: intelligence.metadata?.itinerary || [],
                     updatedAt: intelligence.lastGeneratedAt
                 }
             });
         }
 
-        // 2. If not found and we have context, generate it (Legacy/Fallback)
+        // 2. If not found and we have context, respond fast and generate in background
         if (tripContext) {
             debugTripHub("fetch.generate", { bookingId, reason: "cache_miss" });
-            intelligence = await generateAndSaveTripIntelligence({
+
+            const resolved = await resolveTripContextForPacks({
+                bookingId,
+                tripContext,
+                intelligence: null,
+            });
+            const resolvedTripContext = resolved?.tripContext || null;
+            const resolvedTimeZone = resolved?.timeZone || null;
+            let packResult = null;
+
+            if (resolvedTripContext) {
+                packResult = await getTripHubRecommendationsFromCache({
+                    tripContext: resolvedTripContext,
+                    timeZone: resolvedTimeZone,
+                });
+                if (!packResult) {
+                    enqueueTripHubEnsure({
+                        tripContext: resolvedTripContext,
+                        timeZone: resolvedTimeZone,
+                    }).catch((err) =>
+                        console.warn("[tripHub] ensure packs failed:", err?.message || err)
+                    );
+                }
+            }
+
+            if (packResult?.suggestions?.length) {
+                try {
+                    intelligence = await StayIntelligence.create({
+                        stayId: bookingId,
+                        insights: [],
+                        preparation: [],
+                        metadata: {
+                            suggestions: packResult.suggestions,
+                            packKeys: packResult.packKeys,
+                            packBucket: packResult.bucket,
+                            packH3: packResult.h3,
+                            packUpdatedAt: new Date().toISOString(),
+                        },
+                        lastGeneratedAt: new Date(),
+                    });
+                } catch (createErr) {
+                    console.warn("[tripHub] create placeholder intelligence failed:", createErr?.message || createErr);
+                }
+            }
+
+            generateAndSaveTripIntelligence({
                 stayId: bookingId,
                 tripContext,
-                lang: lang || "en"
-            });
+                lang: lang || "en",
+            }).catch((err) =>
+                console.warn("[IntelligenceController] background generate failed", err?.message || err)
+            );
 
-            if (intelligence) {
-                console.log("[perf] tripHub.fetch", {
-                    bookingId,
-                    status: "generated",
-                    durationMs: Date.now() - startedAt,
-                });
-                return res.json({
-                    bookingId,
-                    intelligence: {
-                        insights: intelligence.insights || [],
-                        preparation: intelligence.preparation || [],
-                        weather: intelligence.metadata?.weather || null,
-                        timeContext: intelligence.metadata?.timeContext || null,
-                        localPulse: intelligence.metadata?.localPulse || [],
-                        localLingo: intelligence.metadata?.localLingo || null,
-                    suggestions: intelligence.metadata?.suggestions || [],
-                    itinerary: intelligence.metadata?.itinerary || [],
-                    updatedAt: intelligence.lastGeneratedAt
+            console.log("[perf] tripHub.fetch", {
+                bookingId,
+                status: "generated_background",
+                durationMs: Date.now() - startedAt,
+            });
+            return res.json({
+                bookingId,
+                intelligence: {
+                    insights: intelligence?.insights || [],
+                    preparation: intelligence?.preparation || [],
+                    weather: intelligence?.metadata?.weather || null,
+                    timeContext: intelligence?.metadata?.timeContext || null,
+                    localPulse: intelligence?.metadata?.localPulse || [],
+                    localLingo: intelligence?.metadata?.localLingo || null,
+                    suggestions: packResult?.suggestions?.length
+                        ? packResult.suggestions
+                        : intelligence?.metadata?.suggestions || [],
+                    itinerary: intelligence?.metadata?.itinerary || [],
+                    updatedAt: intelligence?.lastGeneratedAt || null
                 }
             });
-        }
         }
 
         console.log("[perf] tripHub.fetch", {
@@ -263,9 +437,14 @@ export const refreshTripWeather = async (req, res) => {
         };
         const force = req.query?.force === "true" || req.body?.force === true;
 
+        const startDate = context?.tripContext?.dates?.checkIn || null;
+        const endDate = context?.tripContext?.dates?.checkOut || null;
+
         const { weather, cached, cacheKey } = await getTripWeather({
             location: locationPayload,
             timeZone: context?.derived?.timeZone || null,
+            startDate,
+            endDate,
             force,
         });
 

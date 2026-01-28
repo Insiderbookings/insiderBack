@@ -15,6 +15,7 @@ import { adminListSubscribers, adminBroadcastEmail } from "../controllers/subscr
 import { adminListTransfers, adminCreateTransfer, adminCancelTransfer } from "../controllers/operatorTransfer.controller.js"
 import { syncWebbedsCountriesController, syncWebbedsCitiesController, syncWebbedsHotelsController } from "../controllers/webbedsStatic.controller.js"
 import { adminListContracts, adminCreateContract, adminUpdateContract, adminDeleteContract } from "../controllers/contract.controller.js"
+import { adminListCurrencies, adminSeedCurrencies, adminUpdateCurrency } from "../controllers/adminCurrency.controller.js"
 import { runMockPayouts, runPayoutBatch } from "../controllers/payout.controller.js"
 import { adminUpdateUserStatus, adminGetUserListings, adminSendUserAction } from "../controllers/adminUser.controller.js"
 import { adminUpdateListingStatus } from "../controllers/adminListing.controller.js"
@@ -86,6 +87,11 @@ router.get("/contracts", authenticate, authorizeRoles(100), adminListContracts)
 router.post("/contracts", authenticate, authorizeRoles(100), adminCreateContract)
 router.put("/contracts/:id", authenticate, authorizeRoles(100), adminUpdateContract)
 router.delete("/contracts/:id", authenticate, authorizeRoles(100), adminDeleteContract)
+
+// Currency settings admin
+router.get("/currencies", authenticate, authorizeRoles(100), adminListCurrencies)
+router.post("/currencies/seed", authenticate, authorizeRoles(100), adminSeedCurrencies)
+router.put("/currencies/:code", authenticate, authorizeRoles(100), adminUpdateCurrency)
 
 // Payouts mock (trigger manual, admin only)
 router.post("/payouts/mock", authenticate, authorizeRoles(100), runMockPayouts)

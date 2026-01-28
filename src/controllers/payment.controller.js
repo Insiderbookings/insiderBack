@@ -301,7 +301,7 @@ export const finalizeBookingAfterPayment = async ({ bookingId }) => {
     const inventoryType =
       booking.inventory_type || (hotel ? "HOTEL" : "HOME");
 
-    await generateAndSaveTripIntelligence({
+    generateAndSaveTripIntelligence({
       stayId: booking.id,
       tripContext: {
         stayName,
@@ -312,6 +312,8 @@ export const finalizeBookingAfterPayment = async ({ bookingId }) => {
         inventoryType,
       },
       lang: "en",
+    }).catch((err) => {
+      console.warn("[payments] trip intelligence failed:", err?.message || err);
     });
   } catch (err) {
     console.warn("[payments] trip intelligence failed:", err?.message || err);
@@ -346,10 +348,12 @@ export const finalizeBookingAfterPayment = async ({ bookingId }) => {
         checkOut: booking.check_out,
       },
     };
-    await generateAndSaveTripIntelligence({
+    generateAndSaveTripIntelligence({
       stayId: booking.id,
       tripContext,
       lang: booking.meta?.language || "en",
+    }).catch((err) => {
+      console.warn("[payments] proactive AI trigger failed:", err?.message || err);
     });
   } catch (err) {
     console.warn("[payments] proactive AI trigger failed:", err?.message || err);
