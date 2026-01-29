@@ -1,5 +1,8 @@
 ﻿import models from "../models/index.js";
 import { Op } from "sequelize";
+import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
+
+const iLikeOp = getCaseInsensitiveLikeOp();
 
 export const createHotel = async (req, res) => {
   try {
@@ -16,7 +19,7 @@ export const getHotels = async (req, res) => {
     const { location, category, rating } = req.query
     const where = {}
 
-    if (location) where.location = { [Op.iLike]: `%${location}%` }
+    if (location) where.location = { [iLikeOp]: `%${location}%` }
     if (category) where.category = category
     if (rating) where.rating = { [Op.gte]: Number(rating) }
 

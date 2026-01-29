@@ -5,6 +5,7 @@ import { WebbedsProvider } from "../providers/webbeds/provider.js";
 import { buildSearchHotelsPayload } from "../providers/webbeds/searchHotels.js";
 import { mapHomeToCard } from "../utils/homeMapper.js";
 import { formatStaticHotel } from "../utils/webbedsMapper.js";
+import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 
 const clampLimit = (value, fallback = 6) => {
   const numeric = Number(value);
@@ -20,6 +21,7 @@ const toNumberOrNull = (value) => {
 
 const DEFAULT_COORDINATE_RADIUS_KM = 25;
 const BLOCKED_CALENDAR_STATUSES = new Set(["RESERVED", "BLOCKED"]);
+const iLikeOp = getCaseInsensitiveLikeOp();
 
 const normalizeKeyList = (value) => {
   if (!Array.isArray(value) || !value.length) return [];
@@ -172,9 +174,7 @@ const resolveDialect = () =>
 const buildStringFilter = (value) => {
   const trimmed = typeof value === "string" ? value.trim() : "";
   if (!trimmed) return null;
-  const dialect = resolveDialect();
-  const operator = dialect === "mysql" ? Op.like : Op.iLike;
-  return { [operator]: `%${trimmed}%` };
+  return { [iLikeOp]: `%${trimmed}%` };
 };
 
 const hasLocationConstraint = (location = {}) => {

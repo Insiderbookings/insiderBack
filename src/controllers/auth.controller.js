@@ -5,7 +5,6 @@ import crypto from "node:crypto";
 import { validationResult } from "express-validator";
 import models from "../models/index.js";
 import dotenv from "dotenv";
-import { Op } from "sequelize";
 import { sequelize } from "../models/index.js";
 import { random4 } from "../utils/random4.js";
 import transporter from "../services/transporter.js";
@@ -15,10 +14,12 @@ import { createRemoteJWKSet, jwtVerify } from "jose"; // ← para Google Sign-In
 import { getBaseEmailTemplate } from "../emailTemplates/base-template.js";
 import { ReferralError, linkReferralCodeForUser } from "../services/referralRewards.service.js";
 import { emitAdminActivity } from "../websocket/emitter.js";
+import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 
 dotenv.config();
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+const iLikeOp = getCaseInsensitiveLikeOp();
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
 const ACCESS_TOKEN_TTL = process.env.JWT_ACCESS_TTL || "15m";
 const STAFF_TOKEN_TTL = process.env.JWT_STAFF_TTL || "7d";
@@ -639,7 +640,7 @@ export const requestPasswordReset = async (req, res) => {
 
   try {
     const user = await models.User.findOne({
-      where: { email: { [Op.iLike]: email } },
+      where: { email: { [iLikeOp]: email } },
     });
 
     if (!user || !user.password_hash) {

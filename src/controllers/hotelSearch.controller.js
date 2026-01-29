@@ -3,6 +3,7 @@ import { createHash } from "crypto"
 import models from "../models/index.js"
 import cache from "../services/cache.js"
 import { WebbedsProvider } from "../providers/webbeds/provider.js"
+import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
 
 const provider = new WebbedsProvider()
 const DEFAULT_LIMIT = 50
@@ -15,6 +16,8 @@ const FULL_CACHE_STATUS_TTL_SECONDS = Math.max(
   30,
   Number(process.env.WEBBEDS_SEARCH_FULL_CACHE_STATUS_TTL_SECONDS || 90),
 )
+
+const iLikeOp = getCaseInsensitiveLikeOp()
 
 const buildHashedKey = (prefix, payload) => {
   const ordered = Object.keys(payload)
@@ -136,12 +139,12 @@ const resolveCityMatch = async ({ query, cityCode, countryCode, countryName }) =
   if (!trimmed) return null
 
   const where = {
-    name: { [Op.iLike]: `%${trimmed}%` },
+    name: { [iLikeOp]: `%${trimmed}%` },
   }
   if (countryCode) {
     where.country_code = String(countryCode).trim()
   } else if (countryName) {
-    where.country_name = { [Op.iLike]: `%${String(countryName).trim()}%` }
+    where.country_name = { [iLikeOp]: `%${String(countryName).trim()}%` }
   }
 
   return models.WebbedsCity.findOne({
@@ -259,7 +262,7 @@ const fetchHotelIdsByName = async (query, limit = DEFAULT_LIMIT, offset = 0, fil
   const safeOffset = resolveSafeOffset(offset)
 
   const where = {
-    name: { [Op.iLike]: `%${trimmed}%` },
+    name: { [iLikeOp]: `%${trimmed}%` },
   }
 
   // Apply Filters

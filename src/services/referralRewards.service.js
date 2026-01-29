@@ -1,8 +1,10 @@
 // src/services/referralRewards.service.js
 import { Op } from "sequelize"
 import models, { sequelize } from "../models/index.js"
+import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
 
 const allowedEvents = new Set(["signup", "booking"])
+const iLikeOp = getCaseInsensitiveLikeOp()
 
 export class ReferralError extends Error {
   constructor(message, status = 400) {
@@ -114,7 +116,7 @@ export const findInfluencerByReferralCode = async (code, transaction) => {
   if (!normalized) return null
   const where = {
     role: 2,
-    user_code: { [Op.iLike]: normalized },
+    user_code: { [iLikeOp]: normalized },
   }
   const influencer = await models.User.findOne({
     where,

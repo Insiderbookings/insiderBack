@@ -12,9 +12,11 @@ import { Readable } from "stream"
 import { pipeline } from "stream/promises"
 
 import { resolveEnabledCurrency } from "../services/currencySettings.service.js"
+import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
 
 
 const provider = new WebbedsProvider()
+const iLikeOp = getCaseInsensitiveLikeOp()
 const STRIPE_FX_DEBUG = process.env.STRIPE_FX_DEBUG === "true"
 const logStripeFxDebug = (...args) => {
   if (STRIPE_FX_DEBUG) console.log("[stripe.fx]", ...args)
@@ -994,7 +996,7 @@ export const listStaticHotels = async (req, res, next) => {
       where.country_code = String(countryCode).trim()
     }
     if (q) {
-      where.name = { [Op.iLike]: `%${q.trim()}%` }
+      where.name = { [iLikeOp]: `%${q.trim()}%` }
     }
     if (preferred === "true") {
       where.preferred = true
@@ -1509,7 +1511,7 @@ export const listCities = async (req, res, next) => {
       where.country_code = String(countryCode).trim()
     }
     if (q) {
-      where.name = { [Op.iLike]: `%${q.trim()}%` }
+      where.name = { [iLikeOp]: `%${q.trim()}%` }
     }
 
     const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20))
