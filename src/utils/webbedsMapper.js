@@ -100,6 +100,7 @@ export const formatStaticHotel = (hotel, options = {}) => {
   if (!hotel) return null;
   const plain = hotel.get ? hotel.get({ plain: true }) : hotel;
   const coverImage = pickCoverImage(plain.images);
+  const shortDescription = extractShortDescription(plain.descriptions);
   const imageLimitRaw = options?.imageLimit;
   const imageLimitValue = imageLimitRaw == null ? null : Number(imageLimitRaw);
   const imageLimit = Number.isFinite(imageLimitValue) ? imageLimitValue : null;
@@ -175,6 +176,8 @@ export const formatStaticHotel = (hotel, options = {}) => {
     leisure: amenitiesLeisure.map(a => a.name), // Keep backward compat
     business: amenitiesBusiness.map(a => a.name), // Keep backward compat
     transportation: transportationList,
+    descriptions: plain.descriptions ?? null,
+    shortDescription,
     roomTypes: roomTypesRaw,
     metadata: {
       hasLeisure: amenitiesLeisure.length > 0,
