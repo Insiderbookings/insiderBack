@@ -5,7 +5,7 @@ import { authenticate } from "../middleware/auth.js";
 const router = Router();
 
 router.get("/", getHotels);
-router.get("/search", authenticate, searchHotels);
+router.get("/search", searchHotels);
 router.get("/hotelsAndRooms", getHotelsWithRooms)
 router.get("/:id", getHotelById);
 router.post("/", authenticate, createHotel);
