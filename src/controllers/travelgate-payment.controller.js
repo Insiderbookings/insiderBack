@@ -11,6 +11,7 @@ import {
   finalizeReferralRedemption,
   recordInfluencerEvent,
   upgradeSignupBonusOnBooking,
+  planReferralFirstBookingDiscount,
 } from "../services/referralRewards.service.js"
 
 dotenv.config()
@@ -318,7 +319,23 @@ export const createTravelgatePaymentIntent = async (req, res) => {
     }
 
     // ── Rol / Markup ────────────────────────────────────────────────────────
-    const roleNum = getRoleFromReq?.(req)
+    
+    let referralInfluencerId = Number(req.user?.referredByInfluencerId) || null
+    let referralCode = req.user?.referredByCode || null
+    if (!referralInfluencerId && resolvedUserId) {
+      try {
+        const referralUser = await models.User.findByPk(resolvedUserId, {
+          attributes: ["referred_by_influencer_id", "referred_by_code"],
+        })
+        if (referralUser?.referred_by_influencer_id) {
+          referralInfluencerId = Number(referralUser.referred_by_influencer_id) || null
+          referralCode = referralUser.referred_by_code || null
+        }
+      } catch (e) {
+        console.warn("Referral lookup failed:", e?.message || e)
+      }
+    }
+const roleNum = getRoleFromReq?.(req)
 
 
     // ── Settings para TGX y Quote ───────────────────────────────────────────
@@ -374,28 +391,55 @@ export const createTravelgatePaymentIntent = async (req, res) => {
 
     // If a discount is present, compute expected amount with discount
     let expectedToCharge = computedGross
+    let discountAmount = 0
+    let discountPct = 0
+    let specialDiscountPrice = null
+    let referralFirstBookingPlan = null
+    let referralFirstBookingDiscount = 0
     if (discount && discount.active === true) {
       const pct = Number(discount.percentage)
       const sp  = discount.specialDiscountPrice != null ? Number(discount.specialDiscountPrice) : null
+      discountPct = Number.isFinite(pct) ? pct : 0
+      specialDiscountPrice = Number.isFinite(sp) && sp > 0 ? sp : null
 
       if (Number.isFinite(sp) && sp > 0) {
         // Special fixed final price (major units)
         expectedToCharge = moneyRound(sp)
+        discountAmount = moneyRound(Math.max(0, computedGross - expectedToCharge))
       } else if (Number.isFinite(pct) && pct > 0 && pct <= 100) {
         // Percentage discount over public price (computedGross)
         expectedToCharge = moneyRound(computedGross * (1 - pct / 100))
+        discountAmount = moneyRound(Math.max(0, computedGross - expectedToCharge))
       }
+    }
+
+    if (referralInfluencerId && resolvedUserId && !(discount && discount.active === true)) {
+      referralFirstBookingPlan = await planReferralFirstBookingDiscount({
+        influencerUserId: referralInfluencerId,
+        userId: resolvedUserId,
+        totalBeforeDiscount: computedGross,
+        currency: currency3,
+      })
+      referralFirstBookingDiscount = referralFirstBookingPlan?.apply
+        ? referralFirstBookingPlan.discountAmount
+        : 0
+    }
+    if (referralFirstBookingDiscount > 0) {
+      expectedToCharge = moneyRound(Math.max(0, expectedToCharge - referralFirstBookingDiscount))
     }
 
     const delta           = requestedAmount != null ? Math.abs(expectedToCharge - requestedAmount) : 0
 
-    // Tabla rápida para la cabeza:
+    // Tabla r�pida para la cabeza:
     console.table({
       [`${TAG} PRICE_CHECK`]: "values",
       verifiedNet,
       rolePct,
       computedGross,
-      ...(discount ? { discountPct: Number(discount.percentage) || null, specialDiscountPrice: discount.specialDiscountPrice ?? null } : {}),
+      ...(discount ? { discountPct: discountPct || null, specialDiscountPrice: specialDiscountPrice ?? null } : {}),
+      ...(referralFirstBookingPlan?.apply
+        ? { referralFirstBookingPct: referralFirstBookingPlan.pct, referralFirstBookingDiscount }
+        : {}),
       expectedToCharge,
       requestedAmount,
       delta
@@ -431,8 +475,8 @@ export const createTravelgatePaymentIntent = async (req, res) => {
     let booking_hotel_id = null
     let booking_tgx_hotel_id = null
     const referral = {
-      influencerId: Number(req.user?.referredByInfluencerId) || null,
-      code: req.user?.referredByCode || null,
+      influencerId: referralInfluencerId || null,
+      code: referralCode || null,
     }
 
     tx = await sequelize.transaction()
@@ -488,6 +532,24 @@ export const createTravelgatePaymentIntent = async (req, res) => {
         net_cost: finalNetCost,
         currency: currency3,
 
+        pricing_snapshot: {
+          totalBeforeDiscount: moneyRound(computedGross),
+          discountPct: discountPct || 0,
+          discountAmount: moneyRound(discountAmount),
+          specialDiscountPrice: specialDiscountPrice != null ? moneyRound(specialDiscountPrice) : null,
+          referralFirstBooking: referralFirstBookingPlan?.apply
+            ? {
+                pct: referralFirstBookingPlan.pct,
+                amount: moneyRound(referralFirstBookingDiscount),
+                currency: referralFirstBookingPlan.currency,
+                applied: true,
+              }
+            : null,
+          totalDiscountAmount: moneyRound(discountAmount + referralFirstBookingDiscount),
+          total: moneyRound(finalAmount),
+          currency: currency3,
+        },
+
         payment_provider: "STRIPE",
         payment_intent_id: null,
 
@@ -506,6 +568,16 @@ export const createTravelgatePaymentIntent = async (req, res) => {
           },
           ...((bookingData.meta && typeof bookingData.meta === "object") ? bookingData.meta : {}),
           ...(discount ? { discount } : {}),
+          ...(referralFirstBookingPlan?.apply
+            ? {
+                referralFirstBooking: {
+                  pct: referralFirstBookingPlan.pct,
+                  amount: moneyRound(referralFirstBookingDiscount),
+                  currency: referralFirstBookingPlan.currency,
+                  applied: true,
+                },
+              }
+            : {}),
           ...(referral.influencerId
             ? {
                 referral: {
@@ -1369,3 +1441,12 @@ export const handleTravelgateWebhook = async (req, res) => {
 
   return res.json({ received: true })
 }
+
+
+
+
+
+
+
+
+

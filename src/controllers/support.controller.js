@@ -2,6 +2,7 @@ import models from "../models/index.js";
 import { emitAdminActivity, emitToUser, emitToRoom } from "../websocket/emitter.js";
 import { validationResult } from "express-validator";
 import transporter from "../services/transporter.js";
+import { postMessage } from "../services/chat.service.js";
 
 // Helper to broadcast support events
 const emitSupportEvent = (event, payload) => {
@@ -38,6 +39,15 @@ export const createTicket = async (req, res, next) => {
                 category: category || 'GENERAL'
             }
         });
+
+        // Ensure participants exist for chat list access
+        await models.ChatParticipant.bulkCreate(
+            [
+                { chat_id: chatThread.id, user_id: userId, role: "GUEST" },
+                { chat_id: chatThread.id, user_id: SUPPORT_BOT_ID, role: "HOST" }
+            ],
+            { ignoreDuplicates: true }
+        );
 
         // 2. Create the Support Ticket linked to the thread
         const ticket = await models.SupportTicket.create({
@@ -143,20 +153,17 @@ export const replyTicket = async (req, res, next) => {
 
         // 2. Sync to ChatThread (User App View) if thread exists
         if (ticket.chat_thread_id) {
-            await models.ChatMessage.create({
-                chat_id: ticket.chat_thread_id,
-                sender_id: isAdmin ? SUPPORT_BOT_ID : userId, // Admins post as Bot/System
-                sender_role: isAdmin ? 'HOST' : 'GUEST',
-                type: 'TEXT',
+            await postMessage({
+                chatId: ticket.chat_thread_id,
+                senderId: isAdmin ? SUPPORT_BOT_ID : userId, // Admins post as Bot/System
+                senderRole: isAdmin ? "HOST" : "GUEST",
                 body: content,
-                delivered_at: new Date()
+                type: "TEXT",
+                metadata: {
+                    source: "support",
+                    ...(isAdmin ? { senderName: "BookingGPT Support Team" } : {}),
+                },
             });
-
-            // Update thread timestamp
-            await models.ChatThread.update(
-                { last_message_at: new Date() },
-                { where: { id: ticket.chat_thread_id } }
-            );
         }
 
         // Update ticket timestamp

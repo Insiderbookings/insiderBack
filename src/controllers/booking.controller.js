@@ -23,6 +23,7 @@ import {
   planReferralCoupon,
   createPendingRedemption,
   reverseReferralRedemption,
+  planReferralFirstBookingDiscount,
 } from "../services/referralRewards.service.js"
 import { emitAdminActivity } from "../websocket/emitter.js"
 import { finalizeBookingAfterPayment } from "./payment.controller.js"
@@ -1096,6 +1097,8 @@ export const createBooking = async (req, res) => {
     let referralCouponPlan = null
     let referralDiscountAmount = 0
     let referralCouponApplied = false
+    let referralFirstBookingPlan = null
+    let referralFirstBookingDiscount = 0
 
     const user = req.user || {}
     const guestNameFinal = (guestName ?? user.name ?? "").trim()
@@ -1118,7 +1121,20 @@ export const createBooking = async (req, res) => {
         await discountRecord.increment("times_used", { by: 1, transaction: tx })
       }
 
-      if (!discountRecord && referral.influencerId) {
+      if (referral.influencerId && !discountRecord) {
+        referralFirstBookingPlan = await planReferralFirstBookingDiscount({
+          influencerUserId: referral.influencerId,
+          userId,
+          totalBeforeDiscount,
+          currency: currencyCode,
+          transaction: tx,
+        })
+        referralFirstBookingDiscount = referralFirstBookingPlan?.apply
+          ? referralFirstBookingPlan.discountAmount
+          : 0
+      }
+
+      if (!discountRecord && referral.influencerId && !referralFirstBookingPlan?.apply) {
         referralCouponPlan = await planReferralCoupon({
           influencerUserId: referral.influencerId,
           userId,
@@ -1130,7 +1146,7 @@ export const createBooking = async (req, res) => {
         referralCouponApplied = referralCouponPlan?.apply || false
       }
 
-      const totalDiscountAmount = discountAmount + referralDiscountAmount
+      const totalDiscountAmount = discountAmount + referralDiscountAmount + referralFirstBookingDiscount
       const grossTotal = Number.parseFloat(Math.max(0, totalBeforeDiscount - totalDiscountAmount).toFixed(2))
 
       const stay = await models.Booking.create(
@@ -1166,6 +1182,14 @@ export const createBooking = async (req, res) => {
             nights,
             discountPct,
             discountAmount: Number.parseFloat(discountAmount.toFixed(2)),
+            referralFirstBooking: referralFirstBookingPlan?.apply
+              ? {
+                pct: referralFirstBookingPlan.pct,
+                amount: Number.parseFloat(referralFirstBookingDiscount.toFixed(2)),
+                currency: referralFirstBookingPlan.currency,
+                applied: true,
+              }
+              : null,
             referralCoupon: referralCouponPlan?.apply
               ? {
                 amount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
@@ -1205,6 +1229,16 @@ export const createBooking = async (req, res) => {
                   currency: referralCouponPlan.currency,
                   walletId: referralCouponPlan.wallet?.id ?? null,
                   status: "pending",
+                },
+              }
+              : {}),
+            ...(referralFirstBookingPlan?.apply
+              ? {
+                referralFirstBooking: {
+                  pct: referralFirstBookingPlan.pct,
+                  amount: Number.parseFloat(referralFirstBookingDiscount.toFixed(2)),
+                  currency: referralFirstBookingPlan.currency,
+                  applied: true,
                 },
               }
               : {}),
@@ -1389,17 +1423,33 @@ export const quoteHomeBooking = async (req, res) => {
 
     let referralCouponPlan = null
     let referralDiscountAmount = 0
+    let referralFirstBookingPlan = null
+    let referralFirstBookingDiscount = 0
     if (referral.influencerId) {
-      referralCouponPlan = await planReferralCoupon({
+      referralFirstBookingPlan = await planReferralFirstBookingDiscount({
         influencerUserId: referral.influencerId,
         userId,
         totalBeforeDiscount,
         currency: (pricing.currency ?? process.env.DEFAULT_CURRENCY ?? "USD").toUpperCase(),
       })
-      referralDiscountAmount = referralCouponPlan?.apply ? referralCouponPlan.discountAmount : 0
+      referralFirstBookingDiscount = referralFirstBookingPlan?.apply
+        ? referralFirstBookingPlan.discountAmount
+        : 0
+
+      if (!referralFirstBookingPlan?.apply) {
+        referralCouponPlan = await planReferralCoupon({
+          influencerUserId: referral.influencerId,
+          userId,
+          totalBeforeDiscount,
+          currency: (pricing.currency ?? process.env.DEFAULT_CURRENCY ?? "USD").toUpperCase(),
+        })
+        referralDiscountAmount = referralCouponPlan?.apply ? referralCouponPlan.discountAmount : 0
+      }
     }
 
-    const total = roundCurrency(Math.max(0, totalBeforeDiscount - referralDiscountAmount))
+    const total = roundCurrency(
+      Math.max(0, totalBeforeDiscount - referralDiscountAmount - referralFirstBookingDiscount)
+    )
 
     const nightlyGroups = new Map()
     nightlyBreakdown.forEach((night) => {
@@ -1448,6 +1498,13 @@ export const quoteHomeBooking = async (req, res) => {
         amount: -roundCurrency(referralDiscountAmount),
       })
     }
+    if (referralFirstBookingPlan?.apply && referralFirstBookingDiscount > 0) {
+      items.push({
+        key: "referralFirstBooking",
+        label: "Referral first booking discount",
+        amount: -roundCurrency(referralFirstBookingDiscount),
+      })
+    }
 
     const referralCoupon =
       referralCouponPlan?.apply
@@ -1473,9 +1530,17 @@ export const quoteHomeBooking = async (req, res) => {
         taxRate,
         taxAmount,
         totalBeforeDiscount,
-        discountAmount: roundCurrency(referralDiscountAmount),
+        discountAmount: roundCurrency(referralDiscountAmount + referralFirstBookingDiscount),
         total,
         referralCoupon,
+        referralFirstBooking: referralFirstBookingPlan?.apply
+          ? {
+            pct: referralFirstBookingPlan.pct,
+            amount: Number.parseFloat(referralFirstBookingDiscount.toFixed(2)),
+            currency: referralFirstBookingPlan.currency,
+            applied: true,
+          }
+          : null,
         pricingSnapshot: {
           nightlyBreakdown,
           baseSubtotal: roundCurrency(baseSubtotal),
@@ -1486,6 +1551,14 @@ export const quoteHomeBooking = async (req, res) => {
           securityDeposit,
           subtotalBeforeTax: roundCurrency(subtotalBeforeTax),
           totalBeforeDiscount,
+          referralFirstBooking: referralFirstBookingPlan?.apply
+            ? {
+              pct: referralFirstBookingPlan.pct,
+              amount: Number.parseFloat(referralFirstBookingDiscount.toFixed(2)),
+              currency: referralFirstBookingPlan.currency,
+              applied: true,
+            }
+            : null,
           referralCoupon,
           referralDiscountAmount: roundCurrency(referralDiscountAmount),
           total,
@@ -1635,6 +1708,8 @@ export const createHomeBooking = async (req, res) => {
     let referralCouponPlan = null
     let referralDiscountAmount = 0
     let referralCouponApplied = false
+    let referralFirstBookingPlan = null
+    let referralFirstBookingDiscount = 0
 
     const user = req.user || {}
     const guestNameFinal = (guestName ?? user.name ?? "").trim()
@@ -1689,24 +1764,40 @@ export const createHomeBooking = async (req, res) => {
           totalBeforeDiscount,
           currency: currencyCode,
         })
-        referralCouponPlan = await planReferralCoupon({
+
+        referralFirstBookingPlan = await planReferralFirstBookingDiscount({
           influencerUserId: referral.influencerId,
           userId,
           totalBeforeDiscount,
           currency: currencyCode,
           transaction: tx,
         })
-        console.log("[HOME BOOKING] referral coupon plan", {
-          apply: referralCouponPlan?.apply || false,
-          discountAmount: referralCouponPlan?.discountAmount || 0,
-          walletId: referralCouponPlan?.wallet?.id || null,
-          walletAvailable: referralCouponPlan?.wallet?.available ?? null,
-          reason: referralCouponPlan?.reason || null,
-        })
-        referralDiscountAmount = referralCouponPlan?.apply ? referralCouponPlan.discountAmount : 0
-        referralCouponApplied = referralCouponPlan?.apply || false
+        referralFirstBookingDiscount = referralFirstBookingPlan?.apply
+          ? referralFirstBookingPlan.discountAmount
+          : 0
+
+        if (!referralFirstBookingPlan?.apply) {
+          referralCouponPlan = await planReferralCoupon({
+            influencerUserId: referral.influencerId,
+            userId,
+            totalBeforeDiscount,
+            currency: currencyCode,
+            transaction: tx,
+          })
+          console.log("[HOME BOOKING] referral coupon plan", {
+            apply: referralCouponPlan?.apply || false,
+            discountAmount: referralCouponPlan?.discountAmount || 0,
+            walletId: referralCouponPlan?.wallet?.id || null,
+            walletAvailable: referralCouponPlan?.wallet?.available ?? null,
+            reason: referralCouponPlan?.reason || null,
+          })
+          referralDiscountAmount = referralCouponPlan?.apply ? referralCouponPlan.discountAmount : 0
+          referralCouponApplied = referralCouponPlan?.apply || false
+        }
       }
-      const grossTotal = roundCurrency(Math.max(0, totalBeforeDiscount - referralDiscountAmount))
+      const grossTotal = roundCurrency(
+        Math.max(0, totalBeforeDiscount - referralDiscountAmount - referralFirstBookingDiscount)
+      )
 
         const created = await models.Booking.create(
           {
@@ -1742,6 +1833,14 @@ export const createHomeBooking = async (req, res) => {
             securityDeposit,
             subtotalBeforeTax: roundCurrency(subtotalBeforeTax),
             totalBeforeDiscount: roundCurrency(totalBeforeDiscount),
+            referralFirstBooking: referralFirstBookingPlan?.apply
+              ? {
+                pct: referralFirstBookingPlan.pct,
+                amount: Number.parseFloat(referralFirstBookingDiscount.toFixed(2)),
+                currency: referralFirstBookingPlan.currency,
+                applied: true,
+              }
+              : null,
             referralCoupon: referralCouponPlan?.apply
               ? {
                 amount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
@@ -1781,6 +1880,16 @@ export const createHomeBooking = async (req, res) => {
                   walletId: referralCouponPlan.wallet?.id ?? null,
                   status: "pending",
                   applied: referralCouponApplied,
+                },
+              }
+              : {}),
+            ...(referralFirstBookingPlan?.apply
+              ? {
+                referralFirstBooking: {
+                  pct: referralFirstBookingPlan.pct,
+                  amount: Number.parseFloat(referralFirstBookingDiscount.toFixed(2)),
+                  currency: referralFirstBookingPlan.currency,
+                  applied: true,
                 },
               }
               : {}),
