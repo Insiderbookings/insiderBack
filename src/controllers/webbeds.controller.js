@@ -794,8 +794,8 @@ export const createPaymentIntent = async (req, res, next) => {
     const paymentIntentParams = {
       amount: amountForStripe,
       currency: currencyUpper.toLowerCase(),
+      bookingId: String(localBooking.id), // Link to LOCAL booking
       metadata: {
-        bookingId: String(localBooking.id), // Link to LOCAL booking
         webbedsId: String(bookingId),
         source: "WEBBEDS",
       },
