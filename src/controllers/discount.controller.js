@@ -2,8 +2,10 @@
 // src/controllers/discount.controller.js
 // 100 % COMPLETO — TODAS LAS LÍNEAS
 // ─────────────────────────────────────────────────────────────
-import { Op }  from "sequelize";
 import models  from "../models/index.js";
+import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
+
+const iLikeOp = getCaseInsensitiveLikeOp();
 
 /* ----------------------------------------------------------- */
 /* POST /api/discounts/validate                                */
@@ -37,7 +39,7 @@ export const validateDiscount = async (req, res) => {
     if (isInfluencer) {
       const user = await models.User.findOne({
         where: {
-          user_code: { [Op.iLike]: CODE },
+          user_code: { [iLikeOp]: CODE },
           role: 2,
         },
         attributes: ["id", "name", "user_code"],

@@ -8,13 +8,19 @@ import { resolveGeoFromRequest } from "../utils/geoLocation.js"
 import { sendBookingEmail } from "../emailTemplates/booking-email.js"
 import { triggerBookingAutoPrompts, PROMPT_TRIGGERS } from "../services/chat.service.js"
 import { convertCurrency } from "../services/currency.service.js"
+
 import { Readable } from "stream"
 import { pipeline } from "stream/promises"
 
 import { resolveEnabledCurrency } from "../services/currencySettings.service.js"
+import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
+
+
+import { planReferralFirstBookingDiscount } from "../services/referralRewards.service.js"
 
 
 const provider = new WebbedsProvider()
+const iLikeOp = getCaseInsensitiveLikeOp()
 const STRIPE_FX_DEBUG = process.env.STRIPE_FX_DEBUG === "true"
 const logStripeFxDebug = (...args) => {
   if (STRIPE_FX_DEBUG) console.log("[stripe.fx]", ...args)
@@ -92,6 +98,12 @@ const maskPhone = (phone = "") => {
   if (!value) return null
   const tail = value.slice(-2)
   return `***${tail}`
+}
+
+const roundCurrency = (value) => {
+  const numeric = Number(value || 0)
+  if (!Number.isFinite(numeric)) return 0
+  return Number.parseFloat(numeric.toFixed(2))
 }
 
 const parseCsvList = (value) => {
@@ -187,6 +199,26 @@ const STATIC_HOTEL_ATTRIBUTES_LITE = [
 
 const STATIC_HOTEL_ATTRIBUTES_FULL = [
   ...STATIC_HOTEL_ATTRIBUTES_LITE,
+  "region_name",
+  "region_code",
+  "zip_code",
+  "location1",
+  "location2",
+  "location3",
+  "built_year",
+  "renovation_year",
+  "floors",
+  "no_of_rooms",
+  "hotel_phone",
+  "hotel_check_in",
+  "hotel_check_out",
+  "min_age",
+  "last_updated",
+  "direct",
+  "fire_safety",
+  "full_address",
+  "transportation",
+  "geo_locations",
   "amenities",
   "leisure",
   "business",
@@ -605,6 +637,23 @@ export const createPaymentIntent = async (req, res, next) => {
       children,
     }
 
+    const totalBeforeDiscount = roundCurrency(finalAmount)
+    let referralFirstBookingPlan = null
+    let referralFirstBookingDiscount = 0
+    if (referral.influencerId && req.user?.id) {
+      referralFirstBookingPlan = await planReferralFirstBookingDiscount({
+        influencerUserId: referral.influencerId,
+        userId: req.user.id,
+        totalBeforeDiscount,
+        currency: finalCurrency,
+      })
+      referralFirstBookingDiscount = referralFirstBookingPlan?.apply
+        ? referralFirstBookingPlan.discountAmount
+        : 0
+    }
+    const totalDiscountAmount = roundCurrency(referralFirstBookingDiscount)
+    const grossTotal = roundCurrency(Math.max(0, totalBeforeDiscount - totalDiscountAmount))
+
     const localBooking = await models.Booking.create({
       booking_ref,
       user_id: req.user?.id || null,
@@ -627,8 +676,22 @@ export const createPaymentIntent = async (req, res, next) => {
       status: "PENDING",
       payment_status: "UNPAID",
       payment_status: "UNPAID",
-      gross_price: finalAmount,
+      gross_price: grossTotal,
       currency: finalCurrency,
+      pricing_snapshot: {
+        totalBeforeDiscount,
+        referralFirstBooking: referralFirstBookingPlan?.apply
+          ? {
+            pct: referralFirstBookingPlan.pct,
+            amount: roundCurrency(referralFirstBookingDiscount),
+            currency: referralFirstBookingPlan.currency,
+            applied: true,
+          }
+          : null,
+        totalDiscountAmount,
+        total: grossTotal,
+        currency: finalCurrency,
+      },
 
       meta: {
         hotelId,
@@ -642,6 +705,16 @@ export const createPaymentIntent = async (req, res, next) => {
             referral: {
               influencerUserId: referral.influencerId,
               code: referral.code || null,
+            },
+          }
+          : {}),
+        ...(referralFirstBookingPlan?.apply
+          ? {
+            referralFirstBooking: {
+              pct: referralFirstBookingPlan.pct,
+              amount: roundCurrency(referralFirstBookingDiscount),
+              currency: referralFirstBookingPlan.currency,
+              applied: true,
             },
           }
           : {}),
@@ -691,6 +764,7 @@ export const createPaymentIntent = async (req, res, next) => {
     }
 
     // 2. Create Stripe Payment Intent
+
     const zeroDecimalCurrencies = new Set([
       "BIF",
       "CLP",
@@ -716,12 +790,12 @@ export const createPaymentIntent = async (req, res, next) => {
       : zeroDecimalCurrencies.has(currencyUpper)
         ? 0
         : 2
-    const amountForStripe = Math.round(finalAmount * Math.pow(10, minorUnit))
+    const amountForStripe = Math.round(grossTotal * Math.pow(10, minorUnit))
     const paymentIntentParams = {
       amount: amountForStripe,
       currency: currencyUpper.toLowerCase(),
       metadata: {
-        bookingId: String(localBooking.id), // Link to LOCAL booking
+        bookingId: String(localBooking.id),
         webbedsId: String(bookingId),
         source: "WEBBEDS",
       },
@@ -765,7 +839,21 @@ export const createPaymentIntent = async (req, res, next) => {
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
       localBookingId: localBooking.id,
-      bookingRef: booking_ref
+      bookingRef: booking_ref,
+      pricingSnapshot: {
+        totalBeforeDiscount,
+        referralFirstBooking: referralFirstBookingPlan?.apply
+          ? {
+            pct: referralFirstBookingPlan.pct,
+            amount: roundCurrency(referralFirstBookingDiscount),
+            currency: referralFirstBookingPlan.currency,
+            applied: true,
+          }
+          : null,
+        totalDiscountAmount,
+        total: grossTotal,
+        currency: finalCurrency,
+      },
     })
 
   } catch (error) {
@@ -974,7 +1062,7 @@ export const listStaticHotels = async (req, res, next) => {
       where.country_code = String(countryCode).trim()
     }
     if (q) {
-      where.name = { [Op.iLike]: `%${q.trim()}%` }
+      where.name = { [iLikeOp]: `%${q.trim()}%` }
     }
     if (preferred === "true") {
       where.preferred = true
@@ -1489,7 +1577,7 @@ export const listCities = async (req, res, next) => {
       where.country_code = String(countryCode).trim()
     }
     if (q) {
-      where.name = { [Op.iLike]: `%${q.trim()}%` }
+      where.name = { [iLikeOp]: `%${q.trim()}%` }
     }
 
     const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20))

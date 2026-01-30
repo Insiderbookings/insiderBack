@@ -6,6 +6,7 @@ import { HOME_PROPERTY_TYPES, HOME_SPACE_TYPES } from "../models/Home.js";
 import { HOME_DISCOUNT_RULE_TYPES } from "../models/HomeDiscountRule.js";
 import { resolveGeoFromRequest } from "../utils/geoLocation.js";
 import { mapHomeToCard, getCoverImage } from "../utils/homeMapper.js";
+import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 
 function asBool(value, fallback = false) {
   if (value == null) return fallback;
@@ -67,6 +68,7 @@ const normalizeIdList = (value) =>
     .filter((entry) => Number.isFinite(entry) && entry > 0);
 
 const getUserId = (user) => user?.id || user?.sub;
+const iLikeOp = getCaseInsensitiveLikeOp();
 
 const AMENITY_ICON_BY_KEY = {
   WIFI: "wifi-outline",
@@ -464,8 +466,6 @@ export const listHomeDestinations = async (req, res) => {
     const query = typeof req.query?.query === "string" ? req.query.query.trim() : "";
     const lat = parseCoordinate(req.query?.lat);
     const lng = parseCoordinate(req.query?.lng);
-    const iLikeOp = (typeof sequelize.getDialect === "function" ? sequelize.getDialect() : "mysql") === "mysql" ? Op.like : Op.iLike;
-
     const addressWhere = {};
     if (query.length >= 2) {
       addressWhere[Op.or] = [
@@ -629,8 +629,6 @@ export const searchHomes = async (req, res) => {
 
     const addressAttributes = ["address_line1", "city", "state", "country", "latitude", "longitude"];
     const baseWhere = { status: "PUBLISHED", is_visible: true };
-    const dialect = typeof sequelize.getDialect === "function" ? sequelize.getDialect() : "mysql";
-    const iLikeOp = dialect === "mysql" ? Op.like : Op.iLike;
 
     const addressWhere = {};
     if (lat != null && lng != null) {
@@ -951,8 +949,8 @@ export const getHomeRecommendations = async (req, res) => {
 
     // Define dialect/ops BEFORE using them in include/where clauses
     const dialect = typeof sequelize.getDialect === "function" ? sequelize.getDialect() : "mysql";
-    const iLikeOp = dialect === "mysql" ? Op.like : Op.iLike;
-    const quote = (name) => (dialect === "mysql" ? `\`${name}\`` : `"${name}"`);
+    const quote = (name) =>
+      dialect === "mysql" || dialect === "mariadb" ? `\`${name}\`` : `"${name}"`;
     const columnRef = (alias, column) => `${quote(alias)}.${quote(column)}`;
 
     const baseWhere = {

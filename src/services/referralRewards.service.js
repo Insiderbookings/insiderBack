@@ -1,8 +1,10 @@
 // src/services/referralRewards.service.js
 import { Op } from "sequelize"
 import models, { sequelize } from "../models/index.js"
+import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
 
 const allowedEvents = new Set(["signup", "booking"])
+const iLikeOp = getCaseInsensitiveLikeOp()
 
 export class ReferralError extends Error {
   constructor(message, status = 400) {
@@ -37,6 +39,11 @@ const referralCouponPct = () => {
 const referralCouponCapUsd = () => {
   const capEnv = Number(process.env.REFERRAL_COUPON_MAX_USD)
   return Number.isFinite(capEnv) && capEnv > 0 ? capEnv : null
+}
+
+const referralFirstBookingPct = () => {
+  const pctEnv = Number(process.env.REFERRAL_FIRST_BOOKING_PCT)
+  return Number.isFinite(pctEnv) && pctEnv > 0 ? pctEnv : 15
 }
 
 const signupBonusAmount = (upgraded = false) => {
@@ -108,13 +115,19 @@ const computeReferralDiscount = (totalBeforeDiscount, currency) => {
   return Math.min(rawDiscount, Number.parseFloat(capInCurrency.toFixed(2)))
 }
 
+const roundCurrency = (value) => {
+  const numeric = Number(value || 0)
+  if (!Number.isFinite(numeric)) return 0
+  return Number.parseFloat(numeric.toFixed(2))
+}
+
 export const findInfluencerByReferralCode = async (code, transaction) => {
   if (!models.User) return null
   const normalized = normalizeCode(code)
   if (!normalized) return null
   const where = {
     role: 2,
-    user_code: { [Op.iLike]: normalized },
+    user_code: { [iLikeOp]: normalized },
   }
   const influencer = await models.User.findOne({
     where,
@@ -409,6 +422,53 @@ export const planReferralCoupon = async ({
     available,
     pending,
     discountAmount: Number.parseFloat(discountAmount.toFixed(2)),
+    currency: (currency || "USD").toUpperCase(),
+    influencerUserId,
+    userId,
+  }
+}
+
+export const planReferralFirstBookingDiscount = async ({
+  influencerUserId,
+  userId,
+  totalBeforeDiscount,
+  currency = "USD",
+  transaction,
+}) => {
+  if (!influencerUserId || !userId || !models.User || !models.Booking) {
+    return { apply: false, reason: "missing_context" }
+  }
+  const user = await models.User.findByPk(userId, {
+    attributes: ["id", "referred_by_influencer_id"],
+    transaction,
+  })
+  if (!user) return { apply: false, reason: "user_missing" }
+  if (Number(user.referred_by_influencer_id) !== Number(influencerUserId)) {
+    return { apply: false, reason: "not_referred" }
+  }
+
+  const total = Number(totalBeforeDiscount)
+  if (!Number.isFinite(total) || total <= 0) {
+    return { apply: false, reason: "invalid_total" }
+  }
+
+  const existingCount = await models.Booking.count({
+    where: { user_id: userId },
+    transaction,
+  })
+  if (existingCount > 0) {
+    return { apply: false, reason: "not_first_booking" }
+  }
+
+  const pct = referralFirstBookingPct()
+  if (!pct) return { apply: false, reason: "pct_zero" }
+  const discountAmount = roundCurrency((total * pct) / 100)
+  if (!discountAmount) return { apply: false, reason: "discount_zero" }
+
+  return {
+    apply: true,
+    pct,
+    discountAmount,
     currency: (currency || "USD").toUpperCase(),
     influencerUserId,
     userId,

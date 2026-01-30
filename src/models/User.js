@@ -16,6 +16,14 @@ export default (sequelize) => {
         type: DataTypes.STRING(100),
         allowNull: false,
       },
+      first_name: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+      },
+      last_name: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+      },
       email: {
         type: DataTypes.STRING(150),
         allowNull: false,

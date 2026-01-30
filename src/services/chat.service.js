@@ -1,12 +1,14 @@
 import { Op } from "sequelize";
 import models, { sequelize } from "../models/index.js";
-import { emitToRoom, emitToUser } from "../websocket/emitter.js";
+import { emitToRoom, emitToUser, emitAdminActivity } from "../websocket/emitter.js";
 import { sendPushToUser } from "./pushNotifications.service.js";
 
 const {
   ChatThread,
   ChatParticipant,
   ChatMessage,
+  SupportTicket,
+  SupportMessage,
   ChatAutoPrompt,
   Home,
   User,
@@ -500,10 +502,89 @@ const fetchParticipant = async ({ chatId, userId, transaction }) => {
     where: { chat_id: chatId, user_id: userId },
     transaction,
   });
+  const thread = await ChatThread.findByPk(chatId, { transaction });
   if (!participant) {
+    if (thread) {
+      let role = null;
+      if (thread.guest_user_id === userId) role = "GUEST";
+      if (thread.host_user_id === userId) role = "HOST";
+      if (role) {
+        const created = await ChatParticipant.create(
+          {
+            chat_id: chatId,
+            user_id: userId,
+            role,
+            last_read_at: null,
+          },
+          { transaction }
+        );
+        return created;
+      }
+    }
     throw new Error("User is not a participant of this chat");
   }
+
+  // Normalize unexpected roles (e.g., TRAVELER) based on thread ownership
+  if (thread && participant.role !== "GUEST" && participant.role !== "HOST") {
+    let role = null;
+    if (thread.guest_user_id === userId) role = "GUEST";
+    if (thread.host_user_id === userId) role = "HOST";
+    if (role) {
+      await participant.update({ role }, { transaction });
+      participant.role = role;
+    }
+  }
+
   return participant;
+};
+
+const mirrorSupportMessage = async ({
+  thread,
+  message,
+  senderId,
+  senderRole,
+  body,
+  metadata,
+}) => {
+  if (!thread?.id) return;
+  if (!body || typeof body !== "string") return;
+
+  const source = metadata?.source || metadata?.origin || null;
+  if (source === "support") return;
+
+  const ticket = await SupportTicket.findOne({
+    where: { chat_thread_id: thread.id },
+  });
+  if (!ticket) return;
+
+  const senderType = senderRole === "HOST" ? "ADMIN" : "USER";
+  const supportMessage = await SupportMessage.create({
+    ticket_id: ticket.id,
+    sender_type: senderType,
+    sender_id: senderId ?? null,
+    content: body,
+    metadata: metadata ?? null,
+  });
+
+  const updates = { last_message_at: new Date() };
+  if (senderType === "USER" && ticket.status === "RESOLVED") {
+    updates.status = "IN_PROGRESS";
+  }
+  if (senderType === "ADMIN" && ticket.status === "OPEN") {
+    updates.status = "IN_PROGRESS";
+  }
+  await ticket.update(updates);
+
+  emitToRoom("admin:support", "support:new_message", {
+    ticketId: ticket.id,
+    message: supportMessage,
+    user: message?.sender?.name,
+  });
+  emitAdminActivity({
+    type: "support",
+    action: "support:new_message",
+    ticketId: ticket.id,
+  });
 };
 
 export const postMessage = async ({
@@ -615,6 +696,15 @@ export const postMessage = async ({
       "last_message_at",
       "status",
     ],
+  });
+
+  await mirrorSupportMessage({
+    thread,
+    message,
+    senderId,
+    senderRole: message?.sender_role,
+    body,
+    metadata,
   });
 
   const audience = normalizeAudience(messagePayload?.metadata?.audience);
@@ -794,12 +884,22 @@ export const listThreadsForUser = async ({ userId }) => {
       [Op.or]: [
         { guest_user_id: userId },
         { host_user_id: userId },
+        sequelize.where(sequelize.col("participants.user_id"), userId),
       ],
     },
     include: [
       {
         model: ChatParticipant,
         as: "participants",
+        include: [
+          {
+            model: User,
+            as: "user",
+            attributes: ["id", "name", "email", "avatar_url", "role"],
+            required: false,
+          },
+        ],
+        required: false,
       },
     ],
     order: [["last_message_at", "DESC"]],
@@ -816,13 +916,24 @@ export const getThreadForUser = async ({ userId, chatId }) => {
       {
         model: ChatParticipant,
         as: "participants",
+        include: [
+          {
+            model: User,
+            as: "user",
+            attributes: ["id", "name", "email", "avatar_url", "role"],
+            required: false,
+          },
+        ],
+        required: false,
       },
     ],
   });
   if (!thread) return null;
 
   const isParticipant =
-    thread.guest_user_id === userId || thread.host_user_id === userId;
+    thread.guest_user_id === userId ||
+    thread.host_user_id === userId ||
+    thread.participants?.some((p) => p.user_id === userId);
 
   if (!isParticipant) {
     return null;
@@ -897,6 +1008,7 @@ const mapThreadForUser = async ({ thread, userId }) => {
 
   return {
     id: thread.id,
+    meta: thread.meta ?? null,
     status: thread.status,
     reserveId: thread.reserve_id,
     homeId: thread.home_id,
@@ -910,6 +1022,15 @@ const mapThreadForUser = async ({ thread, userId }) => {
     unreadCount: unread,
     guest: mapUserSummary(guest),
     host: mapUserSummary(host),
+    participants: Array.isArray(thread.participants)
+      ? thread.participants.map((p) => ({
+          id: p.id,
+          userId: p.user_id,
+          role: p.role,
+          lastReadAt: p.last_read_at,
+          user: mapUserSummary(p.user),
+        }))
+      : [],
     lastMessage: lastMessage ? mapMessage(lastMessage) : null,
   };
 };

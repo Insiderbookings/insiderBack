@@ -5,6 +5,7 @@
 import models from "../models/index.js";
 import { Op } from "sequelize";
 import nodemailer from "nodemailer";
+import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SMTP TRANSPORT
@@ -18,6 +19,8 @@ const transporter = nodemailer.createTransport({
     pass: process.env.SMTP_PASS,
   },
 });
+
+const iLikeOp = getCaseInsensitiveLikeOp();
 
 const getGuestMail = (bk) =>
   bk?.User?.email      // insider  (Booking → User)
@@ -67,7 +70,7 @@ export const getHotelAddOns = async (req, res) => {
 
     /** 1 ▪ Filtro de búsqueda **/
     const whereFilter = q && q.trim()
-      ? { name: { [Op.iLike]: `%${q.trim()}%` } }
+      ? { name: { [iLikeOp]: `%${q.trim()}%` } }
       : {}
 
     /** 2 ▪ Traer catálogo + pivote + opciones **/
@@ -847,7 +850,7 @@ export const listHotelAddOnsForEdit = async (req, res) => {
   try {
     const { hotelId } = req.params
     const { q = "" } = req.query
-    const whereAddOn = q ? { name: { [Op.iLike]: `%${q.trim()}%` } } : {}
+    const whereAddOn = q ? { name: { [iLikeOp]: `%${q.trim()}%` } } : {}
 
     const records = await models.AddOn.findAll({
       where: whereAddOn,
