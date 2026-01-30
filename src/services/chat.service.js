@@ -884,12 +884,22 @@ export const listThreadsForUser = async ({ userId }) => {
       [Op.or]: [
         { guest_user_id: userId },
         { host_user_id: userId },
+        sequelize.where(sequelize.col("participants.user_id"), userId),
       ],
     },
     include: [
       {
         model: ChatParticipant,
         as: "participants",
+        include: [
+          {
+            model: User,
+            as: "user",
+            attributes: ["id", "name", "email", "avatar_url", "role"],
+            required: false,
+          },
+        ],
+        required: false,
       },
     ],
     order: [["last_message_at", "DESC"]],
@@ -906,13 +916,24 @@ export const getThreadForUser = async ({ userId, chatId }) => {
       {
         model: ChatParticipant,
         as: "participants",
+        include: [
+          {
+            model: User,
+            as: "user",
+            attributes: ["id", "name", "email", "avatar_url", "role"],
+            required: false,
+          },
+        ],
+        required: false,
       },
     ],
   });
   if (!thread) return null;
 
   const isParticipant =
-    thread.guest_user_id === userId || thread.host_user_id === userId;
+    thread.guest_user_id === userId ||
+    thread.host_user_id === userId ||
+    thread.participants?.some((p) => p.user_id === userId);
 
   if (!isParticipant) {
     return null;
@@ -1001,6 +1022,15 @@ const mapThreadForUser = async ({ thread, userId }) => {
     unreadCount: unread,
     guest: mapUserSummary(guest),
     host: mapUserSummary(host),
+    participants: Array.isArray(thread.participants)
+      ? thread.participants.map((p) => ({
+          id: p.id,
+          userId: p.user_id,
+          role: p.role,
+          lastReadAt: p.last_read_at,
+          user: mapUserSummary(p.user),
+        }))
+      : [],
     lastMessage: lastMessage ? mapMessage(lastMessage) : null,
   };
 };
