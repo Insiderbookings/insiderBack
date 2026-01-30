@@ -240,6 +240,19 @@ export const processBookingCancellation = async ({
     if (statusLc === "cancelled") throw { status: 400, message: "Booking is already cancelled" };
     if (statusLc === "completed") throw { status: 400, message: "Cannot cancel completed booking" };
 
+    const checkInDate = booking.check_in ? new Date(booking.check_in) : null;
+    const now = new Date();
+    if (checkInDate && checkInDate < now && !bySupport) {
+        throw { status: 400, message: "Bookings that already started cannot be cancelled." };
+    }
+
+    const hoursUntilCheckIn = checkInDate
+        ? (checkInDate.getTime() - now.getTime()) / 36e5
+        : null;
+    if (hoursUntilCheckIn != null && hoursUntilCheckIn < 24 && !bySupport) {
+        throw { status: 400, message: "Bookings cannot be cancelled within 24 hours of check-in." };
+    }
+
     const isHomeBooking =
         String(booking.inventory_type || "").toUpperCase() === "HOME" ||
         String(booking.source || "").toUpperCase() === "HOME";
