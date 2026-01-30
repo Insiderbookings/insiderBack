@@ -57,6 +57,8 @@ const appleJwks = createRemoteJWKSet(new URL("https://appleid.apple.com/auth/key
 const USER_SAFE_ATTRIBUTES = [
   "id",
   "name",
+  "first_name",
+  "last_name",
   "email",
   "phone",
   "role",
@@ -85,12 +87,60 @@ const logLoginToken = (label, token) => {
   console.log(`[auth.login] ${label}:`, token);
 };
 
+const normalizeNamePart = (value) => {
+  const trimmed = String(value || "").trim();
+  return trimmed ? trimmed : null;
+};
+
+const normalizeFullName = (value) => {
+  const trimmed = String(value || "").trim().replace(/\s+/g, " ");
+  return trimmed ? trimmed : null;
+};
+
+const splitFullName = (value) => {
+  const fullName = normalizeFullName(value);
+  if (!fullName) return { fullName: null, firstName: null, lastName: null };
+  const parts = fullName.split(" ");
+  const firstName = parts[0] || null;
+  const lastName = parts.slice(1).join(" ") || null;
+  return { fullName, firstName, lastName };
+};
+
+const resolveNameParts = ({ name, firstName, lastName }) => {
+  const normalizedFirst = normalizeNamePart(firstName);
+  const normalizedLast = normalizeNamePart(lastName);
+  let fullName = normalizeFullName(name);
+
+  if (!fullName && (normalizedFirst || normalizedLast)) {
+    fullName = [normalizedFirst, normalizedLast].filter(Boolean).join(" ").trim() || null;
+  }
+
+  let resolvedFirst = normalizedFirst;
+  let resolvedLast = normalizedLast;
+
+  if (fullName && (!resolvedFirst || !resolvedLast)) {
+    const derived = splitFullName(fullName);
+    if (!resolvedFirst) resolvedFirst = derived.firstName;
+    if (!resolvedLast) resolvedLast = derived.lastName;
+    if (!fullName) fullName = derived.fullName;
+  }
+
+  return { fullName, firstName: resolvedFirst, lastName: resolvedLast };
+};
+
 const presentUser = (user) => {
   if (!user) return null;
   const plain = typeof user.get === "function" ? user.get({ plain: true }) : user;
+  const derivedName = resolveNameParts({
+    name: plain.name,
+    firstName: plain.first_name,
+    lastName: plain.last_name,
+  });
   return {
     id: plain.id,
-    name: plain.name,
+    name: derivedName.fullName || plain.name,
+    firstName: derivedName.firstName,
+    lastName: derivedName.lastName,
     email: plain.email,
     phone: plain.phone,
     role: plain.role ?? 0,
@@ -133,11 +183,14 @@ const isPlaceholderAppleName = (name, email, providerSub) => {
 };
 
 const resolveAppleName = (fullName, fallbackEmail) => {
-  if (typeof fullName === "string" && fullName.trim()) return fullName.trim();
+  if (typeof fullName === "string") {
+    const normalized = normalizeFullName(fullName);
+    if (normalized) return normalized;
+  }
   if (fullName && typeof fullName === "object") {
     const parts = [fullName.givenName, fullName.middleName, fullName.familyName]
       .filter(Boolean)
-      .map((part) => String(part).trim())
+      .map((part) => normalizeFullName(part))
       .filter(Boolean);
     if (parts.length) return parts.join(" ");
   }
@@ -499,6 +552,8 @@ export const loginStaff = async (req, res) => {
 export const registerUser = async (req, res) => {
   const {
     name,
+    firstName,
+    lastName,
     email,
     password,
     countryCode,
@@ -510,9 +565,15 @@ export const registerUser = async (req, res) => {
     if (exists) return res.status(409).json({ error: "Email taken" });
 
     const hash = await bcrypt.hash(password, 10);
+    const resolvedName = resolveNameParts({ name, firstName, lastName });
+    if (!resolvedName.fullName) {
+      return res.status(400).json({ error: "Name is required" });
+    }
 
     const user = await models.User.create({
-      name,
+      name: resolvedName.fullName,
+      first_name: resolvedName.firstName,
+      last_name: resolvedName.lastName,
       email,
       password_hash: hash,
       country_code: countryCode ? String(countryCode).trim() : null,
@@ -906,7 +967,14 @@ export const googleExchange = async (req, res) => {
 
     const sub = payload.sub; // id único Google
     const email = payload.email;
-    const name = payload.name || email;
+    const givenName = payload.given_name || payload.givenName || null;
+    const familyName = payload.family_name || payload.familyName || null;
+    const googleNameParts = resolveNameParts({
+      name: payload.name || email,
+      firstName: givenName,
+      lastName: familyName,
+    });
+    const name = googleNameParts.fullName || email;
     const picture = payload.picture || null;
     const emailVerified = !!payload.email_verified;
 
@@ -923,16 +991,22 @@ export const googleExchange = async (req, res) => {
 
       if (user) {
         // Vincular proveedor (merge de cuentas)
-        await user.update({
+        const updates = {
           auth_provider: "google",
           provider_sub: sub,
           email_verified: emailVerified || user.email_verified,
           avatar_url: user.avatar_url || picture,
-        });
+        };
+        if ((!user.name || user.name === user.email) && name) updates.name = name;
+        if (!user.first_name && googleNameParts.firstName) updates.first_name = googleNameParts.firstName;
+        if (!user.last_name && googleNameParts.lastName) updates.last_name = googleNameParts.lastName;
+        await user.update(updates);
       } else {
         // 3c) Crear usuario nuevo (sin password)
         user = await models.User.create({
           name,
+          first_name: googleNameParts.firstName,
+          last_name: googleNameParts.lastName,
           email,
           password_hash: null, // social login → sin password local
           auth_provider: "google",
@@ -941,6 +1015,16 @@ export const googleExchange = async (req, res) => {
           avatar_url: picture,
           // is_active, role → usan defaults del modelo
         });
+      }
+    }
+
+    if (user) {
+      const nameUpdates = {};
+      if ((!user.name || user.name === user.email) && name) nameUpdates.name = name;
+      if (!user.first_name && googleNameParts.firstName) nameUpdates.first_name = googleNameParts.firstName;
+      if (!user.last_name && googleNameParts.lastName) nameUpdates.last_name = googleNameParts.lastName;
+      if (Object.keys(nameUpdates).length) {
+        await user.update(nameUpdates);
       }
     }
 
@@ -1024,6 +1108,11 @@ export const appleExchange = async (req, res) => {
     const emailFromToken = payload?.email ? String(payload.email).toLowerCase() : null;
     const email = emailFromToken || (providedEmail ? String(providedEmail).toLowerCase() : null);
     const emailVerified = normalizeAppleBool(payload?.email_verified);
+    const appleNameParts = resolveNameParts({
+      name: resolveAppleName(fullName, email),
+      firstName: fullName && typeof fullName === "object" ? fullName.givenName : null,
+      lastName: fullName && typeof fullName === "object" ? fullName.familyName : null,
+    });
 
     let user = await models.User.findOne({
       where: { auth_provider: "apple", provider_sub: sub },
@@ -1041,9 +1130,11 @@ export const appleExchange = async (req, res) => {
           provider_sub: sub,
         };
         if (emailVerified && !user.email_verified) updates.email_verified = true;
-        if (fullName && isPlaceholderAppleName(user.name, email || user.email, sub)) {
-          updates.name = resolveAppleName(fullName, email || user.email);
+        if (appleNameParts.fullName && isPlaceholderAppleName(user.name, email || user.email, sub)) {
+          updates.name = appleNameParts.fullName;
         }
+        if (!user.first_name && appleNameParts.firstName) updates.first_name = appleNameParts.firstName;
+        if (!user.last_name && appleNameParts.lastName) updates.last_name = appleNameParts.lastName;
         await user.update(updates);
       } else {
         if (!email) {
@@ -1051,9 +1142,10 @@ export const appleExchange = async (req, res) => {
             error: "Apple account missing email. Revoke Apple access and try again.",
           });
         }
-        const name = resolveAppleName(fullName, email);
         user = await models.User.create({
-          name,
+          name: appleNameParts.fullName || resolveAppleName(fullName, email),
+          first_name: appleNameParts.firstName,
+          last_name: appleNameParts.lastName,
           email,
           password_hash: null, // social login === sin password local
           auth_provider: "apple",
@@ -1065,9 +1157,11 @@ export const appleExchange = async (req, res) => {
       const updates = {};
       if (!user.email && email) updates.email = email;
       if (emailVerified && !user.email_verified) updates.email_verified = true;
-      if (fullName && isPlaceholderAppleName(user.name, email || user.email, sub)) {
-        updates.name = resolveAppleName(fullName, email || user.email);
+      if (appleNameParts.fullName && isPlaceholderAppleName(user.name, email || user.email, sub)) {
+        updates.name = appleNameParts.fullName;
       }
+      if (!user.first_name && appleNameParts.firstName) updates.first_name = appleNameParts.firstName;
+      if (!user.last_name && appleNameParts.lastName) updates.last_name = appleNameParts.lastName;
       if (Object.keys(updates).length) {
         await user.update(updates);
       }

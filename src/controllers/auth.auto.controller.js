@@ -22,6 +22,8 @@ export const autoSignupOrLogin = async (req, res) => {
 
       user = await User.create({
         name: `${firstName} ${lastName}`.trim(),
+        first_name: firstName,
+        last_name: lastName,
         email,
         phone,
         password_hash,
