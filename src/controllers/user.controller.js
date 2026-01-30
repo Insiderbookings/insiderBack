@@ -11,6 +11,46 @@ const normalizeDiscountCode = (value) => String(value || "").trim().toUpperCase(
 const isValidEmail = (value = "") =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim())
 
+const normalizeNamePart = (value) => {
+  const trimmed = String(value || "").trim()
+  return trimmed ? trimmed : null
+}
+
+const normalizeFullName = (value) => {
+  const trimmed = String(value || "").trim().replace(/\s+/g, " ")
+  return trimmed ? trimmed : null
+}
+
+const splitFullName = (value) => {
+  const fullName = normalizeFullName(value)
+  if (!fullName) return { fullName: null, firstName: null, lastName: null }
+  const parts = fullName.split(" ")
+  const firstName = parts[0] || null
+  const lastName = parts.slice(1).join(" ") || null
+  return { fullName, firstName, lastName }
+}
+
+const resolveNameParts = ({ name, firstName, lastName }) => {
+  const normalizedFirst = normalizeNamePart(firstName)
+  const normalizedLast = normalizeNamePart(lastName)
+  let fullName = normalizeFullName(name)
+
+  if (!fullName && (normalizedFirst || normalizedLast)) {
+    fullName = [normalizedFirst, normalizedLast].filter(Boolean).join(" ").trim() || null
+  }
+
+  let resolvedFirst = normalizedFirst
+  let resolvedLast = normalizedLast
+  if (fullName && (!resolvedFirst || !resolvedLast)) {
+    const derived = splitFullName(fullName)
+    if (!resolvedFirst) resolvedFirst = derived.firstName
+    if (!resolvedLast) resolvedLast = derived.lastName
+    if (!fullName) fullName = derived.fullName
+  }
+
+  return { fullName, firstName: resolvedFirst, lastName: resolvedLast }
+}
+
 const shouldTouchLastLogin = (value) => {
   if (!value) return true
   const last = new Date(value).getTime()
@@ -42,6 +82,8 @@ export const getCurrentUser = async (req, res) => {
       attributes: [
         "id",
         "name",
+        ["first_name", "firstName"],
+        ["last_name", "lastName"],
         "email",
         ["email_verified", "emailVerified"],
         "phone",
@@ -71,7 +113,16 @@ export const getCurrentUser = async (req, res) => {
     if (shouldTouchLastLogin(user.last_login_at)) {
       user = await user.update({ last_login_at: new Date() })
     }
-    return res.json(user.get({ plain: true }))
+    const plain = user.get({ plain: true })
+    const derivedName = resolveNameParts({
+      name: plain.name,
+      firstName: plain.firstName,
+      lastName: plain.lastName,
+    })
+    if (!plain.firstName && derivedName.firstName) plain.firstName = derivedName.firstName
+    if (!plain.lastName && derivedName.lastName) plain.lastName = derivedName.lastName
+    if (!plain.name && derivedName.fullName) plain.name = derivedName.fullName
+    return res.json(plain)
   } catch (err) {
     console.error("Error getting current user:", err)
     return res.status(500).json({ error: "Server error" })
@@ -111,11 +162,12 @@ export const lookupUserByEmail = async (req, res) => {
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ PUT /api/users/me â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const updateUserProfile = async (req, res) => {
   try {
-    const { name, email, phone, countryCode, countryOfResidenceCode } = req.body
+    const { name, firstName, lastName, email, phone, countryCode, countryOfResidenceCode } = req.body
     const userId = req.user.id
 
     // Validaciones bÃ¡sicas
-    if (!name || !email) {
+    const resolvedName = resolveNameParts({ name, firstName, lastName })
+    if (!resolvedName.fullName || !email) {
       return res.status(400).json({ error: "Name and email are required" })
     }
 
@@ -167,7 +219,9 @@ export const updateUserProfile = async (req, res) => {
     // Actualizar usuario
     const [updatedRowsCount] = await models.User.update(
       {
-        name: name.trim(),
+        name: resolvedName.fullName,
+        first_name: resolvedName.firstName,
+        last_name: resolvedName.lastName,
         email: email.trim().toLowerCase(),
         phone: phone ? phone.trim() : null,
         country_code: normalizedCountryCode,
@@ -188,6 +242,8 @@ export const updateUserProfile = async (req, res) => {
       attributes: [
         "id",
         "name",
+        ["first_name", "firstName"],
+        ["last_name", "lastName"],
         "email",
         "phone",
         "role",

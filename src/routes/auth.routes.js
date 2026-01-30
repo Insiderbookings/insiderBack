@@ -43,12 +43,21 @@ router.post("/staff/login", loginStaff);
 router.post(
   "/user/register",
   [
-    body("name").notEmpty(),
     body("email").isEmail(),
     body("password").isLength({ min: 6 }),
     body("countryCode").isInt().withMessage("countryCode is required"),
     body("countryOfResidenceCode").isInt().withMessage("countryOfResidenceCode is required"),
     body("referralCode").optional().isString(),
+    body("name").optional().isString(),
+    body("firstName").optional().isString(),
+    body("lastName").optional().isString(),
+    body().custom((_, { req }) => {
+      const name = String(req.body?.name || "").trim();
+      const firstName = String(req.body?.firstName || "").trim();
+      const lastName = String(req.body?.lastName || "").trim();
+      if (name || (firstName && lastName)) return true;
+      throw new Error("Name is required");
+    }),
   ],
   registerUser,
 );
