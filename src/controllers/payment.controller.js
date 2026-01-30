@@ -69,51 +69,45 @@ const ensureBookingNights = async (booking) => {
 const getStayIdFromMeta = (meta = {}) =>
   Number(meta.stayId || meta.stay_id || meta.bookingId || meta.booking_id) || 0;
 
-const dispatchHomeBookingConfirmation = async (booking) => {
-  if (!booking || booking.inventory_type !== "HOME") return;
+const dispatchBookingConfirmation = async (booking) => {
+  if (!booking) return;
 
-  const stayHome = await models.StayHome.findOne({
-    where: { stay_id: booking.id },
-    include: [
-      {
-        model: models.Home,
-        as: "home",
-        attributes: ["id", "title", "host_id"],
-        include: [
-          {
-            association: "media",
-            attributes: ["url", "is_cover", "order"],
-            required: false,
-            separate: true,
-            limit: 1,
-            order: [
-              ["is_cover", "DESC"],
-              ["order", "ASC"],
-              ["id", "ASC"],
-            ],
-          },
-        ],
-      },
-    ],
-  });
+  const isHome = booking.inventory_type === "HOME";
+  const isHotel = !isHome; // Simplify for now, assuming HOTEL or similar
 
-  const home = stayHome?.home || null;
-  const hostUserId =
-    stayHome?.host_id || home?.host_id || booking.meta?.home?.hostId || null;
+  const home = booking.homeStay?.home || null;
+  const hotel = booking.hotelStay?.hotel || null;
+
+  // Resolve Host ID
+  let hostUserId = null;
+  if (isHome) {
+    hostUserId = booking.homeStay?.host_id || home?.host_id || booking.meta?.home?.hostId || null;
+  } else {
+    // For Hotels, use the Support/Bot User
+    hostUserId = process.env.HOTEL_SUPPORT_USER_ID ? Number(process.env.HOTEL_SUPPORT_USER_ID) : null;
+  }
+
   const guestUserId = booking.user_id || null;
   if (!hostUserId || !guestUserId) return;
 
+  // Resolve Property Details
+  const propertyName = isHome ? home?.title : (hotel?.name || booking.meta?.snapshot?.hotelName || "Hotel Stay");
+  const propertyImage = isHome ? (home?.media?.[0]?.url || null) : (booking.meta?.snapshot?.hotelImage || null);
+  const homeId = isHome ? (home?.id || booking.homeStay?.home_id || null) : null;
+
+  // Create Thread
   const thread = await createThread({
     guestUserId,
     hostUserId,
-    homeId: home?.id || stayHome?.home_id || null,
+    homeId, // Null for hotels
     reserveId: booking.id,
     checkIn: booking.check_in || null,
     checkOut: booking.check_out || null,
-    homeSnapshotName: home?.title || booking.meta?.home?.title || null,
-    homeSnapshotImage: home?.media?.[0]?.url || null,
+    homeSnapshotName: propertyName,
+    homeSnapshotImage: propertyImage,
   });
 
+  // Idempotency check
   const confirmationExists = await models.ChatMessage.findOne({
     where: {
       chat_id: thread.id,
@@ -138,7 +132,7 @@ const dispatchHomeBookingConfirmation = async (booking) => {
   const guestLine = guestParts.length ? guestParts.join(", ") : null;
 
   const detailLines = [
-    home?.title ? `Listing: ${home.title}` : null,
+    propertyName ? `${isHome ? "Listing" : "Hotel"}: ${propertyName}` : null,
     booking.check_in ? `Check-in: ${booking.check_in}` : null,
     booking.check_out ? `Check-out: ${booking.check_out}` : null,
     guestLine ? `Guests: ${guestLine}` : null,
@@ -158,13 +152,14 @@ const dispatchHomeBookingConfirmation = async (booking) => {
     "You can find all the details in your Trips tab.",
   ].join("\n");
 
+  // For Host message (only relevant if real host, but for Bot we can log/skip or just send self-message)
   const hostMessage = [
-    `${booking.guest_name || "Guest"} has booked your listing${home?.title ? ` ${home.title}` : ""}.`,
+    `${booking.guest_name || "Guest"} has booked ${isHome ? "your listing" : "a stay"}${propertyName ? ` ${propertyName}` : ""}.`,
     ...detailLines,
-    "Review the reservation details in your Host dashboard.",
+    isHome ? "Review the reservation details in your Host dashboard." : "System notification.",
   ].join("\n");
 
-  await Promise.allSettled([
+  const messagesToPost = [
     postMessage({
       chatId: thread.id,
       senderId: null,
@@ -173,6 +168,12 @@ const dispatchHomeBookingConfirmation = async (booking) => {
       body: guestMessage,
       metadata: { ...baseMetadata, audience: "GUEST" },
     }),
+  ];
+
+  // Only send HOST message if it's a Home (real host) or if we want the Bot to see it (optional)
+  // The original code sent to HOST audience.
+  // For Hotels, HOST audience is the Bot. It doesn't hurt to send it.
+  messagesToPost.push(
     postMessage({
       chatId: thread.id,
       senderId: null,
@@ -180,8 +181,10 @@ const dispatchHomeBookingConfirmation = async (booking) => {
       type: "SYSTEM",
       body: hostMessage,
       metadata: { ...baseMetadata, audience: "HOST" },
-    }),
-  ]);
+    })
+  );
+
+  await Promise.allSettled(messagesToPost);
 };
 
 export const finalizeBookingAfterPayment = async ({ bookingId }) => {
@@ -202,6 +205,18 @@ export const finalizeBookingAfterPayment = async ({ bookingId }) => {
                 model: models.HomeAddress,
                 as: "address",
                 attributes: ["address_line1", "city", "state", "country"],
+              },
+              {
+                association: "media",
+                attributes: ["url", "is_cover", "order"],
+                required: false,
+                separate: true,
+                limit: 1,
+                order: [
+                  ["is_cover", "DESC"],
+                  ["order", "ASC"],
+                  ["id", "ASC"],
+                ],
               },
             ],
           },
@@ -266,9 +281,9 @@ export const finalizeBookingAfterPayment = async ({ bookingId }) => {
   }
 
   try {
-    await dispatchHomeBookingConfirmation(booking);
+    await dispatchBookingConfirmation(booking);
   } catch (err) {
-    console.warn("[payments] home confirmation notify failed:", err?.message || err);
+    console.warn("[payments] booking confirmation notify failed:", err?.message || err);
   }
 
   try {

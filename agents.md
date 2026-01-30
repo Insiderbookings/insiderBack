@@ -43,6 +43,21 @@ Hotel bookings are **stateful** and managed by `FlowOrchestratorService`.
 - `src/providers/*`: External api wrappers.
 - `src/utils/*`: Helpers.
 
+## WebBeds Integration & Search Strategy
+
+### Static Content vs Availability
+WebBeds API separates **Static Content** (Hotel details, images, descriptions) from **Dynamic Availability** (Rates, Rooms).
+- **Static Content**: We maintain a local copy in the `WebbedsHotel` table (synced periodically). This is used for fast searching and rendering hotel details (images, amenities).
+- **Availability**: We query WebBeds live info via `src/providers/webbeds`.
+
+### Search Strategy (By Name/Location)
+To implement robust search (e.g., "Search by Hotel Name"):
+1.  **Local Search First**: Query the `WebbedsHotel` table using SQL (`ILIKE`) or Full-Text Search to find matches for the user's string.
+    *   *Result*: A list of `hotel_id`s (and metadata like City/Country).
+2.  **Live Availability Check**: Call `searchHotels` (WebBeds API) passing the found `hotel_id`s as a filter (using `advancedConditions` with `fieldName: 'hotelId'`).
+    *   *Reason*: WebBeds API is optimized for "Destination" search, not partial string matching on hotel names.
+3.  **Merge Results**: Combine the live rates with the local static details (Images, Location) to return the final list to the frontend.
+
 ## Coding Conventions
 
 ### Database (Sequelize)
@@ -61,5 +76,4 @@ Hotel bookings are **stateful** and managed by `FlowOrchestratorService`.
 
 ### Logging & Debugging
 - Use `console.info` for major flow steps (e.g., "[flows] started").
-- Use `console.error` for exceptions.
-- `FLOW_VERBOSE_LOGS` env var toggles deep xml tracing.
+- **XML Tracing**: Set `FLOW_VERBOSE_LOGS=true` or use `WEBBEDS_DEBUG=true` to log full XML payloads from WebBeds.
