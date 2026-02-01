@@ -23,7 +23,6 @@ import PaymentModel from "./Payment.js";
 import CommissionModel from "./Commission.js";
 import InfluencerCommissionModel from "./InfluencerCommission.js";
 import OutsideMetaModel from "./OutsideMeta.js";
-import TGXMetaModel from "./TGXMeta.js";
 import PayoutAccountModel from "./PayoutAccount.js";
 import PayoutBatchModel from "./PayoutBatch.js";
 import PayoutItemModel from "./PayoutItem.js";
@@ -45,7 +44,6 @@ import HotelStaffAddOnModel from "./HotelStaffAddOn.js";
 
 import MessageModel from "./Message.js";
 import UpsellCodeModel from "./UpsellCode.js";
-import TgxHotelModel from "./TGXHotel.js";
 import BookingFlowModel from "./BookingFlow.js";
 import BookingFlowStepModel from "./BookingFlowStep.js";
 import BookingUserModel from "./BookingUser.js";
@@ -154,7 +152,6 @@ const models = {
   CouponWallet: CouponWalletModel(sequelize),
   CouponRedemption: CouponRedemptionModel(sequelize),
   OutsideMeta: OutsideMetaModel(sequelize),
-  TGXMeta: TGXMetaModel(sequelize),
   PayoutAccount: PayoutAccountModel(sequelize),
   PayoutBatch: PayoutBatchModel(sequelize),
   PayoutItem: PayoutItemModel(sequelize),
@@ -176,7 +173,6 @@ const models = {
   AiChatSession: AiChatSessionModel(sequelize),
   AiChatMessage: AiChatMessageModel(sequelize),
   UpsellCode: UpsellCodeModel(sequelize),
-  TgxHotel: TgxHotelModel(sequelize),
   BookingFlow: BookingFlowModel(sequelize),
   BookingFlowStep: BookingFlowStepModel(sequelize),
   BookingUser: BookingUserModel(sequelize),

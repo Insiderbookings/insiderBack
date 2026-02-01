@@ -2,9 +2,6 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcrypt'
 import models from '../models/index.js'
 import cache from '../services/cache.js'
-import { fetchHotels } from "../providers/travelgate/services/hotelList.service.js"
-import { searchTGX, mapSearchOptions } from "../providers/travelgate/services/search.service.js"
-import { getMarkup } from "../utils/markup.js"
 
 /* --- helpers internos --- */
 /* --- helpers internos --- */
@@ -149,114 +146,5 @@ export async function listTemplates(_req, res) {
         res.json(items)
     } catch (e) {
         console.error(e); res.status(500).json({ error: 'Server error' })
-    }
-}
-
-export async function getHotelPublic(req, res) {
-    try {
-        const access = Number(req.tenant.externalHotelAccess)
-        const hotelCode = String(req.tenant.externalHotelID)
-
-        if (!access || !hotelCode) {
-            return res.status(400).json({ error: 'Missing tenant hotel access/id' })
-        }
-
-        const cacheKey = `hotelPublic:${access}:${hotelCode}`
-        const cached = await cache.get(cacheKey)
-        if (cached) return res.json(cached)
-
-        const criteria = {
-            access,                    // número
-            hotelCodes: [hotelCode],   // string[]
-            maxSize: 1
-        }
-
-        const page = await fetchHotels(criteria, "")
-        const edge = page?.edges?.[0]
-        const hotelData = edge?.node?.hotelData
-
-        if (!edge || !hotelData) {
-            return res.status(404).json({ error: 'Hotel not found' })
-        }
-
-        await cache.set(cacheKey, hotelData, 120)
-        res.json(hotelData)
-    } catch (e) {
-        const detail = e?.response?.errors?.[0]?.message || e.message
-        console.error('getHotelPublic error:', detail)
-        res.status(500).json({ error: 'Server error' })
-    }
-}
-
-/* --- SEARCH (público, por tenant) --- */
-export async function searchPublic(req, res) {
-    try {
-        const access = Number(req.tenant.externalHotelAccess)
-        const hotelCode = String(req.tenant.externalHotelID)
-        if (!access || !hotelCode) {
-            return res.status(400).json({ error: 'Missing tenant hotel access/id' })
-        }
-
-        // Query params
-        const checkIn  = String(req.query.checkIn  || '').trim() || new Date().toISOString().slice(0,10)
-        const checkOut = String(req.query.checkOut || '').trim() || new Date(Date.now()+2*86400000).toISOString().slice(0,10)
-        const adults   = Number(req.query.adults ?? 2)
-        const children = Number(req.query.children ?? 0)
-        const currency = String(req.query.currency || 'EUR').slice(0,3).toUpperCase()
-        const language = String(req.query.language || 'en')
-        const nationality = String(req.query.nationality || '')
-
-        const occupancies = [
-            { paxes: [
-                ...Array.from({ length: Math.max(1, adults) }, () => ({ age: 30 })),
-                ...Array.from({ length: Math.max(0, children) }, () => ({ age: 8 })),
-            ]}
-        ]
-
-        const criteria = {
-            checkIn,
-            checkOut,
-            occupancies,
-            hotels: [String(hotelCode)],
-            currency,
-            language,
-            nationality: nationality || undefined,
-        }
-
-        const settings = {
-            client: process.env.TGX_CLIENT,
-            context: process.env.TGX_CONTEXT,
-            timeout: 25000,
-            testMode: true,
-        }
-
-        const filter = { access: { includes: [String(access)] } }
-
-        const raw = await searchTGX(criteria, settings, filter)
-        let options = mapSearchOptions(raw)
-
-        // Decorate with public price (markup by role 0)
-        const roleNum = 0
-        const applyMarkup = (amount, pct) => {
-            const n = Number(amount)
-            if (!Number.isFinite(n)) return null
-            return Math.round((n * (1 + pct) + Number.EPSILON) * 100) / 100
-        }
-        options = options.map(opt => {
-            const pct = getMarkup(roleNum, opt.price)
-            const priceUser = applyMarkup(opt.price, pct)
-            const rooms = Array.isArray(opt.rooms)
-                ? opt.rooms.map(r => ({ ...r, priceUser: applyMarkup(r.price, getMarkup(roleNum, r.price)) }))
-                : opt.rooms
-            return { ...opt, priceUser, rooms, markup: { roleNum, pct } }
-        })
-
-        res.json({
-            info: { checkIn, checkOut, adults, children, currency, language },
-            options,
-        })
-    } catch (e) {
-        console.error('searchPublic error:', e?.message || e)
-        res.status(500).json({ error: 'Server error' })
     }
 }

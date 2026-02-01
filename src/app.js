@@ -155,7 +155,6 @@ const paymentsLimiter = rateLimit({
   skip: (req) => req.path && req.path.includes("webhook"),
 });
 app.use("/api/payments", paymentsLimiter);
-app.use("/api/tgx-payment", paymentsLimiter);
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
