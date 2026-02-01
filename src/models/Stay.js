@@ -1,8 +1,8 @@
 // src/models/Stay.js
 import { DataTypes } from "sequelize";
 
-const SOURCE_ENUM = ["TGX", "PARTNER", "OUTSIDE", "VAULT", "HOME"];
-const INVENTORY_ENUM = ["TGX_HOTEL", "LOCAL_HOTEL", "HOME", "MANUAL_HOTEL"];
+const SOURCE_ENUM = ["PARTNER", "OUTSIDE", "VAULT", "HOME"];
+const INVENTORY_ENUM = ["LOCAL_HOTEL", "HOME", "MANUAL_HOTEL"];
 const STATUS_ENUM = ["DRAFT", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"];
 const PAYMENT_STATUS_ENUM = ["UNPAID", "PENDING", "PAID", "REFUNDED"];
 const PRIVACY_ENUM = ["ENTIRE_PLACE", "PRIVATE_ROOM", "SHARED_ROOM"];
@@ -122,7 +122,7 @@ export default (sequelize) => {
       freezeTableName: true,
       defaultScope: {
         // Prevent selecting legacy hotel_id fields removed from the schema
-        attributes: { exclude: ["hotel_id", "room_id", "tgx_hotel_id"] },
+        attributes: { exclude: ["hotel_id", "room_id"] },
       },
       indexes: [
         { fields: ["booking_ref"], unique: true },
@@ -143,9 +143,6 @@ export default (sequelize) => {
     Stay.hasOne(models.StayHotel, { foreignKey: "stay_id", as: "hotelStay" });
     Stay.hasOne(models.StayHome, { foreignKey: "stay_id", as: "homeStay" });
     Stay.hasOne(models.StayManual, { foreignKey: "stay_id", as: "manualStay" });
-    if (models.TGXMeta) {
-      Stay.hasOne(models.TGXMeta, { foreignKey: "stay_id", as: "tgxMeta" });
-    }
     if (models.OutsideMeta) {
       Stay.hasOne(models.OutsideMeta, { foreignKey: "stay_id", as: "outsideMeta" });
     }

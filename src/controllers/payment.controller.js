@@ -69,7 +69,7 @@ const ensureBookingNights = async (booking) => {
 const getStayIdFromMeta = (meta = {}) =>
   Number(meta.stayId || meta.stay_id || meta.bookingId || meta.booking_id) || 0;
 
-const dispatchBookingConfirmation = async (booking) => {
+export const dispatchBookingConfirmation = async (booking) => {
   if (!booking) return;
 
   const isHome = booking.inventory_type === "HOME";
@@ -131,11 +131,42 @@ const dispatchBookingConfirmation = async (booking) => {
   if (infantsCount) guestParts.push(`${infantsCount} ${infantsCount === 1 ? "infant" : "infants"}`);
   const guestLine = guestParts.length ? guestParts.join(", ") : null;
 
+  const roomName =
+    booking.hotelStay?.room_name ||
+    booking.hotelStay?.room?.name ||
+    booking.hotelStay?.room_snapshot?.name ||
+    booking.meta?.roomName ||
+    null;
+  const ratePlanName =
+    booking.hotelStay?.rate_plan_name ||
+    booking.meta?.ratePlanName ||
+    null;
+  const boardCode =
+    booking.hotelStay?.board_code ||
+    booking.meta?.boardCode ||
+    null;
+  const bookingRef = booking.booking_ref || booking.bookingRef || null;
+  const supplierRef = booking.external_ref || booking.externalRef || null;
+  const currency = booking.currency || "USD";
+  const totalValue = Number(booking.gross_price ?? booking.total ?? 0);
+  const totalLabel =
+    Number.isFinite(totalValue) && totalValue > 0
+      ? `${currency} ${totalValue.toFixed(2)}`
+      : null;
+  const paymentStatus = booking.payment_status || booking.paymentStatus || null;
+
   const detailLines = [
     propertyName ? `${isHome ? "Listing" : "Hotel"}: ${propertyName}` : null,
     booking.check_in ? `Check-in: ${booking.check_in}` : null,
     booking.check_out ? `Check-out: ${booking.check_out}` : null,
     guestLine ? `Guests: ${guestLine}` : null,
+    roomName ? `Room: ${roomName}` : null,
+    ratePlanName ? `Rate plan: ${ratePlanName}` : null,
+    boardCode ? `Board: ${boardCode}` : null,
+    totalLabel ? `Total: ${totalLabel}` : null,
+    paymentStatus ? `Payment status: ${paymentStatus}` : null,
+    bookingRef ? `Booking ref: ${bookingRef}` : null,
+    supplierRef ? `Supplier ref: ${supplierRef}` : null,
     booking.id ? `Booking ID: ${booking.id}` : null,
   ].filter(Boolean);
 

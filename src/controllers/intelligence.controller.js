@@ -81,7 +81,7 @@ const resolveTripContextForPacks = async ({ bookingId, tripContext, intelligence
                     {
                         model: models.Home,
                         as: "home",
-                        attributes: ["id", "title", "host_id", "amenities", "house_rules"],
+                        attributes: ["id", "title", "host_id"],
                         include: [
                             {
                                 model: models.HomeAddress,
@@ -94,6 +94,18 @@ const resolveTripContextForPacks = async ({ bookingId, tripContext, intelligence
                                     "country",
                                     "latitude",
                                     "longitude",
+                                ],
+                            },
+                            {
+                                model: models.HomeAmenityLink,
+                                as: "amenities",
+                                attributes: ["id", "amenity_id", "value"],
+                                include: [
+                                    {
+                                        model: models.HomeAmenity,
+                                        as: "amenity",
+                                        attributes: ["id", "label", "description", "amenity_key"],
+                                    },
                                 ],
                             },
                         ],
