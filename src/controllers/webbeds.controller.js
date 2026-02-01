@@ -6,7 +6,9 @@ import { listSalutations } from "../providers/webbeds/salutations.js"
 import cache from "../services/cache.js"
 import { resolveGeoFromRequest } from "../utils/geoLocation.js"
 import { sendBookingEmail } from "../emailTemplates/booking-email.js"
+import { buildBookingEmailPayload } from "../helpers/bookingEmailPayload.js"
 import { triggerBookingAutoPrompts, PROMPT_TRIGGERS } from "../services/chat.service.js"
+import { dispatchBookingConfirmation } from "./payment.controller.js"
 import { convertCurrency } from "../services/currency.service.js"
 
 import { Readable } from "stream"
@@ -911,29 +913,32 @@ export const capturePaymentIntent = async (req, res, next) => {
         const nightsCount = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24))
 
         // 1. Send Booking Email
-        await sendBookingEmail(
-          {
-            id: booking.id,
-            bookingCode: booking.booking_ref || booking.id,
-            guestName: booking.guest_name,
-            guests: { adults: booking.adults, children: booking.children },
-            roomsCount: 1,
-            checkIn: booking.check_in,
-            checkOut: booking.check_out,
-            hotel: {
-              name: hotelName,
-              address: addressText,
-              city: null, // extracted if available in meta
-              country: null,
+        const bookingForEmail = await models.Stay.findByPk(booking.id, {
+          include: [
+            {
+              model: models.StayHotel,
+              as: "hotelStay",
+              required: false,
+              include: [
+                { model: models.Hotel, as: "hotel", required: false },
+                { model: models.WebbedsHotel, as: "webbedsHotel", required: false },
+                { model: models.Room, as: "room", required: false },
+              ],
             },
-            currency: booking.currency || "USD",
-            totals: {
-              total: Number(booking.gross_price || 0),
-              nights: nightsCount,
-            },
-          },
-          booking.guest_email
-        ).catch(err => console.error("[webbeds] sendBookingEmail failed", err))
+          ],
+        })
+        const emailPayload = buildBookingEmailPayload(bookingForEmail || booking)
+        if (emailPayload) {
+          await sendBookingEmail(emailPayload, emailPayload.guestEmail || booking.guest_email).catch((err) =>
+            console.error("[webbeds] sendBookingEmail failed", err),
+          )
+        }
+
+        try {
+          await dispatchBookingConfirmation(bookingForEmail || booking)
+        } catch (err) {
+          console.warn("[webbeds] booking confirmation message failed:", err?.message || err)
+        }
 
         // 2. Trigger Chat Auto-Prompts (using Support Bot)
         const supportUserId = process.env.HOTEL_SUPPORT_USER_ID

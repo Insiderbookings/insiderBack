@@ -783,7 +783,6 @@ const mapStay = (row, source) => {
     : null
   const hotel = toPlain(row.Hotel ?? row.hotel ?? hotelFromStay ?? webbedsHotelPayload) ?? null
   const room = toPlain(row.Room ?? row.room ?? roomFromStay) ?? null
-  const tgxMeta = toPlain(row.tgxMeta) ?? null
   const stayHome = toPlain(row.homeStay ?? row.StayHome ?? row.stayHome) ?? null
   let homePayload = stayHome ? buildHomePayload(stayHome) : null
   homePayload = applyHomeSnapshotFallback(homePayload, inventorySnapshot)
@@ -796,12 +795,6 @@ const mapStay = (row, source) => {
 
   let mergedHotel = mergeValues(inventoryHotelFallback, hotel)
   let mergedRoom = mergeValues(inventoryRoomFallback, room)
-  if (source === "tgx" && tgxMeta) {
-    const tgxHotel = tgxMeta?.hotel ?? {}
-    const tgxRoom = tgxMeta?.rooms?.[0] ?? {}
-    mergedHotel = mergeValues(mergedHotel, tgxHotel)
-    mergedRoom = mergeValues(mergedRoom, tgxRoom)
-  }
 
   const checkIn = row.check_in ?? row.checkIn ?? null
   const checkOut = row.check_out ?? row.checkOut ?? null
@@ -917,11 +910,6 @@ const STAY_BASE_INCLUDE = [
         ],
       },
     ],
-  },
-  {
-    model: models.TGXMeta,
-    as: "tgxMeta",
-    required: false,
   },
   {
     model: models.OutsideMeta,
@@ -2191,13 +2179,11 @@ export const getBookingsUnified = async (req, res) => {
         const channel =
           obj.inventory_type === "HOME" || obj.source === "HOME"
             ? "home"
-            : obj.source === "TGX"
-              ? "tgx"
-              : obj.source === "OUTSIDE"
-                ? "outside"
-                : obj.source === "VAULT"
-                  ? "vault"
-                  : "insider"
+            : obj.source === "OUTSIDE"
+              ? "outside"
+              : obj.source === "VAULT"
+                ? "vault"
+                : "insider"
         return mapStay(obj, channel)
       })
       .sort((a, b) => new Date(b.checkIn) - new Date(a.checkIn))
@@ -2253,13 +2239,11 @@ export const lookupBookingPublic = async (req, res) => {
     const channel =
       obj.inventory_type === "HOME" || obj.source === "HOME"
         ? "home"
-        : obj.source === "TGX"
-          ? "tgx"
-          : obj.source === "OUTSIDE"
-            ? "outside"
-            : obj.source === "VAULT"
-              ? "vault"
-              : "insider"
+        : obj.source === "OUTSIDE"
+          ? "outside"
+          : obj.source === "VAULT"
+            ? "vault"
+            : "insider"
     return res.json(mapStay(obj, channel))
   } catch (err) {
     console.error("lookupBookingPublic:", err)
@@ -2362,13 +2346,11 @@ export const listGuestBookings = async (req, res) => {
       const channel =
         obj.inventory_type === "HOME" || obj.source === "HOME"
           ? "home"
-          : obj.source === "TGX"
-            ? "tgx"
-            : obj.source === "OUTSIDE"
-              ? "outside"
-              : obj.source === "VAULT"
-                ? "vault"
-                : "insider"
+          : obj.source === "OUTSIDE"
+            ? "outside"
+            : obj.source === "VAULT"
+              ? "vault"
+              : "insider"
       return mapStay(obj, channel)
     })
     return res.json(latest ? result[0] ?? null : result)
@@ -2588,21 +2570,14 @@ export const getBookingById = async (req, res) => {
     const channel =
       obj.inventory_type === "HOME" || obj.source === "HOME"
         ? "home"
-        : obj.source === "TGX"
-          ? "tgx"
-          : obj.source === "OUTSIDE"
-            ? "outside"
-            : obj.source === "VAULT"
-              ? "vault"
-              : "insider"
+        : obj.source === "OUTSIDE"
+          ? "outside"
+          : obj.source === "VAULT"
+            ? "vault"
+            : "insider"
     const stayView = mapStay(obj, channel)
 
-    const meta =
-      booking.source === "OUTSIDE"
-        ? booking.outsideMeta
-        : booking.source === "TGX"
-          ? booking.tgxMeta
-          : null
+    const meta = booking.source === "OUTSIDE" ? booking.outsideMeta : null
 
     return res.json({
       id: stayView.id,
@@ -2723,13 +2698,11 @@ export const listBookingInvites = async (req, res) => {
         const channel =
           obj.inventory_type === "HOME" || obj.source === "HOME"
             ? "home"
-            : obj.source === "TGX"
-              ? "tgx"
-              : obj.source === "OUTSIDE"
-                ? "outside"
-                : obj.source === "VAULT"
-                  ? "vault"
-                  : "insider"
+            : obj.source === "OUTSIDE"
+              ? "outside"
+              : obj.source === "VAULT"
+                ? "vault"
+                : "insider"
         return {
           token: member.invite_token ?? null,
           expiresAt: member.expires_at ?? null,
@@ -2784,13 +2757,11 @@ export const getBookingInvite = async (req, res) => {
     const channel =
       obj.inventory_type === "HOME" || obj.source === "HOME"
         ? "home"
-        : obj.source === "TGX"
-          ? "tgx"
-          : obj.source === "OUTSIDE"
-            ? "outside"
-            : obj.source === "VAULT"
-              ? "vault"
-              : "insider"
+        : obj.source === "OUTSIDE"
+          ? "outside"
+          : obj.source === "VAULT"
+            ? "vault"
+            : "insider"
 
     return res.json({
       booking: mapStay(obj, channel),
@@ -3071,13 +3042,11 @@ export const acceptBookingInvite = async (req, res) => {
     const channel =
       obj.inventory_type === "HOME" || obj.source === "HOME"
         ? "home"
-        : obj.source === "TGX"
-          ? "tgx"
-          : obj.source === "OUTSIDE"
-            ? "outside"
-            : obj.source === "VAULT"
-              ? "vault"
-              : "insider"
+        : obj.source === "OUTSIDE"
+          ? "outside"
+          : obj.source === "VAULT"
+            ? "vault"
+            : "insider"
 
     return res.json({
       booking: mapStay(obj, channel),
@@ -3142,7 +3111,7 @@ import { processBookingCancellation } from "../services/booking.service.js";
 
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    PUT  /api/bookings/:id/cancel
-   (este endpoint cancela reservas legacy; para TGX usar su flow)
+   (este endpoint cancela reservas legacy)
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const cancelBooking = async (req, res) => {
   try {

@@ -15,7 +15,6 @@ export default (sequelize) => {
       hotel_id: { type: DataTypes.INTEGER, allowNull: true },
       webbeds_hotel_id: { type: DataTypes.BIGINT, allowNull: true },
       room_id: { type: DataTypes.INTEGER, allowNull: true },
-      tgx_option_id: { type: DataTypes.STRING(120), allowNull: true },
       board_code: { type: DataTypes.STRING(40), allowNull: true },
       cancellation_policy: { type: DataTypes.TEXT },
       rate_plan_name: { type: DataTypes.STRING(120) },

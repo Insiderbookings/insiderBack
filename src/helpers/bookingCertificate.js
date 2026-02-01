@@ -1,6 +1,8 @@
 ﻿import PDFDocument from "pdfkit"
 import dayjs from "dayjs"
 
+const DEFAULT_BRAND_NAME = process.env.BOOKING_BRAND_NAME || "BookingGPT"
+
 function fmtDate(d) {
   if (!d) return "-"
   return dayjs(d).format("MMM DD, YYYY")
@@ -22,7 +24,7 @@ function drawLabelValue(doc, { xLabel, xValue, y, label, value }) {
 
 function buildPDF(doc, b, branding = {}) {
   const {
-    brandName = "Insider Bookings",
+    brandName = DEFAULT_BRAND_NAME,
     headerColor = "#0f172a",
     accentColor = "#f97316",
     headerTextColor = "#ffffff",
@@ -107,18 +109,25 @@ function buildPDF(doc, b, branding = {}) {
     value: hotel.phone || propertyContact || "-",
   })
 
+  const cancellationSource =
+    b.policies?.cancellation ||
+    b.cancellationPolicy ||
+    b.cancellation_policy ||
+    b.cancellation ||
+    null
+  const cancellationText = cancellationSource
+    ? Array.isArray(cancellationSource)
+      ? cancellationSource.filter(Boolean).join("\n")
+      : String(cancellationSource)
+    : "This booking is non-refundable and cannot be amended. If you fail to arrive or cancel no refund will be given."
+
   y += 36
   doc.font("Helvetica-Bold").fontSize(10).fillColor("#111").text("Cancellation Policy:", 36, y)
   doc
     .font("Helvetica")
     .fontSize(9)
     .fillColor("#444")
-    .text(
-      "This booking is non-refundable and cannot be amended. If you fail to arrive or cancel no refund will be given.",
-      140,
-      y,
-      { width: 436 },
-    )
+    .text(cancellationText, 140, y, { width: 436 })
 
   y += 48
   doc.roundedRect(36, y, 540, 140, 8).fillAndStroke(backgroundColor, borderColor)

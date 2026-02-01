@@ -15,7 +15,7 @@ import {
   verifyOperatorCheckout,
 } from '../controllers/vcc.controller.js'
 import { listMyTenants } from '../controllers/operator.controller.js'
-import { getSiteConfigPublic, getHotelPublic, getSiteConfigPrivate, updateSiteConfigPrivate, listTemplates } from '../controllers/webconstructor.controller.js'
+import { getSiteConfigPublic, getSiteConfigPrivate, updateSiteConfigPrivate, listTemplates } from '../controllers/webconstructor.controller.js'
 import { uploadImagesToS3Fields } from '../middleware/s3UploadFields.js'
 import {
   listOperatorTransfers,
@@ -68,7 +68,6 @@ router.get('/tenants', authenticate, authorizeOperator, listMyTenants)
 
 // Read-only site info for operator panel
 router.get('/site-config', resolveTenant, authenticate, authorizeOperator, getSiteConfigPublic)
-router.get('/hotel', resolveTenant, authenticate, authorizeOperator, getHotelPublic)
 // Editable site-config for operators (reuses WC controller)
 router.get('/site-config/private', resolveTenant, authenticate, authorizeOperator, getSiteConfigPrivate)
 router.put('/site-config', resolveTenant, authenticate, authorizeOperator, uploadImagesToS3Fields({ logo: 'logoUrl', favicon: 'faviconUrl' }), updateSiteConfigPrivate)
