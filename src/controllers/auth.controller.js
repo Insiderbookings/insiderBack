@@ -1142,6 +1142,15 @@ export const appleExchange = async (req, res) => {
       firstName: fullName && typeof fullName === "object" ? fullName.givenName : null,
       lastName: fullName && typeof fullName === "object" ? fullName.familyName : null,
     });
+    console.log("appleExchange details:", {
+      providedEmail,
+      tokenEmail: payload?.email,
+      emailResolved: email,
+      fullName,
+      appleNameParts,
+      resolvedName: resolveAppleName(fullName, email),
+      emailVerified,
+    });
 
     let user = await models.User.findOne({
       where: { auth_provider: "apple", provider_sub: sub },
