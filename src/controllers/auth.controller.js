@@ -28,8 +28,33 @@ const REFRESH_TOKEN_DAYS = Number.isFinite(REFRESH_TOKEN_DAYS_RAW) ? REFRESH_TOK
 const REFRESH_TOKEN_TTL = `${REFRESH_TOKEN_DAYS}d`;
 const REFRESH_TOKEN_TTL_SECONDS = REFRESH_TOKEN_DAYS * 24 * 60 * 60;
 const REFRESH_COOKIE_NAME = process.env.REFRESH_COOKIE_NAME || "insider_rt";
-const REFRESH_COOKIE_DOMAIN = process.env.REFRESH_COOKIE_DOMAIN || ".insiderbookings.com";
 const IS_PROD = process.env.NODE_ENV === "production";
+const normalizeCookieDomain = (value) => {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/^#+/, "") || null;
+};
+const REFRESH_COOKIE_DOMAIN = normalizeCookieDomain(
+  IS_PROD
+    ? process.env.REFRESH_COOKIE_DOMAIN || ".insiderbookings.com"
+    : process.env.REFRESH_COOKIE_DOMAIN || ""
+);
+const REFRESH_COOKIE_SAMESITE_RAW = String(
+  process.env.REFRESH_COOKIE_SAMESITE || (IS_PROD ? "none" : "lax")
+)
+  .trim()
+  .toLowerCase();
+const REFRESH_COOKIE_SAMESITE =
+  REFRESH_COOKIE_SAMESITE_RAW === "none"
+    ? "None"
+    : REFRESH_COOKIE_SAMESITE_RAW === "strict"
+      ? "Strict"
+      : "Lax";
+const REFRESH_COOKIE_SECURE =
+  process.env.REFRESH_COOKIE_SECURE === "true" ||
+  (process.env.REFRESH_COOKIE_SECURE !== "false" &&
+    (IS_PROD || REFRESH_COOKIE_SAMESITE === "None"));
 const DEBUG_AUTH_LOGIN_TOKEN = process.env.DEBUG_AUTH_LOGIN_TOKEN === "true";
 const EMAIL_VERIFICATION_TTL_MINUTES_RAW = Number(process.env.EMAIL_VERIFICATION_TTL_MINUTES);
 const EMAIL_VERIFICATION_TTL_MINUTES =
@@ -282,12 +307,14 @@ const setRefreshCookie = (res, token) => {
     `${REFRESH_COOKIE_NAME}=${encodeURIComponent(token)}`,
     "Path=/",
     "HttpOnly",
-    "SameSite=Lax",
+    `SameSite=${REFRESH_COOKIE_SAMESITE}`,
     `Max-Age=${REFRESH_TOKEN_TTL_SECONDS}`,
   ];
-  if (IS_PROD) {
+  if (REFRESH_COOKIE_SECURE) {
     parts.push("Secure");
-    if (REFRESH_COOKIE_DOMAIN) parts.push(`Domain=${REFRESH_COOKIE_DOMAIN}`);
+  }
+  if (REFRESH_COOKIE_DOMAIN) {
+    parts.push(`Domain=${REFRESH_COOKIE_DOMAIN}`);
   }
   res.append("Set-Cookie", parts.join("; "));
 };
@@ -298,12 +325,14 @@ const clearRefreshCookie = (res) => {
     `${REFRESH_COOKIE_NAME}=`,
     "Path=/",
     "HttpOnly",
-    "SameSite=Lax",
+    `SameSite=${REFRESH_COOKIE_SAMESITE}`,
     "Max-Age=0",
   ];
-  if (IS_PROD) {
+  if (REFRESH_COOKIE_SECURE) {
     parts.push("Secure");
-    if (REFRESH_COOKIE_DOMAIN) parts.push(`Domain=${REFRESH_COOKIE_DOMAIN}`);
+  }
+  if (REFRESH_COOKIE_DOMAIN) {
+    parts.push(`Domain=${REFRESH_COOKIE_DOMAIN}`);
   }
   res.append("Set-Cookie", parts.join("; "));
 };
