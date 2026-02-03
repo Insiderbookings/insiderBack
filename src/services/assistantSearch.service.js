@@ -919,10 +919,15 @@ const tryRunLiveHotelSearch = async ({ plan, limit, hotelFilters, coordinateFilt
   const locationCodes = await resolveWebbedsLocationCodes(plan?.location || {});
   if (!locationCodes.cityCode && !locationCodes.countryCode) return [];
   try {
+    const passengerNationality = plan?.passengerNationality ?? plan?.nationality ?? null;
+    const passengerCountryOfResidence =
+      plan?.passengerCountryOfResidence ?? plan?.residence ?? null;
     const { payload, requestAttributes } = buildSearchHotelsPayload({
       checkIn: plan.dates.checkIn,
       checkOut: plan.dates.checkOut,
       occupancies: buildHotelOccupancies(plan),
+      nationality: passengerNationality,
+      residence: passengerCountryOfResidence,
       cityCode: locationCodes.cityCode,
       countryCode: locationCodes.countryCode,
       resultsPerPage: limit * 2,

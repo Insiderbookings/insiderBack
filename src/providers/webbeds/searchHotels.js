@@ -43,6 +43,12 @@ const ensureArray = (value) => {
   return Array.isArray(value) ? value : [value]
 }
 
+const requireNumericCode = (value) => {
+  if (value === undefined || value === null || value === "") return null
+  const strValue = String(value).trim()
+  return /^\d+$/.test(strValue) ? strValue : null
+}
+
 const formatDate = (value) => {
   if (!value) return null
   return formatDateWebbeds(value)
@@ -242,6 +248,11 @@ export const buildSearchHotelsPayload = ({
     throw new Error("WebBeds search requires valid checkIn and checkOut dates")
   }
 
+  const resolvedNationality = requireNumericCode(nationality)
+  const resolvedResidence = requireNumericCode(residence)
+  if (!resolvedNationality || !resolvedResidence) {
+    throw new Error("WebBeds search requires passengerNationality and passengerCountryOfResidence")
+  }
   const parsedRooms = parseOccupancies(occupancies)
   validateOccupancies(parsedRooms)
   const rooms = parsedRooms.map((room, idx) =>
@@ -249,8 +260,8 @@ export const buildSearchHotelsPayload = ({
       ...room,
       runno: idx,
       rateBasis,
-      nationality,
-      residence,
+      nationality: resolvedNationality,
+      residence: resolvedResidence,
     }),
   )
 
