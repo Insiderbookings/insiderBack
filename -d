@@ -1,0 +1,11 @@
+HTTP/1.1 401 Unauthorized
+X-Powered-By: Express
+Vary: Origin
+Access-Control-Allow-Credentials: true
+Content-Type: application/json; charset=utf-8
+Content-Length: 25
+Date: Tue, 03 Feb 2026 19:02:42 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"error":"Missing token"}

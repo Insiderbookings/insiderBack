@@ -9,7 +9,7 @@ import { enqueueTripHubEnsure } from "./tripHubPacksQueue.service.js";
 const DEFAULT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini";
 const apiKey = process.env.OPENAI_API_KEY;
 let openaiClient = null;
-const TRIP_HUB_OPENAI_TIMEOUT_MS = Number(process.env.TRIP_HUB_OPENAI_TIMEOUT_MS) || 25000;
+const TRIP_HUB_OPENAI_TIMEOUT_MS = Number(process.env.TRIP_HUB_OPENAI_TIMEOUT_MS) || 60000;
 
 const ensureClient = () => {
   if (!apiKey) return null;
