@@ -36,37 +36,47 @@ const withTimeout = (promise, ms, label) => {
 export const isAssistantEnabled = () => Boolean(apiKey);
 
 const SPANISH_HINTS = [
-  " hola ",
-  " gracias",
-  " por favor",
-  " buenas",
-  " buen dia",
-  " alojamiento",
-  " donde",
-  " habitacion",
-  " buscar",
-  " necesito",
-  " viaje",
-  " familias",
-  " personas",
+  " hola ", " gracias", " por favor", " buenas", " buen dia", " alojamiento",
+  " donde", " habitacion", " buscar", " necesito", " viaje", " familias", " personas",
+  " quiero", " reservar", " fechas", " cuantos", " viajar",
 ];
-const ENGLISH_HINTS = [" hello ", " hi ", " please ", " thanks", " looking for", " need ", " trip ", " hotel", " house "];
+const ENGLISH_HINTS = [" hello ", " hi ", " please ", " thanks", " looking for", " need ", " trip ", " hotel", " house ", " want ", " book ", " dates ", " guests ", " travel "];
 
+/** Detect reply language from user message only (priority over app/profile). */
 const detectLanguageFromText = (text = "", fallback = "en") => {
-  const normalized = (text || "").trim().toLowerCase();
-  if (!normalized) return fallback || "en";
+  const raw = String(text || "").trim();
+  if (!raw) return fallback || "en";
+  const normalized = raw.toLowerCase();
   const padded = ` ${normalized} `;
-  const hasSpanishChars = /[\u00f1\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00a1\u00bf]/i.test(text);
-  if (hasSpanishChars) return "es";
-  if (SPANISH_HINTS.some((hint) => padded.includes(hint))) return "es";
+
+  // Arabic: script or common words
+  if (/\p{Script=Arabic}/u.test(raw)) return "ar";
+  const arabicHints = [" مرحبا", " شكرا", " من فضلك", " اريد", " فندق", " سفر"];
+  if (arabicHints.some((hint) => raw.includes(hint))) return "ar";
+
+  // Spanish: chars or hints
+  const hasSpanishChars = /[\u00f1\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00a1\u00bf]/i.test(raw);
+  if (hasSpanishChars || SPANISH_HINTS.some((hint) => padded.includes(hint))) return "es";
+
   if (ENGLISH_HINTS.some((hint) => padded.includes(hint))) return "en";
   return fallback || "en";
 };
 
-const languageInstruction = (lang) =>
-  lang === "es"
-    ? "Responde en espanol neutro (ajusta modismos si corresponde)."
-    : "Reply in neutral English (and mirror idioms if needed).";
+/**
+ * Reply language: always match the user's message language, not app/profile.
+ * Supports any language; model should reply in the same language as the last user message.
+ */
+const languageInstruction = (lang) => {
+  const byLang = {
+    es: "Responde siempre en espanol. Ajusta modismos si el usuario usa argentino, mexicano, etc.",
+    en: "Reply always in English. Mirror the user's register (formal/casual) if needed.",
+    ar: "Respond always in Arabic. Use the same register (formal/dialect) as the user.",
+  };
+  return (
+    byLang[lang] ||
+    `You MUST reply in the exact same language as the user's last message. If they wrote in Spanish, reply in Spanish; in Arabic, reply in Arabic; in English, reply in English; in French, reply in French; etc. Do not use app or profile language—only the language of the last user message. Current detected language code: ${lang}.`
+  );
+};
 
 const PLACE_SUGGESTION_CATEGORIES = [
   { id: "food", title: "Where to Eat", type: "restaurant" },
@@ -98,7 +108,12 @@ const buildPlaceSuggestions = async ({ location, limit = 6 } = {}) => {
   return groups.filter((group) => Array.isArray(group.items) && group.items.length);
 };
 
-const pickLanguageText = (lang, english, spanish) => (lang === "es" ? spanish : english);
+/** Pick localized string; for unsupported lang (e.g. ar) use English so model can still reply in user language. */
+const pickLanguageText = (lang, english, spanish, arabic) => {
+  if (lang === "es") return spanish;
+  if (lang === "ar" && arabic) return arabic;
+  return english;
+};
 
 const isDateQuestion = (text = "") => {
   const normalized = String(text || "").toLowerCase();
@@ -448,9 +463,11 @@ const buildPlannerPrompt = () => [
 
       "FILTERING & SORTING RULES:\n" +
       "- Fill location city/state/country and lat/lng when provided. If the user requests proximity (\"1km around Movistar Arena\"), set location.radiusKm and location.landmark.\n" +
-      "- Detect HOME filters: propertyTypes (HOUSE, APARTMENT, CABIN, etc.), spaceTypes (ENTIRE_PLACE, PRIVATE_ROOM, SHARED_ROOM), amenityKeys (e.g., WIFI, FREE_PARKING_ON_PREMISES, PAID_PARKING_ON_PREMISES), and tagKeys (BEACHFRONT, LUXURY, FAMILY). Use uppercase keys.\n" +
+      "- Detect HOME filters: propertyTypes (HOUSE, APARTMENT, CABIN, etc.), spaceTypes (ENTIRE_PLACE, PRIVATE_ROOM, SHARED_ROOM), amenityKeys (e.g., WIFI, FREE_PARKING_ON_PREMISES), and tagKeys (BEACHFRONT, LUXURY, FAMILY). Use uppercase keys.\n" +
       "- For parking requests, set homeFilters.amenityKeys (FREE_PARKING_ON_PREMISES and/or PAID_PARKING_ON_PREMISES).\n" +
       "- Detect HOTEL filters: amenityCodes from catalog names, amenityItemIds when numeric IDs are provided, preferredOnly flag, and minRating based on star ranks.\n" +
+      "- PREFERENCES (preferences.areaPreference): Extract from phrases like 'quiet', 'tranquilo', 'near coast/beach', 'cerca de la playa', 'city center', 'centro', 'family-friendly', 'familia', 'luxury', 'lujo', 'budget', 'económico'. Use: QUIET, BEACH_COAST, CITY_CENTER, FAMILY_FRIENDLY, LUXURY, BUDGET. Put all that apply in preferences.areaPreference array. Optional preferences.preferenceNotes: short free text for other wishes.\n" +
+      "- Map preferences to filters: BEACH_COAST -> homeFilters.tagKeys BEACHFRONT when HOMES; LUXURY -> hotelFilters.preferredOnly or homeFilters.tagKeys LUXURY; BUDGET -> sortBy PRICE_ASC or budget.max; QUIET/FAMILY_FRIENDLY -> preferenceNotes so assistant can acknowledge.\n" +
       "- Capture guest requirements (adults, children, pets) plus requested bedrooms, beds, bathrooms, or total guests for homes.\n" +
       "- Detect explicit budgets and ordering like 'cheapest', 'precios altos', or 'ordenar por precio'. Map to sortBy PRICE_ASC or PRICE_DESC. Respect requested limit counts when possible.\n\n" +
 
@@ -461,6 +478,7 @@ const buildPlannerPrompt = () => [
         "location": {"city": string|null, "state": string|null, "country": string|null, "lat": number|null, "lng": number|null, "radiusKm": number|null, "landmark": string|null},
         "dates": {"checkIn": "YYYY-MM-DD" | null, "checkOut": "YYYY-MM-DD" | null, "flexible": boolean},
         "guests": {"adults": number|null, "children": number|null, "infants": number|null, "pets": number|null, "total": number|null},
+        "preferences": {"areaPreference": string[], "preferenceNotes": string[]},
         "homeFilters": {
           "propertyTypes": string[],
           "spaceTypes": string[],
@@ -492,6 +510,7 @@ const defaultPlan = {
   location: { city: null, state: null, country: null, lat: null, lng: null, radiusKm: null, landmark: null },
   dates: { checkIn: null, checkOut: null, flexible: true },
   guests: { adults: null, children: null, infants: null, pets: null, total: null },
+  preferences: { areaPreference: [], preferenceNotes: [] },
   homeFilters: {
     propertyTypes: [],
     spaceTypes: [],
@@ -646,7 +665,17 @@ export const generateTripAddons = async ({ tripContext, location, lang = "en" })
   };
   if (!client) {
     debugTripHub("addons.missing_client", { hasTripContext: Boolean(tripContext) });
-    return { insights: [], preparation: [] };
+    return {
+      insights: [],
+      preparation: [],
+      timeContext: null,
+      localPulse: [],
+      localLingo: null,
+      suggestions: [],
+      itinerary: [],
+      __aiStatus: null,
+      __aiErrorCode: null,
+    };
   }
 
   const city = location?.city || tripContext?.location?.city || "your destination";
@@ -766,7 +795,18 @@ export const generateTripAddons = async ({ tripContext, location, lang = "en" })
         code: err?.code || null,
       });
     }
-    return { insights: [], preparation: [] };
+    const errorCode = err?.code || null;
+    return {
+      insights: [],
+      preparation: [],
+      timeContext: null,
+      localPulse: [],
+      localLingo: null,
+      suggestions: [],
+      itinerary: [],
+      __aiStatus: errorCode === "OPENAI_TIMEOUT" ? "failed" : null,
+      __aiErrorCode: errorCode === "OPENAI_TIMEOUT" ? "OPENAI_TIMEOUT" : null,
+    };
   }
 };
 
@@ -781,6 +821,8 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
   };
   try {
     const { StayIntelligence, Stay } = models;
+    const nowIso = new Date().toISOString();
+    const cooldownUntilIso = new Date(Date.now() + 10 * 60 * 1000).toISOString();
     const location = tripContext?.location || {};
     const tripContextSnapshot = tripContext
       ? {
@@ -791,6 +833,11 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
           inventoryType: tripContext.inventoryType ?? null,
         }
       : null;
+
+    // Load record early so we can persist AI attempt state
+    let record = await StayIntelligence.findOne({ where: { stayId } });
+    const prevMetadata = record?.metadata || {};
+    const aiAttempts = (Number(prevMetadata.aiAttempts) || 0) + 1;
 
     // 1. Generate core addons
     const addons = await generateTripAddons({
@@ -820,10 +867,11 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
     debugTripHub("intelligence.weather", { stayId, hasWeather: Boolean(weather) });
 
     // 3. Upsert intelligence record (Manual check to avoid ON CONFLICT errors if constraint missing)
-    let record = await StayIntelligence.findOne({ where: { stayId } });
     const isNewRecord = !record;
+    const timedOut = addons?.__aiStatus === "failed" && addons?.__aiErrorCode === "OPENAI_TIMEOUT";
+    // __aiStatus/__aiErrorCode are internal-only; never persist or return them. Only write failure fields on timeout.
     const baseMetadata = {
-      ...(record?.metadata || {}),
+      ...(prevMetadata || {}),
       weather,
       timeContext: addons.timeContext,
       localPulse: addons.localPulse,
@@ -831,6 +879,16 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
       suggestions: placeSuggestions.length ? placeSuggestions : addons.suggestions,
       itinerary: addons.itinerary,
       tripContext: tripContextSnapshot,
+      aiLastAttemptAt: nowIso,
+      aiAttempts,
+      ...(timedOut
+        ? {
+            aiStatus: "failed",
+            aiErrorCode: "OPENAI_TIMEOUT",
+            aiFailedAt: nowIso,
+            aiCooldownUntil: cooldownUntilIso,
+          }
+        : {}),
     };
     const alreadyNotified = Boolean(
       baseMetadata.tripHubReadyNotifiedAt || baseMetadata.tripHubReadyNotified

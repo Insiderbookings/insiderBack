@@ -140,11 +140,13 @@ const NAMESPACE_ATOMIC = "http://us.dotwconnect.com/xsd/atomicCondition"
 const NAMESPACE_COMPLEX = "http://us.dotwconnect.com/xsd/complexCondition"
 
 const buildFilters = ({ cityCode, countryCode, filterConditions }) => {
-  const filters = {
-    "@xmlns:a": NAMESPACE_ATOMIC,
-    "@xmlns:c": NAMESPACE_COMPLEX,
-  }
+  // XSD: filtersType is a sequence of cityOrCountryFilter (optional), noPrice, rateTypes, c:condition.
+  // When only city/country is used, do NOT add xmlns on <filters> or DOTW returns "XML request NOT XSD VALID" (code 26).
+  // Add xmlns only when we have c:condition (advanced conditions).
+  const filters = {}
   if (filterConditions && filterConditions.length) {
+    filters["@xmlns:a"] = NAMESPACE_ATOMIC
+    filters["@xmlns:c"] = NAMESPACE_COMPLEX
     filters["c:condition"] = filterConditions
   } else {
     if (cityCode) filters.city = cityCode
@@ -232,8 +234,6 @@ export const buildSearchHotelsPayload = ({
   filterConditions,
   advancedConditions,
   advancedOperator,
-  includeFields = [],
-  includeRoomFields = [],
   includeNoPrice = false,
   resultsPerPage,
   page,
@@ -290,19 +290,6 @@ export const buildSearchHotelsPayload = ({
   if (resultsPerPage || page) {
     returnNode.resultsPerPage = String(resultsPerPage || "20")
     returnNode.page = String(page || "1")
-  }
-
-  const fieldsNode = {}
-  const cleanFields = ensureArray(includeFields).filter(Boolean)
-  if (cleanFields.length) {
-    fieldsNode.field = cleanFields
-  }
-  const cleanRoomFields = ensureArray(includeRoomFields).filter(Boolean)
-  if (cleanRoomFields.length) {
-    fieldsNode.roomField = cleanRoomFields
-  }
-  if (Object.keys(fieldsNode).length) {
-    returnNode.fields = fieldsNode
   }
 
   const bookingDetails = {
