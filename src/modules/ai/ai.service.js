@@ -402,6 +402,15 @@ export const runAiTurn = async ({
   const { state: nextState, plan: mergedPlanRaw } = applyPlanToState(existingState, planCandidate);
   const planWithUi = applyUiEventToPlan(mergedPlanRaw, uiEvent);
   const mergedPlan = applyPlanDefaults(planWithUi, nextState);
+  const contextPassengerNationality = userContext?.passengerNationality ?? userContext?.nationality ?? null;
+  const contextPassengerResidence =
+    userContext?.passengerCountryOfResidence ?? userContext?.residence ?? null;
+  if (contextPassengerNationality && !mergedPlan.passengerNationality) {
+    mergedPlan.passengerNationality = contextPassengerNationality;
+  }
+  if (contextPassengerResidence && !mergedPlan.passengerCountryOfResidence) {
+    mergedPlan.passengerCountryOfResidence = contextPassengerResidence;
+  }
   if (incomingTripContext) {
     nextState.tripContext = mergeTripContext(nextState.tripContext, incomingTripContext);
   }

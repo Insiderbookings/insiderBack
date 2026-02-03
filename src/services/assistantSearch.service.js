@@ -204,6 +204,31 @@ const resolveGuestTotal = (plan) => {
 
 const resolveBudgetMax = (plan) => toNumberOrNull(plan?.budget?.max);
 
+/** Preference intents: QUIET, BEACH_COAST, CITY_CENTER, FAMILY_FRIENDLY, LUXURY, BUDGET → filters */
+const deriveFiltersFromPreferences = (plan = {}) => {
+  const areaPreference = Array.isArray(plan?.preferences?.areaPreference)
+    ? plan.preferences.areaPreference.map((s) => String(s || "").trim().toUpperCase()).filter(Boolean)
+    : [];
+  const homeTagKeys = [];
+  if (areaPreference.includes("BEACH_COAST")) {
+    homeTagKeys.push("BEACH", "BEACHFRONT");
+  }
+  if (areaPreference.includes("FAMILY_FRIENDLY")) {
+    homeTagKeys.push("FAMILY");
+  }
+  if (areaPreference.includes("LUXURY")) {
+    homeTagKeys.push("LUXURY");
+  }
+  const hotelPreferredOnly = areaPreference.includes("LUXURY");
+  const sortBy =
+    areaPreference.includes("BUDGET") && !plan?.sortBy ? "PRICE_ASC" : (plan?.sortBy && String(plan.sortBy).trim()) || null;
+  return {
+    homeTagKeys: Array.from(new Set(homeTagKeys)),
+    hotelPreferredOnly,
+    sortBy: sortBy || null,
+  };
+};
+
 const hasAmenityMatch = (home, matcher) => {
   if (!home?.amenities) return false;
   return home.amenities.some((link) => {
@@ -525,13 +550,22 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
   const planLimit = typeof plan.limit === "number" && plan.limit > 0 ? plan.limit : null;
   const limit = clampLimit(planLimit || options.limit);
   const guests = resolveGuestTotal(plan);
+  const prefFilters = deriveFiltersFromPreferences(plan);
   const homeFiltersRaw = plan?.homeFilters || {};
+  const baseTagKeys = normalizeKeyList(homeFiltersRaw.tagKeys);
+  const mergedTagKeys = Array.from(
+    new Set([...baseTagKeys, ...(prefFilters.homeTagKeys || [])].filter(Boolean))
+  );
   const normalizedHomeFilters = {
     ...homeFiltersRaw,
     propertyTypes: normalizeKeyList(homeFiltersRaw.propertyTypes),
     spaceTypes: normalizeKeyList(homeFiltersRaw.spaceTypes),
     amenityKeys: normalizeKeyList(homeFiltersRaw.amenityKeys),
-    tagKeys: normalizeKeyList(homeFiltersRaw.tagKeys),
+    tagKeys: mergedTagKeys,
+  };
+  const planWithSort = {
+    ...plan,
+    sortBy: (plan?.sortBy && String(plan.sortBy).trim()) || prefFilters.sortBy || plan.sortBy,
   };
   const addressWhere = {};
   if (plan?.location?.city) {
@@ -567,7 +601,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
     const attempt = attempts[index];
     console.log("[assistant] attempt", attempt);
     const homes = await runHomeQuery({
-      plan,
+      plan: planWithSort,
       limit,
       guests,
       coordinateFilter,
@@ -586,7 +620,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
 
     const enriched = mapHomesToResults({
       homes,
-      plan,
+      plan: planWithSort,
       attempt,
       guests,
       budgetMax,
@@ -611,7 +645,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
     tagKeys: [],
   };
   const relaxedHomes = await runHomeQuery({
-    plan,
+    plan: planWithSort,
     limit,
     guests,
     coordinateFilter,
@@ -628,7 +662,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
 
   const relaxedEnriched = mapHomesToResults({
     homes: relaxedHomes,
-    plan,
+    plan: planWithSort,
     attempt: { respectGuest: false, respectBudget: false },
     guests,
     budgetMax,
@@ -651,7 +685,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
   }
 
   const fallbackHomes = await runHomeQuery({
-    plan,
+    plan: planWithSort,
     limit,
     guests: null,
     coordinateFilter: null,
@@ -671,7 +705,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
   });
   const fallbackEnriched = mapHomesToResults({
     homes: fallbackHomes,
-    plan,
+    plan: planWithSort,
     attempt: { respectGuest: false, respectBudget: false },
     guests: null,
     budgetMax: null,
@@ -919,14 +953,18 @@ const tryRunLiveHotelSearch = async ({ plan, limit, hotelFilters, coordinateFilt
   const locationCodes = await resolveWebbedsLocationCodes(plan?.location || {});
   if (!locationCodes.cityCode && !locationCodes.countryCode) return [];
   try {
+    const passengerNationality = plan?.passengerNationality ?? plan?.nationality ?? null;
+    const passengerCountryOfResidence =
+      plan?.passengerCountryOfResidence ?? plan?.residence ?? null;
     const { payload, requestAttributes } = buildSearchHotelsPayload({
       checkIn: plan.dates.checkIn,
       checkOut: plan.dates.checkOut,
       occupancies: buildHotelOccupancies(plan),
+      nationality: passengerNationality,
+      residence: passengerCountryOfResidence,
       cityCode: locationCodes.cityCode,
       countryCode: locationCodes.countryCode,
       resultsPerPage: limit * 2,
-      includeFields: ["hotelDetails"],
     });
     const credentials = provider.getCredentials();
     const options = await provider.sendSearchRequest({
@@ -950,12 +988,13 @@ const tryRunLiveHotelSearch = async ({ plan, limit, hotelFilters, coordinateFilt
 export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   const planLimit = typeof plan.limit === "number" && plan.limit > 0 ? plan.limit : null;
   const limit = clampLimit(planLimit || options.limit);
+  const prefFilters = deriveFiltersFromPreferences(plan);
   const hotelFiltersRaw = plan?.hotelFilters || {};
   const normalizedHotelFilters = {
     ...hotelFiltersRaw,
     amenityCodes: normalizeKeyList(hotelFiltersRaw.amenityCodes),
     amenityItemIds: normalizeIdList(hotelFiltersRaw.amenityItemIds),
-    preferredOnly: normalizeBooleanFlag(hotelFiltersRaw.preferredOnly),
+    preferredOnly: normalizeBooleanFlag(hotelFiltersRaw.preferredOnly) || prefFilters.hotelPreferredOnly,
     minRating: toNumberOrNull(hotelFiltersRaw.minRating),
   };
   const coordinateFilter = buildCoordinateFilterUsingRadius(plan?.location || {});
