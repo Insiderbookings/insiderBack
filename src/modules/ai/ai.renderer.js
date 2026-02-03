@@ -11,25 +11,36 @@ const normalizeLanguage = (plan) => {
   return AI_DEFAULTS.language || "es";
 };
 
+/**
+ * Detect reply language from the latest user message only.
+ * Priority: user's message language over plan/app/profile.
+ * Supports: es, en, ar (and more can be added).
+ */
 const detectLanguageFromMessages = (messages, fallback) => {
   const latestUserMessage =
     Array.isArray(messages) &&
     [...messages].reverse().find((msg) => msg?.role === "user" && msg?.content)?.content;
-  const normalized = ` ${String(latestUserMessage || "").toLowerCase()} `;
+  const raw = String(latestUserMessage || "").trim();
+  const normalized = ` ${raw.toLowerCase()} `;
+
+  // Arabic: script or common words
+  if (/\p{Script=Arabic}/u.test(raw)) return "ar";
+  const arabicHints = [" مرحبا", " شكرا", " من فضلك", " اريد", " فندق", " سفر"];
+  if (arabicHints.some((hint) => raw.includes(hint) || normalized.includes(hint.toLowerCase()))) return "ar";
+
+  // Spanish: common words/chars
   const spanishHints = [
-    " hola ",
-    " gracias",
-    " por favor",
-    " necesito",
-    " buscar",
-    " alojamiento",
-    " casa ",
-    " hotel ",
-    " habitaciones",
+    " hola ", " gracias", " por favor", " necesito", " buscar", " alojamiento",
+    " casa ", " hotel ", " habitaciones", " quiero", " viajar", " reservar",
+    " dónde", " cuándo", " cuantos", " personas", " fechas",
   ];
-  const englishHints = [" hello ", " hi ", " please ", " thanks", " looking", " need ", " hotel", " house "];
-  if (spanishHints.some((hint) => normalized.includes(hint))) return "es";
+  const hasSpanishChars = /[áéíóúñü¿¡]/.test(raw);
+  if (hasSpanishChars || spanishHints.some((hint) => normalized.includes(hint))) return "es";
+
+  // English
+  const englishHints = [" hello ", " hi ", " please ", " thanks", " looking", " need ", " hotel", " house ", " want ", " travel ", " book ", " where ", " when ", " how many "];
   if (englishHints.some((hint) => normalized.includes(hint))) return "en";
+
   return fallback || "es";
 };
 
@@ -102,6 +113,11 @@ const buildCards = (inventory) => {
 export const renderAssistantPayload = async ({ plan, messages, inventory, nextAction, trip, tripContext, userContext, weather, missing = [] }) => {
   const baseLanguage = normalizeLanguage(plan);
   const language = detectLanguageFromMessages(messages, baseLanguage);
+  // Force the assistant to reply in the user's language (based on the latest user message),
+  // even if the extracted plan.language is wrong/missing.
+  if (plan && typeof plan === "object") {
+    plan.language = language;
+  }
   let replyText = "";
   let followUps = [];
 
