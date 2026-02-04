@@ -580,10 +580,32 @@ export class WebbedsProvider extends HotelProvider {
         })
       }
 
-      const { result } = await this.client.send("getrooms", payload, {
-        requestId: this.getRequestId(req),
-        productOverride: "hotel",
-      })
+      const requestId = this.getRequestId(req)
+      const sendGetRooms = async (nextRequestId) =>
+        this.client.send("getrooms", payload, {
+          requestId: nextRequestId,
+          productOverride: "hotel",
+        })
+
+      let response
+      try {
+        response = await sendGetRooms(requestId)
+      } catch (error) {
+        const errorCode = String(error?.code ?? "")
+        const shouldRetry = error?.name === "WebbedsError" && (errorCode === "12" || errorCode === "149")
+        if (!shouldRetry) {
+          throw error
+        }
+        console.warn("[webbeds] getRooms retrying after provider error", {
+          code: error?.code,
+          details: error?.details,
+          requestId,
+        })
+        const retryRequestId = requestId ? `${requestId}-retry` : undefined
+        response = await sendGetRooms(retryRequestId)
+      }
+
+      const { result } = response
       if (verboseLogs) {
         console.info("[webbeds] getRooms result", {
           hotelId: result?.hotel?.["@_id"] ?? result?.hotel?.id ?? null,
