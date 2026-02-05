@@ -78,6 +78,32 @@ const languageInstruction = (lang) => {
   );
 };
 
+const buildTodayLine = (value) => {
+  let now = null;
+  if (value) {
+    const parsed = value instanceof Date ? value : new Date(value);
+    if (Number.isFinite(parsed?.getTime?.())) {
+      now = parsed;
+    }
+  }
+  if (!now) now = new Date();
+  const isoDate = Number.isFinite(now.getTime()) ? now.toISOString().slice(0, 10) : "";
+  let pretty = "";
+  try {
+    pretty = new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }).format(now);
+  } catch {
+    pretty = isoDate;
+  }
+  if (pretty && isoDate && pretty !== isoDate) return `Today is ${pretty} (${isoDate}).`;
+  if (isoDate) return `Today is ${isoDate}.`;
+  return "";
+};
+
 const PLACE_SUGGESTION_CATEGORIES = [
   { id: "food", title: "Where to Eat", type: "restaurant" },
   { id: "drinks", title: "Drinks & Nightlife", type: "bar" },
@@ -373,18 +399,18 @@ const normalizeDateString = (value) => {
 
 const sanitizeListingTypes = (value) => {
   const allowed = new Set(["HOMES", "HOTELS"]);
-  if (!Array.isArray(value) || !value.length) return [...defaultPlan.listingTypes];
+  if (!Array.isArray(value) || !value.length) return [];
   const sanitized = value
     .map((item) => (typeof item === "string" ? item.trim().toUpperCase() : null))
     .filter((item) => item && allowed.has(item));
-  return sanitized.length ? Array.from(new Set(sanitized)) : [...defaultPlan.listingTypes];
+  return sanitized.length ? Array.from(new Set(sanitized)) : [];
 };
 
 const normalizeSortBy = (value) => {
-  if (!value || typeof value !== "string") return defaultPlan.sortBy;
+  if (!value || typeof value !== "string") return null;
   const normalized = value.trim().toUpperCase();
   const allowed = new Set(["POPULARITY", "PRICE_ASC", "PRICE_DESC", "RELEVANCE"]);
-  return allowed.has(normalized) ? normalized : defaultPlan.sortBy;
+  return allowed.has(normalized) ? normalized : null;
 };
 
 const normalizeIntent = (value, fallback) => {
@@ -416,14 +442,17 @@ const normalizeBooleanFlag = (value, fallback = false) => {
   return fallback;
 };
 
-const buildPlannerPrompt = () => [
-  {
-    role: "system",
-    content:
-      "You are a smart travel assistant that analyzes conversations and detects intents. " +
-      "Your job is to determine if the user wants to SEARCH for accommodation, just SMALL_TALK, or needs HELP.\n\n" +
-
-      "INTENT DETECTION RULES:\n" +
+const buildPlannerPrompt = ({ now } = {}) => {
+  const todayLine = buildTodayLine(now);
+  const todayBlock = todayLine ? `TODAY CONTEXT:\n${todayLine}\n\n` : "";
+  return [
+    {
+      role: "system",
+      content:
+        "You are a smart travel assistant that analyzes conversations and detects intents. " +
+        "Your job is to determine if the user wants to SEARCH for accommodation, just SMALL_TALK, or needs HELP.\n\n" +
+        todayBlock +
+        "INTENT DETECTION RULES:\n" +
       "- SEARCH: Only when the user explicitly mentions looking for accommodation with enough information (location, type, dates, or guests). " +
       "Key verbs: 'search', 'need', 'want', 'show me', 'is there', 'available'.\n" +
       "- SMALL_TALK: Greetings, farewells, thanks, personal questions, casual conversation without search intent.\n" +
@@ -463,12 +492,15 @@ const buildPlannerPrompt = () => [
 
       "FILTERING & SORTING RULES:\n" +
       "- Fill location city/state/country and lat/lng when provided. If the user requests proximity (\"1km around Movistar Arena\"), set location.radiusKm and location.landmark.\n" +
+      "- If the user does NOT specify homes vs hotels, return listingTypes as an empty array (do not assume a default).\n" +
       "- Detect HOME filters: propertyTypes (HOUSE, APARTMENT, CABIN, etc.), spaceTypes (ENTIRE_PLACE, PRIVATE_ROOM, SHARED_ROOM), amenityKeys (e.g., WIFI, FREE_PARKING_ON_PREMISES), and tagKeys (BEACHFRONT, LUXURY, FAMILY). Use uppercase keys.\n" +
       "- For parking requests, set homeFilters.amenityKeys (FREE_PARKING_ON_PREMISES and/or PAID_PARKING_ON_PREMISES).\n" +
       "- Detect HOTEL filters: amenityCodes from catalog names, amenityItemIds when numeric IDs are provided, preferredOnly flag, and minRating based on star ranks.\n" +
       "- PREFERENCES (preferences.areaPreference): Extract from phrases like 'quiet', 'tranquilo', 'near coast/beach', 'cerca de la playa', 'city center', 'centro', 'family-friendly', 'familia', 'luxury', 'lujo', 'budget', 'económico'. Use: QUIET, BEACH_COAST, CITY_CENTER, FAMILY_FRIENDLY, LUXURY, BUDGET. Put all that apply in preferences.areaPreference array. Optional preferences.preferenceNotes: short free text for other wishes.\n" +
       "- Map preferences to filters: BEACH_COAST -> homeFilters.tagKeys BEACHFRONT when HOMES; LUXURY -> hotelFilters.preferredOnly or homeFilters.tagKeys LUXURY; BUDGET -> sortBy PRICE_ASC or budget.max; QUIET/FAMILY_FRIENDLY -> preferenceNotes so assistant can acknowledge.\n" +
       "- Capture guest requirements (adults, children, pets) plus requested bedrooms, beds, bathrooms, or total guests for homes.\n" +
+      "- If the user says cheap/budget/economico/barato/ahorrar WITHOUT an explicit numeric amount, set sortBy PRICE_ASC and DO NOT set budget.max.\n" +
+      "- Only set budget.max or budget.min when the user provides an explicit numeric amount (e.g., \"menos de 100\").\n" +
       "- Detect explicit budgets and ordering like 'cheapest', 'precios altos', or 'ordenar por precio'. Map to sortBy PRICE_ASC or PRICE_DESC. Respect requested limit counts when possible.\n\n" +
 
       "Respond ONLY with a valid JSON object with this schema:\n" +
@@ -501,12 +533,13 @@ const buildPlannerPrompt = () => [
         "language": "en",
         "notes": string[]
       }`,
-  },
-];
+    },
+  ];
+};
 
 const defaultPlan = {
   intent: "SMALL_TALK",
-  listingTypes: ["HOMES"],
+  listingTypes: [],
   location: { city: null, state: null, country: null, lat: null, lng: null, radiusKm: null, landmark: null },
   dates: { checkIn: null, checkOut: null, flexible: true },
   guests: { adults: null, children: null, infants: null, pets: null, total: null },
@@ -528,7 +561,7 @@ const defaultPlan = {
     minRating: null,
   },
   budget: { currency: null, max: null, min: null },
-  sortBy: "RELEVANCE",
+  sortBy: null,
   limit: null,
   language: "en",
   notes: [],
@@ -630,7 +663,7 @@ const mergePlan = (raw, { contextText = "" } = {}) => {
   };
 };
 
-export const extractSearchPlan = async (messages = []) => {
+export const extractSearchPlan = async (messages = [], { now } = {}) => {
   const client = ensureClient();
   const normalizedMessages = sanitizeMessages(messages);
   const latestUserMessage =
@@ -642,7 +675,7 @@ export const extractSearchPlan = async (messages = []) => {
     const completion = await client.chat.completions.create({
       model: DEFAULT_MODEL,
       response_format: { type: "json_object" },
-      messages: [...buildPlannerPrompt(), ...normalizedMessages],
+      messages: [...buildPlannerPrompt({ now }), ...normalizedMessages],
     });
     const payload = completion.choices?.[0]?.message?.content;
     if (!payload) return mergePlan(defaultPlan, { contextText: latestUserMessage });
@@ -974,6 +1007,10 @@ export const generateAssistantReply = async ({
   const planLanguage = typeof plan?.language === "string" ? plan.language : null;
   const targetLanguage = detectLanguageFromText(latestUserMessage, planLanguage || "en");
   const contextBlock = buildUserContextBlock(userContext, targetLanguage);
+  const languageGuard =
+    "DETECT the language of the user's last message. ALWAYS reply in that same language. Do not mix languages.";
+  const todayLine = buildTodayLine(userContext?.now || userContext?.localDate);
+  const todayBlock = todayLine ? `${todayLine}\n` : "";
 
   let finalContextBlock = contextBlock;
   if (tripContext?.summary) {
@@ -1044,6 +1081,7 @@ export const generateAssistantReply = async ({
     guests: plan?.guests ?? null,
     dates: plan?.dates ?? null,
     matchTypes,
+    foundExact: Boolean(inventory?.foundExact),
     weather: weather
       ? {
         current: weather.current || null,
@@ -1126,8 +1164,8 @@ export const generateAssistantReply = async ({
             )
             : pickLanguageText(
               targetLanguage,
-              "I found some options that match your search. Check the results below and tell me if you want to adjust dates or budget.",
-              "Encontre algunas opciones que coinciden con tu busqueda. Revisa los resultados y decime si queres ajustar fechas o presupuesto."
+              "Here are the best options for you.",
+              "Estas son las mejores opciones para vos."
             )
           : pickLanguageText(
             targetLanguage,
@@ -1180,45 +1218,55 @@ export const generateAssistantReply = async ({
       systemPrompt =
         "You are a travel planner helping a guest who already booked a stay.\n" +
         `${langLine}\n` +
+        `${languageGuard}\n` +
+        `${todayBlock}` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
+        "- Vary your wording: e.g. 'Here are some nearby spots.', 'I put together a few options around you.', 'These are solid picks for your stay.' (or equivalent in the user's language). Avoid repeating the same opener.\n" +
         "- Use the provided trip context and suggestions to summarize nearby options.\n" +
         "- If an itinerary is provided, mention that a day-by-day plan is ready.\n" +
         "- Keep the reply concise and helpful, highlighting top-rated or closest options.\n" +
-        "- followUps: Ask what category or day to refine.\n" +
+        "- followUps: Ask what category or day to refine. Vary phrasing.\n" +
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     } else if (intent === "SEARCH") {
       systemPrompt =
         "You are a friendly and professional travel assistant. The user is looking for accommodation.\n" +
         `${langLine}\n` +
+        `${languageGuard}\n` +
+        `${todayBlock}` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
         `${contextInstruction}\n` +
-        "- If there are results: Return the 'reply' as a single, VERY concise and helpful sentence. If a location is known, mention it (e.g., 'I found these options in [Location] for you').\n" +
+        "- Vary your wording naturally. Avoid repeating the same phrase every time (e.g. do not always start with 'Here are the best options'). Use different openings and tones: e.g. 'I found some great options for you.', 'These picks match what you’re looking for.', 'Take a look at these.', Or in Spanish: 'Encontré buenas opciones.', 'Estas son algunas opciones que encajan.', 'Mirá estas opciones.'\n" +
+        "- If there are results: Return the 'reply' as a single, VERY concise sentence. You may add the location briefly. Vary phrasing across conversations.\n" +
         "- If results are marked as SIMILAR (matchTypes): say there were no exact matches and mention you found similar options.\n" +
-        "- If NO results: Suggest concrete adjustments (change city, dates, budget).\n" +
-        "- followUps: 3-4 relevant follow-up suggestions.\n" +
+        "- If NO results: Suggest concrete adjustments (change city, dates, budget). Vary suggestions (e.g. 'Try different dates', 'Broaden the area', 'Adjust your budget').\n" +
+        "- followUps: 3-4 relevant follow-up suggestions. Vary the wording of follow-ups; avoid always using the same labels.\n" +
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     } else if (intent === "HELP") {
       systemPrompt =
         "You are a friendly travel assistant. The user needs help or information.\n" +
         `${langLine}\n` +
+        `${languageGuard}\n` +
+        `${todayBlock}` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
         `${contextInstruction}\n` +
+        "- Vary your tone: sometimes more direct ('You can search by destination and dates'), sometimes warmer ('I can help you find a place — just tell me where and when'). Avoid robotic or repeated phrasing.\n" +
         "- Explain what you can do: search for homes and hotels, filter by amenities, dates, budget.\n" +
         "- If the user asks about their booking, CONFIRM you see it using the context below.\n" +
-        "- Be concise but helpful.\n" +
-        "- followUps: Suggestions on how to start searching.\n" +
+        "- followUps: Suggestions on how to start searching. Vary wording (e.g. 'Search for a stay', 'Pick dates and guests', 'Tell me your destination').\n" +
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     } else {
       // SMALL_TALK
       systemPrompt =
         "You are a friendly and conversational travel assistant. The user is chatting casually.\n" +
         `${langLine}\n` +
+        `${languageGuard}\n` +
+        `${todayBlock}` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
         `${contextInstruction}\n` +
-        "- Reply naturally and in a friendly way.\n" +
+        "- Reply naturally and in a friendly way. Vary your replies: avoid always saying 'How can I help?' or 'What would you like to know?' Use alternatives like 'What are you in the mood for?', 'Tell me what you have in mind.', 'I’m here to help — what do you need?' (or equivalent in the user's language).\n" +
         "- If they mention destinations without asking for a search, ask for more details before searching.\n" +
         "- DO NOT assume they want to search unless explicitly requested.\n" +
-        "- followUps: Natural questions to continue the conversation or guide them towards search.\n" +
+        "- followUps: Natural questions to continue the conversation or guide them towards search. Vary the phrasing.\n" +
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     }
 
@@ -1287,8 +1335,8 @@ export const generateAssistantReply = async ({
             )
             : pickLanguageText(
               targetLanguage,
-              "I found some options that match your search. Check the results below and tell me if you want to adjust dates or budget.",
-              "Encontre algunas opciones que coinciden con tu busqueda. Revisa los resultados y decime si queres ajustar fechas o presupuesto."
+              "Here are the best options for you.",
+              "Estas son las mejores opciones para vos."
             )
           : pickLanguageText(
             targetLanguage,

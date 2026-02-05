@@ -2,6 +2,8 @@ import { geocodePlace, getNearbyPlaces } from "./tools/index.js";
 
 const DEFAULT_MAX_CAROUSELS = 5;
 const DEFAULT_ITEMS_PER_CAROUSEL = 5;
+/** When total inventory is below this, return a single "Recommendations" carousel to avoid repetition. */
+const SINGLE_CAROUSEL_THRESHOLD = 12;
 
 const toNumber = (value) => {
   const numeric = Number(value);
@@ -133,6 +135,9 @@ const buildSignals = (text) => {
     center: has(["center", "centro", "downtown", "centro historico"]),
     premium: has(["premium", "luxury", "lujo", "exclusive", "exclusivo"]),
     budget: has(["budget", "cheap", "barato", "economico"]),
+    tranquility: has(["quiet", "tranquilo", "tranquility", "peaceful", "relax", "silencio", "calm", "calma"]),
+    beach: has(["beach", "playa", "coast", "costa", "mar", "sea", "ocean", "beachfront", "frente al mar"]),
+    poolLeisure: has(["pool", "pileta", "piscina", "leisure", "gym", "spa", "wellness", "piscina"]),
   };
 };
 
@@ -255,6 +260,26 @@ export const buildInventoryCarousels = async ({
 
   if (!normalizedItems.length) return [];
 
+  if (rawItems.length < SINGLE_CAROUSEL_THRESHOLD) {
+    const usedIds = new Set();
+    const combined = buildCarousel({
+      id: "recommendations",
+      title: "Recommendations",
+      reason: "Best options for your search.",
+      items: normalizedItems,
+      scoreFn: (entry) => {
+        const price = entry.price != null ? entry.price : 9999;
+        const rating = entry.rating != null ? entry.rating : 0;
+        return rating * 50 - Math.min(price / 5, 200);
+      },
+      sort: "desc",
+      minItems: 1,
+      maxItems: Math.min(maxItems * 2, normalizedItems.length),
+      usedIds,
+    });
+    return combined ? [combined] : [];
+  }
+
   const userText = [
     message,
     ...(Array.isArray(plan?.notes) ? plan.notes : []),
@@ -270,8 +295,11 @@ export const buildInventoryCarousels = async ({
   if (signals.business) requested.add("business");
   if (signals.family) requested.add("family");
   if (signals.center) requested.add("central");
+  if (signals.tranquility) requested.add("tranquility");
+  if (signals.beach) requested.add("beach");
+  if (signals.poolLeisure) requested.add("poolLeisure");
 
-  const optionalIds = ["central", "family", "business", "nightlife", "shopping"];
+  const optionalIds = ["central", "family", "business", "nightlife", "shopping", "tranquility", "beach", "poolLeisure"];
   const prioritizedOptional = [
     ...optionalIds.filter((id) => requested.has(id)),
     ...optionalIds.filter((id) => !requested.has(id)),
@@ -435,6 +463,76 @@ export const buildInventoryCarousels = async ({
             "wifi",
             "meeting",
             "conference",
+          ]);
+          return score > 0 ? score : null;
+        },
+        sort: "desc",
+        minItems: 2,
+        maxItems,
+        usedIds,
+      }),
+    tranquility: () =>
+      buildCarousel({
+        id: "tranquility",
+        title: "Tranquility",
+        reason: "Quiet, peaceful stays.",
+        items: normalizedItems,
+        scoreFn: (entry) => {
+          const score = scoreByKeywords(entry.keywordBlob, [
+            "quiet",
+            "peaceful",
+            "tranquil",
+            "relax",
+            "calm",
+            "silent",
+            "garden",
+            "nature",
+          ]);
+          return score > 0 ? score : null;
+        },
+        sort: "desc",
+        minItems: 2,
+        maxItems,
+        usedIds,
+      }),
+    beach: () =>
+      buildCarousel({
+        id: "beach",
+        title: "Near the Beach",
+        reason: "Close to the coast or beachfront.",
+        items: normalizedItems,
+        scoreFn: (entry) => {
+          const score = scoreByKeywords(entry.keywordBlob, [
+            "beach",
+            "beachfront",
+            "sea",
+            "ocean",
+            "coast",
+            "waterfront",
+            "playa",
+          ]);
+          return score > 0 ? score : null;
+        },
+        sort: "desc",
+        minItems: 2,
+        maxItems,
+        usedIds,
+      }),
+    poolLeisure: () =>
+      buildCarousel({
+        id: "poolLeisure",
+        title: "Pool & Leisure",
+        reason: "Pool, gym, or spa for your stay.",
+        items: normalizedItems,
+        scoreFn: (entry) => {
+          const score = scoreByKeywords(entry.keywordBlob, [
+            "pool",
+            "piscina",
+            "gym",
+            "fitness",
+            "spa",
+            "wellness",
+            "leisure",
           ]);
           return score > 0 ? score : null;
         },

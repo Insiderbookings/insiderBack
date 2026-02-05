@@ -276,7 +276,12 @@ const getClientType = (req) =>
 
 export const shouldExposeRefreshToken = (req) => {
   const clientType = getClientType(req);
-  return clientType === "mobile" || clientType === "app" || clientType === "react-native";
+  return (
+    clientType === "web" ||
+    clientType === "mobile" ||
+    clientType === "app" ||
+    clientType === "react-native"
+  );
 };
 
 const readCookie = (req, name) => {

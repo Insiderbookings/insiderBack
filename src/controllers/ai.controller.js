@@ -138,6 +138,7 @@ export const handleAiChat = async (req, res) => {
       state: result.state,
       plan: result.plan,
       inventory: result.inventory,
+      carousels: Array.isArray(result.carousels) ? result.carousels : [],
       trip: result.trip,
       counts: {
         homes: Array.isArray(result.inventory?.homes) ? result.inventory.homes.length : 0,

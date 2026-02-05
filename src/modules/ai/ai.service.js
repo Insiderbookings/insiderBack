@@ -1,5 +1,6 @@
 import { extractSearchPlan, generateTripAddons } from "../../services/aiAssistant.service.js";
 import { AI_FLAGS, AI_LIMITS } from "./ai.config.js";
+import { buildInventoryCarousels } from "./ai.carousels.js";
 import { applyPlanToState, buildPlanOutcome, INTENTS, NEXT_ACTIONS, updateStageFromAction } from "./ai.planner.js";
 import { enforcePolicy } from "./ai.policy.js";
 import { renderAssistantPayload } from "./ai.renderer.js";
@@ -11,6 +12,7 @@ const buildEmptyInventory = () => ({
   homes: [],
   hotels: [],
   matchTypes: { homes: "NONE", hotels: "NONE" },
+  foundExact: false,
 });
 
 const normalizeMessages = (messages = []) =>
@@ -28,13 +30,11 @@ const normalizeMessages = (messages = []) =>
 
 const applyPlanDefaults = (plan, state) => {
   const nextPlan = { ...(plan || {}) };
-  const listingTypes =
-    Array.isArray(nextPlan.listingTypes) && nextPlan.listingTypes.length
-      ? nextPlan.listingTypes
-      : Array.isArray(state?.preferences?.listingTypes) && state.preferences.listingTypes.length
-        ? state.preferences.listingTypes
-        : ["HOMES"];
-  nextPlan.listingTypes = listingTypes;
+  if (!Array.isArray(nextPlan.listingTypes) || !nextPlan.listingTypes.length) {
+    if (Array.isArray(state?.preferences?.listingTypes) && state.preferences.listingTypes.length) {
+      nextPlan.listingTypes = state.preferences.listingTypes;
+    }
+  }
   if (!nextPlan.sortBy && state?.preferences?.sortBy) {
     nextPlan.sortBy = state.preferences.sortBy;
   }
@@ -370,6 +370,7 @@ export const runAiTurn = async ({
   if (!AI_FLAGS.chatEnabled) {
     return {
       inventory: buildEmptyInventory(),
+      carousels: [],
       reply: "AI chat is disabled.",
       followUps: [],
       plan: null,
@@ -397,7 +398,9 @@ export const runAiTurn = async ({
   const userContext = context && typeof context === "object" ? context : null;
 
   const planStart = Date.now();
-  const planCandidate = await extractSearchPlan(normalizedMessages);
+  const planCandidate = await extractSearchPlan(normalizedMessages, {
+    now: userContext?.now || userContext?.localDate || null,
+  });
   timings.planMs = Date.now() - planStart;
   const { state: nextState, plan: mergedPlanRaw } = applyPlanToState(existingState, planCandidate);
   const planWithUi = applyUiEventToPlan(mergedPlanRaw, uiEvent);
@@ -449,6 +452,7 @@ export const runAiTurn = async ({
   }
 
   let inventory = buildEmptyInventory();
+  let carousels = [];
   if (resolvedNextAction === "RUN_SEARCH") {
     const searchStart = Date.now();
     inventory = await searchStays(mergedPlan, {
@@ -456,6 +460,20 @@ export const runAiTurn = async ({
       maxResults: AI_LIMITS.maxResults,
     });
     timings.searchMs = Date.now() - searchStart;
+    if ((inventory.homes?.length || 0) + (inventory.hotels?.length || 0) > 0) {
+      try {
+        carousels = await buildInventoryCarousels({
+          inventory,
+          plan: mergedPlan,
+          state: nextState,
+          message: latestUserMessage,
+          maxCarousels: 5,
+          maxItems: 8,
+        });
+      } catch (carouselErr) {
+        console.warn("[ai] buildInventoryCarousels failed", carouselErr?.message || carouselErr);
+      }
+    }
   }
 
   let trip = null;
@@ -546,6 +564,7 @@ export const runAiTurn = async ({
     ui: rendered.ui || { chips: [], cards: [], inputs: [], sections: [] },
     plan: mergedPlan,
     inventory,
+    carousels: Array.isArray(carousels) ? carousels : [],
     trip,
     weather: resolvedWeather,
     state: updatedState,

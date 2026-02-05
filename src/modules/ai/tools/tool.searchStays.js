@@ -1,8 +1,11 @@
 import { searchHomesForPlan, searchHotelsForPlan } from "../../../services/assistantSearch.service.js";
 
 export const searchStays = async (plan, { limit, maxResults = 5 } = {}) => {
-  const listingTypes = Array.isArray(plan?.listingTypes) ? plan.listingTypes : ["HOMES"];
-  const wantsHomes = listingTypes.includes("HOMES") || listingTypes.length === 0;
+  const listingTypes =
+    Array.isArray(plan?.listingTypes) && plan.listingTypes.length
+      ? plan.listingTypes
+      : ["HOMES", "HOTELS"];
+  const wantsHomes = listingTypes.includes("HOMES");
   const wantsHotels = listingTypes.includes("HOTELS");
 
   const [homesResult, hotelsResult] = await Promise.all([
@@ -20,5 +23,7 @@ export const searchStays = async (plan, { limit, maxResults = 5 } = {}) => {
       homes: homesResult?.matchType || "NONE",
       hotels: hotelsResult?.matchType || "NONE",
     },
+    foundExact:
+      homesResult?.matchType === "EXACT" || hotelsResult?.matchType === "EXACT",
   };
 };

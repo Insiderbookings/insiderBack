@@ -59,6 +59,11 @@ const promptByAction = {
   },
 };
 
+const promptDatesAndGuests = {
+  es: "Excelente, ¿cuántas personas y cuándo?",
+  en: "Great, how many people and when?",
+};
+
 const inputByAction = {
   [NEXT_ACTIONS.ASK_FOR_DESTINATION]: [{ type: "destination", id: "DESTINATION", required: true }],
   [NEXT_ACTIONS.ASK_FOR_DATES]: [{ type: "dateRange", id: "DATES", required: true }],
@@ -155,10 +160,15 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
     nextAction === NEXT_ACTIONS.ASK_FOR_DATES ||
     nextAction === NEXT_ACTIONS.ASK_FOR_GUESTS
   ) {
-    replyText =
-      promptByAction[nextAction]?.[language] ||
-      promptByAction[nextAction]?.en ||
-      "Can you clarify?";
+    const bothDatesAndGuestsMissing = missingDates && missingGuests;
+    if (bothDatesAndGuestsMissing) {
+      replyText = promptDatesAndGuests[language] || promptDatesAndGuests.en;
+    } else {
+      replyText =
+        promptByAction[nextAction]?.[language] ||
+        promptByAction[nextAction]?.en ||
+        "Can you clarify?";
+    }
     followUps = [];
   } else {
     const replyPayload = await generateAssistantReply({
