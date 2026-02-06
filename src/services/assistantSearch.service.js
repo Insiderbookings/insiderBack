@@ -481,35 +481,35 @@ const runHomeQuery = async ({
       },
       ...(Array.isArray(homeFilters.tagKeys) && homeFilters.tagKeys.length
         ? [
-            {
-              model: models.HomeTagLink,
-              as: "tags",
-              required: false,
-              include: [
-                {
-                  model: models.HomeTag,
-                  as: "tag",
-                  attributes: ["id", "tag_key", "label"],
-                },
-              ],
-            },
-          ]
+          {
+            model: models.HomeTagLink,
+            as: "tags",
+            required: false,
+            include: [
+              {
+                model: models.HomeTag,
+                as: "tag",
+                attributes: ["id", "tag_key", "label"],
+              },
+            ],
+          },
+        ]
         : []),
       ...(calendarRange
         ? [
-            {
-              model: models.HomeCalendar,
-              as: "calendar",
-              attributes: ["date", "status"],
-              required: false,
-              where: {
-                status: { [Op.in]: Array.from(BLOCKED_CALENDAR_STATUSES) },
-                date: {
-                  [Op.between]: [calendarRange.startDate, calendarRange.endDate],
-                },
+          {
+            model: models.HomeCalendar,
+            as: "calendar",
+            attributes: ["date", "status"],
+            required: false,
+            where: {
+              status: { [Op.in]: Array.from(BLOCKED_CALENDAR_STATUSES) },
+              date: {
+                [Op.between]: [calendarRange.startDate, calendarRange.endDate],
               },
             },
-          ]
+          },
+        ]
         : []),
     ],
     order,
@@ -1150,6 +1150,13 @@ const tryRunLiveHotelSearch = async ({ plan, limit, hotelFilters, coordinateFilt
 export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   const planLimit = typeof plan.limit === "number" && plan.limit > 0 ? plan.limit : null;
   const limit = clampLimit(planLimit || options.limit);
+  const excludeIds = Array.isArray(options.excludeIds) ? options.excludeIds : [];
+
+  console.log(`[DEBUG_SEARCH] searchHotelsForPlan invoked. Limit: ${limit}. Exclude count: ${excludeIds.length}`);
+  if (excludeIds.length > 0) {
+    console.log(`[DEBUG_SEARCH] Exclude Sample: ${excludeIds.slice(0, 3).join(", ")} (Type: ${typeof excludeIds[0]})`);
+  }
+
   const prefFilters = deriveFiltersFromPreferences(plan);
   const hotelFiltersRaw = plan?.hotelFilters || {};
   const normalizedHotelFilters = {
@@ -1168,18 +1175,87 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     hotelFilters: normalizedHotelFilters,
     coordinateFilter,
   });
+
   if (liveResults.length) {
-    return { items: liveResults, matchType: "EXACT" };
+    // If live search is used, we might need post-filtering if the provider doesn't support exclusion
+    // ideally provider supports it, or we filter here
+    const filteredLive = excludeIds.length
+      ? liveResults.filter(r => !excludeIds.includes(String(r.id || r.hotelCode)))
+      : liveResults;
+
+    if (filteredLive.length) {
+      return { items: filteredLive, matchType: "EXACT" };
+    }
   }
 
   const where = {};
+
+  // Relational Lookup for Static Data
+  let cityCodes = [];
+  let countryCodes = [];
+
   if (plan?.location?.city) {
+    const filter = buildStringFilter(plan.location.city);
+    console.log(`[DEBUG_SEARCH] Looking up City: "${plan.location.city}" (Filter: ${JSON.stringify(filter)})`);
+    if (filter) {
+      try {
+        const foundCities = await models.WebbedsCity.findAll({
+          where: { name: filter },
+          attributes: ["code", "name", "country_name"],
+          limit: 10
+        });
+        if (foundCities?.length) {
+          cityCodes = foundCities.map(c => c.code);
+          console.log(`[DEBUG_SEARCH] Found Companies: ${foundCities.map(c => `${c.name} (${c.code}) - ${c.country_name}`).join(", ")}`);
+        } else {
+          console.log(`[DEBUG_SEARCH] No cities found for "${plan.location.city}"`);
+        }
+      } catch (err) {
+        console.warn("[assistant] city lookup failed", err);
+      }
+    }
+  }
+
+  if (plan?.location?.country) {
+    const filter = buildStringFilter(plan.location.country);
+    console.log(`[DEBUG_SEARCH] Looking up Country: "${plan.location.country}"`);
+    if (filter) {
+      try {
+        const foundCountries = await models.WebbedsCountry.findAll({
+          where: { name: filter },
+          attributes: ["code", "name"],
+          limit: 5
+        });
+        if (foundCountries?.length) {
+          countryCodes = foundCountries.map(c => c.code);
+          console.log(`[DEBUG_SEARCH] Found Countries: ${foundCountries.map(c => `${c.name} (${c.code})`).join(", ")}`);
+        } else {
+          console.log(`[DEBUG_SEARCH] No countries found for "${plan.location.country}"`);
+        }
+      } catch (err) {
+        console.warn("[assistant] country lookup failed", err);
+      }
+    }
+  }
+
+  // Apply filters with precedence: City Code > City Name > Country Code > Country Name
+  if (cityCodes.length > 0) {
+    where.city_code = { [Op.in]: cityCodes };
+  } else if (plan?.location?.city) {
     const filter = buildStringFilter(plan.location.city);
     if (filter) where.city_name = filter;
   }
-  if (plan?.location?.country) {
-    const filter = buildStringFilter(plan.location.country);
-    if (filter) where.country_name = filter;
+
+  // Only apply country filter if city didn't capture it (or if checking same country)
+  // However, usually we want strict filtering. If city is found, we assume it implies country.
+  // If city is NOT found but country IS, we filter by country.
+  if (!where.city_code && !where.city_name) {
+    if (countryCodes.length > 0) {
+      where.country_code = { [Op.in]: countryCodes };
+    } else if (plan?.location?.country) {
+      const filter = buildStringFilter(plan.location.country);
+      if (filter) where.country_name = filter;
+    }
   }
   if (coordinateFilter) {
     where.lat = coordinateFilter.latitude;
@@ -1187,6 +1263,12 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   }
   if (normalizedHotelFilters.preferredOnly) {
     where.preferred = true;
+  }
+
+  console.log(`[DEBUG_SEARCH] Final Query "where" clause:`, JSON.stringify(where, null, 2));
+
+  if (excludeIds.length) {
+    where.hotel_id = { [Op.notIn]: excludeIds };
   }
 
   const fetchMultiplier =
@@ -1273,8 +1355,13 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     return { items: [], matchType: "NONE" };
   }
 
+  const fallbackWhere = {};
+  if (excludeIds.length) {
+    fallbackWhere.hotel_id = { [Op.notIn]: excludeIds };
+  }
+
   const fallbackHotels = await models.WebbedsHotel.findAll({
-    where: {},
+    where: fallbackWhere,
     attributes: [
       "hotel_id",
       "name",

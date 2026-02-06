@@ -147,15 +147,18 @@ export const buildPlanOutcome = ({ state, plan }) => {
   if (intent === INTENTS.HELP) {
     nextAction = NEXT_ACTIONS.HELP;
   } else if (intent === INTENTS.SEARCH) {
-    if (missing.includes("DESTINATION")) nextAction = NEXT_ACTIONS.ASK_FOR_DESTINATION;
-    else if (missing.includes("DATES")) nextAction = NEXT_ACTIONS.ASK_FOR_DATES;
-    else if (missing.includes("GUESTS")) nextAction = NEXT_ACTIONS.ASK_FOR_GUESTS;
-    else nextAction = NEXT_ACTIONS.RUN_SEARCH;
+    if (missing.includes("DESTINATION")) {
+      nextAction = NEXT_ACTIONS.ASK_FOR_DESTINATION;
+    } else {
+      // Contextual Search: Run search even if dates/guests are missing (Static Mode)
+      // The Renderer will see 'missing' fields and add UI Chips (Select Dates, etc.)
+      nextAction = NEXT_ACTIONS.RUN_SEARCH;
+    }
   }
 
   const safeMode = Boolean(
     state?.locks?.bookingFlowLocked ||
-      [STAGES.QUOTE, STAGES.READY_TO_BOOK].includes(state?.stage)
+    [STAGES.QUOTE, STAGES.READY_TO_BOOK].includes(state?.stage)
   );
 
   return {

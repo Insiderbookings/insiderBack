@@ -567,22 +567,27 @@ export const searchHotels = async (req, res, next) => {
       cityCode: resolvedCityCode || undefined,
       countryCode: resolvedCountryCode || undefined,
       hotelIds: hotelIds.length ? hotelIds.join(",") : undefined,
-        passengerNationality,
-        passengerCountryOfResidence,
-        priceMin,
-        priceMax,
-        amenities,
-        leisure,
-        business,
-        roomAmenity,
-        lite: normalizeBoolean(lite),
-        fetchAll: useFetchAll,
-      }
+      passengerNationality,
+      passengerCountryOfResidence,
+      priceMin,
+      priceMax,
+      amenities,
+      leisure,
+      business,
+      roomAmenity,
+      lite: normalizeBoolean(lite),
+      fetchAll: useFetchAll,
+    }
 
     const cacheKey = buildCacheKey({
       ...normalizedQuery,
       userCountry: req.user?.countryCode ?? req.user?.country ?? null,
     })
+
+    // Check if we have mandatory availability params
+    const hasDates = checkIn && checkOut
+    const hasRatesParams = hasDates && occupancies
+
     const ttlSeconds = Math.max(
       1,
       Number(process.env.WEBBEDS_SEARCH_CACHE_TTL_SECONDS || DEFAULT_CACHE_TTL),
@@ -608,13 +613,77 @@ export const searchHotels = async (req, res, next) => {
     }
 
     const searchStart = Date.now()
-    let items = await runWebbedsSearch({
-      query: normalizedQuery,
-      user: req.user,
-      headers: req.headers,
-    })
+    let items = []
+    let isStaticResult = false
+
+    if (hasRatesParams) {
+      // Full Availability Search
+      try {
+        items = await runWebbedsSearch({
+          query: normalizedQuery,
+          user: req.user,
+          headers: req.headers,
+        })
+      } catch (err) {
+        // If webbeds fails, we could fallback to static, but for now let it throw or handle
+        throw err
+      }
+    } else {
+      // Static Content Search (No Dates/Occupancy)
+      // Fetch details from DB for the resolved IDs
+      isStaticResult = true
+      console.log("[hotels.search] static search (no dates)", { hotelIdsCount: hotelIds.length });
+
+      // We need to fetch full details for these IDs from DB to return useful cards
+      // The previous fetch functions returned only IDs.
+      const targetIds = useFetchAll ? hotelIds : hotelIds.slice(safeOffset, safeOffset + safeLimit)
+
+      const staticRows = await models.WebbedsHotel.findAll({
+        where: { hotel_id: { [Op.in]: targetIds } },
+        include: [{
+          model: models.WebbedsHotelDetail,
+          as: "details",
+          attributes: ["images", "description", "address", "city", "country", "location"],
+        }],
+        raw: true,
+        nest: true
+      })
+
+      // Map back to expected "item" structure for frontend
+      const rowMap = new Map(staticRows.map(r => [String(r.hotel_id), r]))
+
+      items = targetIds.map(id => {
+        const row = rowMap.get(String(id))
+        if (!row) return null
+
+        // Pick best image
+        let cover = null
+        const images = row.details?.images?.hotelImages || row.details?.images
+        if (images) {
+          const list = Array.isArray(images) ? images : (Array.isArray(images.image) ? images.image : [images.image])
+          cover = list.find(img => img?.url)?.url
+        }
+
+        return {
+          hotelCode: row.hotel_id,
+          hotelName: row.name,
+          bestPrice: null, // No price in static mode
+          currency: null,
+          hotelDetails: {
+            hotelCode: row.hotel_id,
+            hotelName: row.name,
+            rating: row.rating,
+            city: row.details?.city,
+            country: row.details?.country,
+            images: cover ? { hotelImages: { image: [{ url: cover }] } } : null
+          },
+          isStatic: true
+        }
+      }).filter(Boolean)
+    }
+
     const useLite = normalizeBoolean(lite)
-    if (useLite && Array.isArray(items)) {
+    if (useLite && Array.isArray(items) && !isStaticResult) {
       items = reduceToLite(items)
     }
     const durationMs = Date.now() - startTime
@@ -693,15 +762,15 @@ export const searchHotels = async (req, res, next) => {
             hotelIds: allHotelIds.join(","),
             limit: undefined,
             offset: 0,
-              fetchAll: true,
-              priceMin: undefined,
-              priceMax: undefined,
-              amenities: undefined,
-              leisure: undefined,
-              business: undefined,
-              roomAmenity: undefined,
-              chain: undefined,
-            }
+            fetchAll: true,
+            priceMin: undefined,
+            priceMax: undefined,
+            amenities: undefined,
+            leisure: undefined,
+            business: undefined,
+            roomAmenity: undefined,
+            chain: undefined,
+          }
 
           let fullItems = await runWebbedsSearch({
             query: fullQuery,

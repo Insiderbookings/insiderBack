@@ -177,3 +177,46 @@ export const getNearbyPlaces = async ({
     return [];
   }
 };
+
+export const searchDestinationImages = async (query, limit = 2) => {
+  if (!query || typeof query !== "string") return [];
+  const apiKey =
+    process.env.GOOGLE_PLACES_API_KEY ||
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.GOOGLE_API_KEY;
+  if (!apiKey) return [];
+
+  // Use Text Search to find the city/place itself
+  try {
+    const { data } = await axios.get("https://maps.googleapis.com/maps/api/place/textsearch/json", {
+      params: {
+        query: query,
+        key: apiKey,
+      },
+      timeout: 5000,
+    });
+
+    if (!data || !Array.isArray(data.results) || !data.results.length) return [];
+
+    const results = data.results.slice(0, limit);
+    const images = [];
+
+    for (const place of results) {
+      if (place.photos && place.photos.length > 0) {
+        // Take the best photo (usually the first one)
+        const ref = place.photos[0].photo_reference;
+        if (ref) {
+          images.push({
+            url: `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${apiKey}`,
+            caption: place.name
+          });
+        }
+      }
+    }
+
+    return images;
+  } catch (err) {
+    console.warn("[ai] destination image search failed", err?.message || err);
+    return [];
+  }
+};
