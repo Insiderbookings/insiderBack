@@ -41,6 +41,35 @@ const STEP_COMMAND = {
 
 const FLOW_VERBOSE_LOGS = process.env.WEBBEDS_VERBOSE_LOGS === "true";
 
+const isPrivilegedUser = (user) => {
+  const role = Number(user?.role);
+  return role === 1 || role === 100;
+};
+
+const resolveUserId = (req) => {
+  const raw = req?.user?.id;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const requireFlowAccess = async ({ flowId, user }) => {
+  if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
+  const flow = await models.BookingFlow.findByPk(flowId);
+  if (!flow) throw Object.assign(new Error("Flow not found"), { status: 404 });
+
+  const userId = Number(user?.id);
+  if (!isPrivilegedUser(user)) {
+    if (!userId) {
+      throw Object.assign(new Error("Unauthorized"), { status: 401 });
+    }
+    if (!flow.user_id || Number(flow.user_id) !== userId) {
+      throw Object.assign(new Error("Forbidden"), { status: 403 });
+    }
+  }
+
+  return flow;
+};
+
 const ensureArray = (value) => {
   if (!value) return [];
   return Array.isArray(value) ? value : [value];
@@ -405,6 +434,11 @@ export class FlowOrchestratorService {
       rateBasis,
     } = body || {};
 
+    const userId = resolveUserId(req);
+    if (!userId) {
+      throw Object.assign(new Error("Unauthorized"), { status: 401 });
+    }
+
     const resolvedHotelCode = hotelId ?? productId;
     if (!resolvedHotelCode) {
       throw Object.assign(new Error("hotelId (productId) is required"), { status: 400 });
@@ -592,6 +626,7 @@ export class FlowOrchestratorService {
     const flowId = randomUUID();
     const flow = await models.BookingFlow.create({
       id: flowId,
+      user_id: userId,
       status: FLOW_STATUSES.STARTED,
       search_context: {
         hotelId: hotel.id ?? resolvedHotelCode,
@@ -621,13 +656,12 @@ export class FlowOrchestratorService {
     const responsePayload = attachOfferTokensToRooms(mapped, offers);
     return { flowId, offers, flow: serializeFlow(flow), ...responsePayload };
   }
-  async select({ body }) {
+  async select({ body, req }) {
     const { flowId, offerToken } = body || {};
     if (!flowId || !offerToken) {
       throw Object.assign(new Error("flowId and offerToken are required"), { status: 400 });
     }
-    const flow = await models.BookingFlow.findByPk(flowId);
-    if (!flow) throw Object.assign(new Error("Flow not found"), { status: 404 });
+    const flow = await requireFlowAccess({ flowId, user: req?.user });
     const payload = verifyOfferToken(offerToken);
     flow.selected_offer = payload;
     flow.allocation_current = payload.allocationDetails;
@@ -641,8 +675,7 @@ export class FlowOrchestratorService {
     const idempotencyKey = bodyIdempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
 
-    const flow = await models.BookingFlow.findByPk(flowId);
-    if (!flow) throw Object.assign(new Error("Flow not found"), { status: 404 });
+    const flow = await requireFlowAccess({ flowId, user: req?.user });
     if (!flow.selected_offer) {
       if (!offerToken) {
         throw Object.assign(new Error("offerToken is required to block this flow"), { status: 400 });
@@ -732,8 +765,7 @@ export class FlowOrchestratorService {
     } = body || {};
     const idempotencyKey = body?.idempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
-    const flow = await models.BookingFlow.findByPk(flowId);
-    if (!flow) throw Object.assign(new Error("Flow not found"), { status: 404 });
+    const flow = await requireFlowAccess({ flowId, user: req?.user });
     if (!flow.selected_offer) {
       throw Object.assign(new Error("Offer not selected for this flow"), { status: 400 });
     }
@@ -897,8 +929,7 @@ export class FlowOrchestratorService {
     const { flowId, idempotencyKey: bodyIdempotencyKey } = body || {};
     const idempotencyKey = bodyIdempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
-    const flow = await models.BookingFlow.findByPk(flowId);
-    if (!flow) throw Object.assign(new Error("Flow not found"), { status: 404 });
+    const flow = await requireFlowAccess({ flowId, user: req?.user });
     if (!flow.itinerary_booking_code) {
       throw Object.assign(new Error("Flow is missing itinerary booking code"), { status: 400 });
     }
@@ -1042,8 +1073,7 @@ export class FlowOrchestratorService {
     const { flowId, paymentIntentId, amount } = body || {};
     const idempotencyKey = body?.idempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
-    const flow = await models.BookingFlow.findByPk(flowId);
-    if (!flow) throw Object.assign(new Error("Flow not found"), { status: 404 });
+    const flow = await requireFlowAccess({ flowId, user: req?.user });
     if (!flow.itinerary_booking_code) {
       throw Object.assign(new Error("Flow is missing itinerary booking code"), { status: 400 });
     }
@@ -1180,8 +1210,7 @@ export class FlowOrchestratorService {
     const { flowId } = body || {};
     const idempotencyKey = body?.idempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
-    const flow = await models.BookingFlow.findByPk(flowId);
-    if (!flow) throw Object.assign(new Error("Flow not found"), { status: 404 });
+    const flow = await requireFlowAccess({ flowId, user: req?.user });
     if (!flow.itinerary_booking_code || !flow.service_reference_number) {
       throw Object.assign(new Error("Flow missing itinerary or service reference"), { status: 400 });
     }
@@ -1265,8 +1294,7 @@ export class FlowOrchestratorService {
     const { flowId, comment } = body || {};
     const idempotencyKey = body?.idempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
-    const flow = await models.BookingFlow.findByPk(flowId);
-    if (!flow) throw Object.assign(new Error("Flow not found"), { status: 404 });
+    const flow = await requireFlowAccess({ flowId, user: req?.user });
     const bookingCode = flow.final_booking_code || flow.itinerary_booking_code;
     if (!bookingCode) {
       throw Object.assign(new Error("Flow missing booking code for cancellation"), { status: 400 });
@@ -1314,8 +1342,7 @@ export class FlowOrchestratorService {
     const { flowId, comment } = body || {};
     const idempotencyKey = body?.idempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
-    const flow = await models.BookingFlow.findByPk(flowId);
-    if (!flow) throw Object.assign(new Error("Flow not found"), { status: 404 });
+    const flow = await requireFlowAccess({ flowId, user: req?.user });
     const bookingCode = flow.final_booking_code || flow.itinerary_booking_code;
     if (!bookingCode) {
       throw Object.assign(new Error("Flow missing booking code for cancellation"), { status: 400 });
@@ -1379,15 +1406,13 @@ export class FlowOrchestratorService {
 
     return { flow: serializeFlow(flow) };
   }
-  async getFlow(flowId) {
-    const flow = await models.BookingFlow.findByPk(flowId);
-    if (!flow) throw Object.assign(new Error("Flow not found"), { status: 404 });
+  async getFlow(flowId, { user } = {}) {
+    const flow = await requireFlowAccess({ flowId, user });
     return serializeFlow(flow);
   }
 
-  async getSteps(flowId, { includeXml = false } = {}) {
-    const flow = await models.BookingFlow.findByPk(flowId);
-    if (!flow) throw Object.assign(new Error("Flow not found"), { status: 404 });
+  async getSteps(flowId, { includeXml = false, user } = {}) {
+    await requireFlowAccess({ flowId, user });
     const steps = await models.BookingFlowStep.findAll({
       where: { flow_id: flowId },
       order: [["created_at", "ASC"]],

@@ -26,6 +26,10 @@ export default (sequelize) => {
         allowNull: false,
         defaultValue: DataTypes.UUIDV4,
       },
+      user_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
       status: {
         type: DataTypes.ENUM(...STATUS_VALUES),
         allowNull: false,
@@ -59,6 +63,10 @@ export default (sequelize) => {
   );
 
   BookingFlow.associate = (models) => {
+    BookingFlow.belongsTo(models.User, {
+      foreignKey: "user_id",
+      as: "user",
+    });
     BookingFlow.hasMany(models.BookingFlowStep, {
       foreignKey: "flow_id",
       as: "steps",

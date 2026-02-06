@@ -496,6 +496,7 @@ const buildPlannerPrompt = ({ now } = {}) => {
       "- Detect HOME filters: propertyTypes (HOUSE, APARTMENT, CABIN, etc.), spaceTypes (ENTIRE_PLACE, PRIVATE_ROOM, SHARED_ROOM), amenityKeys (e.g., WIFI, FREE_PARKING_ON_PREMISES), and tagKeys (BEACHFRONT, LUXURY, FAMILY). Use uppercase keys.\n" +
       "- For parking requests, set homeFilters.amenityKeys (FREE_PARKING_ON_PREMISES and/or PAID_PARKING_ON_PREMISES).\n" +
       "- Detect HOTEL filters: amenityCodes from catalog names, amenityItemIds when numeric IDs are provided, preferredOnly flag, and minRating based on star ranks.\n" +
+      "- If the user mentions pool/piscina/pileta, include hotelFilters.amenityCodes with \"POOL\".\n" +
       "- PREFERENCES (preferences.areaPreference): Extract from phrases like 'quiet', 'tranquilo', 'near coast/beach', 'cerca de la playa', 'city center', 'centro', 'family-friendly', 'familia', 'luxury', 'lujo', 'budget', 'económico'. Use: QUIET, BEACH_COAST, CITY_CENTER, FAMILY_FRIENDLY, LUXURY, BUDGET. Put all that apply in preferences.areaPreference array. Optional preferences.preferenceNotes: short free text for other wishes.\n" +
       "- Map preferences to filters: BEACH_COAST -> homeFilters.tagKeys BEACHFRONT when HOMES; LUXURY -> hotelFilters.preferredOnly or homeFilters.tagKeys LUXURY; BUDGET -> sortBy PRICE_ASC or budget.max; QUIET/FAMILY_FRIENDLY -> preferenceNotes so assistant can acknowledge.\n" +
       "- Capture guest requirements (adults, children, pets) plus requested bedrooms, beds, bathrooms, or total guests for homes.\n" +

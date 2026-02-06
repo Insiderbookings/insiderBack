@@ -1655,8 +1655,8 @@ export const listRateBasis = async (_req, res, next) => {
 export const listHotelAmenities = async (_req, res, next) => {
   try {
     const rows = await models.WebbedsAmenityCatalog.findAll({
-      where: { type: "hotel" },
-      attributes: ["code", "name", "runno"],
+      where: { type: { [Op.in]: ["hotel", "leisure", "business"] } },
+      attributes: ["code", "name", "runno", "type"],
       order: [
         ["name", "ASC"],
         ["code", "ASC"],
@@ -1666,6 +1666,7 @@ export const listHotelAmenities = async (_req, res, next) => {
       code: row.code != null ? String(row.code) : null,
       name: row.name,
       runno: row.runno ?? null,
+      type: row.type ?? "hotel",
     }))
     return res.json({ items })
   } catch (error) {

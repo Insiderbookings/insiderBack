@@ -15,20 +15,20 @@ import {
 import { createHomePaymentIntentAppTest } from "../controllers/paymentAppTest.controller.js";
 
 import express from "express";
-import { authenticate, requireVerifiedEmail } from "../middleware/auth.js";
+import { authenticate, authenticateOrPartnerKey, requireVerifiedEmail } from "../middleware/auth.js";
 
 const router = Router();
 console.log("[payments] registering /api/payments routes (includes /stripe/webhook)");
 
 /* Bookings */
-router.post("/stripe/create-session",   createCheckoutSession);
+router.post("/stripe/create-session", authenticate, createCheckoutSession);
 router.post("/apple-pay/process",       processApplePay);
-router.post("/booking-addons/create-session", createOutsideAddOnsSession);
+router.post("/booking-addons/create-session", authenticate, createOutsideAddOnsSession);
 router.post("/homes/create-payment-intent", authenticate, requireVerifiedEmail, createHomePaymentIntent);
 router.post("/homes/test/create-payment-intent", authenticate, requireVerifiedEmail, createHomePaymentIntentAppTest);
 
 /* Add-Ons */
-router.post("/upsell/create-session",   createAddOnSession);
+router.post("/upsell/create-session", authenticate, createAddOnSession);
 
 /* Webhook */
 router.post("/stripe/webhook",
@@ -39,8 +39,8 @@ router.post("/stripe/webhook",
 /* Apple Pay merchant validation */
 router.post("/stripe/validate-merchant", validateMerchant);
 
-router.post("/create-payment-intent", createPartnerPaymentIntent);
-router.post("/confirm-and-book",      confirmPartnerPayment);
+router.post("/create-payment-intent", authenticateOrPartnerKey, createPartnerPaymentIntent);
+router.post("/confirm-and-book", authenticateOrPartnerKey, confirmPartnerPayment);
 
 // (opcional) webhook específico de partner si quieres auditar
 router.post("/webhook",

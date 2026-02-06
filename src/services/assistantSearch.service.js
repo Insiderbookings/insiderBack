@@ -69,6 +69,31 @@ const normalizeIdList = (value) => {
   return Array.from(new Set(normalized));
 };
 
+const AMENITY_NAME_SYNONYMS = {
+  POOL: ["POOL", "SWIMMING POOL", "OUTDOOR POOL", "INDOOR POOL"],
+  PISCINA: ["POOL", "SWIMMING POOL"],
+  PILETA: ["POOL", "SWIMMING POOL"],
+};
+
+const expandAmenityNameCandidates = (candidates = []) => {
+  const expanded = new Set();
+  candidates.forEach((raw) => {
+    if (raw == null) return;
+    const value = String(raw).trim();
+    if (!value) return;
+    expanded.add(value);
+    const key = value.toUpperCase();
+    const synonyms = AMENITY_NAME_SYNONYMS[key];
+    if (Array.isArray(synonyms)) {
+      synonyms.forEach((synonym) => {
+        const cleaned = String(synonym || "").trim();
+        if (cleaned) expanded.add(cleaned);
+      });
+    }
+  });
+  return Array.from(expanded);
+};
+
 const combineCapacities = (...values) => {
   const numeric = values
     .map((value) => toNumberOrNull(value))
@@ -786,10 +811,94 @@ const resolveWebbedsLocationCodes = async (location = {}) => {
   return result;
 };
 
+const normalizeNumericList = (values = []) => {
+  const result = [];
+  values.forEach((value) => {
+    if (value === null || value === undefined) return;
+    const raw = String(value).trim();
+    if (!raw) return;
+    const num = Number(raw);
+    if (Number.isFinite(num)) result.push(String(num));
+  });
+  return Array.from(new Set(result));
+};
+
+const resolveAmenityCatalogCodes = async (codes = []) => {
+  const raw = Array.isArray(codes) ? codes.map((value) => String(value || "").trim()).filter(Boolean) : [];
+  const numericCodes = new Set(normalizeNumericList(raw));
+  const nameCandidates = raw.filter((value) => !Number.isFinite(Number(value)));
+  const expandedNames = expandAmenityNameCandidates(nameCandidates);
+  console.log("[assistant][amenities] resolveAmenityCatalogCodes input", {
+    raw,
+    numericCount: numericCodes.size,
+    nameCandidatesCount: nameCandidates.length,
+    expandedNamesCount: expandedNames.length,
+  });
+  if (!expandedNames.length || !models.WebbedsAmenityCatalog) {
+    console.log("[assistant][amenities] resolveAmenityCatalogCodes resolved (no catalog lookup)", {
+      codes: Array.from(numericCodes),
+    });
+    return Array.from(numericCodes);
+  }
+  const likeOp = iLikeOp;
+  const nameFilters = expandedNames.map((name) => ({ name: { [likeOp]: `%${name}%` } }));
+  const rows = await models.WebbedsAmenityCatalog.findAll({
+    where: {
+      type: { [Op.in]: ["hotel", "leisure", "business"] },
+      [Op.or]: nameFilters,
+    },
+    attributes: ["code"],
+    raw: true,
+  });
+  rows.forEach((row) => {
+    if (row?.code != null) numericCodes.add(String(row.code));
+  });
+  console.log("[assistant][amenities] resolveAmenityCatalogCodes resolved", {
+    matchedRows: rows.length,
+    codes: Array.from(numericCodes),
+  });
+  return Array.from(numericCodes);
+};
+
 const filterHotelsByAmenities = async (hotels, filters = {}) => {
-  const amenityCodes = Array.isArray(filters.amenityCodes) ? filters.amenityCodes.filter(Boolean) : [];
-  const amenityItemIds = Array.isArray(filters.amenityItemIds) ? filters.amenityItemIds.filter(Boolean) : [];
-  if (!amenityCodes.length && !amenityItemIds.length) return hotels;
+  const requestedCodes = Array.isArray(filters.amenityCodes) ? filters.amenityCodes : [];
+  const requestedItems = Array.isArray(filters.amenityItemIds) ? filters.amenityItemIds : [];
+  const amenityCodes = await resolveAmenityCatalogCodes(requestedCodes);
+  const amenityItemIds = normalizeNumericList(requestedItems);
+  const requestedNames = expandAmenityNameCandidates(requestedCodes).map((name) => name.toLowerCase());
+  console.log("[assistant][amenities] filterHotelsByAmenities start", {
+    hotelsCount: hotels.length,
+    requestedCodes,
+    requestedItems,
+    resolvedCodes: amenityCodes,
+    resolvedItemIds: amenityItemIds,
+    requestedNames,
+  });
+  const matchesAmenityKeywords = (hotel) => {
+    if (!requestedNames.length) return false;
+    const parts = [];
+    if (Array.isArray(hotel?.amenities)) {
+      hotel.amenities.forEach((item) => {
+        if (!item) return;
+        if (typeof item === "string") parts.push(item);
+        else if (typeof item === "object") parts.push(item.name || item.label || "");
+      });
+    }
+    if (Array.isArray(hotel?.leisure)) parts.push(...hotel.leisure);
+    if (Array.isArray(hotel?.business)) parts.push(...hotel.business);
+    const blob = parts.filter(Boolean).join(" ").toLowerCase();
+    return requestedNames.some((name) => name && blob.includes(name));
+  };
+  if (!amenityCodes.length && !amenityItemIds.length) {
+    const fallbackResults =
+      requestedCodes.length || requestedItems.length
+        ? hotels.filter(matchesAmenityKeywords)
+        : hotels;
+    console.log("[assistant][amenities] filterHotelsByAmenities fallback (no codes)", {
+      fallbackCount: fallbackResults.length,
+    });
+    return fallbackResults;
+  }
   const hotelIds = hotels.map((hotel) => String(hotel.id)).filter(Boolean);
   if (!hotelIds.length) return [];
   const amenityWhere = { hotel_id: { [Op.in]: hotelIds } };
@@ -809,6 +918,9 @@ const filterHotelsByAmenities = async (hotels, filters = {}) => {
     attributes: ["hotel_id", "catalog_code", "item_id"],
     raw: true,
   });
+  console.log("[assistant][amenities] filterHotelsByAmenities rows", {
+    rows: rows.length,
+  });
   const amenityMap = new Map();
   rows.forEach((row) => {
     const key = String(row.hotel_id);
@@ -823,13 +935,24 @@ const filterHotelsByAmenities = async (hotels, filters = {}) => {
     }
   });
 
-  return hotels.filter((hotel) => {
+  const filtered = hotels.filter((hotel) => {
     const info = amenityMap.get(String(hotel.id));
     if (!info) return false;
     const hasCodes = !amenityCodes.length || amenityCodes.every((code) => info.codes.has(String(code)));
     const hasItems = !amenityItemIds.length || amenityItemIds.every((itemId) => info.items.has(String(itemId)));
     return hasCodes && hasItems;
   });
+  if (!filtered.length && requestedNames.length) {
+    const fallbackResults = hotels.filter(matchesAmenityKeywords);
+    console.log("[assistant][amenities] filterHotelsByAmenities fallback (keyword match)", {
+      fallbackCount: fallbackResults.length,
+    });
+    return fallbackResults;
+  }
+  console.log("[assistant][amenities] filterHotelsByAmenities done", {
+    filteredCount: filtered.length,
+  });
+  return filtered;
 };
 
 const applyHotelFilters = async (hotels, filters = {}) => {
@@ -851,13 +974,24 @@ const applyHotelFilters = async (hotels, filters = {}) => {
 
 const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, coordinateFilter }) => {
   if (!Array.isArray(options) || !options.length) return [];
+  const debugLive =
+    process.env.WEBBEDS_VERBOSE_LOGS === "true" || process.env.ASSISTANT_DEBUG_HOTEL_MATCH === "true";
+  let priceMissing = 0;
+  let priceInvalid = 0;
   const grouped = new Map();
   options.forEach((option) => {
     const hotelCode = option?.hotelCode ?? option?.hotelDetails?.hotelCode;
     if (!hotelCode) return;
     const key = String(hotelCode);
     const price = toNumberOrNull(option.price);
-    if (price == null) return;
+    if (price == null) {
+      priceMissing += 1;
+      return;
+    }
+    if (!Number.isFinite(price)) {
+      priceInvalid += 1;
+      return;
+    }
     const current = grouped.get(key);
     if (!current || price < current.price) {
       grouped.set(key, {
@@ -868,6 +1002,22 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
       });
     }
   });
+  if (debugLive) {
+    const sample = options.slice(0, 2).map((option) => ({
+      hotelCode: option?.hotelCode ?? option?.hotelDetails?.hotelCode ?? null,
+      hasPrice: option?.price != null,
+      price: option?.price ?? null,
+      currency: option?.currency ?? null,
+      keys: Object.keys(option || {}).slice(0, 12),
+    }));
+    console.log("[assistant][live] options summary", {
+      optionsCount: options.length,
+      groupedCount: grouped.size,
+      priceMissing,
+      priceInvalid,
+      sample,
+    });
+  }
   if (!grouped.size) return [];
 
   const hotelCodes = Array.from(grouped.keys());
@@ -910,6 +1060,18 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
       },
     ],
   });
+  if (process.env.WEBBEDS_VERBOSE_LOGS === "true" || process.env.ASSISTANT_DEBUG_HOTEL_MATCH === "true") {
+    const foundIds = new Set(records.map((row) => String(row.hotel_id)));
+    const missing = hotelCodes.filter((code) => !foundIds.has(String(code)));
+    console.log("[assistant][live] hotel match summary", {
+      liveCount: hotelCodes.length,
+      staticCount: records.length,
+      missingCount: missing.length,
+      sampleMissing: missing.slice(0, 10),
+      city: plan?.location?.city ?? null,
+      country: plan?.location?.country ?? null,
+    });
+  }
 
   const cards = records
     .map((record) => {
