@@ -2,7 +2,7 @@
 import { createHmac, randomUUID } from "crypto";
 import models from "../models/index.js";
 import { getWebbedsConfig } from "../providers/webbeds/config.js";
-import { createWebbedsClient } from "../providers/webbeds/client.js";
+import { createWebbedsClient, WebbedsError } from "../providers/webbeds/client.js";
 import { buildGetRoomsPayload, mapGetRoomsResponse } from "../providers/webbeds/getRooms.js";
 import { buildSaveBookingPayload, mapSaveBookingResponse } from "../providers/webbeds/saveBooking.js";
 import {
@@ -351,6 +351,21 @@ const findRateBasisMatch = (mappedHotel, roomTypeCode, rateBasisId) => {
   }
   return null;
 };
+
+const buildNoAvailabilityError = ({
+  message = "Selected rate is no longer available.",
+  requestXml,
+  responseXml,
+  metadata,
+} = {}) =>
+  new WebbedsError(message, {
+    command: STEP_COMMAND.GETROOMS,
+    code: "12",
+    details: message,
+    requestXml,
+    responseXml,
+    metadata,
+  });
 
 const attachOfferTokensToRooms = (mapped, offers = []) => {
   if (!mapped?.hotel?.rooms || !Array.isArray(offers) || !offers.length) return mapped;
@@ -1292,6 +1307,105 @@ export class FlowOrchestratorService {
 
     return { flow: serializeFlow(flow) };
   }
+  async recheckAvailability({ flow, req, idempotencyKey }) {
+    const context = flow?.search_context || {};
+    if (!flow?.selected_offer) {
+      throw Object.assign(new Error("Offer not selected for this flow"), { status: 400 });
+    }
+
+    const payload = buildGetRoomsPayload({
+      checkIn: context.fromDate,
+      checkOut: context.toDate,
+      currency: context.currency,
+      occupancies: serializeRoomsParam(context.rooms),
+      rateBasis: flow.selected_offer.rateBasisId,
+      nationality: context.passengerNationality,
+      residence: context.passengerCountryOfResidence,
+      hotelId: context.hotelId,
+      roomTypeCode: flow.selected_offer.roomTypeCode,
+      selectedRateBasis: flow.selected_offer.rateBasisId,
+      allocationDetails: flow.allocation_current,
+    });
+
+    let result;
+    let requestXml;
+    let responseXml;
+    let metadata;
+    const allocationIn = flow.allocation_current;
+    try {
+      ({ result, requestXml, responseXml, metadata } = await this.client.send(
+        "getrooms",
+        payload,
+        { requestId: getRequestId(req), productOverride: "hotel" },
+      ));
+    } catch (error) {
+      await logStep({
+        flowId: flow.id,
+        step: "RECHECK",
+        command: STEP_COMMAND.GETROOMS,
+        tid: error?.metadata?.transactionId,
+        success: false,
+        errorClass: error?.name,
+        errorCode: error?.code ?? error?.httpStatus,
+        allocationIn,
+        requestXml: error?.requestXml,
+        responseXml: error?.responseXml,
+        idempotencyKey,
+      });
+      throw error;
+    }
+
+    const mapped = mapGetRoomsResponse(result);
+    const rooms = ensureArray(mapped?.hotel?.rooms);
+    const rateBasis = findRateBasisMatch(
+      mapped?.hotel,
+      flow.selected_offer.roomTypeCode,
+      flow.selected_offer.rateBasisId,
+    );
+    if (!rooms.length || !rateBasis) {
+      const error = buildNoAvailabilityError({
+        message: "Selected rate is no longer available.",
+        requestXml,
+        responseXml,
+        metadata,
+      });
+      await logStep({
+        flowId: flow.id,
+        step: "RECHECK",
+        command: STEP_COMMAND.GETROOMS,
+        tid: metadata?.transactionId,
+        success: false,
+        errorClass: error?.name,
+        errorCode: error?.code,
+        allocationIn,
+        requestXml,
+        responseXml,
+        idempotencyKey,
+      });
+      throw error;
+    }
+
+    const newAllocation = getText(rateBasis?.allocationDetails) || allocationIn;
+    if (newAllocation && newAllocation !== allocationIn) {
+      flow.allocation_current = newAllocation;
+      await flow.save();
+    }
+
+    await logStep({
+      flowId: flow.id,
+      step: "RECHECK",
+      command: STEP_COMMAND.GETROOMS,
+      tid: metadata?.transactionId,
+      success: true,
+      allocationIn,
+      allocationOut: newAllocation,
+      requestXml,
+      responseXml,
+      idempotencyKey,
+    });
+
+    return { allocationIn, allocationOut: newAllocation };
+  }
   async confirm({ body, req }) {
     const { flowId } = body || {};
     const idempotencyKey = body?.idempotencyKey || req?.headers?.["idempotency-key"];
@@ -1311,6 +1425,8 @@ export class FlowOrchestratorService {
 
     const reusedStep = await resolveIdempotentStep(flowId, "BOOK_YES", idempotencyKey);
     if (reusedStep) return { flow: serializeFlow(flow), idempotent: true };
+
+    await this.recheckAvailability({ flow, req, idempotencyKey });
 
     const services = [
       {
