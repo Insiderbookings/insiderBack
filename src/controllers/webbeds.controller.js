@@ -167,13 +167,15 @@ const computeGeoBounds = (lat, lng, radiusKm) => {
   }
 }
 
-const buildDistanceLiteral = (lat, lng) => {
+const buildDistanceLiteral = (lat, lng, latExpr = "lat", lngExpr = "lng") => {
   const safeLat = Number(lat)
   const safeLng = Number(lng)
+  const latColumn = String(latExpr)
+  const lngColumn = String(lngExpr)
   return literal(
     `6371 * acos(` +
-    `cos(radians(${safeLat})) * cos(radians(lat)) * cos(radians(lng) - radians(${safeLng})) + ` +
-    `sin(radians(${safeLat})) * sin(radians(lat))` +
+    `cos(radians(${safeLat})) * cos(radians(${latColumn})) * cos(radians(${lngColumn}) - radians(${safeLng})) + ` +
+    `sin(radians(${safeLat})) * sin(radians(${latColumn}))` +
     `)`,
   )
 }
@@ -1225,31 +1227,36 @@ const fetchCityMetaByCode = async (cityCode) => {
 
 const getNearbyCityBuckets = async (coords, radiusKm, limit) => {
   if (!coords) return []
-  const bounds = computeGeoBounds(coords.lat, coords.lng, radiusKm)
-  const distanceLiteral = buildDistanceLiteral(coords.lat, coords.lng)
-  const rows = await models.WebbedsHotel.findAll({
-    where: {
-      lat: { [Op.not]: null, [Op.between]: [bounds.minLat, bounds.maxLat] },
-      lng: { [Op.not]: null, [Op.between]: [bounds.minLng, bounds.maxLng] },
-    },
-    attributes: [
-      "city_code",
-      "city_name",
-      "country_name",
-      [distanceLiteral, "distance_km"],
-      [literal("MAX(priority)"), "priority_score"],
-    ],
-    group: ["city_code", "city_name", "country_name"],
-    order: [[literal("distance_km"), "ASC"], [literal("priority_score"), "DESC"]],
-    limit: Math.max(limit * 2, limit),
-  })
-  return rows
-    .map((row) => ({
-      cityCode: row.city_code ? String(row.city_code) : null,
-      cityName: row.city_name || null,
-      countryName: row.country_name || null,
-    }))
-    .filter((item) => item.cityCode)
+  try {
+    const bounds = computeGeoBounds(coords.lat, coords.lng, radiusKm)
+    const distanceLiteral = buildDistanceLiteral(coords.lat, coords.lng, "AVG(lat)", "AVG(lng)")
+    const rows = await models.WebbedsHotel.findAll({
+      where: {
+        lat: { [Op.not]: null, [Op.between]: [bounds.minLat, bounds.maxLat] },
+        lng: { [Op.not]: null, [Op.between]: [bounds.minLng, bounds.maxLng] },
+      },
+      attributes: [
+        "city_code",
+        "city_name",
+        "country_name",
+        [distanceLiteral, "distance_km"],
+        [literal("MAX(priority)"), "priority_score"],
+      ],
+      group: ["city_code", "city_name", "country_name"],
+      order: [[literal("distance_km"), "ASC"], [literal("priority_score"), "DESC"]],
+      limit: Math.max(limit * 2, limit),
+    })
+    return rows
+      .map((row) => ({
+        cityCode: row.city_code ? String(row.city_code) : null,
+        cityName: row.city_name || null,
+        countryName: row.country_name || null,
+      }))
+      .filter((item) => item.cityCode)
+  } catch (error) {
+    console.warn("[webbeds] nearby city buckets failed", error?.message || error)
+    return []
+  }
 }
 
 const getTopGlobalCities = async (limit) => {

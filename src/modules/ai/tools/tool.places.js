@@ -1,5 +1,10 @@
 import axios from "axios";
 
+const AI_PLACES_DISABLED =
+  String(process.env.AI_PLACES_DISABLED || "").trim().toLowerCase() === "true";
+const DEBUG_AI_PLACES =
+  String(process.env.DEBUG_AI_PLACES || "").trim().toLowerCase() === "true";
+
 const DEFAULT_RADIUS_KM = 10;
 const MAX_RADIUS_KM = 15;
 const MIN_RADIUS_KM = 0.5;
@@ -65,7 +70,9 @@ const normalizePlace = (item, origin) => {
     const ref = item.photos[0].photo_reference;
     const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
 
-    console.log(`[ai] place ${item.name} | hasRef: ${!!ref} | hasKey: ${!!apiKey}`);
+    if (DEBUG_AI_PLACES) {
+      console.log(`[ai] place ${item.name} | hasRef: ${!!ref} | hasKey: ${!!apiKey}`);
+    }
 
     if (ref && apiKey) {
       photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${ref}&key=${apiKey}`;
@@ -125,6 +132,7 @@ export const getNearbyPlaces = async ({
   limit = 6,
   hydratePhotos = false,
 } = {}) => {
+  if (AI_PLACES_DISABLED) return [];
   const apiKey =
     process.env.GOOGLE_PLACES_API_KEY ||
     process.env.GOOGLE_MAPS_API_KEY ||
@@ -179,6 +187,7 @@ export const getNearbyPlaces = async ({
 };
 
 export const searchDestinationImages = async (query, limit = 2) => {
+  if (AI_PLACES_DISABLED) return [];
   if (!query || typeof query !== "string") return [];
   const apiKey =
     process.env.GOOGLE_PLACES_API_KEY ||
