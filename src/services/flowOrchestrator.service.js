@@ -15,6 +15,40 @@ import { logCurrencyDebug } from "../utils/currencyDebug.js";
 import { convertCurrency } from "./currency.service.js";
 import { resolveEnabledCurrency } from "./currencySettings.service.js";
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const RETRYABLE_WEBBEDS_CODES = new Set([
+  "8", "20", "25", "31", "67", "900", "901", "53", "63", "5300", "696",
+  "115", "116", "119", "117", "132", "190", "65002", "86000",
+]);
+const RETRYABLE_HTTP_STATUSES = new Set([502, 503, 504]);
+const RETRYABLE_ERRNOS = new Set([
+  "ETIMEDOUT",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+]);
+
+const isRetryablePriceError = (error) => {
+  if (!error) return false;
+  if (error.name === "WebbedsError") {
+    const code = error.code != null ? String(error.code) : "";
+    if (RETRYABLE_WEBBEDS_CODES.has(code)) return true;
+    if (error.httpStatus && RETRYABLE_HTTP_STATUSES.has(Number(error.httpStatus))) return true;
+  }
+  if (error.code && RETRYABLE_ERRNOS.has(String(error.code))) return true;
+  if (error.httpStatus && RETRYABLE_HTTP_STATUSES.has(Number(error.httpStatus))) return true;
+  return false;
+};
+
+const getRetryDelayMs = (attempt, baseDelay, maxDelay) => {
+  const cappedBase = Math.max(100, Number(baseDelay) || 600);
+  const max = Math.max(cappedBase, Number(maxDelay) || 5000);
+  const delay = Math.min(cappedBase * Math.pow(2, attempt - 1), max);
+  const jitter = Math.floor(Math.random() * 200);
+  return delay + jitter;
+};
+
 const FLOW_STATUSES = {
   STARTED: "STARTED",
   OFFER_SELECTED: "OFFER_SELECTED",
@@ -251,7 +285,23 @@ const buildOfferPayload = ({
     rooms: roomsRaw,
     roomRunno: room?.runno ?? null,
     roomTypeCode: roomType?.roomTypeCode ?? roomType?.code ?? null,
+    roomName: roomType?.name ?? null,
     rateBasisId: rateBasis?.id ?? null,
+    rateBasisName: rateBasis?.description ?? null,
+    mealPlan: rateBasis?.mealPlan ?? rateBasis?.includedMeal?.mealName ?? null,
+    specials: rateBasis?.specials ?? [],
+    tariffNotes: rateBasis?.tariffNotes ?? null,
+    cancellationRules: rateBasis?.cancellationRules ?? [],
+    refundable: rateBasis?.rateType?.nonRefundable != null
+      ? !Boolean(rateBasis?.rateType?.nonRefundable)
+      : rateBasis?.refundable ?? null,
+    nonRefundable: rateBasis?.rateType?.nonRefundable ?? rateBasis?.nonRefundable ?? null,
+    cancelRestricted: rateBasis?.cancellationRules?.some((r) => r?.cancelRestricted) ?? false,
+    amendRestricted: rateBasis?.cancellationRules?.some((r) => r?.amendRestricted) ?? false,
+    paymentMode: rateBasis?.paymentMode ?? null,
+    totalTaxes: rateBasis?.totalTaxes ?? null,
+    totalFee: rateBasis?.totalFee ?? null,
+    propertyFees: rateBasis?.propertyFees ?? [],
     allocationDetails: rateBasis?.allocationDetails ?? null,
     createdAt: now,
     exp: now + ttlSeconds * 1000,
@@ -949,27 +999,49 @@ export class FlowOrchestratorService {
     let requestXml;
     let responseXml;
     let metadata;
-    try {
-      ({ result, requestXml, responseXml, metadata } = await this.client.send(
-        "bookitinerary",
-        payload,
-        { requestId: getRequestId(req), productOverride: null },
-      ));
-    } catch (error) {
+    const maxAttempts = Math.max(1, Number(process.env.WEBBEDS_PRICE_RETRY_MAX || 3));
+    const baseDelayMs = Number(process.env.WEBBEDS_PRICE_RETRY_BASE_MS || 600);
+    const maxDelayMs = Number(process.env.WEBBEDS_PRICE_RETRY_MAX_MS || 5000);
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        ({ result, requestXml, responseXml, metadata } = await this.client.send(
+          "bookitinerary",
+          payload,
+          { requestId: getRequestId(req), productOverride: null },
+        ));
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        const retryable = isRetryablePriceError(error);
+        const shouldRetry = retryable && attempt < maxAttempts;
+        console.warn("[flows] price attempt failed", {
+          flowId,
+          attempt,
+          retryable,
+          code: error?.code ?? error?.httpStatus ?? error?.name ?? null,
+          details: error?.details ?? error?.message ?? null,
+        });
+        if (!shouldRetry) break;
+        await sleep(getRetryDelayMs(attempt, baseDelayMs, maxDelayMs));
+      }
+    }
+    if (lastError) {
       await logStep({
         flowId,
         step: "BOOK_NO",
         command: STEP_COMMAND.BOOK_NO,
-        tid: error?.metadata?.transactionId,
+        tid: lastError?.metadata?.transactionId,
         success: false,
-        errorClass: error?.name,
-        errorCode: error?.code ?? error?.httpStatus,
+        errorClass: lastError?.name,
+        errorCode: lastError?.code ?? lastError?.httpStatus,
         allocationIn: flow.allocation_current,
-        requestXml: error?.requestXml,
-        responseXml: error?.responseXml,
+        requestXml: lastError?.requestXml,
+        responseXml: lastError?.responseXml,
         idempotencyKey,
       });
-      throw error;
+      throw lastError;
     }
     const mapped = mapBookItineraryResponse(result);
     const productNode = Array.isArray(result?.product) ? result.product[0] : result?.product;
@@ -1070,7 +1142,7 @@ export class FlowOrchestratorService {
     return { flow: serializeFlow(flow) };
   }
   async preauth({ body, req }) {
-    const { flowId, paymentIntentId, amount } = body || {};
+    const { flowId, paymentIntentId } = body || {};
     const idempotencyKey = body?.idempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
     const flow = await requireFlowAccess({ flowId, user: req?.user });
@@ -1082,12 +1154,26 @@ export class FlowOrchestratorService {
     }
 
     const priceValue =
-      amount ??
       flow.pricing_snapshot_priced?.price ??
       flow.pricing_snapshot_preauth?.price ??
       null;
     if (priceValue == null) {
       throw Object.assign(new Error("Missing amount for preauthorization"), { status: 400 });
+    }
+    if (body?.amount != null) {
+      const clientAmount = Number(body.amount);
+      const serverAmount = Number(priceValue);
+      if (
+        Number.isFinite(clientAmount) &&
+        Number.isFinite(serverAmount) &&
+        Math.abs(clientAmount - serverAmount) > 0.01
+      ) {
+        console.warn("[flows] preauth client amount mismatch", {
+          flowId,
+          clientAmount,
+          serverAmount,
+        });
+      }
     }
 
     const reusedStep = await resolveIdempotentStep(flowId, "PREAUTH", idempotencyKey);
@@ -1267,6 +1353,12 @@ export class FlowOrchestratorService {
       allocationDetails: newAllocation,
       bookingCode: flow.final_booking_code,
       bookingReferenceNumber: flow.booking_reference_number,
+      voucher: booking?.voucher ?? null,
+      totalTaxes: booking?.totalTaxes ?? null,
+      totalFee: booking?.totalFee ?? null,
+      currency: booking?.currency ?? mapped.currencyShort ?? flow.pricing_snapshot_preauth?.currency ?? null,
+      servicePrice: booking?.servicePrice ?? booking?.price ?? null,
+      paymentGuaranteedBy: booking?.paymentGuaranteedBy ?? null,
     };
     flow.status = FLOW_STATUSES.CONFIRMED;
     await flow.save();
