@@ -1190,6 +1190,25 @@ export class WebbedsProvider extends HotelProvider {
       if (!code) {
         throw new Error("Webbeds cancellation requires bookingId")
       }
+      const userId = Number(req.user?.id)
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" })
+      }
+      const bookingRow = await models.Booking.findOne({
+        where: {
+          external_ref: String(code),
+          source: "PARTNER",
+          inventory_type: "LOCAL_HOTEL",
+        },
+      })
+      if (!bookingRow) {
+        return res.status(404).json({ error: "Booking not found" })
+      }
+      const role = Number(req.user?.role)
+      const isPrivileged = role === 1 || role === 100
+      if (!isPrivileged && Number(bookingRow.user_id) !== userId) {
+        return res.status(403).json({ error: "Forbidden" })
+      }
 
       const payload = buildCancelBookingPayload({
         bookingId: code,
@@ -1236,6 +1255,25 @@ export class WebbedsProvider extends HotelProvider {
 
     try {
       if (!bookingId) throw new Error("Webbeds getBookingDetails requires bookingId")
+      const userId = Number(req.user?.id)
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" })
+      }
+      const bookingRow = await models.Booking.findOne({
+        where: {
+          external_ref: String(bookingId),
+          source: "PARTNER",
+          inventory_type: "LOCAL_HOTEL",
+        },
+      })
+      if (!bookingRow) {
+        return res.status(404).json({ error: "Booking not found" })
+      }
+      const role = Number(req.user?.role)
+      const isPrivileged = role === 1 || role === 100
+      if (!isPrivileged && Number(bookingRow.user_id) !== userId) {
+        return res.status(403).json({ error: "Forbidden" })
+      }
 
       const payload = buildGetBookingDetailsPayload({ bookingId })
 

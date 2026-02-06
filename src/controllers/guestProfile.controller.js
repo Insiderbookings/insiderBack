@@ -41,6 +41,13 @@ export const getGuestProfile = async (req, res) => {
   try {
     const guestId = Number(req.params.guestId)
     if (!guestId) return res.status(400).json({ error: "guestId is required" })
+    const userId = Number(req.user?.id)
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+    const role = Number(req.user?.role)
+    const isPrivileged = role === 1 || role === 100
+    if (!isPrivileged && userId !== guestId) {
+      return res.status(403).json({ error: "Forbidden" })
+    }
 
     const user = await models.User.findByPk(guestId, {
       attributes: ["id", "name", "email", "avatar_url", "createdAt", "email_verified"],
