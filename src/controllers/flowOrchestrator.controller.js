@@ -51,7 +51,12 @@ export const preauthFlow = wrap((req) => service.preauth({ body: req.body, req }
 export const confirmFlow = wrap((req) => service.confirm({ body: req.body, req }));
 export const cancelQuoteFlow = wrap((req) => service.cancelQuote({ body: req.body, req }));
 export const cancelFlow = wrap((req) => service.cancel({ body: req.body, req }));
-export const getFlow = wrap((req) => service.getFlow(req.params.flowId));
+export const getFlow = wrap((req) =>
+  service.getFlow(req.params.flowId, { user: req.user })
+);
 export const getFlowSteps = wrap((req) =>
-  service.getSteps(req.params.flowId, { includeXml: req.query.includeXml === "true" })
+  service.getSteps(req.params.flowId, {
+    includeXml: req.query.includeXml === "true",
+    user: req.user,
+  })
 );

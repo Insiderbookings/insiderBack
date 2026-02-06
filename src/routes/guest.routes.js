@@ -5,11 +5,12 @@ import { getGuestProfile, updateGuestProfile } from "../controllers/guestProfile
 
 const router = Router()
 
+router.use(authenticate)
+
 router.get("/:guestId/profile", getGuestProfile)
-router.put("/me/profile", authenticate, updateGuestProfile)
+router.put("/me/profile", updateGuestProfile)
 router.post(
   "/me/profile/avatar",
-  authenticate,
   uploadImagesToS3Fields({ avatar: "avatarUrl" }, { folder: "avatars", quality: 82 }),
   updateGuestProfile,
 )

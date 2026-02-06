@@ -259,7 +259,7 @@ export const createPaymentIntent = async (req, res, next) => {
   try {
     const {
       bookingId, // Webbeds Booking ID
-      amount, // USD Amount from WebBeds
+      amount, // USD Amount from WebBeds (client-provided; ignored for security)
       currency = "USD", // Target currency requested by frontend
       flowId,
       hotelId,
@@ -278,6 +278,15 @@ export const createPaymentIntent = async (req, res, next) => {
     const logPrefix = `[webbeds] createPaymentIntent ${requestTag}`
     const requestedCurrency = currency
     const resolvedCurrency = await resolveEnabledCurrency(requestedCurrency)
+    const userId = Number(req.user?.id)
+    if (!userId) {
+      console.warn(`${logPrefix} missing user`)
+      return res.status(401).json({ error: "Unauthorized" })
+    }
+    if (!flowId) {
+      console.warn(`${logPrefix} missing flowId`)
+      return res.status(400).json({ error: "Missing flowId" })
+    }
 
     console.info(`${logPrefix} request`, {
       bookingId,
@@ -296,19 +305,37 @@ export const createPaymentIntent = async (req, res, next) => {
         phone: maskPhone(holder?.phone),
       },
       roomName,
-      userId: req.user?.id || null,
+      userId,
     })
 
     if (!bookingId) {
       console.warn(`${logPrefix} missing bookingId`)
       return res.status(400).json({ error: "Missing bookingId" })
     }
-    if (!hotelId) {
-      console.warn(`${logPrefix} missing hotelId`)
+    const flow = await models.BookingFlow.findByPk(flowId)
+    if (!flow) {
+      console.warn(`${logPrefix} flow not found`, { flowId })
+      return res.status(404).json({ error: "Flow not found" })
+    }
+    if (!isPrivilegedUser(req.user) && (!flow.user_id || Number(flow.user_id) !== userId)) {
+      console.warn(`${logPrefix} flow forbidden`, { flowId, userId, flowUserId: flow.user_id })
+      return res.status(403).json({ error: "Forbidden" })
+    }
+
+    const flowContext = flow.search_context || {}
+    const flowHotelId = flowContext.hotelId ?? flowContext.productId ?? null
+    const flowCheckIn = flowContext.fromDate ?? null
+    const flowCheckOut = flowContext.toDate ?? null
+    const resolvedHotelId = flowHotelId ?? hotelId
+    const resolvedCheckIn = flowCheckIn ?? checkIn
+    const resolvedCheckOut = flowCheckOut ?? checkOut
+
+    if (!resolvedHotelId) {
+      console.warn(`${logPrefix} missing hotelId`, { flowHotelId, hotelId })
       return res.status(400).json({ error: "Missing hotelId" })
     }
-    if (!checkIn || !checkOut) {
-      console.warn(`${logPrefix} missing dates`, { checkIn, checkOut })
+    if (!resolvedCheckIn || !resolvedCheckOut) {
+      console.warn(`${logPrefix} missing dates`, { resolvedCheckIn, resolvedCheckOut })
       return res.status(400).json({ error: "Missing check-in or check-out dates" })
     }
     const referral = {
@@ -321,12 +348,32 @@ export const createPaymentIntent = async (req, res, next) => {
     // and "WEBBEDS" as source
     const booking_ref = `WB-${Date.now().toString(36).toUpperCase()}`
 
-    // Convert amounts
-    // logic: WebBeds provides cost in USD. We convert to 'currency' (User's currency)
-    const amountUsd = Number(amount)
-    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
-      console.warn(`${logPrefix} invalid amount`, { amount })
-      return res.status(400).json({ error: "Invalid amount" })
+    // Convert amounts (server-trusted)
+    // WebBeds provides cost in USD; we use the priced flow snapshot as the source of truth.
+    const pricedAmount =
+      Number(flow.pricing_snapshot_priced?.price) ||
+      Number(flow.pricing_snapshot_preauth?.price) ||
+      null
+    if (!Number.isFinite(pricedAmount) || pricedAmount <= 0) {
+      console.warn(`${logPrefix} invalid flow amount`, {
+        flowId,
+        pricedAmount,
+        pricedSnapshot: flow.pricing_snapshot_priced,
+      })
+      return res.status(409).json({ error: "Flow pricing unavailable" })
+    }
+    const amountUsd = pricedAmount
+    if (amount != null) {
+      const clientAmount = Number(amount)
+      if (
+        Number.isFinite(clientAmount) &&
+        Math.abs(clientAmount - amountUsd) > 0.01
+      ) {
+        console.warn(`${logPrefix} client amount mismatch`, {
+          clientAmount,
+          serverAmount: amountUsd,
+        })
+      }
     }
 
     const stripe = await getStripeClient()
@@ -387,10 +434,7 @@ export const createPaymentIntent = async (req, res, next) => {
     let stripeFxFeeRate = null
     let stripeFxReferenceRate = null
     let stripeFxReferenceProvider = null
-    let flow = null
-    if (flowId) {
-      flow = await models.BookingFlow.findByPk(flowId)
-    }
+    // flow resolved above
 
     const extractSupportedLockDurations = (message) => {
       if (!message) return []
@@ -551,8 +595,22 @@ export const createPaymentIntent = async (req, res, next) => {
       resolvedCurrency,
     })
 
-    const guestAdultsRaw = guests?.adults ?? req.body?.adults
-    const guestChildrenRaw = guests?.children ?? req.body?.children
+    const flowRooms = Array.isArray(flowContext.rooms) ? flowContext.rooms : null
+    const flowAdults =
+      flowRooms?.reduce((sum, room) => {
+        const adultsValue = Number(room?.adults ?? room?.adult ?? 0)
+        return sum + (Number.isFinite(adultsValue) ? adultsValue : 0)
+      }, 0) ?? null
+    const flowChildren =
+      flowRooms?.reduce((sum, room) => {
+        const childrenRaw = room?.children ?? room?.childrenAges ?? room?.kids ?? []
+        if (Array.isArray(childrenRaw)) return sum + childrenRaw.length
+        const numeric = Number(childrenRaw)
+        return sum + (Number.isFinite(numeric) ? numeric : 0)
+      }, 0) ?? null
+
+    const guestAdultsRaw = flowAdults ?? guests?.adults ?? req.body?.adults
+    const guestChildrenRaw = flowChildren ?? guests?.children ?? req.body?.children
     const adults = Math.max(1, Number(guestAdultsRaw) || 1)
     const children = Math.max(0, Number(guestChildrenRaw) || 0)
 
@@ -576,7 +634,7 @@ export const createPaymentIntent = async (req, res, next) => {
 
     let inventorySnapshot = null
     let guestSnapshot = null
-    const hotelIdValue = String(hotelId).trim()
+    const hotelIdValue = String(resolvedHotelId).trim()
     let webbedsHotelIdForStay = null
     try {
       const staticHotel = await models.WebbedsHotel.findOne({
@@ -662,11 +720,11 @@ export const createPaymentIntent = async (req, res, next) => {
       influencer_user_id: referral.influencerId,
       source: "PARTNER",
       inventory_type: "LOCAL_HOTEL",
-      inventory_id: String(hotelId),
+      inventory_id: String(resolvedHotelId),
       external_ref: bookingId, // The Webbeds Booking ID
 
-      check_in: checkIn,
-      check_out: checkOut,
+      check_in: resolvedCheckIn,
+      check_out: resolvedCheckOut,
 
       guest_name: guestName,
       guest_email: guestEmail,
@@ -696,7 +754,7 @@ export const createPaymentIntent = async (req, res, next) => {
       },
 
       meta: {
-        hotelId,
+        hotelId: resolvedHotelId,
         hotelName: inventorySnapshot?.hotelName ?? null,
         hotelImage: inventorySnapshot?.hotelImage ?? null,
         roomName,
@@ -878,6 +936,9 @@ export const capturePaymentIntent = async (req, res, next) => {
     if (!booking && paymentIntentId) {
       booking = await models.Booking.findOne({ where: { payment_intent_id: paymentIntentId } })
     }
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found" })
+    }
     if (booking?.user_id && req.user?.id && booking.user_id !== req.user.id && !isPrivilegedUser(req.user)) {
       return res.status(403).json({ error: "Forbidden" })
     }
@@ -987,6 +1048,9 @@ export const cancelPaymentIntent = async (req, res, next) => {
     }
     if (!booking && paymentIntentId) {
       booking = await models.Booking.findOne({ where: { payment_intent_id: paymentIntentId } })
+    }
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found" })
     }
     if (booking?.user_id && req.user?.id && booking.user_id !== req.user.id && !isPrivilegedUser(req.user)) {
       return res.status(403).json({ error: "Forbidden" })
@@ -1655,8 +1719,8 @@ export const listRateBasis = async (_req, res, next) => {
 export const listHotelAmenities = async (_req, res, next) => {
   try {
     const rows = await models.WebbedsAmenityCatalog.findAll({
-      where: { type: "hotel" },
-      attributes: ["code", "name", "runno"],
+      where: { type: { [Op.in]: ["hotel", "leisure", "business"] } },
+      attributes: ["code", "name", "runno", "type"],
       order: [
         ["name", "ASC"],
         ["code", "ASC"],
@@ -1666,6 +1730,7 @@ export const listHotelAmenities = async (_req, res, next) => {
       code: row.code != null ? String(row.code) : null,
       name: row.name,
       runno: row.runno ?? null,
+      type: row.type ?? "hotel",
     }))
     return res.json({ items })
   } catch (error) {

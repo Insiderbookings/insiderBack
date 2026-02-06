@@ -116,6 +116,8 @@ const isCacheFilterable = (filters = {}) => {
   const hasValue = (val) => val !== undefined && val !== null && val !== ""
   const unsupported = [
     filters.amenities,
+    filters.leisure,
+    filters.business,
     filters.roomAmenity,
     filters.chain,
     filters.rateTypes,
@@ -442,6 +444,8 @@ export const searchHotels = async (req, res, next) => {
     const ratingMin = req.query.ratingMin ?? req.query.minRating ?? req.query.hotelRateMin
     const ratingMax = req.query.ratingMax ?? req.query.maxRating ?? req.query.hotelRateMax
     const amenities = req.query.amenities ?? req.query.amenityIds
+    const leisure = req.query.leisure ?? req.query.leisureIds
+    const business = req.query.business ?? req.query.businessIds
     const roomAmenity = req.query.roomAmenity ?? req.query.roomAmenityIds
     const chain = req.query.chain ?? req.query.chainIds
     const hotelName = req.query.hotelName ?? req.query.nameFilter
@@ -472,6 +476,8 @@ export const searchHotels = async (req, res, next) => {
       ratingMin,
       ratingMax,
       amenities,
+      leisure,
+      business,
       roomAmenity,
       chain,
       rateTypes,
@@ -486,6 +492,8 @@ export const searchHotels = async (req, res, next) => {
       ratingMin,
       ratingMax,
       amenities,
+      leisure,
+      business,
       roomAmenity,
       chain,
       hotelName,
@@ -559,15 +567,17 @@ export const searchHotels = async (req, res, next) => {
       cityCode: resolvedCityCode || undefined,
       countryCode: resolvedCountryCode || undefined,
       hotelIds: hotelIds.length ? hotelIds.join(",") : undefined,
-      passengerNationality,
-      passengerCountryOfResidence,
-      priceMin,
-      priceMax,
-      amenities,
-      roomAmenity,
-      lite: normalizeBoolean(lite),
-      fetchAll: useFetchAll,
-    }
+        passengerNationality,
+        passengerCountryOfResidence,
+        priceMin,
+        priceMax,
+        amenities,
+        leisure,
+        business,
+        roomAmenity,
+        lite: normalizeBoolean(lite),
+        fetchAll: useFetchAll,
+      }
 
     const cacheKey = buildCacheKey({
       ...normalizedQuery,
@@ -683,13 +693,15 @@ export const searchHotels = async (req, res, next) => {
             hotelIds: allHotelIds.join(","),
             limit: undefined,
             offset: 0,
-            fetchAll: true,
-            priceMin: undefined,
-            priceMax: undefined,
-            amenities: undefined,
-            roomAmenity: undefined,
-            chain: undefined,
-          }
+              fetchAll: true,
+              priceMin: undefined,
+              priceMax: undefined,
+              amenities: undefined,
+              leisure: undefined,
+              business: undefined,
+              roomAmenity: undefined,
+              chain: undefined,
+            }
 
           let fullItems = await runWebbedsSearch({
             query: fullQuery,

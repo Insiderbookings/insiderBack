@@ -6,12 +6,35 @@ dotenv.config()
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET
 
+const normalizeBearer = (headerValue) => {
+  if (!headerValue || typeof headerValue !== "string") return null
+  if (!headerValue.startsWith("Bearer ")) return null
+  const token = headerValue.slice(7).trim()
+  return token || null
+}
+
+const verifyAccessToken = (token) => {
+  if (!token) return null
+  return jwt.verify(token, ACCESS_SECRET)
+}
+
+const parsePartnerKeys = () => {
+  const raw =
+    process.env.PARTNER_API_KEY ||
+    process.env.PARTNER_API_KEYS ||
+    process.env.VAULT_API_KEY ||
+    ""
+  return raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
 export const authenticate = (req, res, next) => {
-  const h = req.headers.authorization
-  if (!h || !h.startsWith("Bearer ")) return res.status(401).json({ error: "Missing token" })
-  const token = h.slice(7)
+  const token = normalizeBearer(req.headers.authorization)
+  if (!token) return res.status(401).json({ error: "Missing token" })
   try {
-    const payload = jwt.verify(token, ACCESS_SECRET)
+    const payload = verifyAccessToken(token)
     req.user = payload
     next()
   } catch (err) {
@@ -21,6 +44,35 @@ export const authenticate = (req, res, next) => {
     console.error(err)
     return res.status(401).json({ error: "Invalid token" })
   }
+}
+
+export const authenticateOrPartnerKey = (req, res, next) => {
+  const token = normalizeBearer(req.headers.authorization)
+  if (token) {
+    try {
+      const payload = verifyAccessToken(token)
+      req.user = payload
+      return next()
+    } catch (err) {
+      if (err?.name === "TokenExpiredError") {
+        return res.status(401).json({ error: "Token expired" })
+      }
+      console.error(err)
+      return res.status(401).json({ error: "Invalid token" })
+    }
+  }
+
+  const partnerKey =
+    req.headers["x-partner-key"] ||
+    req.headers["x-api-key"] ||
+    req.headers["x-vault-key"]
+  const allowedKeys = parsePartnerKeys()
+  if (partnerKey && allowedKeys.includes(String(partnerKey).trim())) {
+    req.partner = { key: String(partnerKey).trim().slice(0, 6) }
+    return next()
+  }
+
+  return res.status(401).json({ error: "Unauthorized" })
 }
 
 /** Autoriza por rol numerico (ej. 100=admin, 2=influencer, 3=corporate, 4=agency, 1=staff, 0=regular) */

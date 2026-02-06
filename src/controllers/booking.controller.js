@@ -12,6 +12,12 @@ import { generateAndSaveTripIntelligence } from "../services/aiAssistant.service
 import { sendCancellationEmail } from "../emailTemplates/cancel-email.js"
 import { sendBookingEmail } from "../emailTemplates/booking-email.js"
 import { sendHomeHostBookingEmail } from "../emailTemplates/home-host-booking-email.js"
+import { createWebbedsClient } from "../providers/webbeds/client.js"
+import { getWebbedsConfig } from "../providers/webbeds/config.js"
+import {
+  buildGetBookingDetailsPayload,
+  mapGetBookingDetailsResponse,
+} from "../providers/webbeds/getBookingDetails.js"
 import {
   PROMPT_TRIGGERS,
   createThread,
@@ -107,6 +113,27 @@ const trimText = (value, max = 500) => {
   return text.length > max ? text.slice(0, max) : text
 }
 
+const stripHtml = (value) => {
+  if (value == null) return null
+  const text = String(value)
+  if (!text.includes("<")) return text
+  return text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
+}
+
+const normalizeVoucherIdentifier = (value) => {
+  const cleaned = trimText(stripHtml(value), 2000)
+  if (!cleaned) return null
+  const bookingRefMatch = cleaned.match(
+    /booking\s*reference(?:\s*no)?[:\s]*([A-Z0-9-]+)/i,
+  )
+  if (bookingRefMatch?.[1]) return bookingRefMatch[1]
+  const itineraryMatch = cleaned.match(
+    /itinerary\s*number[:\s]*([A-Z0-9-]+)/i,
+  )
+  if (itineraryMatch?.[1]) return itineraryMatch[1]
+  return cleaned
+}
+
 const sanitizeStringArray = (values, limit = 20, max = 120) => {
   if (!Array.isArray(values)) return []
   return values
@@ -168,7 +195,7 @@ const sanitizeConfirmationSnapshot = (raw = {}) => {
 
   return {
     bookingCodes: {
-      voucherId: trimText(bookingCodes?.voucherId, 120),
+      voucherId: trimText(normalizeVoucherIdentifier(bookingCodes?.voucherId), 120),
       bookingReference: trimText(bookingCodes?.bookingReference, 120),
       itineraryNumber: trimText(bookingCodes?.itineraryNumber, 120),
       externalRef: trimText(bookingCodes?.externalRef, 120),
@@ -233,6 +260,126 @@ const sanitizeConfirmationSnapshot = (raw = {}) => {
       label: trimText(payment?.label, 120),
     },
   }
+}
+
+const ensureArray = (value) => {
+  if (!value) return []
+  return Array.isArray(value) ? value : [value]
+}
+
+const isPlainObject = (value) =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value)
+
+const mergeSnapshotValues = (primary, fallback) => {
+  if (!isPlainObject(primary) && !isPlainObject(fallback)) {
+    if (Array.isArray(primary) || Array.isArray(fallback)) {
+      const primaryArr = Array.isArray(primary) ? primary : []
+      const fallbackArr = Array.isArray(fallback) ? fallback : []
+      return primaryArr.length ? primaryArr : fallbackArr
+    }
+    if (primary === null || primary === undefined) return fallback
+    if (typeof primary === "string" && !primary.trim()) return fallback
+    return primary
+  }
+
+  const primaryObj = isPlainObject(primary) ? primary : {}
+  const fallbackObj = isPlainObject(fallback) ? fallback : {}
+  const keys = new Set([...Object.keys(fallbackObj), ...Object.keys(primaryObj)])
+  const merged = {}
+  keys.forEach((key) => {
+    merged[key] = mergeSnapshotValues(primaryObj[key], fallbackObj[key])
+  })
+  return merged
+}
+
+const pickFirst = (...values) => {
+  for (const value of values) {
+    if (value == null) continue
+    if (typeof value === "string" && !value.trim()) continue
+    return value
+  }
+  return null
+}
+
+const normalizeCancellationRules = (rules) => {
+  const entries = ensureArray(rules?.rule ?? rules)
+  return entries
+    .map((rule) => ({
+      from:
+        rule?.from ??
+        rule?.fromDate ??
+        rule?.from_date ??
+        rule?.fromDateDetails ??
+        rule?.fromDetails ??
+        null,
+      to:
+        rule?.to ??
+        rule?.toDate ??
+        rule?.to_date ??
+        rule?.toDateDetails ??
+        rule?.toDetails ??
+        null,
+      charge:
+        rule?.charge ??
+        rule?.amount ??
+        rule?.cancelCharge ??
+        rule?.amendCharge ??
+        rule?.price ??
+        rule?.formatted ??
+        null,
+    }))
+    .filter((rule) => rule.from || rule.to || rule.charge)
+}
+
+const resolveFlowForBooking = async ({ bookingCode, bookingRef }) => {
+  const flowId =
+    bookingRef?.flowId ??
+    bookingRef?.flow_id ??
+    bookingRef?.pricing_snapshot?.flowId ??
+    bookingRef?.pricing_snapshot?.flow_id ??
+    null
+  if (flowId) {
+    const direct = await models.BookingFlow.findByPk(flowId)
+    if (direct) return direct
+  }
+  if (!bookingCode) return null
+  return models.BookingFlow.findOne({
+    where: {
+      [Op.or]: [
+        { itinerary_booking_code: String(bookingCode) },
+        { final_booking_code: String(bookingCode) },
+        { booking_reference_number: String(bookingCode) },
+      ],
+    },
+    order: [["created_at", "DESC"]],
+  })
+}
+
+const fetchWebbedsBookingDetails = async ({ bookingCode, requestId }) => {
+  if (!bookingCode) return null
+  try {
+    const client = createWebbedsClient(getWebbedsConfig())
+    const payload = buildGetBookingDetailsPayload({ bookingId: bookingCode })
+    const { result } = await client.send("getbookingdetails", payload, {
+      requestId,
+    })
+    return mapGetBookingDetailsResponse(result)
+  } catch (error) {
+    console.warn("[booking] getbookingdetails failed", {
+      bookingCode,
+      error: error?.message || error,
+    })
+    return null
+  }
+}
+
+const resolvePaymentMethodLabel = (provider, existingLabel) => {
+  if (existingLabel) return existingLabel
+  const normalized = provider ? String(provider).toUpperCase() : ""
+  if (normalized === "STRIPE") return "Credit or debit card"
+  if (normalized === "PAYPAL") return "PayPal"
+  if (normalized === "CARD_ON_FILE") return "Card on file"
+  return normalized || null
 }
 
 const resolveHomePricingConfig = ({ pricing = {}, capacity = null }) => {
@@ -2621,7 +2768,7 @@ export const saveHotelConfirmationSnapshot = async (req, res) => {
     if (!userId) return res.status(401).json({ error: "Unauthorized" })
     if (!id) return res.status(400).json({ error: "Missing booking id" })
 
-    const booking = await models.Booking.findByPk(id)
+    const booking = await models.Booking.findByPk(id, { include: STAY_BASE_INCLUDE })
     if (!booking) return res.status(404).json({ error: "Booking not found" })
 
     const role = Number(req.user?.role)
@@ -2635,20 +2782,331 @@ export const saveHotelConfirmationSnapshot = async (req, res) => {
       return res.status(400).json({ error: "Confirmation snapshot is only for hotel bookings" })
     }
 
-    const rawSnapshot = req.body?.snapshot ?? req.body
-    if (!rawSnapshot || typeof rawSnapshot !== "object") {
-      return res.status(400).json({ error: "Invalid snapshot payload" })
+    const bookingCode = booking.external_ref ? String(booking.external_ref).trim() : null
+    const bookingObj = booking.toJSON()
+    const channel =
+      bookingObj.inventory_type === "HOME" || bookingObj.source === "HOME"
+        ? "home"
+        : bookingObj.source === "OUTSIDE"
+          ? "outside"
+          : bookingObj.source === "VAULT"
+            ? "vault"
+            : "insider"
+    const stayView = mapStay(bookingObj, channel)
+
+    const flow = await resolveFlowForBooking({ bookingCode, bookingRef: bookingObj })
+    const selectedOffer = flow?.selected_offer ?? null
+    const flowSnapshot =
+      flow?.pricing_snapshot_confirmed ??
+      flow?.pricing_snapshot_preauth ??
+      flow?.pricing_snapshot_priced ??
+      null
+    const flowContext = flow?.search_context ?? {}
+
+    const existingSnapshot =
+      booking.pricing_snapshot?.confirmationSnapshot ??
+      booking.pricing_snapshot?.confirmation_snapshot ??
+      null
+
+    let webbedsDetails = null
+    if (
+      bookingCode &&
+      String(booking.source || "").toUpperCase() === "PARTNER" &&
+      String(booking.inventory_type || "").toUpperCase() === "LOCAL_HOTEL"
+    ) {
+      const requestId =
+        req?.headers?.["x-request-id"] ||
+        req?.headers?.["x-correlation-id"] ||
+        `confirm-${booking.id}`
+      webbedsDetails = await fetchWebbedsBookingDetails({
+        bookingCode,
+        requestId,
+      })
     }
 
-    const sanitized = sanitizeConfirmationSnapshot(rawSnapshot)
+    const cancellationRules = normalizeCancellationRules(
+      webbedsDetails?.product?.policies?.cancellation ??
+      flowSnapshot?.cancellationRules ??
+      selectedOffer?.cancellationRules ??
+      existingSnapshot?.policies?.cancellationRules ??
+      null,
+    )
+
+    const propertyFees = ensureArray(
+      webbedsDetails?.product?.totals?.propertyFees ??
+      selectedOffer?.propertyFees ??
+      existingSnapshot?.policies?.propertyFees ??
+      [],
+    )
+
+    const taxes = pickFirst(
+      webbedsDetails?.product?.totals?.tax,
+      flowSnapshot?.totalTaxes,
+      selectedOffer?.totalTaxes,
+      existingSnapshot?.policies?.taxes,
+      booking.taxes_total,
+      booking.pricing_snapshot?.taxAmount,
+      booking.pricing_snapshot?.taxes,
+      null,
+    )
+
+    const fees = pickFirst(
+      webbedsDetails?.product?.totals?.fee,
+      flowSnapshot?.totalFee,
+      selectedOffer?.totalFee,
+      existingSnapshot?.policies?.fees,
+      booking.fees_total,
+      booking.pricing_snapshot?.feeAmount,
+      booking.pricing_snapshot?.fees,
+      null,
+    )
+
+    const totalNumeric = Number(booking.gross_price ?? booking.pricing_snapshot?.total ?? null)
+    const total = Number.isFinite(totalNumeric)
+      ? totalNumeric
+      : booking.pricing_snapshot?.total ?? existingSnapshot?.totals?.total ?? null
+    const currency = pickFirst(
+      booking.currency,
+      flowSnapshot?.currency,
+      booking.pricing_snapshot?.currency,
+      webbedsDetails?.product?.service?.currency,
+      existingSnapshot?.totals?.currency,
+      null,
+    )
+
+    const childrenAges = []
+    let flowAdults = 0
+    let flowChildren = 0
+    ensureArray(flowContext.rooms).forEach((room) => {
+      const adultsValue = Number(room?.adults ?? room?.adult ?? 0)
+      if (Number.isFinite(adultsValue)) {
+        flowAdults += adultsValue
+      }
+      const ages = room?.children ?? room?.childrenAges ?? room?.kids ?? []
+      if (Array.isArray(ages)) {
+        ages.forEach((age) => {
+          if (age == null || age === "") return
+          childrenAges.push(age)
+        })
+        flowChildren += ages.length
+      } else {
+        const childrenCount = Number(ages)
+        if (Number.isFinite(childrenCount)) {
+          flowChildren += childrenCount
+        }
+      }
+    })
+
+    const adultsValue = Number(booking.adults)
+    const adults = Number.isFinite(adultsValue)
+      ? adultsValue
+      : flowAdults > 0
+        ? flowAdults
+        : existingSnapshot?.stay?.guests?.adults ?? null
+    const childrenValue = Number(booking.children)
+    const children = Number.isFinite(childrenValue)
+      ? childrenValue
+      : flowChildren > 0
+        ? flowChildren
+        : existingSnapshot?.stay?.guests?.children ?? null
+
+    const nightsValue = booking.nights ?? stayView?.nights
+    const resolvedNights =
+      nightsValue ?? (booking.check_in && booking.check_out
+        ? diffDays(booking.check_in, booking.check_out)
+        : null)
+
+    const snapshot = {
+      bookingCodes: {
+        externalRef: pickFirst(booking.external_ref),
+        itineraryNumber: pickFirst(
+          flow?.itinerary_booking_code,
+          booking.external_ref,
+        ),
+        bookingReference: pickFirst(
+          flow?.booking_reference_number,
+          flowSnapshot?.bookingReferenceNumber,
+          booking.pricing_snapshot?.bookingReferenceNumber,
+          webbedsDetails?.product?.bookingReference,
+          booking.external_ref,
+        ),
+        voucherId: pickFirst(
+          webbedsDetails?.product?.supplierConfirmation,
+          flowSnapshot?.voucher,
+        ),
+      },
+      hotel: {
+        id: pickFirst(
+          stayView?.hotel?.id,
+          booking.inventory_id,
+          existingSnapshot?.hotel?.id,
+        ),
+        name: pickFirst(
+          stayView?.hotel?.name,
+          booking.meta?.hotelName,
+          existingSnapshot?.hotel?.name,
+        ),
+        address: pickFirst(
+          stayView?.hotel?.address,
+          booking.meta?.location,
+          existingSnapshot?.hotel?.address,
+        ),
+        phone: pickFirst(
+          stayView?.hotel?.phone,
+          existingSnapshot?.hotel?.phone,
+        ),
+        city: pickFirst(
+          stayView?.hotel?.city,
+          existingSnapshot?.hotel?.city,
+        ),
+        country: pickFirst(
+          stayView?.hotel?.country,
+          existingSnapshot?.hotel?.country,
+        ),
+      },
+      room: {
+        name: pickFirst(
+          stayView?.room?.name,
+          booking.meta?.roomName,
+          selectedOffer?.roomName,
+          existingSnapshot?.room?.name,
+        ),
+        roomTypeCode: pickFirst(
+          flow?.selected_offer?.roomTypeCode,
+          webbedsDetails?.product?.room?.code,
+          existingSnapshot?.room?.roomTypeCode,
+        ),
+      },
+      rate: {
+        rateBasis: pickFirst(
+          webbedsDetails?.product?.room?.rateBasis,
+          selectedOffer?.rateBasisName,
+          flowSnapshot?.rateBasis,
+          selectedOffer?.rateBasisId,
+          existingSnapshot?.rate?.rateBasis,
+          flow?.selected_offer?.rateBasisId,
+        ),
+        mealPlan: pickFirst(
+          selectedOffer?.mealPlan,
+          existingSnapshot?.rate?.mealPlan,
+        ),
+        specials: pickFirst(
+          Array.isArray(selectedOffer?.specials) ? selectedOffer.specials : null,
+          existingSnapshot?.rate?.specials,
+        ),
+        tariffNotes: pickFirst(
+          webbedsDetails?.product?.notes?.tariff,
+          flowSnapshot?.tariffNotes,
+          selectedOffer?.tariffNotes,
+          existingSnapshot?.rate?.tariffNotes,
+        ),
+        refundable: pickFirst(
+          flowSnapshot?.refundable,
+          selectedOffer?.refundable,
+          existingSnapshot?.rate?.refundable,
+        ),
+        nonRefundable: pickFirst(
+          flowSnapshot?.nonRefundable,
+          selectedOffer?.nonRefundable,
+          existingSnapshot?.rate?.nonRefundable,
+        ),
+        cancelRestricted: pickFirst(
+          flowSnapshot?.cancelRestricted,
+          selectedOffer?.cancelRestricted,
+          existingSnapshot?.rate?.cancelRestricted,
+        ),
+        amendRestricted: pickFirst(
+          flowSnapshot?.amendRestricted,
+          selectedOffer?.amendRestricted,
+          existingSnapshot?.rate?.amendRestricted,
+        ),
+        paymentMode: pickFirst(
+          flowSnapshot?.paymentMode,
+          selectedOffer?.paymentMode,
+          existingSnapshot?.rate?.paymentMode,
+        ),
+      },
+      policies: {
+        cancellationRules,
+        taxes,
+        fees,
+        propertyFees,
+      },
+      traveler: {
+        leadGuestName: pickFirst(
+          booking.guest_name,
+          booking.guest_snapshot?.name,
+          existingSnapshot?.traveler?.leadGuestName,
+        ),
+        email: pickFirst(
+          booking.guest_email,
+          booking.guest_snapshot?.email,
+          existingSnapshot?.traveler?.email,
+        ),
+        phone: pickFirst(
+          booking.guest_phone,
+          booking.guest_snapshot?.phone,
+          existingSnapshot?.traveler?.phone,
+        ),
+        nationality: pickFirst(
+          flowContext.passengerNationality,
+          existingSnapshot?.traveler?.nationality,
+        ),
+        residence: pickFirst(
+          flowContext.passengerCountryOfResidence,
+          existingSnapshot?.traveler?.residence,
+        ),
+        salutation: pickFirst(
+          booking.guest_snapshot?.salutation,
+          existingSnapshot?.traveler?.salutation,
+        ),
+      },
+      stay: {
+        checkIn: pickFirst(booking.check_in, stayView?.checkIn, existingSnapshot?.stay?.checkIn),
+        checkOut: pickFirst(
+          booking.check_out,
+          stayView?.checkOut,
+          existingSnapshot?.stay?.checkOut,
+        ),
+        nights: resolvedNights ?? existingSnapshot?.stay?.nights ?? null,
+        guests: {
+          adults,
+          children,
+          childrenAges: childrenAges.length
+            ? childrenAges
+            : existingSnapshot?.stay?.guests?.childrenAges ?? null,
+        },
+      },
+      totals: {
+        total,
+        currency,
+      },
+      payment: {
+        method: resolvePaymentMethodLabel(
+          booking.payment_provider,
+          existingSnapshot?.payment?.method ?? existingSnapshot?.payment?.label ?? null,
+        ),
+        label: existingSnapshot?.payment?.label ?? null,
+      },
+    }
+
+    const sanitized = sanitizeConfirmationSnapshot(snapshot)
+    const clientRaw = req.body?.snapshot
+    const clientSanitized =
+      clientRaw && typeof clientRaw === "object"
+        ? sanitizeConfirmationSnapshot(clientRaw)
+        : null
+    const merged = clientSanitized
+      ? mergeSnapshotValues(sanitized, clientSanitized)
+      : sanitized
     const pricingSnapshot =
       booking.pricing_snapshot && typeof booking.pricing_snapshot === "object"
         ? { ...booking.pricing_snapshot }
         : {}
-    pricingSnapshot.confirmationSnapshot = sanitized
+    pricingSnapshot.confirmationSnapshot = merged
     await booking.update({ pricing_snapshot: pricingSnapshot })
 
-    return res.json({ success: true, confirmationSnapshot: sanitized })
+    return res.json({ success: true, confirmationSnapshot: merged })
   } catch (err) {
     console.error("saveHotelConfirmationSnapshot:", err)
     return res.status(500).json({ error: "Server error" })

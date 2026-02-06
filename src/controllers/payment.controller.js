@@ -27,6 +27,45 @@ if (!process.env.STRIPE_WEBHOOK_SECRET) throw new Error("\U0001f6d1 Falta STRIPE
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" });
 
+const ZERO_DECIMAL_CURRENCIES = new Set([
+  "BIF",
+  "CLP",
+  "DJF",
+  "GNF",
+  "JPY",
+  "KMF",
+  "KRW",
+  "MGA",
+  "PYG",
+  "RWF",
+  "UGX",
+  "VND",
+  "VUV",
+  "XAF",
+  "XOF",
+  "XPF",
+]);
+const THREE_DECIMAL_CURRENCIES = new Set(["BHD", "JOD", "KWD", "OMR", "TND"]);
+
+const getMinorUnit = (currency) => {
+  const upper = String(currency || "USD").toUpperCase();
+  if (THREE_DECIMAL_CURRENCIES.has(upper)) return 3;
+  if (ZERO_DECIMAL_CURRENCIES.has(upper)) return 0;
+  return 2;
+};
+
+const toMinorUnits = (amount, currency) => {
+  const numeric = Number(amount);
+  if (!Number.isFinite(numeric)) return null;
+  const unit = getMinorUnit(currency);
+  return Math.round(numeric * Math.pow(10, unit));
+};
+
+const isPrivilegedUser = (user) => {
+  const role = Number(user?.role);
+  return role === 1 || role === 100;
+};
+
 const safeURL = (maybe, fallback) => {
   try {
     const url = new URL(maybe);
@@ -414,30 +453,61 @@ export const finalizeBookingAfterPayment = async ({ bookingId }) => {
    1. CREAR SESSION PARA BOOKING
 ============================================================================ */
 export const createCheckoutSession = async (req, res) => {
-  const { bookingId, amount, currency = "usd" } = req.body
-  if (!bookingId || !amount) return res.status(400).json({ error: "bookingId y amount son obligatorios" })
+  const { bookingId } = req.body;
+  if (!bookingId) return res.status(400).json({ error: "bookingId es obligatorio" });
 
   try {
+    const booking = await models.Booking.findByPk(bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+    if (
+      booking.user_id &&
+      req.user?.id &&
+      booking.user_id !== req.user.id &&
+      !isPrivilegedUser(req.user)
+    ) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    if (String(booking.status || "").toUpperCase() === "CANCELLED") {
+      return res.status(400).json({ error: "Booking is cancelled" });
+    }
+    if (String(booking.payment_status || "").toUpperCase() === "PAID") {
+      return res.status(400).json({ error: "Booking is already paid" });
+    }
+
+    const currencyUpper = String(booking.currency || "USD").toUpperCase();
+    const amountMinor = toMinorUnits(booking.gross_price, currencyUpper);
+    if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
+      return res.status(400).json({ error: "Invalid booking amount" });
+    }
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
-      line_items: [{
-        price_data: { currency, product_data: { name: `Booking #${bookingId}` }, unit_amount: amount },
-        quantity: 1,
-      }],
+      line_items: [
+        {
+          price_data: {
+            currency: currencyUpper.toLowerCase(),
+            product_data: { name: `Booking #${booking.id}` },
+            unit_amount: amountMinor,
+          },
+          quantity: 1,
+        },
+      ],
       mode: "payment",
-      success_url: `${YOUR_DOMAIN}payment/success?bookingId=${bookingId}`,
-      cancel_url: `${YOUR_DOMAIN}payment/fail?bookingId=${bookingId}`,
-      metadata: { bookingId },
-      payment_intent_data: { metadata: { bookingId } },
-    })
+      success_url: `${YOUR_DOMAIN}payment/success?bookingId=${booking.id}`,
+      cancel_url: `${YOUR_DOMAIN}payment/fail?bookingId=${booking.id}`,
+      metadata: { bookingId: String(booking.id) },
+      payment_intent_data: { metadata: { bookingId: String(booking.id) } },
+    });
 
-    await models.Booking.update({ payment_id: session.id }, { where: { id: bookingId } })
-    res.json({ sessionId: session.id })
+    await models.Booking.update({ payment_id: session.id }, { where: { id: booking.id } });
+    res.json({ sessionId: session.id });
   } catch (error) {
-    console.error("Stripe create session error:", error)
-    res.status(500).json({ error: error.message })
+    console.error("Stripe create session error:", error);
+    res.status(500).json({ error: error.message });
   }
-}
+};
 
 /* ============================================================================
    1.b CREAR SESSION PARA ADD-ON (UpsellCode)
@@ -486,36 +556,70 @@ export const createAddOnSession = async (req, res) => {
    1.c CREAR SESSION PARA ADD-ONS de una BOOKING source=OUTSIDE
 ============================================================================ */
 export const createOutsideAddOnsSession = async (req, res) => {
-  const { bookingId, amount, currency = "usd" } = req.body
-  if (!bookingId || !amount) return res.status(400).json({ error: "bookingId y amount son obligatorios" })
+  const { bookingId } = req.body;
+  if (!bookingId) return res.status(400).json({ error: "bookingId es obligatorio" });
 
-  const booking = await models.Booking.findOne({ where: { id: bookingId, source: "OUTSIDE" } })
-  if (!booking) return res.status(404).json({ error: "Outside-booking not found" })
+  const booking = await models.Booking.findOne({
+    where: { id: bookingId, source: "OUTSIDE" },
+  });
+  if (!booking) return res.status(404).json({ error: "Outside-booking not found" });
+
+  if (
+    booking.user_id &&
+    req.user?.id &&
+    booking.user_id !== req.user.id &&
+    !isPrivilegedUser(req.user)
+  ) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
 
   try {
+    const addOns = await models.BookingAddOn.findAll({
+      where: {
+        stay_id: booking.id,
+        payment_status: "unpaid",
+        status: { [Op.ne]: "cancelled" },
+      },
+      attributes: ["quantity", "unit_price"],
+    });
+
+    const total = addOns.reduce((sum, item) => {
+      const qty = Number(item.quantity) || 0;
+      const unit = Number(item.unit_price) || 0;
+      return sum + qty * unit;
+    }, 0);
+
+    const currencyUpper = String(booking.currency || "USD").toUpperCase();
+    const amountMinor = toMinorUnits(total, currencyUpper);
+    if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
+      return res.status(400).json({ error: "No unpaid add-ons available" });
+    }
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
-      line_items: [{
-        price_data: {
-          currency,
-          product_data: { name: `Add-Ons Outside #${bookingId}` },
-          unit_amount: amount,
+      line_items: [
+        {
+          price_data: {
+            currency: currencyUpper.toLowerCase(),
+            product_data: { name: `Add-Ons Outside #${booking.id}` },
+            unit_amount: amountMinor,
+          },
+          quantity: 1,
         },
-        quantity: 1,
-      }],
+      ],
       mode: "payment",
-      success_url: `${YOUR_DOMAIN}payment/outside-addons-success?bookingId=${bookingId}`,
-      cancel_url: `${YOUR_DOMAIN}payment/outside-addons-fail?bookingId=${bookingId}`,
-      metadata: { outsideBookingId: bookingId },
-      payment_intent_data: { metadata: { outsideBookingId: bookingId } },
-    })
+      success_url: `${YOUR_DOMAIN}payment/outside-addons-success?bookingId=${booking.id}`,
+      cancel_url: `${YOUR_DOMAIN}payment/outside-addons-fail?bookingId=${booking.id}`,
+      metadata: { outsideBookingId: String(booking.id) },
+      payment_intent_data: { metadata: { outsideBookingId: String(booking.id) } },
+    });
 
-    res.json({ sessionId: session.id })
+    res.json({ sessionId: session.id });
   } catch (err) {
-    console.error("Stripe create outside-addons session error:", err)
-    res.status(500).json({ error: err.message })
+    console.error("Stripe create outside-addons session error:", err);
+    res.status(500).json({ error: err.message });
   }
-}
+};
 
 /* ============================================================================
    2. WEBHOOK GENERAL  (Bookings + Add-Ons)
@@ -577,8 +681,52 @@ export const handleWebhook = async (req, res) => {
     }
   };
 
-  const markBookingAsPaid = async ({ bookingId, paymentId }) => {
-    console.log("[payments] markBookingAsPaid:start", { bookingId, paymentId });
+  const markBookingAsPaid = async ({ bookingId, paymentId, amountMinor = null, currency = null }) => {
+    console.log("[payments] markBookingAsPaid:start", {
+      bookingId,
+      paymentId,
+      amountMinor,
+      currency,
+    });
+
+    const bookingRecord = await models.Booking.findByPk(bookingId);
+    if (!bookingRecord) {
+      console.warn("[payments] markBookingAsPaid:not-found", { bookingId });
+      return;
+    }
+
+    if (amountMinor != null && currency) {
+      const expectedCurrency = String(bookingRecord.currency || "USD").toUpperCase();
+      const receivedCurrency = String(currency).toUpperCase();
+      if (expectedCurrency !== receivedCurrency) {
+        console.warn("[payments] markBookingAsPaid:currency-mismatch", {
+          bookingId,
+          expectedCurrency,
+          receivedCurrency,
+        });
+        return;
+      }
+      const expectedMinor = toMinorUnits(bookingRecord.gross_price, expectedCurrency);
+      const receivedMinor = Number(amountMinor);
+      const tolerance = Number(process.env.PAYMENT_AMOUNT_TOLERANCE_MINOR || 1);
+      if (!Number.isFinite(expectedMinor) || expectedMinor <= 0) {
+        console.warn("[payments] markBookingAsPaid:invalid-expected-amount", {
+          bookingId,
+          expectedMinor,
+        });
+        return;
+      }
+      if (!Number.isFinite(receivedMinor) || Math.abs(expectedMinor - receivedMinor) > tolerance) {
+        console.warn("[payments] markBookingAsPaid:amount-mismatch", {
+          bookingId,
+          expectedMinor,
+          receivedMinor,
+          tolerance,
+        });
+        return;
+      }
+    }
+
     const booking = await touchBookingPayment(bookingId, (booking) => {
       const next = {
         payment_status: "PAID",
@@ -587,10 +735,7 @@ export const handleWebhook = async (req, res) => {
       if (!booking.payment_provider || booking.payment_provider === "NONE") {
         next.payment_provider = "STRIPE";
       }
-      if (
-        booking.status !== "CONFIRMED" &&
-        booking.inventory_type !== "HOME"
-      ) {
+      if (booking.status !== "CONFIRMED" && booking.inventory_type !== "HOME") {
         next.status = "CONFIRMED";
       }
       return next;
@@ -608,13 +753,13 @@ export const handleWebhook = async (req, res) => {
 
       // Emit real-time activity to Admin Dashboard
       emitAdminActivity({
-        type: 'booking',
-        user: { name: booking.guest_name || 'Guest' },
-        action: 'confirmed booking at',
-        location: booking.meta?.hotel?.name || 'Hotel',
+        type: "booking",
+        user: { name: booking.guest_name || "Guest" },
+        action: "confirmed booking at",
+        location: booking.meta?.hotel?.name || "Hotel",
         amount: booking.gross_price,
-        status: 'PAID',
-        timestamp: new Date()
+        status: "PAID",
+        timestamp: new Date(),
       });
 
       try {
@@ -752,7 +897,14 @@ export const handleWebhook = async (req, res) => {
       outsideBooking,
     });
 
-    if (bookingId) await markBookingAsPaid({ bookingId, paymentId: s.payment_intent || s.id })
+    if (bookingId) {
+      await markBookingAsPaid({
+        bookingId,
+        paymentId: s.payment_intent || s.id,
+        amountMinor: s.amount_total ?? null,
+        currency: s.currency ?? null,
+      });
+    }
     if (upsellCodeId) await markUpsellAsPaid({ upsellCodeId, paymentId: s.payment_intent || s.id })
     if (outsideBooking) await markBookingAddOnsAsPaid({ bookingId: outsideBooking })
   }
@@ -773,7 +925,14 @@ export const handleWebhook = async (req, res) => {
       currency: pi.currency,
     });
 
-    if (bookingId) await markBookingAsPaid({ bookingId, paymentId: pi.id })
+    if (bookingId) {
+      await markBookingAsPaid({
+        bookingId,
+        paymentId: pi.id,
+        amountMinor: pi.amount_received ?? pi.amount ?? null,
+        currency: pi.currency ?? null,
+      });
+    }
     if (upsellCodeId) await markUpsellAsPaid({ upsellCodeId, paymentId: pi.id })
     if (outsideBooking) await markBookingAddOnsAsPaid({ bookingId: outsideBooking })
     if (vccCardId) {
