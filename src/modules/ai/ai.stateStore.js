@@ -155,6 +155,14 @@ export const loadAssistantState = async ({ sessionId, userId }) => {
   if (!session) return normalizeState(null);
   const metadata = parseMetadata(session.metadata);
   const state = metadata.aiState || metadata.ai_state || null;
+
+  // DEBUG PERSISTENCE
+  if (state?.lastResultsContext?.shownIds?.length) {
+    console.log(`[DEBUG_STORE] LOADED state for ${sessionId}. ShownIds: ${state.lastResultsContext.shownIds.length}`);
+  } else {
+    console.log(`[DEBUG_STORE] LOADED state for ${sessionId}. ShownIds: 0 (or null)`);
+  }
+
   return normalizeState(state);
 };
 
@@ -165,8 +173,18 @@ export const saveAssistantState = async ({ sessionId, userId, state }) => {
     attributes: ["id", "metadata"],
   });
   if (!session) return null;
-  const metadata = parseMetadata(session.metadata);
-  metadata.aiState = normalizeState(state);
-  await session.update({ metadata });
-  return metadata.aiState;
+
+  // Clone to ensure we are not mutating the Sequelize instance in-place effectively invisible to update
+  const currentMetadata = parseMetadata(session.metadata);
+  const nextMetadata = { ...currentMetadata };
+
+  nextMetadata.aiState = normalizeState(state);
+
+  // DEBUG PERSISTENCE
+  const count = nextMetadata.aiState?.lastResultsContext?.shownIds?.length || 0;
+  console.log(`[DEBUG_STORE] SAVING state for ${sessionId}. ShownIds: ${count}`);
+
+  // Force update by passing a new object reference
+  await session.update({ metadata: nextMetadata });
+  return nextMetadata.aiState;
 };

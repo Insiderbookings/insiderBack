@@ -1,5 +1,10 @@
 import axios from "axios";
 
+const AI_PLACES_DISABLED =
+  String(process.env.AI_PLACES_DISABLED || "").trim().toLowerCase() === "true";
+const DEBUG_AI_PLACES =
+  String(process.env.DEBUG_AI_PLACES || "").trim().toLowerCase() === "true";
+
 const DEFAULT_RADIUS_KM = 10;
 const MAX_RADIUS_KM = 15;
 const MIN_RADIUS_KM = 0.5;
@@ -65,7 +70,9 @@ const normalizePlace = (item, origin) => {
     const ref = item.photos[0].photo_reference;
     const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
 
-    console.log(`[ai] place ${item.name} | hasRef: ${!!ref} | hasKey: ${!!apiKey}`);
+    if (DEBUG_AI_PLACES) {
+      console.log(`[ai] place ${item.name} | hasRef: ${!!ref} | hasKey: ${!!apiKey}`);
+    }
 
     if (ref && apiKey) {
       photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${ref}&key=${apiKey}`;
@@ -125,6 +132,7 @@ export const getNearbyPlaces = async ({
   limit = 6,
   hydratePhotos = false,
 } = {}) => {
+  if (AI_PLACES_DISABLED) return [];
   const apiKey =
     process.env.GOOGLE_PLACES_API_KEY ||
     process.env.GOOGLE_MAPS_API_KEY ||
@@ -174,6 +182,50 @@ export const getNearbyPlaces = async ({
     return sorted.slice(0, Math.max(1, Math.min(10, Number(limit) || 6)));
   } catch (err) {
     console.warn("[ai] places lookup failed", err?.message || err);
+    return [];
+  }
+};
+
+export const searchDestinationImages = async (query, limit = 2) => {
+  if (AI_PLACES_DISABLED) return [];
+  if (!query || typeof query !== "string") return [];
+  const apiKey =
+    process.env.GOOGLE_PLACES_API_KEY ||
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.GOOGLE_API_KEY;
+  if (!apiKey) return [];
+
+  // Use Text Search to find the city/place itself
+  try {
+    const { data } = await axios.get("https://maps.googleapis.com/maps/api/place/textsearch/json", {
+      params: {
+        query: query,
+        key: apiKey,
+      },
+      timeout: 5000,
+    });
+
+    if (!data || !Array.isArray(data.results) || !data.results.length) return [];
+
+    const results = data.results.slice(0, limit);
+    const images = [];
+
+    for (const place of results) {
+      if (place.photos && place.photos.length > 0) {
+        // Take the best photo (usually the first one)
+        const ref = place.photos[0].photo_reference;
+        if (ref) {
+          images.push({
+            url: `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${apiKey}`,
+            caption: place.name
+          });
+        }
+      }
+    }
+
+    return images;
+  } catch (err) {
+    console.warn("[ai] destination image search failed", err?.message || err);
     return [];
   }
 };

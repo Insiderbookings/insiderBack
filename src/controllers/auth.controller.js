@@ -107,9 +107,16 @@ const USER_INCLUDES = [
   { model: models.GuestProfile, as: "guestProfile" },
 ];
 
+const maskToken = (token) => {
+  if (!token) return null;
+  const value = String(token);
+  if (value.length <= 12) return value;
+  return `${value.slice(0, 6)}...${value.slice(-6)}`;
+};
+
 const logLoginToken = (label, token) => {
   if (!DEBUG_AUTH_LOGIN_TOKEN || !token) return;
-  console.log(`[auth.login] ${label}:`, token);
+  console.log(`[auth.login] ${label}:`, maskToken(token));
 };
 
 const normalizeNamePart = (value) => {
@@ -1456,7 +1463,7 @@ export const refreshSession = async (req, res) => {
   const response = { token: accessToken, user: safeUser };
   if (shouldExposeRefreshToken(req)) response.refreshToken = nextRefreshToken;
   if (process.env.DEBUG_AUTH_REFRESH_TOKEN === "true") {
-    console.log("[auth.refresh] accessToken:", accessToken);
+    console.log("[auth.refresh] accessToken:", maskToken(accessToken));
   }
   return res.json(response);
 };

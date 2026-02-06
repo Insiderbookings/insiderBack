@@ -115,7 +115,7 @@ const buildCards = (inventory) => {
   ].filter(Boolean);
 };
 
-export const renderAssistantPayload = async ({ plan, messages, inventory, nextAction, trip, tripContext, userContext, weather, missing = [] }) => {
+export const renderAssistantPayload = async ({ plan, messages, inventory, nextAction, trip, tripContext, userContext, weather, missing = [], visualContext }) => {
   const baseLanguage = normalizeLanguage(plan);
   const language = detectLanguageFromMessages(messages, baseLanguage);
   // Force the assistant to reply in the user's language (based on the latest user message),
@@ -131,7 +131,8 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
   const missingGuests = missing.includes("GUESTS");
   const multipleMissing = (missingDest ? 1 : 0) + (missingDates ? 1 : 0) + (missingGuests ? 1 : 0) > 1;
 
-  if (multipleMissing) {
+  // Only override text if we are NOT running a search (i.e. we are stuck asking for info)
+  if (multipleMissing && nextAction !== "RUN_SEARCH") {
     const partsEs = [];
     const partsEn = [];
     if (missingDest) {
@@ -205,6 +206,7 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
     cards: buildCards(inventory),
     inputs: combinedInputs,
     sections: [],
+    visualContext: visualContext || null
   };
 
   return {

@@ -453,59 +453,67 @@ const buildPlannerPrompt = ({ now } = {}) => {
         "Your job is to determine if the user wants to SEARCH for accommodation, just SMALL_TALK, or needs HELP.\n\n" +
         todayBlock +
         "INTENT DETECTION RULES:\n" +
-      "- SEARCH: Only when the user explicitly mentions looking for accommodation with enough information (location, type, dates, or guests). " +
-      "Key verbs: 'search', 'need', 'want', 'show me', 'is there', 'available'.\n" +
-      "- SMALL_TALK: Greetings, farewells, thanks, personal questions, casual conversation without search intent.\n" +
-      "- HELP: Questions about functionality, assistant capabilities, or general information about accommodation types.\n\n" +
+        "- SEARCH: Only when the user explicitly mentions looking for accommodation with enough information (location, type, dates, or guests). " +
+        "Key verbs: 'search', 'need', 'want', 'show me', 'is there', 'available'.\n" +
+        "- SMALL_TALK: Greetings, farewells, thanks, personal questions, casual conversation without search intent.\n" +
+        "- HELP: Questions about functionality, assistant capabilities, or general information about accommodation types.\n\n" +
 
-      "IMPORTANT: If the user expresses a desire to travel ('I want to go to...', 'Quiero viajar a...') or provides a destination with travel context, use SEARCH intent.\n" +
-      "Use SEARCH when the user's goal is to find options or plan a trip, even if details are missing.\n\n" +
+        "IMPORTANT: If the user expresses a desire to travel ('I want to go to...', 'Quiero viajar a...') or provides a destination with travel context, use SEARCH intent.\n" +
+        "Use SEARCH when the user's goal is to find options or plan a trip, even if details are missing.\n\n" +
 
-      "SPECIAL LOCATION HANDLING:\n" +
-      "- If the user says 'nearby', 'Nearby', 'User's Current Location', or 'current location':\n" +
-      "  1. Look at the provided location object in the context (city, lat, lng).\n" +
-      "  2. Use that location as the SEARCH destination.\n" +
-      "  3. Do NOT ask 'Which city?' if the context location is available. Proceed with the search using the context coordinates or city.\n" +
-      "- If the user specifies a city but no country, try to infer it from the context or region.\n\n" +
+        "SPECIAL LOCATION HANDLING:\n" +
+        "- If the user says 'nearby', 'Nearby', 'User's Current Location', or 'current location':\n" +
+        "  1. Look at the provided location object in the context (city, lat, lng).\n" +
+        "  2. Use that location as the SEARCH destination.\n" +
+        "  3. Do NOT ask 'Which city?' if the context location is available. Proceed with the search using the context coordinates or city.\n" +
+        "- If the user specifies a city but no country, try to infer it from the context or region.\n\n" +
 
-      "DATE HANDLING:\n" +
-      "- If the user says a date without a year (e.g., 'Jan 18'), assume the NEXT occurrence of that date relative to 'now' in the context.\n" +
-      "- If 'now' is 2026-01-08 and user says 'Jan 18', assume 2026-01-18.\n" +
-      "- If today is Dec 2025 and user says 'Jan 18', assume 2026-01-18.\n\n" +
+        "DATE HANDLING:\n" +
+        "- If the user says a date without a year (e.g., 'Jan 18'), assume the NEXT occurrence of that date relative to 'now' in the context.\n" +
+        "- If 'now' is 2026-01-08 and user says 'Jan 18', assume 2026-01-18.\n" +
+        "- If today is Dec 2025 and user says 'Jan 18', assume 2026-01-18.\n\n" +
 
-      "LANGUAGE AND IDIOMS DETECTION:\n" +
-      "Detect and recognize regional idioms:\n" +
-      "- Argentinians: che, boludo, copado, finde, buenisimo, genial, dale, barbaro\n" +
-      "- Mexicans: wey, chido, padre, que onda\n" +
-      "- Chileans: po, cachai, bacan\n" +
-      "- Colombians: parce, chevere, berraco\n" +
-      "Note these idioms in 'notes' so the assistant can respond in the same register if needed.\n\n" +
+        "LANGUAGE AND IDIOMS DETECTION:\n" +
+        "Detect and recognize regional idioms:\n" +
+        "- Argentinians: che, boludo, copado, finde, buenisimo, genial, dale, barbaro\n" +
+        "- Mexicans: wey, chido, padre, que onda\n" +
+        "- Chileans: po, cachai, bacan\n" +
+        "- Colombians: parce, chevere, berraco\n" +
+        "Note these idioms in 'notes' so the assistant can respond in the same register if needed.\n\n" +
 
-      "EXAMPLES:\n" +
-      "User: 'Hi, how are you?' -> intent: SMALL_TALK\n" +
-      "User: 'What types of accommodation do you have?' -> intent: HELP\n" +
-      "User: 'Looking for a house in Cordoba for 4' -> intent: SEARCH\n" +
-      "User: 'Hey, do you have something cool?' -> intent: SMALL_TALK (lacks specific info)\n" +
-      "User: 'I want to go to Bariloche' -> intent: SEARCH (implied search)\n" +
-      "User: 'Show me hotels in CABA' -> intent: SEARCH\n" +
-      "User: 'Search nearby' -> intent: SEARCH (uses context location)\n\n" +
+        "EXAMPLES:\n" +
+        "User: 'Hi, how are you?' -> intent: SMALL_TALK\n" +
+        "User: 'What types of accommodation do you have?' -> intent: HELP\n" +
+        "User: 'Looking for a house in Cordoba for 4' -> intent: SEARCH\n" +
+        "User: 'Hey, do you have something cool?' -> intent: SMALL_TALK (lacks specific info)\n" +
+        "User: 'I want to go to Bariloche' -> intent: SEARCH (implied search)\n" +
+        "User: 'Show me hotels in CABA' -> intent: SEARCH\n" +
+        "User: 'Search nearby' -> intent: SEARCH (uses context location)\n\n" +
 
-      "FILTERING & SORTING RULES:\n" +
-      "- Fill location city/state/country and lat/lng when provided. If the user requests proximity (\"1km around Movistar Arena\"), set location.radiusKm and location.landmark.\n" +
-      "- If the user does NOT specify homes vs hotels, return listingTypes as an empty array (do not assume a default).\n" +
-      "- Detect HOME filters: propertyTypes (HOUSE, APARTMENT, CABIN, etc.), spaceTypes (ENTIRE_PLACE, PRIVATE_ROOM, SHARED_ROOM), amenityKeys (e.g., WIFI, FREE_PARKING_ON_PREMISES), and tagKeys (BEACHFRONT, LUXURY, FAMILY). Use uppercase keys.\n" +
-      "- For parking requests, set homeFilters.amenityKeys (FREE_PARKING_ON_PREMISES and/or PAID_PARKING_ON_PREMISES).\n" +
-      "- Detect HOTEL filters: amenityCodes from catalog names, amenityItemIds when numeric IDs are provided, preferredOnly flag, and minRating based on star ranks.\n" +
-      "- If the user mentions pool/piscina/pileta, include hotelFilters.amenityCodes with \"POOL\".\n" +
-      "- PREFERENCES (preferences.areaPreference): Extract from phrases like 'quiet', 'tranquilo', 'near coast/beach', 'cerca de la playa', 'city center', 'centro', 'family-friendly', 'familia', 'luxury', 'lujo', 'budget', 'económico'. Use: QUIET, BEACH_COAST, CITY_CENTER, FAMILY_FRIENDLY, LUXURY, BUDGET. Put all that apply in preferences.areaPreference array. Optional preferences.preferenceNotes: short free text for other wishes.\n" +
-      "- Map preferences to filters: BEACH_COAST -> homeFilters.tagKeys BEACHFRONT when HOMES; LUXURY -> hotelFilters.preferredOnly or homeFilters.tagKeys LUXURY; BUDGET -> sortBy PRICE_ASC or budget.max; QUIET/FAMILY_FRIENDLY -> preferenceNotes so assistant can acknowledge.\n" +
-      "- Capture guest requirements (adults, children, pets) plus requested bedrooms, beds, bathrooms, or total guests for homes.\n" +
-      "- If the user says cheap/budget/economico/barato/ahorrar WITHOUT an explicit numeric amount, set sortBy PRICE_ASC and DO NOT set budget.max.\n" +
-      "- Only set budget.max or budget.min when the user provides an explicit numeric amount (e.g., \"menos de 100\").\n" +
-      "- Detect explicit budgets and ordering like 'cheapest', 'precios altos', or 'ordenar por precio'. Map to sortBy PRICE_ASC or PRICE_DESC. Respect requested limit counts when possible.\n\n" +
+        "FILTERING & SORTING RULES:\n" +
+        "- Fill location city/state/country and lat/lng when provided. If the user requests proximity (\"1km around Movistar Arena\"), set location.radiusKm and location.landmark.\n" +
+        "- If the user does NOT specify homes vs hotels, return listingTypes as an empty array (do not assume a default).\n" +
+        "- Detect HOME filters: propertyTypes (HOUSE, APARTMENT, CABIN, etc.), spaceTypes (ENTIRE_PLACE, PRIVATE_ROOM, SHARED_ROOM), amenityKeys (e.g., WIFI, FREE_PARKING_ON_PREMISES), and tagKeys (BEACHFRONT, LUXURY, FAMILY). Use uppercase keys.\n" +
+        "- For parking requests, set homeFilters.amenityKeys (FREE_PARKING_ON_PREMISES and/or PAID_PARKING_ON_PREMISES).\n" +
+        "- Detect HOTEL filters: amenityCodes from catalog names, amenityItemIds when numeric IDs are provided, preferredOnly flag, and minRating based on star ranks.\n" +
+        "- If the user mentions pool/piscina/pileta, include hotelFilters.amenityCodes with \"POOL\".\n" +
+        "- PREFERENCES (preferences.areaPreference): Extract from phrases like 'quiet', 'tranquilo', 'near coast/beach', 'cerca de la playa', 'city center', 'centro', 'family-friendly', 'familia', 'luxury', 'lujo', 'budget', 'económico'. Use: QUIET, BEACH_COAST, CITY_CENTER, FAMILY_FRIENDLY, LUXURY, BUDGET. Put all that apply in preferences.areaPreference array. Optional preferences.preferenceNotes: short free text for other wishes.\n" +
+        "- Map preferences to filters: BEACH_COAST -> homeFilters.tagKeys BEACHFRONT when HOMES; LUXURY -> hotelFilters.preferredOnly or homeFilters.tagKeys LUXURY; BUDGET -> sortBy PRICE_ASC or budget.max; QUIET/FAMILY_FRIENDLY -> preferenceNotes so assistant can acknowledge.\n" +
+        "- Capture guest requirements (adults, children, pets) plus requested bedrooms, beds, bathrooms, or total guests for homes.\n" +
+        "- If the user says cheap/budget/economico/barato/ahorrar WITHOUT an explicit numeric amount, set sortBy PRICE_ASC and DO NOT set budget.max.\n" +
+        "- Only set budget.max or budget.min when the user provides an explicit numeric amount (e.g., \"menos de 100\").\n" +
+        "- Detect explicit budgets and ordering like 'cheapest', 'precios altos', or 'ordenar por precio'. Map to sortBy PRICE_ASC or PRICE_DESC. Respect requested limit counts when possible.\n\n" +
 
-      "Respond ONLY with a valid JSON object with this schema:\n" +
-      `{
+        "RESPONDING RULES:\n" +
+        "- Use **Rich Markdown** to format your response visually.\n" +
+        "- Use `## My Header` for sections (Day 1, Morning, Tips).\n" +
+        "- Use `**My Text**` to bold place names.\n" +
+        "- Use `> My Tip` for important travel tips.\n" +
+        "- Use Emojis as bullets (`- 🏖️ Beach`).\n" +
+        "- Be concise. Avoid long preambles. Get straight to the point.\n\n" +
+
+        "Respond ONLY with a valid JSON object with this schema:\n" +
+        `{
         "intent": "SEARCH" | "SMALL_TALK" | "HELP",
         "listingTypes": ["HOMES","HOTELS"],
         "location": {"city": string|null, "state": string|null, "country": string|null, "lat": number|null, "lng": number|null, "radiusKm": number|null, "landmark": string|null},
@@ -860,12 +868,12 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
     const location = tripContext?.location || {};
     const tripContextSnapshot = tripContext
       ? {
-          stayName: tripContext.stayName ?? null,
-          locationText: tripContext.locationText ?? null,
-          location: tripContext.location ?? null,
-          dates: tripContext.dates ?? null,
-          inventoryType: tripContext.inventoryType ?? null,
-        }
+        stayName: tripContext.stayName ?? null,
+        locationText: tripContext.locationText ?? null,
+        location: tripContext.location ?? null,
+        dates: tripContext.dates ?? null,
+        inventoryType: tripContext.inventoryType ?? null,
+      }
       : null;
 
     // Load record early so we can persist AI attempt state
@@ -917,11 +925,11 @@ export const generateAndSaveTripIntelligence = async ({ stayId, tripContext, lan
       aiAttempts,
       ...(timedOut
         ? {
-            aiStatus: "failed",
-            aiErrorCode: "OPENAI_TIMEOUT",
-            aiFailedAt: nowIso,
-            aiCooldownUntil: cooldownUntilIso,
-          }
+          aiStatus: "failed",
+          aiErrorCode: "OPENAI_TIMEOUT",
+          aiFailedAt: nowIso,
+          aiCooldownUntil: cooldownUntilIso,
+        }
         : {}),
     };
     const alreadyNotified = Boolean(
@@ -1102,6 +1110,9 @@ export const generateAssistantReply = async ({
       name: hotel.name,
       city: hotel.city,
       preferred: hotel.preferred,
+      stars: hotel.classification?.name || "Not Rated",
+      description: hotel.shortDescription,
+      amenities: (hotel.amenities || []).slice(0, 5).map(a => a.name).join(", "),
     })),
   };
   const tripSummary = trip
@@ -1236,11 +1247,21 @@ export const generateAssistantReply = async ({
         `${todayBlock}` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
         `${contextInstruction}\n` +
-        "- Vary your wording naturally. Avoid repeating the same phrase every time (e.g. do not always start with 'Here are the best options'). Use different openings and tones: e.g. 'I found some great options for you.', 'These picks match what you’re looking for.', 'Take a look at these.', Or in Spanish: 'Encontré buenas opciones.', 'Estas son algunas opciones que encajan.', 'Mirá estas opciones.'\n" +
-        "- If there are results: Return the 'reply' as a single, VERY concise sentence. You may add the location briefly. Vary phrasing across conversations.\n" +
-        "- If results are marked as SIMILAR (matchTypes): say there were no exact matches and mention you found similar options.\n" +
-        "- If NO results: Suggest concrete adjustments (change city, dates, budget). Vary suggestions (e.g. 'Try different dates', 'Broaden the area', 'Adjust your budget').\n" +
-        "- followUps: 3-4 relevant follow-up suggestions. Vary the wording of follow-ups; avoid always using the same labels.\n" +
+        "- **MODERN & FUN TONE**: Be enthusiastic. Use varied openers like 'Here we go!', 'Check this out!', 'Sorted!', 'Bingo!', or occasionally 'Boom!'. **Do not overuse any single phrase**.\n" +
+        "- **OPINIONATED**: After presenting results, add a SHORT comment or 'Hot Take'.\n" +
+        "- **STRUCTURE**:\n" +
+        "  1. Enthusiastic Opening\n" +
+        "  2. (Optional) Hot Take / Opinion\n" +
+        "  3. **Crucial**: Explain that these are just a few top picks and you can show more. **IMPORTANT: VARY THIS PHRASE EVERY TIME**. Do not typically say the exact same thing.\n" +
+        "  4. Closing Guidance: 'Ready to check availability for dates?'\n" +
+        "- If NO results: Be helpful. 'Ouch, nothing exactly there. Try changing dates.'\n" +
+        "- followUps: 3-4 distinct options.\n" +
+        "- **STRICT RULES**:\n" +
+        "  - **TRAVEL ONLY**: You are a travel assistant. If the user talks about politics, religion, or off-topic subjects, politely refuse: 'I can only help with travel and bookings.'\n" +
+        "  - **RESPECT**: Never use offensive language. Be professional yet fun.\n" +
+        "  - You do NOT have access to user reviews. NEVER say 'guests love...'.\n" +
+        "  - Only use the provided `stars`, `description`, and `amenities`. If a feature is not listed, do not invent it.\n" +
+        "  - If you mention quality, refer to the 'Stars' (e.g. 5 Stars).\n" +
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     } else if (intent === "HELP") {
       systemPrompt =

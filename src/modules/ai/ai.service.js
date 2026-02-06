@@ -5,7 +5,7 @@ import { applyPlanToState, buildPlanOutcome, INTENTS, NEXT_ACTIONS, updateStageF
 import { enforcePolicy } from "./ai.policy.js";
 import { renderAssistantPayload } from "./ai.renderer.js";
 import { loadAssistantState } from "./ai.stateStore.js";
-import { geocodePlace, getNearbyPlaces, getWeatherSummary, searchStays } from "./tools/index.js";
+import { geocodePlace, getNearbyPlaces, getWeatherSummary, searchStays, searchDestinationImages } from "./tools/index.js";
 import { logAiEvent } from "./ai.telemetry.js";
 
 const buildEmptyInventory = () => ({
@@ -455,9 +455,16 @@ export const runAiTurn = async ({
   let carousels = [];
   if (resolvedNextAction === "RUN_SEARCH") {
     const searchStart = Date.now();
+
+    // Check if we have previous results to exclude (for pagination/"more options")
+    // Only exclude if the search plan is roughly similar (e.g. same location)
+    // For simplicity, we assume if we are in the same session and doing a search, we want fresh results.
+    const excludeIds = existingState?.lastResultsContext?.shownIds || [];
+
     inventory = await searchStays(mergedPlan, {
       limit: limits,
       maxResults: AI_LIMITS.maxResults,
+      excludeIds
     });
     timings.searchMs = Date.now() - searchStart;
     if ((inventory.homes?.length || 0) + (inventory.hotels?.length || 0) > 0) {
@@ -520,14 +527,49 @@ export const runAiTurn = async ({
 
   const updatedState = updateStageFromAction(nextState, resolvedNextAction);
   if (resolvedNextAction === "RUN_SEARCH") {
-    const shownIds = [
+    const previousShownIds = nextState?.lastResultsContext?.shownIds || [];
+    const newShownIds = [
       ...(inventory.homes || []).map((item) => String(item.id)),
       ...(inventory.hotels || []).map((item) => String(item.id)),
     ].filter(Boolean);
+
+    // Accumulate IDs to support deep pagination/rejection
+    // Only reset if the user completely changed the destination/intent (which usually resets state anyway)
+    const combinedIds = Array.from(new Set([...previousShownIds, ...newShownIds]));
+
     updatedState.lastResultsContext = {
       lastSearchId: `search-${Date.now()}`,
-      shownIds,
+      shownIds: combinedIds,
     };
+
+    console.log("[ai] search complete", {
+      previousCount: previousShownIds.length,
+      newCount: newShownIds.length,
+      totalExcludedNext: combinedIds.length
+    });
+  }
+
+  // ---- Visual Context Injection ----
+  let visualContext = null;
+  const destinationName = mergedPlan?.location?.city || nextState?.destination?.name;
+
+  // Only fetch visuals if we have a destination but NO search results yet (to avoid clutter)
+  const hasNoResults = (!inventory.homes?.length && !inventory.hotels?.length);
+  const isAskingForDetails = [NEXT_ACTIONS.ASK_FOR_DATES, NEXT_ACTIONS.ASK_FOR_GUESTS].includes(resolvedNextAction);
+
+  if (destinationName && (hasNoResults || isAskingForDetails) && !trip) {
+    try {
+      const images = await searchDestinationImages(destinationName, 2);
+      if (images.length) {
+        visualContext = {
+          type: "destination_gallery",
+          title: destinationName,
+          images: images
+        };
+      }
+    } catch (err) {
+      console.warn("[ai] visual context fetch failed", err);
+    }
   }
 
   const renderStart = Date.now();
@@ -541,6 +583,7 @@ export const runAiTurn = async ({
     userContext,
     weather: resolvedWeather,
     missing: outcome.missing,
+    visualContext
   });
   timings.renderMs = Date.now() - renderStart;
   timings.totalMs = Date.now() - startedAt;
