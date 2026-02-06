@@ -9,6 +9,7 @@ const STEP_VALUES = [
   "BOOK_YES",
   "CANCEL_NO",
   "CANCEL_YES",
+  "RECHECK",
 ];
 
 export default (sequelize) => {
