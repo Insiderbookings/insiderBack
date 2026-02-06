@@ -134,6 +134,25 @@ const normalizeVoucherIdentifier = (value) => {
   return cleaned
 }
 
+const COUNTRY_CACHE_TTL_MS = 10 * 60 * 1000
+let countryCache = new Map()
+let countryCacheLoadedAt = 0
+
+const resolveCountryNameByCode = async (code) => {
+  const normalized = code != null ? String(code).trim() : ""
+  if (!normalized || !/^\d+$/.test(normalized)) return null
+  const now = Date.now()
+  if (now - countryCacheLoadedAt > COUNTRY_CACHE_TTL_MS) {
+    countryCache = new Map()
+    countryCacheLoadedAt = now
+  }
+  if (countryCache.has(normalized)) return countryCache.get(normalized)
+  const row = await models.WebbedsCountry.findByPk(Number(normalized))
+  const name = row?.name ?? null
+  countryCache.set(normalized, name)
+  return name
+}
+
 const sanitizeStringArray = (values, limit = 20, max = 120) => {
   if (!Array.isArray(values)) return []
   return values
@@ -2916,6 +2935,17 @@ export const saveHotelConfirmationSnapshot = async (req, res) => {
         ? diffDays(booking.check_in, booking.check_out)
         : null)
 
+    const nationalityCode = pickFirst(
+      flowContext.passengerNationality,
+      existingSnapshot?.traveler?.nationality,
+    )
+    const residenceCode = pickFirst(
+      flowContext.passengerCountryOfResidence,
+      existingSnapshot?.traveler?.residence,
+    )
+    const nationalityName = await resolveCountryNameByCode(nationalityCode)
+    const residenceName = await resolveCountryNameByCode(residenceCode)
+
     const snapshot = {
       bookingCodes: {
         externalRef: pickFirst(booking.external_ref),
@@ -3048,14 +3078,8 @@ export const saveHotelConfirmationSnapshot = async (req, res) => {
           booking.guest_snapshot?.phone,
           existingSnapshot?.traveler?.phone,
         ),
-        nationality: pickFirst(
-          flowContext.passengerNationality,
-          existingSnapshot?.traveler?.nationality,
-        ),
-        residence: pickFirst(
-          flowContext.passengerCountryOfResidence,
-          existingSnapshot?.traveler?.residence,
-        ),
+        nationality: nationalityName ?? nationalityCode ?? null,
+        residence: residenceName ?? residenceCode ?? null,
         salutation: pickFirst(
           booking.guest_snapshot?.salutation,
           existingSnapshot?.traveler?.salutation,
