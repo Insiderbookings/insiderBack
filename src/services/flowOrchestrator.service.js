@@ -775,6 +775,7 @@ export class FlowOrchestratorService {
     const { result, requestXml, responseXml, metadata } = await this.client.send("getrooms", payload, {
       requestId: getRequestId(req),
       productOverride: "hotel",
+      logMeta: { flowId },
     });
     const mapped = mapGetRoomsResponse(result);
     const rateBasis = findRateBasisMatch(
@@ -964,6 +965,7 @@ export class FlowOrchestratorService {
 
     const { result, requestXml, responseXml, metadata } = await this.client.send("savebooking", payload, {
       requestId: getRequestId(req),
+      logMeta: { flowId },
     });
     const mapped = mapSaveBookingResponse(result);
     const serviceRef = mapped.services?.[0]?.returnedServiceCode ?? null;
@@ -1023,7 +1025,7 @@ export class FlowOrchestratorService {
         ({ result, requestXml, responseXml, metadata } = await this.client.send(
           "bookitinerary",
           payload,
-          { requestId: getRequestId(req), productOverride: null },
+          { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
         ));
         lastError = null;
         break;
@@ -1251,7 +1253,7 @@ export class FlowOrchestratorService {
       ({ result, requestXml, responseXml, metadata } = await this.client.send(
         "bookitinerary",
         payload,
-        { requestId: getRequestId(req), productOverride: null },
+        { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
       ));
     } catch (error) {
       await logStep({
@@ -1336,7 +1338,7 @@ export class FlowOrchestratorService {
       ({ result, requestXml, responseXml, metadata } = await this.client.send(
         "getrooms",
         payload,
-        { requestId: getRequestId(req), productOverride: "hotel" },
+        { requestId: getRequestId(req), productOverride: "hotel", logMeta: { flowId: flow.id } },
       ));
     } catch (error) {
       await logStep({
@@ -1426,8 +1428,6 @@ export class FlowOrchestratorService {
     const reusedStep = await resolveIdempotentStep(flowId, "BOOK_YES", idempotencyKey);
     if (reusedStep) return { flow: serializeFlow(flow), idempotent: true };
 
-    await this.recheckAvailability({ flow, req, idempotencyKey });
-
     const services = [
       {
         serviceCode: flow.service_reference_number,
@@ -1453,7 +1453,7 @@ export class FlowOrchestratorService {
     const { result, requestXml, responseXml, metadata } = await this.client.send(
       "bookitinerary",
       payload,
-      { requestId: getRequestId(req), productOverride: null },
+      { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
     );
     const mapped = mapBookItineraryResponse(result);
     const allocationIn = flow.allocation_current;
@@ -1522,7 +1522,7 @@ export class FlowOrchestratorService {
     const { result, requestXml, responseXml, metadata } = await this.client.send(
       "cancelbooking",
       payload,
-      { requestId: getRequestId(req), productOverride: null },
+      { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
     );
     const mapped = mapCancelBookingResponse(result);
 
@@ -1591,7 +1591,7 @@ export class FlowOrchestratorService {
     const { result, requestXml, responseXml, metadata } = await this.client.send(
       "cancelbooking",
       payload,
-      { requestId: getRequestId(req), productOverride: null },
+      { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
     );
     const mapped = mapCancelBookingResponse(result);
 

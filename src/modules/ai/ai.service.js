@@ -8,6 +8,24 @@ import { loadAssistantState } from "./ai.stateStore.js";
 import { geocodePlace, getNearbyPlaces, getWeatherSummary, searchStays, searchDestinationImages } from "./tools/index.js";
 import { logAiEvent } from "./ai.telemetry.js";
 
+const DEBUG_TRIP_HUB = process.env.TRIP_HUB_DEBUG === "true";
+const debugTripHub = (...args) => {
+  if (!DEBUG_TRIP_HUB) return;
+  console.log("[tripHub.debug]", ...args);
+};
+
+const summarizeReply = (value, previewLength = 140) => {
+  const text = typeof value === "string" ? value : "";
+  const trimmed = text.trim();
+  const invisibleMatches = text.match(/[\u200B-\u200D\uFEFF]/g);
+  return {
+    len: text.length,
+    trimmedLen: trimmed.length,
+    invisibleCount: invisibleMatches ? invisibleMatches.length : 0,
+    preview: text.slice(0, previewLength),
+  };
+};
+
 const buildEmptyInventory = () => ({
   homes: [],
   hotels: [],
@@ -395,6 +413,12 @@ export const runAiTurn = async ({
     (sessionId && userId ? await loadAssistantState({ sessionId, userId }) : null);
 
   const incomingTripContext = normalizeTripContext(context?.trip ?? context?.tripContext ?? context);
+  debugTripHub("incoming", {
+    sessionId,
+    userId,
+    hasTripContext: Boolean(incomingTripContext),
+    tripLocation: incomingTripContext?.locationText || incomingTripContext?.location?.city || null,
+  });
   const userContext = context && typeof context === "object" ? context : null;
 
   const planStart = Date.now();
@@ -584,6 +608,13 @@ export const runAiTurn = async ({
     weather: resolvedWeather,
     missing: outcome.missing,
     visualContext
+  });
+  debugTripHub("reply", {
+    sessionId,
+    intent: resolvedIntent,
+    nextAction: resolvedNextAction,
+    tripGenerated: Boolean(trip),
+    reply: summarizeReply(rendered?.assistant?.text),
   });
   timings.renderMs = Date.now() - renderStart;
   timings.totalMs = Date.now() - startedAt;

@@ -389,7 +389,7 @@ const runWebbedsSearch = async ({ query, user, headers }) => {
   )
 
   if (statusCode >= 400) {
-    const error = new Error(payload?.message || "WebBeds search failed")
+    const error = new Error(payload?.message || "Provider search failed")
     error.status = statusCode
     error.payload = payload
     throw error
@@ -406,6 +406,8 @@ export const searchHotels = async (req, res, next) => {
     cityCode,
     countryCode,
     country,
+    searchMode,
+    mode,
     checkIn,
     checkOut,
     occupancies,
@@ -416,13 +418,18 @@ export const searchHotels = async (req, res, next) => {
     fields,
     roomFields,
     rateTypes,
+    merge,
     lite,
     fetchAll,
   } = req.query
 
   try {
     const searchQuery = String(query || q || "").trim()
+    const rawSearchMode = String(searchMode ?? mode ?? "").trim().toLowerCase()
+    const resolvedSearchMode = rawSearchMode === "city" ? "city" : "hotelids"
     const useFetchAll = normalizeBoolean(fetchAll)
+    const hasDates = Boolean(checkIn && checkOut)
+    const hasRatesParams = Boolean(hasDates && occupancies)
     const resolvedCity = await resolveCityMatch({
       query: searchQuery,
       cityCode,
@@ -438,6 +445,20 @@ export const searchHotels = async (req, res, next) => {
       : countryCode
         ? String(countryCode).trim()
         : null
+    const mustFetchAllHotelIds = Boolean(
+      resolvedSearchMode === "hotelids" && resolvedCityCode && hasRatesParams,
+    )
+    const effectiveFetchAll = resolvedSearchMode === "hotelids"
+      ? useFetchAll || mustFetchAllHotelIds
+      : useFetchAll
+
+    const mergeModeRaw = String(merge ?? "").trim().toLowerCase()
+    const normalizedMerge =
+      mergeModeRaw === "lite"
+        ? "lite"
+        : ["1", "true", "yes", "y", "si"].includes(mergeModeRaw)
+          ? "true"
+          : undefined
 
     const priceMin = req.query.priceMin ?? req.query.minPrice ?? req.query.price_from ?? req.query.priceFrom
     const priceMax = req.query.priceMax ?? req.query.maxPrice ?? req.query.price_to ?? req.query.priceTo
@@ -499,7 +520,11 @@ export const searchHotels = async (req, res, next) => {
       hotelName,
     ].some(hasFilterValue)
     const canUseFullCache =
-      fullCacheKey && !useFetchAll && isCacheFilterable(cacheFilters) && !hotelName // Disable full-cache optimization if searching by name (simpler)
+      resolvedSearchMode === "hotelids" &&
+      fullCacheKey &&
+      !effectiveFetchAll &&
+      isCacheFilterable(cacheFilters) &&
+      !hotelName // Disable full-cache optimization if searching by name (simpler)
 
     if (canUseFullCache && process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true") {
       // ... existing cache logic ...
@@ -525,7 +550,7 @@ export const searchHotels = async (req, res, next) => {
     let hotelIds = []
     let fallback = null
     if (resolvedCityCode) {
-      hotelIds = useFetchAll
+      hotelIds = effectiveFetchAll
         ? await fetchAllHotelIdsByCity(resolvedCityCode, dbFilters)
         : await fetchHotelIdsByCity(resolvedCityCode, safeLimit, safeOffset, dbFilters)
       if (hotelIds.length) {
@@ -558,12 +583,13 @@ export const searchHotels = async (req, res, next) => {
       occupancies,
       currency,
       rateBasis,
-      limit: useFetchAll ? undefined : safeLimit,
-      offset: useFetchAll ? undefined : safeOffset,
+      limit: effectiveFetchAll ? undefined : safeLimit,
+      offset: effectiveFetchAll ? undefined : safeOffset,
       fields,
       roomFields,
       rateTypes,
-      mode: "hotelids",
+      merge: normalizedMerge,
+      mode: resolvedSearchMode,
       cityCode: resolvedCityCode || undefined,
       countryCode: resolvedCountryCode || undefined,
       hotelIds: hotelIds.length ? hotelIds.join(",") : undefined,
@@ -576,17 +602,23 @@ export const searchHotels = async (req, res, next) => {
       business,
       roomAmenity,
       lite: normalizeBoolean(lite),
-      fetchAll: useFetchAll,
+      fetchAll: effectiveFetchAll,
+    }
+
+    const providerQuery = { ...normalizedQuery }
+    if (resolvedSearchMode === "hotelids") {
+      if (providerQuery.hotelIds) {
+        delete providerQuery.cityCode
+        delete providerQuery.countryCode
+      }
+    } else {
+      delete providerQuery.hotelIds
     }
 
     const cacheKey = buildCacheKey({
       ...normalizedQuery,
       userCountry: req.user?.countryCode ?? req.user?.country ?? null,
     })
-
-    // Check if we have mandatory availability params
-    const hasDates = checkIn && checkOut
-    const hasRatesParams = hasDates && occupancies
 
     const ttlSeconds = Math.max(
       1,
@@ -619,11 +651,42 @@ export const searchHotels = async (req, res, next) => {
     if (hasRatesParams) {
       // Full Availability Search
       try {
-        items = await runWebbedsSearch({
-          query: normalizedQuery,
-          user: req.user,
-          headers: req.headers,
-        })
+        const shouldFetchAllCity =
+          resolvedSearchMode === "city" && effectiveFetchAll
+
+        if (shouldFetchAllCity) {
+          const pageSize = resolveSafeLimit(limit)
+          const maxPages = Math.max(1, Number(process.env.WEBBEDS_CITY_FETCH_ALL_MAX_PAGES || 50))
+          let aggregated = []
+          let pageIndex = 0
+          let offsetCursor = resolveSafeOffset(offset)
+
+          while (pageIndex < maxPages) {
+            const pageQuery = {
+              ...providerQuery,
+              limit: pageSize,
+              offset: offsetCursor,
+            }
+            const pageItems = await runWebbedsSearch({
+              query: pageQuery,
+              user: req.user,
+              headers: req.headers,
+            })
+            const safeItems = Array.isArray(pageItems) ? pageItems : []
+            aggregated = aggregated.concat(safeItems)
+            if (safeItems.length < pageSize) break
+            pageIndex += 1
+            offsetCursor += pageSize
+          }
+
+          items = aggregated
+        } else {
+          items = await runWebbedsSearch({
+            query: providerQuery,
+            user: req.user,
+            headers: req.headers,
+          })
+        }
       } catch (err) {
         // If webbeds fails, we could fallback to static, but for now let it throw or handle
         throw err
@@ -636,7 +699,7 @@ export const searchHotels = async (req, res, next) => {
 
       // We need to fetch full details for these IDs from DB to return useful cards
       // The previous fetch functions returned only IDs.
-      const targetIds = useFetchAll ? hotelIds : hotelIds.slice(safeOffset, safeOffset + safeLimit)
+      const targetIds = effectiveFetchAll ? hotelIds : hotelIds.slice(safeOffset, safeOffset + safeLimit)
 
       const staticRows = await models.WebbedsHotel.findAll({
         where: { hotel_id: { [Op.in]: targetIds } },
@@ -688,7 +751,7 @@ export const searchHotels = async (req, res, next) => {
     }
     const durationMs = Date.now() - startTime
     const searchDurationMs = Date.now() - searchStart
-    const hasMore = useFetchAll ? false : hotelIds.length === safeLimit
+    const hasMore = effectiveFetchAll ? false : hotelIds.length === safeLimit
     const responsePayload = {
       items: Array.isArray(items) ? items : [],
       meta: {
@@ -701,17 +764,24 @@ export const searchHotels = async (req, res, next) => {
         query: searchQuery || null,
         total: Array.isArray(items) ? items.length : 0,
         hotelIdsCount: hotelIds.length,
-        limit: useFetchAll ? hotelIds.length : safeLimit,
-        offset: useFetchAll ? 0 : safeOffset,
+        limit: effectiveFetchAll ? hotelIds.length : safeLimit,
+        offset: effectiveFetchAll ? 0 : safeOffset,
         hasMore,
         nextOffset: hasMore ? safeOffset + safeLimit : null,
-        fetchAll: useFetchAll,
+        fetchAll: effectiveFetchAll,
         timing: {
           totalMs: durationMs,
           searchMs: searchDurationMs,
         },
       },
     }
+
+    console.log("[hotels.search] response count", {
+      items: responsePayload.items.length,
+      cityCode: resolvedCityCode,
+      searchMode: resolvedSearchMode,
+      fetchAll: effectiveFetchAll,
+    })
 
     if (process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true") {
       await cache.set(cacheKey, responsePayload, ttlSeconds)
@@ -721,8 +791,9 @@ export const searchHotels = async (req, res, next) => {
       fullCacheKey &&
       fullCacheStatusKey &&
       resolvedCityCode &&
-      !useFetchAll &&
+      !effectiveFetchAll &&
       !hasAnyFilter &&
+      resolvedSearchMode === "hotelids" &&
       process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true"
 
     if (shouldWarmFullCache) {
@@ -772,8 +843,14 @@ export const searchHotels = async (req, res, next) => {
             chain: undefined,
           }
 
+          const fullProviderQuery = { ...fullQuery }
+          if (fullProviderQuery.hotelIds) {
+            delete fullProviderQuery.cityCode
+            delete fullProviderQuery.countryCode
+          }
+
           let fullItems = await runWebbedsSearch({
-            query: fullQuery,
+            query: fullProviderQuery,
             user: req.user,
             headers: req.headers,
           })
