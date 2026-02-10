@@ -220,6 +220,27 @@ const normalizeAdvancedOperator = (value) => {
   return null
 }
 
+const pickLiteImages = (details = {}) => {
+  const images = details?.images
+  if (!images) return null
+  if (Array.isArray(images)) {
+    return images.length ? [images[0]] : null
+  }
+  const hotelImages = images?.hotelImages ?? images
+  const thumb = hotelImages?.thumb ?? null
+  const firstImage = Array.isArray(hotelImages?.image)
+    ? hotelImages.image[0]
+    : hotelImages?.image
+  const firstUrl = firstImage?.url ?? firstImage ?? null
+  if (!thumb && !firstUrl) return null
+  return {
+    hotelImages: {
+      thumb: thumb || firstUrl,
+      image: firstUrl ? [{ url: firstUrl }] : undefined,
+    },
+  }
+}
+
 const buildHotelIdConditions = (ids) =>
   ids?.length
     ? [
@@ -381,7 +402,9 @@ export class WebbedsProvider extends HotelProvider {
       const includeFields = includeFieldsList.length ? includeFieldsList : undefined
       const includeRoomFields = includeRoomFieldsList.length ? includeRoomFieldsList : undefined
       const includeNoPrice = req.query.noPrice === "true"
-      const mergeStaticDetails = parseBooleanFlag(req.query.merge) === true
+      const mergeMode = String(req.query.merge ?? "").trim().toLowerCase()
+      const mergeStaticDetails = parseBooleanFlag(req.query.merge) === true || mergeMode === "full"
+      const mergeLiteDetails = mergeMode === "lite"
       const debug = req.query.debug ?? undefined
       const providedHotelIds = parseCsvList(req.query.hotelIds)
       const credentials = this.getCredentials()
@@ -430,6 +453,7 @@ export class WebbedsProvider extends HotelProvider {
           cityCode,
           queryAdvancedConditions,
           advancedOperator,
+          mergeMode: mergeLiteDetails ? "lite" : mergeStaticDetails ? "full" : null,
         })
       }
 
@@ -452,7 +476,11 @@ export class WebbedsProvider extends HotelProvider {
         credentials,
       })
       // Merge con metadata estática solo cuando el cliente lo solicita.
-      const results = mergeStaticDetails ? await this.enrichWithHotelDetails(options) : options
+      const results = mergeLiteDetails
+        ? await this.enrichWithHotelDetailsLite(options)
+        : mergeStaticDetails
+          ? await this.enrichWithHotelDetails(options)
+          : options
       return res.json(this.groupOptionsByHotel(results))
     } catch (error) {
       if (error.name === "WebbedsError") {
@@ -513,7 +541,6 @@ export class WebbedsProvider extends HotelProvider {
       const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102"
       const defaultCurrencyCode = process.env.WEBBEDS_DEFAULT_CURRENCY_CODE || "520"
       const normalizeCurrency = () => {
-        // WebBeds account is USD-only; force USD currency code (520) for all requests.
         return "520"
       }
       const ensureNumericCode = (value, fallback) => {
@@ -1397,6 +1424,7 @@ export class WebbedsProvider extends HotelProvider {
     cityCode,
     queryAdvancedConditions = [],
     advancedOperator,
+    mergeMode,
   }) {
     let hotelIds = providedHotelIds
     if (!hotelIds.length) {
@@ -1423,9 +1451,15 @@ export class WebbedsProvider extends HotelProvider {
       )
     }
 
+    const requestPayloadOptions = {
+      ...payloadOptions,
+      cityCode: undefined,
+      countryCode: undefined,
+    }
+
     const batchResults = await runBatchesWithLimit(batches, concurrency, async (batch) => {
       const { payload, requestAttributes } = buildSearchHotelsPayload({
-        ...payloadOptions,
+        ...requestPayloadOptions,
         advancedConditions: [
           ...queryAdvancedConditions,
           ...(buildHotelIdConditions(batch) ?? []),
@@ -1441,8 +1475,98 @@ export class WebbedsProvider extends HotelProvider {
     })
 
     const flattened = batchResults.flat()
-    const enriched = await this.enrichWithHotelDetails(flattened)
+    const enriched =
+      mergeMode === "lite"
+        ? await this.enrichWithHotelDetailsLite(flattened)
+        : await this.enrichWithHotelDetails(flattened)
     return res.json(this.groupOptionsByHotel(enriched))
+  }
+
+  async enrichWithHotelDetailsLite(options = []) {
+    if (!Array.isArray(options) || !options.length || !models?.WebbedsHotel) {
+      return options
+    }
+
+    const hotelCodes = Array.from(
+      new Set(
+        options
+          .map((option) => (option?.hotelCode != null ? String(option.hotelCode) : null))
+          .filter(Boolean),
+      ),
+    )
+
+    if (!hotelCodes.length) {
+      return options
+    }
+
+    let records = []
+    try {
+      records = await models.WebbedsHotel.findAll({
+        where: {
+          hotel_id: {
+            [Op.in]: hotelCodes,
+          },
+        },
+        attributes: [
+          "hotel_id",
+          "name",
+          "city_name",
+          "city_code",
+          "country_name",
+          "country_code",
+          "rating",
+          "images",
+          "lat",
+          "lng",
+        ],
+        raw: true,
+      })
+    } catch (error) {
+      console.warn("[webbeds] failed to fetch lite hotel metadata:", error.message)
+      return options
+    }
+
+    if (!records.length) {
+      return options
+    }
+
+    const hotelMap = new Map(records.map((record) => [String(record.hotel_id), record]))
+
+    return options.map((option) => {
+      const details = hotelMap.get(String(option.hotelCode))
+      if (!details) return option
+
+      const images = pickLiteImages(details)
+      const geoPoint =
+        details.lat != null && details.lng != null
+          ? { lat: Number(details.lat), lng: Number(details.lng) }
+          : option.hotelDetails?.geoPoint ?? null
+
+      const liteDetails = {
+        hotelCode: String(details.hotel_id),
+        hotelName: details.name ?? option.hotelDetails?.hotelName ?? option.hotelName ?? null,
+        city: details.city_name ?? option.hotelDetails?.city ?? null,
+        cityCode:
+          details.city_code != null ? String(details.city_code) : option.hotelDetails?.cityCode ?? null,
+        country: details.country_name ?? option.hotelDetails?.country ?? null,
+        countryCode:
+          details.country_code != null
+            ? String(details.country_code)
+            : option.hotelDetails?.countryCode ?? null,
+        rating: details.rating ?? option.hotelDetails?.rating ?? null,
+        geoPoint,
+        images: images ?? option.hotelDetails?.images ?? null,
+      }
+
+      return {
+        ...option,
+        hotelName: option.hotelName ?? liteDetails.hotelName ?? null,
+        hotelDetails: {
+          ...option.hotelDetails,
+          ...liteDetails,
+        },
+      }
+    })
   }
 
   async enrichWithHotelDetails(options = []) {

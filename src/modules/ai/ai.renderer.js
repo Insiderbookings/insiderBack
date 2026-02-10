@@ -181,7 +181,7 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
       userContext,
       weather,
     });
-    replyText = replyPayload?.reply || "";
+    replyText = (replyPayload?.reply || "").trim();
     followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
   }
 

@@ -237,6 +237,7 @@ export const createWebbedsClient = ({
     useCompression,
     logContext,
     productOverride,
+    logMeta,
   }) => {
     const computedProduct = productOverride !== undefined ? productOverride : product
 
@@ -263,8 +264,6 @@ export const createWebbedsClient = ({
       ? await gzip(envelopeXml)
       : Buffer.from(envelopeXml, "utf8")
 
-    console.log(`[WebBeds] Sending XML (${command}):`, maskSensitiveXml(envelopeXml)); // Added Log
-
     const xmlBytes = Buffer.byteLength(envelopeXml, "utf8")
     const gzBytes = requestBody.length
 
@@ -274,6 +273,11 @@ export const createWebbedsClient = ({
       const attemptStart = Date.now()
       const attemptNumber = attempt + 1
       const attemptLabel = formatAttemptLabel(attemptNumber, useCompression)
+
+      const flowId = logMeta?.flowId ? String(logMeta.flowId) : null
+      console.log(
+        `********webbeds request: ${command} (${attemptLabel})${requestId ? ` [requestId=${requestId}]` : ""}${flowId ? ` [flowId=${flowId}]` : ""}**********`,
+      )
 
       const requestConfig = {
         method: "POST",
@@ -405,7 +409,11 @@ export const createWebbedsClient = ({
     )
   }
 
-  const send = async (command, payload = {}, { requestId, timeout, requestAttributes, productOverride } = {}) => {
+  const send = async (
+    command,
+    payload = {},
+    { requestId, timeout, requestAttributes, productOverride, logMeta } = {},
+  ) => {
     if (!command) {
       throw new Error("WebBeds command is required")
     }
@@ -422,6 +430,7 @@ export const createWebbedsClient = ({
         useCompression: preferCompressedRequests,
         logContext,
         productOverride,
+        logMeta,
       })
     } catch (error) {
       if (isTransportParseError(error)) {
