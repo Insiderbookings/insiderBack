@@ -7,6 +7,10 @@ import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
 
 const provider = new WebbedsProvider()
 const DEFAULT_LIMIT = 50
+const MOBILE_RESULT_LIMIT = Math.max(
+  1,
+  Number(process.env.WEBBEDS_MOBILE_RESULT_LIMIT || 30),
+)
 const DEFAULT_CACHE_TTL = 120
 const FULL_CACHE_TTL_SECONDS = Math.max(
   60,
@@ -18,6 +22,14 @@ const FULL_CACHE_STATUS_TTL_SECONDS = Math.max(
 )
 
 const iLikeOp = getCaseInsensitiveLikeOp()
+const MOBILE_CLIENT_TYPES = new Set(["mobile", "app", "react-native"])
+
+const getClientType = (req) =>
+  String(req?.headers?.["x-client-type"] || req?.headers?.["x-client-platform"] || "")
+    .trim()
+    .toLowerCase()
+
+const isMobileClient = (req) => MOBILE_CLIENT_TYPES.has(getClientType(req))
 
 const buildHashedKey = (prefix, payload) => {
   const ordered = Object.keys(payload)
@@ -422,12 +434,14 @@ export const searchHotels = async (req, res, next) => {
     lite,
     fetchAll,
   } = req.query
+  const clientIsMobile = isMobileClient(req)
 
   try {
     const searchQuery = String(query || q || "").trim()
     const rawSearchMode = String(searchMode ?? mode ?? "").trim().toLowerCase()
     const resolvedSearchMode = rawSearchMode === "city" ? "city" : "hotelids"
     const useFetchAll = normalizeBoolean(fetchAll)
+    const useLite = normalizeBoolean(lite)
     const hasDates = Boolean(checkIn && checkOut)
     const hasRatesParams = Boolean(hasDates && occupancies)
     const resolvedCity = await resolveCityMatch({
@@ -437,7 +451,10 @@ export const searchHotels = async (req, res, next) => {
       countryName: country,
     })
 
-    const safeLimit = resolveSafeLimit(limit)
+    const requestedLimit = resolveSafeLimit(limit)
+    const safeLimit = clientIsMobile
+      ? Math.min(requestedLimit, MOBILE_RESULT_LIMIT)
+      : requestedLimit
     const safeOffset = resolveSafeOffset(offset)
     const resolvedCityCode = resolvedCity?.code ? String(resolvedCity.code) : null
     const resolvedCountryCode = resolvedCity?.country_code
@@ -448,9 +465,10 @@ export const searchHotels = async (req, res, next) => {
     const mustFetchAllHotelIds = Boolean(
       resolvedSearchMode === "hotelids" && resolvedCityCode && hasRatesParams,
     )
-    const effectiveFetchAll = resolvedSearchMode === "hotelids"
+    const effectiveFetchAllBase = resolvedSearchMode === "hotelids"
       ? useFetchAll || mustFetchAllHotelIds
       : useFetchAll
+    const effectiveFetchAll = clientIsMobile ? false : effectiveFetchAllBase
 
     const mergeModeRaw = String(merge ?? "").trim().toLowerCase()
     const normalizedMerge =
@@ -475,7 +493,7 @@ export const searchHotels = async (req, res, next) => {
     const passengerCountryOfResidence =
       req.query.passengerCountryOfResidence ?? req.query.residence ?? null
 
-    const fullCachePayload = resolvedCityCode
+    const fullCacheKeyPayload = resolvedCityCode
       ? {
         cityCode: resolvedCityCode,
         checkIn,
@@ -487,9 +505,9 @@ export const searchHotels = async (req, res, next) => {
         passengerCountryOfResidence,
       }
       : null
-    const fullCacheKey = fullCachePayload ? buildFullCacheKey(fullCachePayload) : null
-    const fullCacheStatusKey = fullCachePayload
-      ? buildFullCacheStatusKey(fullCachePayload)
+    const fullCacheKey = fullCacheKeyPayload ? buildFullCacheKey(fullCacheKeyPayload) : null
+    const fullCacheStatusKey = fullCacheKeyPayload
+      ? buildFullCacheStatusKey(fullCacheKeyPayload)
       : null
     const cacheFilters = {
       priceMin,
@@ -520,17 +538,118 @@ export const searchHotels = async (req, res, next) => {
       hotelName,
     ].some(hasFilterValue)
     const canUseFullCache =
-      resolvedSearchMode === "hotelids" &&
       fullCacheKey &&
-      !effectiveFetchAll &&
+      resolvedCityCode &&
+      hasRatesParams &&
+      useLite &&
       isCacheFilterable(cacheFilters) &&
-      !hotelName // Disable full-cache optimization if searching by name (simpler)
+      resolvedSearchMode === "hotelids" &&
+      !hotelName
 
-    if (canUseFullCache && process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true") {
-      // ... existing cache logic ...
-      // NOTE: We SKIP full-cache block if hotelName is present for safety, or we'd need to implementing name filtering on cached items in JS, which is fine but let's be safe.
-      // Actually, standard cache filtering (line 89) needs to support name.
-      // For now, let's just skip full-cache if name filter is present to rely on DB ILIKE.
+    if (clientIsMobile && canUseFullCache && process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true") {
+      const buildFullCachePayload = async () => {
+        const allHotelIds = await fetchAllHotelIdsByCity(resolvedCityCode, {})
+        if (!allHotelIds.length) return null
+
+        const fallbackLabel = resolvedCityCode ? "city" : null
+        const fullQuery = {
+          checkIn,
+          checkOut,
+          occupancies,
+          currency,
+          rateBasis,
+          fields,
+          roomFields,
+          rateTypes,
+          merge: normalizedMerge,
+          mode: "hotelids",
+          hotelIds: allHotelIds.join(","),
+          passengerNationality,
+          passengerCountryOfResidence,
+          lite: true,
+          fetchAll: true,
+        }
+
+        const fullProviderQuery = { ...fullQuery }
+        if (fullProviderQuery.hotelIds) {
+          delete fullProviderQuery.cityCode
+          delete fullProviderQuery.countryCode
+        }
+
+        let fullItems = await runWebbedsSearch({
+          query: fullProviderQuery,
+          user: req.user,
+          headers: req.headers,
+        })
+
+        fullItems = reduceToLite(Array.isArray(fullItems) ? fullItems : [])
+        const fullPayload = {
+          items: fullItems,
+          meta: {
+            cached: false,
+            fallback: fallbackLabel,
+            cityCode: resolvedCityCode,
+            countryCode: resolvedCountryCode,
+            cityName: resolvedCity?.name ?? null,
+            countryName: resolvedCity?.country_name ?? null,
+            query: searchQuery || null,
+            total: fullItems.length,
+            hotelIdsCount: allHotelIds.length,
+            limit: allHotelIds.length,
+            offset: 0,
+            hasMore: false,
+            nextOffset: null,
+            fetchAll: true,
+          },
+        }
+
+        await cache.set(fullCacheKey, fullPayload, FULL_CACHE_TTL_SECONDS)
+        return fullPayload
+      }
+
+      let fullCacheEntry = await cache.get(fullCacheKey)
+      if (!fullCacheEntry?.items) {
+        if (fullCacheStatusKey) {
+          await cache.set(fullCacheStatusKey, { status: "building" }, FULL_CACHE_STATUS_TTL_SECONDS)
+        }
+        try {
+          fullCacheEntry = await buildFullCachePayload()
+        } finally {
+          if (fullCacheStatusKey) {
+            await cache.del(fullCacheStatusKey)
+          }
+        }
+      }
+
+      if (fullCacheEntry?.items) {
+        const sourceItems = Array.isArray(fullCacheEntry.items) ? fullCacheEntry.items : []
+        const filteredItems = hasAnyFilter
+          ? filterCachedItems(sourceItems, cacheFilters)
+          : sourceItems
+        const pagedItems = filteredItems.slice(safeOffset, safeOffset + safeLimit)
+        const hasMore = filteredItems.length > safeOffset + safeLimit
+
+        return res.json({
+          items: pagedItems,
+          meta: {
+            ...fullCacheEntry.meta,
+            cached: true,
+            query: searchQuery || fullCacheEntry.meta?.query || null,
+            cityCode: resolvedCityCode,
+            countryCode: resolvedCountryCode,
+            cityName: resolvedCity?.name ?? fullCacheEntry.meta?.cityName ?? null,
+            countryName: resolvedCity?.country_name ?? fullCacheEntry.meta?.countryName ?? null,
+            total: filteredItems.length,
+            hotelIdsCount: fullCacheEntry.meta?.hotelIdsCount ?? filteredItems.length,
+            limit: safeLimit,
+            offset: safeOffset,
+            hasMore,
+            nextOffset: hasMore ? safeOffset + safeLimit : null,
+            fetchAll: false,
+            fullCache: true,
+          },
+        })
+      }
     }
 
     // Parse DB Filters
@@ -601,7 +720,7 @@ export const searchHotels = async (req, res, next) => {
       leisure,
       business,
       roomAmenity,
-      lite: normalizeBoolean(lite),
+      lite: useLite,
       fetchAll: effectiveFetchAll,
     }
 
@@ -745,7 +864,6 @@ export const searchHotels = async (req, res, next) => {
       }).filter(Boolean)
     }
 
-    const useLite = normalizeBoolean(lite)
     if (useLite && Array.isArray(items) && !isStaticResult) {
       items = reduceToLite(items)
     }
