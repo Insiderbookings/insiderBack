@@ -679,6 +679,21 @@ export class FlowOrchestratorService {
             cancelRestricted,
             amendRestricted,
             tariffNotes: rateBasis.tariffNotes ?? null,
+            specials:
+              rateBasis.specials ??
+              rateBasis.promotionSummary ??
+              rateBasis.specialPromotions ??
+              null,
+            promotionSummary:
+              rateBasis.promotionSummary ??
+              rateBasis.specialPromotions ??
+              rateBasis.specials ??
+              null,
+            specialPromotions:
+              rateBasis.specialPromotions ??
+              rateBasis.promotionSummary ??
+              rateBasis.specials ??
+              null,
             minStay: rateBasis.minStay ?? null,
             dateApplyMinStay: rateBasis.dateApplyMinStay ?? null,
             changedOccupancy: rateBasis.changedOccupancy ?? null,
@@ -816,7 +831,12 @@ export class FlowOrchestratorService {
       idempotencyKey,
     });
 
-    return { flow: serializeFlow(flow) };
+    const blockedRate = rateBasis ? { ...rateBasis } : null;
+    return {
+      flow: serializeFlow(flow),
+      blockedRate,
+      responseCurrency: mapped?.currency ?? mapped?.currencyShort ?? null,
+    };
   }
   async saveBooking({ body, req }) {
     const {

@@ -38,6 +38,28 @@ const getText = (value) => {
   return null
 }
 
+const stripHtml = (value) => {
+  if (value == null) return value
+  return String(value).replace(/<\/?[^>]+>/g, "").trim()
+}
+
+const extractPromotionLines = (notes) => {
+  if (!notes) return []
+  const lines = stripHtml(notes)
+    .replace(/\r/g, "\n")
+    .split(/\n+/)
+    .map((line) => line.replace(/^[*-]\s*/, "").trim())
+    .filter(Boolean)
+  const promos = []
+  lines.forEach((line) => {
+    const match = line.match(/^promotion\s*[:\-]\s*(.+)$/i)
+    if (match && match[1]) {
+      promos.push(match[1].trim())
+    }
+  })
+  return promos
+}
+
 const formatDateValue = (value) => {
   const parsed = dayjs(value)
   if (!parsed.isValid()) return null
@@ -564,7 +586,11 @@ const parseRateBases = (rateBasesNode, requestedCurrency, roomTypeSpecialsCatalo
     const appliedSpecials = resolveAppliedSpecials(specialsCatalog, specialsAppliedIndices)
     const dailySpecials = buildDailySpecials(dateEntries)
     const finalAppliedSpecials = appliedSpecials.length ? appliedSpecials : dailySpecials
-    const promotionSummary = summarizeSpecials(finalAppliedSpecials)
+    const basePromotionSummary = summarizeSpecials(finalAppliedSpecials)
+    const tariffNotesText = getText(rateBasis?.tariffNotes)
+    const promotionFromNotes = extractPromotionLines(tariffNotesText)
+    const promotionSummary =
+      basePromotionSummary.length ? basePromotionSummary : promotionFromNotes
     const includedMealsRaw = dateEntries.flatMap((date) => parseIncludedMeals(date?.including))
     const uniqueMeals = []
     const seenMeals = new Set()
@@ -625,6 +651,8 @@ const parseRateBases = (rateBasesNode, requestedCurrency, roomTypeSpecialsCatalo
       totalFee: toNumber(rateBasis?.totalFee),
       propertyFees: parsePropertyFees(rateBasis),
       specials: promotionSummary,
+      promotionSummary,
+      specialPromotions: promotionSummary,
       specialsApplied: specialsAppliedIndices,
       appliedSpecials: finalAppliedSpecials,
       includedMeals: uniqueMeals,
@@ -652,7 +680,7 @@ const parseRateBases = (rateBasesNode, requestedCurrency, roomTypeSpecialsCatalo
         includedMeals: parseIncludedMeals(date?.including),
       })),
       leftToSell: toNumber(rateBasis?.leftToSell),
-      tariffNotes: getText(rateBasis?.tariffNotes),
+      tariffNotes: tariffNotesText,
     }
   })
 }
