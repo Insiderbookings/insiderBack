@@ -70,6 +70,38 @@ const buildPreview = (text, limit = 800) => {
   return text.length > limit ? `${text.slice(0, limit)}...` : text
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const RETRYABLE_NETWORK_CODES = new Set([
+  "ECONNABORTED",
+  "ENOTFOUND",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+])
+
+const collectErrorCodes = (error) => {
+  const codes = new Set()
+  if (error?.code) codes.add(String(error.code))
+  if (error?.cause?.code) codes.add(String(error.cause.code))
+  if (Array.isArray(error?.errors)) {
+    error.errors.forEach((entry) => {
+      if (entry?.code) codes.add(String(entry.code))
+    })
+  }
+  if (Array.isArray(error?.cause?.errors)) {
+    error.cause.errors.forEach((entry) => {
+      if (entry?.code) codes.add(String(entry.code))
+    })
+  }
+  return Array.from(codes)
+}
+
+const hasTimeoutMessage = (error) => /timeout|timed\s*out/i.test(String(error?.message || ""))
+
 const ensureMd5Password = ({ passwordMd5, passwordPlain }) => {
   if (passwordMd5) return passwordMd5
   if (!passwordPlain) {
@@ -177,6 +209,9 @@ export const createWebbedsClient = ({
   product = "hotel",
   timeoutMs = 30000,
   retries = 2,
+  retryBaseDelayMs = 400,
+  retryMaxDelayMs = 2500,
+  ipFamily,
   preferCompressedRequests = false,
   logger = defaultLogger,
   axiosInstance = axios,
@@ -208,7 +243,10 @@ export const createWebbedsClient = ({
         return await attemptFn(attempt)
       } catch (error) {
         lastError = error
-        const isNetworkError = error.code === "ECONNABORTED" || error.code === "ENOTFOUND" || error.code === "ECONNRESET"
+        const errorCodes = collectErrorCodes(error)
+        const isNetworkError =
+          errorCodes.some((code) => RETRYABLE_NETWORK_CODES.has(code)) ||
+          hasTimeoutMessage(error)
         const shouldRetry = attempt + 1 < maxAttempts && (
           isNetworkError
           || (error.response && error.response.status >= 500)
@@ -217,10 +255,17 @@ export const createWebbedsClient = ({
 
         if (!shouldRetry) throw error
 
+        const exponentialBackoff = retryBaseDelayMs * Math.pow(2, attempt)
+        const jitterMs = Math.floor(Math.random() * 180)
+        const waitMs = Math.min(retryMaxDelayMs, exponentialBackoff + jitterMs)
+
         logger.warn(`[webbeds] retrying request (attempt ${attempt + 2}/${maxAttempts})`, {
           code: error.code,
+          errorCodes,
           message: error.message,
+          waitMs,
         })
+        await sleep(waitMs)
       }
       attempt += 1
     }
@@ -300,6 +345,7 @@ export const createWebbedsClient = ({
         proxy: false,
         decompress: true,
         validateStatus: () => true,
+        ...(ipFamily === 4 || ipFamily === 6 ? { family: ipFamily } : {}),
       }
 
       logger.info(`[webbeds] ${attemptLabel} start`, {

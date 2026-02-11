@@ -43,6 +43,38 @@ const stripHtml = (value) => {
   return String(value).replace(/<\/?[^>]+>/g, "").trim()
 }
 
+const isGenericPromotionLabel = (value) => {
+  if (!value) return false
+  const text = String(value).trim().toLowerCase()
+  if (!text) return false
+  if (/[0-9]/.test(text) || text.includes("%")) return false
+  return text === "promotional rate" || text === "promotion" || text === "promotional"
+}
+
+const isPromotionDisclaimerText = (value) => {
+  if (!value) return false
+  const text = String(value).trim().toLowerCase()
+  if (!text) return false
+  if (text.includes("lower promotion")) return true
+  if (text.includes("rebooked under lower promotion")) return true
+  return false
+}
+
+const hasPromotionDetailSignal = (value) => {
+  if (!value) return false
+  const text = String(value).toLowerCase()
+  return /(\d+\s*%|\bstay\b|\bpay\b|\bdiscount\b|\boff\b|\bfree\b|\bupgrade\b|\bnight\b)/i.test(
+    text,
+  )
+}
+
+const isMeaningfulPromotionText = (value) => {
+  if (!value) return false
+  if (isGenericPromotionLabel(value)) return false
+  if (isPromotionDisclaimerText(value)) return false
+  return hasPromotionDetailSignal(value)
+}
+
 const extractPromotionLines = (notes) => {
   if (!notes) return []
   const lines = stripHtml(notes)
@@ -54,7 +86,10 @@ const extractPromotionLines = (notes) => {
   lines.forEach((line) => {
     const match = line.match(/^promotion\s*[:\-]\s*(.+)$/i)
     if (match && match[1]) {
-      promos.push(match[1].trim())
+      const label = match[1].trim()
+      if (isMeaningfulPromotionText(label)) {
+        promos.push(label)
+      }
     }
   })
   return promos
@@ -427,6 +462,8 @@ const summarizeSpecials = (specials) => {
     })
     .filter((label) => {
       if (!label) return false
+      if (isGenericPromotionLabel(label)) return false
+      if (isPromotionDisclaimerText(label)) return false
       const key = label.toLowerCase()
       if (seen.has(key)) return false
       seen.add(key)
