@@ -546,7 +546,7 @@ export const searchHotels = async (req, res, next) => {
       resolvedSearchMode === "hotelids" &&
       !hotelName
 
-    if (clientIsMobile && canUseFullCache && process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true") {
+    if (canUseFullCache && process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true") {
       const buildFullCachePayload = async () => {
         const allHotelIds = await fetchAllHotelIdsByCity(resolvedCityCode, {})
         if (!allHotelIds.length) return null
