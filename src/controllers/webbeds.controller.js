@@ -1821,6 +1821,16 @@ const WEBBEDS_IMAGE_HOSTS = new Set([
   "static-images.webbeds.com",
   "us.dotwconnect.com",
 ])
+const WEBBEDS_IMAGE_FETCH_TIMEOUT_MS = clampNumber(
+  Number(process.env.WEBBEDS_IMAGE_FETCH_TIMEOUT_MS) || 12000,
+  2000,
+  30000,
+)
+const WEBBEDS_IMAGE_FETCH_RETRIES = clampNumber(
+  Number(process.env.WEBBEDS_IMAGE_FETCH_RETRIES) || 1,
+  0,
+  2,
+)
 
 const clampInt = (value, min, max) => {
   const parsed = Number(value)
@@ -1847,6 +1857,41 @@ const inferFormatFromContentType = (contentType = "") => {
   return null
 }
 
+const isRetryableImageFetchError = (error) => {
+  const code = String(error?.code || "").toUpperCase()
+  const message = String(error?.message || "").toLowerCase()
+  if (error?.name === "AbortError") return true
+  if (["ETIMEDOUT", "ECONNRESET", "ECONNABORTED", "UND_ERR_CONNECT_TIMEOUT"].includes(code)) return true
+  return message.includes("fetch failed") || message.includes("network") || message.includes("timeout")
+}
+
+const fetchImageWithTimeoutAndRetry = async (url) => {
+  let lastError = null
+  for (let attempt = 0; attempt <= WEBBEDS_IMAGE_FETCH_RETRIES; attempt += 1) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), WEBBEDS_IMAGE_FETCH_TIMEOUT_MS)
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        redirect: "follow",
+      })
+      if (response.ok) return response
+      if (response.status >= 500 && attempt < WEBBEDS_IMAGE_FETCH_RETRIES) {
+        continue
+      }
+      return response
+    } catch (error) {
+      lastError = error
+      if (!isRetryableImageFetchError(error) || attempt >= WEBBEDS_IMAGE_FETCH_RETRIES) {
+        throw error
+      }
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  throw lastError || new Error("Image fetch failed")
+}
+
 export const proxyWebbedsImage = async (req, res) => {
   try {
     const rawUrl = String(req.query?.url || "").trim()
@@ -1865,7 +1910,7 @@ export const proxyWebbedsImage = async (req, res) => {
       return res.status(403).json({ error: "Host not allowed" })
     }
 
-    const response = await fetch(parsed.toString())
+    const response = await fetchImageWithTimeoutAndRetry(parsed.toString())
     if (!response.ok) {
       return res.status(response.status).end()
     }
@@ -1951,7 +1996,21 @@ export const proxyWebbedsImage = async (req, res) => {
     await pipeline(sourceStream, transformer, res)
     return
   } catch (error) {
+    const errorCode = String(error?.code || "")
+    if (errorCode === "ERR_STREAM_PREMATURE_CLOSE") {
+      // Client/upstream stream closed before completion; do not escalate noisy logs.
+      if (!res.headersSent && !res.writableEnded && !res.destroyed) {
+        return res.status(502).json({ error: "Image stream interrupted" })
+      }
+      return
+    }
+    if (res.writableEnded || res.destroyed) {
+      return
+    }
     console.error("[webbeds] image proxy failed", error)
-    return res.status(500).json({ error: "Image proxy failed" })
+    if (!res.headersSent) {
+      return res.status(500).json({ error: "Image proxy failed" })
+    }
+    return
   }
 }
