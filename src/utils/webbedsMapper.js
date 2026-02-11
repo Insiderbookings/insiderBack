@@ -99,6 +99,7 @@ const extractGeoLocations = (geoPayload) => {
 export const formatStaticHotel = (hotel, options = {}) => {
   if (!hotel) return null;
   const plain = hotel.get ? hotel.get({ plain: true }) : hotel;
+  const compact = Boolean(options?.compact);
   const coverImage = pickCoverImage(plain.images);
   const shortDescription = extractShortDescription(plain.descriptions);
   const imageLimitRaw = options?.imageLimit;
@@ -138,10 +139,10 @@ export const formatStaticHotel = (hotel, options = {}) => {
       plain.address ??
       [plain.city_name, plain.country_name].filter(Boolean).join(", "),
     zipCode: plain.zip_code ?? null,
-    fullAddress: plain.full_address ?? null,
+    fullAddress: compact ? null : plain.full_address ?? null,
     geoPoint:
       plain.lat != null && plain.lng != null ? { lat: Number(plain.lat), lng: Number(plain.lng) } : null,
-    geoLocations,
+    geoLocations: compact ? [] : geoLocations,
     priority: plain.priority,
     preferred: Boolean(plain.preferred),
     exclusive: Boolean(plain.exclusive),
@@ -157,7 +158,7 @@ export const formatStaticHotel = (hotel, options = {}) => {
       builtYear: plain.built_year ?? null,
       renovationYear: plain.renovation_year ?? null,
     },
-    locations: extraLocations,
+    locations: compact ? [] : extraLocations,
     chain: plain.chainCatalog
       ? { code: String(plain.chainCatalog.code), name: plain.chainCatalog.name }
       : plain.chain
@@ -171,17 +172,17 @@ export const formatStaticHotel = (hotel, options = {}) => {
     coverImage,
     lat: plain.lat ? Number(plain.lat) : null,
     lng: plain.lng ? Number(plain.lng) : null,
-    images: allImages,
-    amenities: allAmenities, // Now returns full list of objects {name, category}
-    leisure: amenitiesLeisure.map(a => a.name), // Keep backward compat
-    business: amenitiesBusiness.map(a => a.name), // Keep backward compat
-    transportation: transportationList,
-    descriptions: plain.descriptions ?? null,
+    images: compact ? allImages.slice(0, 1) : allImages,
+    amenities: compact ? [] : allAmenities, // Now returns full list of objects {name, category}
+    leisure: compact ? [] : amenitiesLeisure.map(a => a.name), // Keep backward compat
+    business: compact ? [] : amenitiesBusiness.map(a => a.name), // Keep backward compat
+    transportation: compact ? [] : transportationList,
+    descriptions: compact ? null : plain.descriptions ?? null,
     shortDescription,
-    roomTypes: roomTypesRaw,
+    roomTypes: compact ? [] : roomTypesRaw,
     metadata: {
-      hasLeisure: amenitiesLeisure.length > 0,
-      hasBusiness: amenitiesBusiness.length > 0,
+      hasLeisure: compact ? false : amenitiesLeisure.length > 0,
+      hasBusiness: compact ? false : amenitiesBusiness.length > 0,
       rawPriority: plain.priority ?? null,
     },
   };

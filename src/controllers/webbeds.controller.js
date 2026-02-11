@@ -10,6 +10,7 @@ import { buildBookingEmailPayload } from "../helpers/bookingEmailPayload.js"
 import { triggerBookingAutoPrompts, PROMPT_TRIGGERS } from "../services/chat.service.js"
 import { dispatchBookingConfirmation } from "./payment.controller.js"
 import { convertCurrency } from "../services/currency.service.js"
+import sharp from "sharp"
 
 import { Readable } from "stream"
 import { pipeline } from "stream/promises"
@@ -1816,7 +1817,35 @@ export const listSalutationsCatalog = async (req, res, next) => {
   }
 }
 
-const WEBBEDS_IMAGE_HOSTS = new Set(["static-images.webbeds.com"])
+const WEBBEDS_IMAGE_HOSTS = new Set([
+  "static-images.webbeds.com",
+  "us.dotwconnect.com",
+])
+
+const clampInt = (value, min, max) => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return null
+  const rounded = Math.round(parsed)
+  if (rounded < min || rounded > max) return null
+  return rounded
+}
+
+const normalizeImageFormat = (value) => {
+  if (!value) return null
+  const normalized = String(value).trim().toLowerCase()
+  if (normalized === "jpg") return "jpeg"
+  if (["jpeg", "png", "webp", "avif"].includes(normalized)) return normalized
+  return null
+}
+
+const inferFormatFromContentType = (contentType = "") => {
+  const lower = String(contentType || "").toLowerCase()
+  if (lower.includes("image/jpeg") || lower.includes("image/jpg")) return "jpeg"
+  if (lower.includes("image/png")) return "png"
+  if (lower.includes("image/webp")) return "webp"
+  if (lower.includes("image/avif")) return "avif"
+  return null
+}
 
 export const proxyWebbedsImage = async (req, res) => {
   try {
@@ -1841,17 +1870,86 @@ export const proxyWebbedsImage = async (req, res) => {
       return res.status(response.status).end()
     }
 
-    const contentType = response.headers.get("content-type")
-    if (contentType) {
-      res.setHeader("Content-Type", contentType)
+    const width = clampInt(req.query?.w, 64, 2400)
+    const height = clampInt(req.query?.h, 64, 2400)
+    const quality = clampInt(req.query?.q, 35, 90)
+    const requestedFormat = normalizeImageFormat(req.query?.format ?? req.query?.fmt)
+    const contentType = response.headers.get("content-type") || ""
+    const inputFormat = inferFormatFromContentType(contentType)
+    const outputFormat = requestedFormat ?? inputFormat
+    const targetFormat = outputFormat || "jpeg"
+    const shouldTransform =
+      width != null ||
+      height != null ||
+      quality != null ||
+      requestedFormat != null
+
+    if (!shouldTransform) {
+      if (contentType) {
+        res.setHeader("Content-Type", contentType)
+      }
+      res.setHeader("Cache-Control", "public, max-age=86400")
+
+      if (!response.body) {
+        return res.status(502).json({ error: "Empty image response" })
+      }
+
+      await pipeline(Readable.fromWeb(response.body), res)
+      return
     }
-    res.setHeader("Cache-Control", "public, max-age=86400")
 
     if (!response.body) {
       return res.status(502).json({ error: "Empty image response" })
     }
 
-    await pipeline(Readable.fromWeb(response.body), res)
+    const sourceStream = Readable.fromWeb(response.body)
+    let transformer = sharp({
+      failOn: "none",
+      sequentialRead: true,
+      limitInputPixels: 6000 * 6000,
+    })
+
+    if (width != null || height != null) {
+      transformer = transformer.resize({
+        width: width ?? undefined,
+        height: height ?? undefined,
+        fit: "cover",
+        withoutEnlargement: true,
+      })
+    }
+
+    if (targetFormat === "webp") {
+      transformer = transformer.webp({
+        quality: quality ?? 70,
+        effort: 4,
+      })
+    } else if (targetFormat === "avif") {
+      transformer = transformer.avif({
+        quality: quality ?? 52,
+        effort: 4,
+      })
+    } else if (targetFormat === "jpeg") {
+      transformer = transformer.jpeg({
+        quality: quality ?? 74,
+        mozjpeg: true,
+      })
+    } else if (targetFormat === "png") {
+      transformer = transformer.png({
+        quality: quality ?? 80,
+        compressionLevel: 9,
+      })
+    } else if (quality != null) {
+      transformer = transformer.jpeg({
+        quality,
+        mozjpeg: true,
+      })
+    }
+
+    const resolvedFormat = targetFormat
+    res.setHeader("Content-Type", `image/${resolvedFormat}`)
+    res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800")
+    await pipeline(sourceStream, transformer, res)
+    return
   } catch (error) {
     console.error("[webbeds] image proxy failed", error)
     return res.status(500).json({ error: "Image proxy failed" })

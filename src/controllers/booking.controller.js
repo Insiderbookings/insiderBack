@@ -161,10 +161,34 @@ const sanitizeStringArray = (values, limit = 20, max = 120) => {
     .slice(0, limit)
 }
 
+const isGenericPromotionLabel = (value) => {
+  if (!value) return false
+  const text = String(value).trim().toLowerCase()
+  if (!text) return false
+  if (/[0-9]/.test(text) || text.includes("%")) return false
+  return text === "promotional rate" || text === "promotion" || text === "promotional"
+}
+
 const resolveSpecialLabels = (rate) => {
-  if (Array.isArray(rate?.specials) && rate.specials.length) {
-    return rate.specials
-  }
+  const directSpecials = Array.isArray(rate?.specials) ? rate.specials : []
+  const fromDirect = directSpecials
+    .map((entry) => {
+      if (!entry) return null
+      if (typeof entry === "string") return entry
+      return (
+        entry?.label ??
+        entry?.specialName ??
+        entry?.name ??
+        entry?.description ??
+        entry?.notes ??
+        entry?.type ??
+        null
+      )
+    })
+    .filter(Boolean)
+    .filter((label) => !isGenericPromotionLabel(label))
+  if (fromDirect.length) return fromDirect
+
   if (!Array.isArray(rate?.appliedSpecials)) return []
   return rate.appliedSpecials
     .map((entry) => {
@@ -181,6 +205,7 @@ const resolveSpecialLabels = (rate) => {
       )
     })
     .filter(Boolean)
+    .filter((label) => !isGenericPromotionLabel(label))
 }
 
 const sanitizeConfirmationSnapshot = (raw = {}) => {

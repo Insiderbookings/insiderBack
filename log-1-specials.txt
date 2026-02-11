@@ -1,0 +1,1782 @@
+# DOTW Certification Flow Log
+
+Generated: 2026-02-11T17:15:34.328Z
+Flow ID: 1f172510-44f1-4c8f-ac95-ceabcba1ebbd
+User: host01@seed.local
+Source: http://localhost:3006
+
+## Flow Summary
+```json
+{
+  "id": "1f172510-44f1-4c8f-ac95-ceabcba1ebbd",
+  "status": "STARTED",
+  "statusReason": null,
+  "searchContext": {
+    "rooms": [
+      {
+        "adults": 1,
+        "children": []
+      }
+    ],
+    "toDate": "2026-02-13",
+    "hotelId": "43114",
+    "cityCode": null,
+    "currency": "520",
+    "fromDate": "2026-02-12",
+    "rateBasis": "-1",
+    "passengerNationality": "90",
+    "passengerCountryOfResidence": "107"
+  },
+  "selectedOffer": null,
+  "allocationCurrent": null,
+  "pricingSnapshotPriced": null,
+  "pricingSnapshotPreauth": null,
+  "pricingSnapshotConfirmed": null
+}
+```
+
+## Steps
+Total steps: 1
+
+### Step 01: GETROOMS (getrooms)
+
+#### Step Record
+```json
+{
+  "id": "7cdf1ce3-2b5f-48e7-9b9f-c931a276e1d3",
+  "step": "GETROOMS",
+  "command": "getrooms",
+  "tid": "1770829168100002",
+  "success": true,
+  "errorClass": null,
+  "errorCode": null,
+  "allocationIn": null,
+  "allocationOut": null,
+  "bookingCodeOut": null,
+  "serviceRefOut": null,
+  "orderCodeOut": null,
+  "authorisationOut": null,
+  "withinCancellationDeadline": null,
+  "pricesOut": {
+    "offersCount": 27
+  },
+  "createdAt": "2026-02-11T16:59:29.611Z",
+  "specialsStats": {
+    "tags": 8,
+    "nonZeroTags": 0,
+    "maxCount": 0
+  }
+}
+```
+
+#### DOTW Request XML
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<customer>
+  <username>InsiderBookings</username>
+  <password>***redacted***</password>
+  <id>2266975</id>
+  <source>1</source>
+  <product>hotel</product>
+  <request command="getrooms">
+    <bookingDetails>
+      <fromDate>2026-02-12</fromDate>
+      <toDate>2026-02-13</toDate>
+      <currency>520</currency>
+      <rooms no="1">
+        <room runno="0">
+          <adultsCode>1</adultsCode>
+          <children no="0"/>
+          <rateBasis>-1</rateBasis>
+          <passengerNationality>90</passengerNationality>
+          <passengerCountryOfResidence>107</passengerCountryOfResidence>
+        </room>
+      </rooms>
+      <productId>43114</productId>
+    </bookingDetails>
+  </request>
+</customer>
+```
+
+#### DOTW Response XML
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<result command="getrooms" tID="1770829168100002" ip="186.143.135.9" date="2026-02-11 16:59:28" version="4.0" elapsedTime="0.48588705062866">
+  <currencyShort>USD</currencyShort>
+  <hotel id="43114" name="Kempinski Hotel Mall of the Emirates">
+    <allowBook>yes</allowBook>
+    <rooms count="1">
+      <room runno="0" count="8" adults="1" children="0" childrenages="" extrabeds="0">
+        <roomType runno="0" roomtypecode="177329">
+          <name>SUPERIOR ROOM</name>
+          <twin>no</twin>
+          <roomInfo>
+            <maxOccupancy>3</maxOccupancy>
+            <maxAdultWithChildren>2</maxAdultWithChildren>
+            <minChildAge>0</minChildAge>
+            <maxChildAge>11</maxChildAge>
+            <maxAdult>2</maxAdult>
+            <maxExtraBed>0</maxExtraBed>
+            <maxChildren>1</maxChildren>
+          </roomInfo>
+          <specials count="0"></specials>
+          <rateBases count="4">
+            <rateBasis runno="0" id="0" description="Room Only">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B4</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>390.2674<formatted>390.27</formatted></amendCharge>
+                  <cancelCharge>390.2674<formatted>390.27</formatted></cancelCharge>
+                  <charge>390.2674<formatted>390.27</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>390.2674<formatted>390.27</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>390.2674<formatted>390.27</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>390.2674<formatted>390.27</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="0"></including>
+                </date>
+              </dates>
+              <leftToSell>9995</leftToSell>
+            </rateBasis>
+            <rateBasis runno="1" id="1331" description="Breakfast">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B5</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>418.5477<formatted>418.55</formatted></amendCharge>
+                  <cancelCharge>418.5477<formatted>418.55</formatted></cancelCharge>
+                  <charge>418.5477<formatted>418.55</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>418.5477<formatted>418.55</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>418.5477<formatted>418.55</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>418.5477<formatted>418.55</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Buffet</mealName>
+                      <mealType code="1331">Breakfast</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9995</leftToSell>
+            </rateBasis>
+            <rateBasis runno="2" id="1334" description="Half Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B6</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>470.8662<formatted>470.87</formatted></amendCharge>
+                  <cancelCharge>470.8662<formatted>470.87</formatted></cancelCharge>
+                  <charge>470.8662<formatted>470.87</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>470.8662<formatted>470.87</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>470.8662<formatted>470.87</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>470.8662<formatted>470.87</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Breakfast + Dinner</mealName>
+                      <mealType code="1334">Half Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9995</leftToSell>
+            </rateBasis>
+            <rateBasis runno="3" id="1335" description="Full Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B7</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>523.1846<formatted>523.18</formatted></amendCharge>
+                  <cancelCharge>523.1846<formatted>523.18</formatted></cancelCharge>
+                  <charge>523.1846<formatted>523.18</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>523.1846<formatted>523.18</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>523.1846<formatted>523.18</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>523.1846<formatted>523.18</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Full Board</mealName>
+                      <mealType code="1335">Full Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9995</leftToSell>
+            </rateBasis>
+          </rateBases>
+        </roomType>
+        <roomType runno="1" roomtypecode="80114">
+          <name>DELUXE ROOM</name>
+          <twin>no</twin>
+          <roomInfo>
+            <maxOccupancy>3</maxOccupancy>
+            <maxAdultWithChildren>2</maxAdultWithChildren>
+            <minChildAge>0</minChildAge>
+            <maxChildAge>11</maxChildAge>
+            <maxAdult>2</maxAdult>
+            <maxExtraBed>0</maxExtraBed>
+            <maxChildren>1</maxChildren>
+          </roomInfo>
+          <specials count="0"></specials>
+          <rateBases count="4">
+            <rateBasis runno="0" id="0" description="Room Only">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B0</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>415.7197<formatted>415.72</formatted></amendCharge>
+                  <cancelCharge>415.7197<formatted>415.72</formatted></cancelCharge>
+                  <charge>415.7197<formatted>415.72</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>415.7197<formatted>415.72</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>415.7197<formatted>415.72</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>415.7197<formatted>415.72</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="0"></including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+            <rateBasis runno="1" id="1331" description="Breakfast">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B1</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>449.656<formatted>449.66</formatted></amendCharge>
+                  <cancelCharge>449.656<formatted>449.66</formatted></cancelCharge>
+                  <charge>449.656<formatted>449.66</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>449.656<formatted>449.66</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>449.656<formatted>449.66</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>449.656<formatted>449.66</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Buffet</mealName>
+                      <mealType code="1331">Breakfast</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+            <rateBasis runno="2" id="1334" description="Half Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B2</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>501.9744<formatted>501.97</formatted></amendCharge>
+                  <cancelCharge>501.9744<formatted>501.97</formatted></cancelCharge>
+                  <charge>501.9744<formatted>501.97</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>501.9744<formatted>501.97</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>501.9744<formatted>501.97</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>501.9744<formatted>501.97</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Breakfast + Dinner</mealName>
+                      <mealType code="1334">Half Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+            <rateBasis runno="3" id="1335" description="Full Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B3</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>554.2929<formatted>554.29</formatted></amendCharge>
+                  <cancelCharge>554.2929<formatted>554.29</formatted></cancelCharge>
+                  <charge>554.2929<formatted>554.29</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>554.2929<formatted>554.29</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>554.2929<formatted>554.29</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>554.2929<formatted>554.29</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Full Board</mealName>
+                      <mealType code="1335">Full Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+          </rateBases>
+        </roomType>
+        <roomType runno="2" roomtypecode="34037495">
+          <name>GRAND DELUXE ROOM</name>
+          <twin>no</twin>
+          <roomInfo>
+            <maxOccupancy>4</maxOccupancy>
+            <maxAdultWithChildren>3</maxAdultWithChildren>
+            <minChildAge>0</minChildAge>
+            <maxChildAge>11</maxChildAge>
+            <maxAdult>3</maxAdult>
+            <maxExtraBed>1</maxExtraBed>
+            <maxChildren>2</maxChildren>
+          </roomInfo>
+          <specials count="0"></specials>
+          <rateBases count="4">
+            <rateBasis runno="0" id="0" description="Room Only">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B8</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>441.1719<formatted>441.17</formatted></amendCharge>
+                  <cancelCharge>441.1719<formatted>441.17</formatted></cancelCharge>
+                  <charge>441.1719<formatted>441.17</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>441.1719<formatted>441.17</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>441.1719<formatted>441.17</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>441.1719<formatted>441.17</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="0"></including>
+                </date>
+              </dates>
+              <leftToSell>9998</leftToSell>
+            </rateBasis>
+            <rateBasis runno="1" id="1331" description="Breakfast">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B9</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>475.1082<formatted>475.11</formatted></amendCharge>
+                  <cancelCharge>475.1082<formatted>475.11</formatted></cancelCharge>
+                  <charge>475.1082<formatted>475.11</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>475.1082<formatted>475.11</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>475.1082<formatted>475.11</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>475.1082<formatted>475.11</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Buffet</mealName>
+                      <mealType code="1331">Breakfast</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9998</leftToSell>
+            </rateBasis>
+            <rateBasis runno="2" id="1334" description="Half Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B10</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>527.4267<formatted>527.43</formatted></amendCharge>
+                  <cancelCharge>527.4267<formatted>527.43</formatted></cancelCharge>
+                  <charge>527.4267<formatted>527.43</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>527.4267<formatted>527.43</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>527.4267<formatted>527.43</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>527.4267<formatted>527.43</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Breakfast + Dinner</mealName>
+                      <mealType code="1334">Half Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9998</leftToSell>
+            </rateBasis>
+            <rateBasis runno="3" id="1335" description="Full Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B11</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>579.7451<formatted>579.75</formatted></amendCharge>
+                  <cancelCharge>579.7451<formatted>579.75</formatted></cancelCharge>
+                  <charge>579.7451<formatted>579.75</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>579.7451<formatted>579.75</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>579.7451<formatted>579.75</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>579.7451<formatted>579.75</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Full Board</mealName>
+                      <mealType code="1335">Full Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9998</leftToSell>
+            </rateBasis>
+          </rateBases>
+        </roomType>
+        <roomType runno="3" roomtypecode="73313335">
+          <name>EXECUTIVE GRAND DELUXE ROOM</name>
+          <twin>no</twin>
+          <roomInfo>
+            <maxOccupancy>4</maxOccupancy>
+            <maxAdultWithChildren>3</maxAdultWithChildren>
+            <minChildAge>0</minChildAge>
+            <maxChildAge>11</maxChildAge>
+            <maxAdult>3</maxAdult>
+            <maxExtraBed>1</maxExtraBed>
+            <maxChildren>2</maxChildren>
+          </roomInfo>
+          <specials count="0"></specials>
+          <rateBases count="3">
+            <rateBasis runno="0" id="1331" description="Breakfast">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B21</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>545.8088<formatted>545.81</formatted></amendCharge>
+                  <cancelCharge>545.8088<formatted>545.81</formatted></cancelCharge>
+                  <charge>545.8088<formatted>545.81</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>545.8088<formatted>545.81</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>545.8088<formatted>545.81</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>545.8088<formatted>545.81</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Buffet</mealName>
+                      <mealType code="1331">Breakfast</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9996</leftToSell>
+            </rateBasis>
+            <rateBasis runno="1" id="1334" description="Half Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B22</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>598.1273<formatted>598.13</formatted></amendCharge>
+                  <cancelCharge>598.1273<formatted>598.13</formatted></cancelCharge>
+                  <charge>598.1273<formatted>598.13</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>598.1273<formatted>598.13</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>598.1273<formatted>598.13</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>598.1273<formatted>598.13</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Breakfast + Dinner</mealName>
+                      <mealType code="1334">Half Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9996</leftToSell>
+            </rateBasis>
+            <rateBasis runno="2" id="1335" description="Full Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B23</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>650.4457<formatted>650.45</formatted></amendCharge>
+                  <cancelCharge>650.4457<formatted>650.45</formatted></cancelCharge>
+                  <charge>650.4457<formatted>650.45</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>650.4457<formatted>650.45</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>650.4457<formatted>650.45</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>650.4457<formatted>650.45</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Full Board</mealName>
+                      <mealType code="1335">Full Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9996</leftToSell>
+            </rateBasis>
+          </rateBases>
+        </roomType>
+        <roomType runno="4" roomtypecode="20337945">
+          <name>ASPEN POOL CHALET WITH 2 SKI DUBAI TICKET PER STAY AND EXCUTIVE LOUNGE ACCESS</name>
+          <twin>no</twin>
+          <roomInfo>
+            <maxOccupancy>3</maxOccupancy>
+            <maxAdultWithChildren>2</maxAdultWithChildren>
+            <minChildAge>0</minChildAge>
+            <maxChildAge>11</maxChildAge>
+            <maxAdult>2</maxAdult>
+            <maxExtraBed>0</maxExtraBed>
+            <maxChildren>2</maxChildren>
+          </roomInfo>
+          <specials count="0"></specials>
+          <rateBases count="3">
+            <rateBasis runno="0" id="1331" description="Breakfast">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B12</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>1066.1654<formatted>1,066.17</formatted></amendCharge>
+                  <cancelCharge>1066.1654<formatted>1,066.17</formatted></cancelCharge>
+                  <charge>1066.1654<formatted>1,066.17</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>1066.1654<formatted>1,066.17</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>1066.1654<formatted>1,066.17</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>1066.1654<formatted>1,066.17</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Buffet</mealName>
+                      <mealType code="1331">Breakfast</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+            <rateBasis runno="1" id="1334" description="Half Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B13</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>1118.4839<formatted>1,118.48</formatted></amendCharge>
+                  <cancelCharge>1118.4839<formatted>1,118.48</formatted></cancelCharge>
+                  <charge>1118.4839<formatted>1,118.48</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>1118.4839<formatted>1,118.48</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>1118.4839<formatted>1,118.48</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>1118.4839<formatted>1,118.48</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Breakfast + Dinner</mealName>
+                      <mealType code="1334">Half Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+            <rateBasis runno="2" id="1335" description="Full Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B14</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>1170.8023<formatted>1,170.80</formatted></amendCharge>
+                  <cancelCharge>1170.8023<formatted>1,170.80</formatted></cancelCharge>
+                  <charge>1170.8023<formatted>1,170.80</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>1170.8023<formatted>1,170.80</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>1170.8023<formatted>1,170.80</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>1170.8023<formatted>1,170.80</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Full Board</mealName>
+                      <mealType code="1335">Full Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+          </rateBases>
+        </roomType>
+        <roomType runno="5" roomtypecode="20337955">
+          <name>ASPEN SKI CHALET 1 BR WITH 2 SKI DUBAI TICKET PER STAY AND EXCUTIVE LOUNGE ACCES</name>
+          <twin>no</twin>
+          <roomInfo>
+            <maxOccupancy>3</maxOccupancy>
+            <maxAdultWithChildren>2</maxAdultWithChildren>
+            <minChildAge>0</minChildAge>
+            <maxChildAge>11</maxChildAge>
+            <maxAdult>2</maxAdult>
+            <maxExtraBed>0</maxExtraBed>
+            <maxChildren>1</maxChildren>
+          </roomInfo>
+          <specials count="0"></specials>
+          <rateBases count="3">
+            <rateBasis runno="0" id="1331" description="Breakfast">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B15</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>1091.6176<formatted>1,091.62</formatted></amendCharge>
+                  <cancelCharge>1091.6176<formatted>1,091.62</formatted></cancelCharge>
+                  <charge>1091.6176<formatted>1,091.62</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>1091.6176<formatted>1,091.62</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>1091.6176<formatted>1,091.62</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>1091.6176<formatted>1,091.62</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Buffet</mealName>
+                      <mealType code="1331">Breakfast</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+            <rateBasis runno="1" id="1334" description="Half Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B16</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>1143.9361<formatted>1,143.94</formatted></amendCharge>
+                  <cancelCharge>1143.9361<formatted>1,143.94</formatted></cancelCharge>
+                  <charge>1143.9361<formatted>1,143.94</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>1143.9361<formatted>1,143.94</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>1143.9361<formatted>1,143.94</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>1143.9361<formatted>1,143.94</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Breakfast + Dinner</mealName>
+                      <mealType code="1334">Half Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+            <rateBasis runno="2" id="1335" description="Full Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B17</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>1196.2546<formatted>1,196.25</formatted></amendCharge>
+                  <cancelCharge>1196.2546<formatted>1,196.25</formatted></cancelCharge>
+                  <charge>1196.2546<formatted>1,196.25</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>1196.2546<formatted>1,196.25</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <total>1196.2546<formatted>1,196.25</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>1196.2546<formatted>1,196.25</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Full Board</mealName>
+                      <mealType code="1335">Full Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+          </rateBases>
+        </roomType>
+        <roomType runno="6" roomtypecode="20337965">
+          <name>DUPLEX ASPEN SKI CHALET.WITH 2 SKI DUBAI TICKET PER STAY AND EXCUTIVE LOUNGE ACC</name>
+          <twin>no</twin>
+          <roomInfo>
+            <maxOccupancy>4</maxOccupancy>
+            <maxAdultWithChildren>3</maxAdultWithChildren>
+            <minChildAge>0</minChildAge>
+            <maxChildAge>11</maxChildAge>
+            <maxAdult>3</maxAdult>
+            <maxExtraBed>1</maxExtraBed>
+            <maxChildren>2</maxChildren>
+          </roomInfo>
+          <specials count="0"></specials>
+          <rateBases count="3">
+            <rateBasis runno="0" id="1331" description="Breakfast">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B18</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>1298.0635<formatted>1,298.06</formatted></amendCharge>
+                  <cancelCharge>1298.0635<formatted>1,298.06</formatted></cancelCharge>
+                  <charge>1298.0635<formatted>1,298.06</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>1298.0635<formatted>1,298.06</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>1298.0635<formatted>1,298.06</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>1298.0635<formatted>1,298.06</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Buffet</mealName>
+                      <mealType code="1331">Breakfast</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+            <rateBasis runno="1" id="1334" description="Half Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B19</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>1350.3819<formatted>1,350.38</formatted></amendCharge>
+                  <cancelCharge>1350.3819<formatted>1,350.38</formatted></cancelCharge>
+                  <charge>1350.3819<formatted>1,350.38</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>1350.3819<formatted>1,350.38</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>1350.3819<formatted>1,350.38</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>1350.3819<formatted>1,350.38</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Breakfast + Dinner</mealName>
+                      <mealType code="1334">Half Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+            <rateBasis runno="2" id="1335" description="Full Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B20</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>1402.7004<formatted>1,402.70</formatted></amendCharge>
+                  <cancelCharge>1402.7004<formatted>1,402.70</formatted></cancelCharge>
+                  <charge>1402.7004<formatted>1,402.70</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>1402.7004<formatted>1,402.70</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>1402.7004<formatted>1,402.70</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>1402.7004<formatted>1,402.70</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Full Board</mealName>
+                      <mealType code="1335">Full Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+          </rateBases>
+        </roomType>
+        <roomType runno="7" roomtypecode="1066363055">
+          <name>DIPLOMATIC SUITE</name>
+          <twin>no</twin>
+          <roomInfo>
+            <maxOccupancy>4</maxOccupancy>
+            <maxAdultWithChildren>3</maxAdultWithChildren>
+            <minChildAge>0</minChildAge>
+            <maxChildAge>11</maxChildAge>
+            <maxAdult>3</maxAdult>
+            <maxExtraBed>1</maxExtraBed>
+            <maxChildren>2</maxChildren>
+          </roomInfo>
+          <specials count="0"></specials>
+          <rateBases count="3">
+            <rateBasis runno="0" id="1331" description="Breakfast">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B24</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>3110.5447<formatted>3,110.54</formatted></amendCharge>
+                  <cancelCharge>3110.5447<formatted>3,110.54</formatted></cancelCharge>
+                  <charge>3110.5447<formatted>3,110.54</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>3110.5447<formatted>3,110.54</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>3110.5447<formatted>3,110.54</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>3110.5447<formatted>3,110.54</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Buffet</mealName>
+                      <mealType code="1331">Breakfast</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+            <rateBasis runno="1" id="1334" description="Half Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B25</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>3162.8631<formatted>3,162.86</formatted></amendCharge>
+                  <cancelCharge>3162.8631<formatted>3,162.86</formatted></cancelCharge>
+                  <charge>3162.8631<formatted>3,162.86</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>3162.8631<formatted>3,162.86</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>3162.8631<formatted>3,162.86</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>3162.8631<formatted>3,162.86</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Breakfast + Dinner</mealName>
+                      <mealType code="1334">Half Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+            <rateBasis runno="2" id="1335" description="Full Board">
+              <status>unchecked</status>
+              <passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking>
+              <rateType currencyid="520" currencyshort="USD" description="XML">1</rateType>
+              <allowsExtraMeals>true</allowsExtraMeals>
+              <allowsSpecialRequests>true</allowsSpecialRequests>
+              <allowsBeddingPreference>true</allowsBeddingPreference>
+              <allocationDetails>1770829168000006B1000B26</allocationDetails>
+              <minStay></minStay>
+              <dateApplyMinStay></dateApplyMinStay>
+              <cancellationRules count="2">
+                <rule runno="0">
+                  <fromDate>2026-02-06 06:00:00</fromDate>
+                  <fromDateDetails>Fri, 06 Feb 2026 06:00:00</fromDateDetails>
+                  <amendCharge>3215.1816<formatted>3,215.18</formatted></amendCharge>
+                  <cancelCharge>3215.1816<formatted>3,215.18</formatted></cancelCharge>
+                  <charge>3215.1816<formatted>3,215.18</formatted></charge>
+                </rule>
+                <rule runno="1">
+                  <fromDate>2026-02-12 15:00:00</fromDate>
+                  <fromDateDetails>Thu, 12 Feb 2026 15:00:00</fromDateDetails>
+                  <noShowPolicy>true</noShowPolicy>
+                  <charge>3215.1816<formatted>3,215.18</formatted></charge>
+                </rule>
+              </cancellationRules>
+              <withinCancellationDeadline>yes</withinCancellationDeadline>
+              <tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+Compulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward
+Booking including children will be based on sharing parents bedding, no separate bed for children is provided unless stated. Early departure- 100% charge. Name change will be considered new booking &amp; will be subject to availability.
+
+
+Existing reservation cannot be cancelled and rebooked under lower promotion.
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please be advised that the outlets will be closing for renovations Olean and Mosaic : Pool. Starting February 28 with the venues scheduled to reopen in May this year.
+This hotel charges according to residency; therefore, if you hold residency in the hotels country of destination, please enter your country of residency as your nationality]]></tariffNotes>
+              <isBookable>yes</isBookable>
+              <onRequest>0</onRequest>
+              <extraBedOnRequest>0</extraBedOnRequest>
+              <total>3215.1816<formatted>3,215.18</formatted></total>
+              <dates count="1">
+                <date runno="0" datetime="2026-02-12" day="Feb, 12 2026" wday="Thursday">
+                  <price>3215.1816<formatted>3,215.18</formatted></price>
+                  <freeStay>no</freeStay>
+                  <dayOnRequest>0</dayOnRequest>
+                  <including count="1">
+                    <includedMeal runno="0">
+                      <mealName>Full Board</mealName>
+                      <mealType code="1335">Full Board</mealType>
+                    </includedMeal>
+                  </including>
+                </date>
+              </dates>
+              <leftToSell>9999</leftToSell>
+            </rateBasis>
+          </rateBases>
+        </roomType>
+        <lookedForText>Room Number 1: 1 adult/s</lookedForText>
+      </room>
+    </rooms>
+    <extraMeals count="0"></extraMeals>
+  </hotel>
+  <successful>TRUE</successful>
+</result>
+```

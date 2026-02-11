@@ -21,8 +21,12 @@ export const getWebbedsConfig = (overrides = {}) => {
     WEBBEDS_HOST,
     WEBBEDS_TIMEOUT_MS,
     WEBBEDS_RETRIES,
+    WEBBEDS_RETRY_BASE_DELAY_MS,
+    WEBBEDS_RETRY_MAX_DELAY_MS,
+    WEBBEDS_IP_FAMILY,
     WEBBEDS_COMPRESS_REQUESTS,
   } = process.env
+  const parsedIpFamily = toNumberOr(WEBBEDS_IP_FAMILY, null)
 
   const config = {
     username: overrides.username ?? WEBBEDS_USERNAME,
@@ -32,6 +36,12 @@ export const getWebbedsConfig = (overrides = {}) => {
     host: overrides.host ?? WEBBEDS_HOST ?? "https://xmldev.dotwconnect.com",
     timeoutMs: overrides.timeoutMs ?? toNumberOr(WEBBEDS_TIMEOUT_MS, 30000),
     retries: overrides.retries ?? toNumberOr(WEBBEDS_RETRIES, 2),
+    retryBaseDelayMs:
+      overrides.retryBaseDelayMs ?? toNumberOr(WEBBEDS_RETRY_BASE_DELAY_MS, 400),
+    retryMaxDelayMs:
+      overrides.retryMaxDelayMs ?? toNumberOr(WEBBEDS_RETRY_MAX_DELAY_MS, 2500),
+    ipFamily:
+      overrides.ipFamily ?? ((parsedIpFamily === 4 || parsedIpFamily === 6) ? parsedIpFamily : undefined),
     preferCompressedRequests:
       overrides.preferCompressedRequests ??
       toBooleanOr(WEBBEDS_COMPRESS_REQUESTS, false),

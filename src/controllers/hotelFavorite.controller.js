@@ -24,9 +24,39 @@ const parseHotelId = (value) => {
   return trimmed;
 };
 
+const HOTEL_CARD_ATTRIBUTES = [
+  "hotel_id",
+  "name",
+  "city_code",
+  "city_name",
+  "country_code",
+  "country_name",
+  "region_name",
+  "region_code",
+  "address",
+  "zip_code",
+  "rating",
+  "priority",
+  "preferred",
+  "exclusive",
+  "chain",
+  "chain_code",
+  "classification_code",
+  "hotel_phone",
+  "hotel_check_in",
+  "hotel_check_out",
+  "min_age",
+  "lat",
+  "lng",
+  "images",
+  "full_address",
+];
+
+const HOTEL_CARD_FORMAT_OPTIONS = { compact: true, imageLimit: 1 };
+
 const mapHotelFavoriteItem = (fav) => {
   if (!fav?.hotel) return null;
-  const card = formatStaticHotel(fav.hotel);
+  const card = formatStaticHotel(fav.hotel, HOTEL_CARD_FORMAT_OPTIONS);
   if (!card) return null;
   const addedAtRaw = fav.created_at ?? fav.createdAt ?? fav.addedAt ?? null;
   const addedDate = addedAtRaw ? new Date(addedAtRaw) : new Date();
@@ -83,6 +113,7 @@ export const listHotelFavoriteLists = async (req, res) => {
             {
               model: models.WebbedsHotel,
               as: "hotel",
+              attributes: HOTEL_CARD_ATTRIBUTES,
               include: includeForHotelCard,
             },
           ],
@@ -127,6 +158,7 @@ export const listHotelFavoriteLists = async (req, res) => {
         {
           model: models.WebbedsHotel,
           as: "hotel",
+          attributes: HOTEL_CARD_ATTRIBUTES,
           include: includeForHotelCard,
         },
       ],
@@ -195,6 +227,7 @@ export const getHotelFavoriteListDetail = async (req, res) => {
         {
           model: models.WebbedsHotel,
           as: "hotel",
+          attributes: HOTEL_CARD_ATTRIBUTES,
           include: includeForHotelCard,
         },
       ],
@@ -243,6 +276,7 @@ export const getHotelRecentViews = async (req, res) => {
         {
           model: models.WebbedsHotel,
           as: "hotel",
+          attributes: HOTEL_CARD_ATTRIBUTES,
           include: includeForHotelCard,
         },
       ],
