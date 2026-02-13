@@ -60,7 +60,7 @@ const releaseHomeCalendarHold = async ({ booking, transaction }) => {
   }
 };
 
-const expirePendingHomeBookings = async () => {
+const expirePendingBookings = async () => {
   const ttlMinutes = Number(process.env.HOME_BOOKING_PENDING_TTL_MINUTES || DEFAULT_TTL_MINUTES);
   if (!Number.isFinite(ttlMinutes) || ttlMinutes <= 0) {
     console.log("[booking-cleanup] disabled: HOME_BOOKING_PENDING_TTL_MINUTES invalid");
@@ -69,13 +69,23 @@ const expirePendingHomeBookings = async () => {
 
   const limit = Number(process.env.HOME_BOOKING_PENDING_SWEEP_LIMIT || DEFAULT_LIMIT);
   const cutoff = new Date(Date.now() - ttlMinutes * 60 * 1000);
+  const today = new Date().toISOString().slice(0, 10);
 
   const bookings = await models.Booking.findAll({
     where: {
-      inventory_type: "HOME",
       status: "PENDING",
       payment_status: { [Op.in]: ["UNPAID", "PENDING"] },
-      createdAt: { [Op.lte]: cutoff },
+      [Op.or]: [
+        // HOME holds should expire quickly after creation to release calendar.
+        {
+          inventory_type: "HOME",
+          createdAt: { [Op.lte]: cutoff },
+        },
+        // Any unpaid pending booking becomes invalid after check-in date.
+        {
+          check_in: { [Op.lt]: today },
+        },
+      ],
     },
     order: [["createdAt", "ASC"]],
     limit: Number.isFinite(limit) && limit > 0 ? limit : DEFAULT_LIMIT,
@@ -94,10 +104,18 @@ const expirePendingHomeBookings = async () => {
         if (String(fresh.status || "").toUpperCase() !== "PENDING") return;
         if (String(fresh.payment_status || "").toUpperCase() === "PAID") return;
 
+        const checkInKey = String(fresh.check_in || "").slice(0, 10);
+        const checkInPassed = Boolean(checkInKey) && checkInKey < today;
+        const isHomeHoldTimeout =
+          String(fresh.inventory_type || "").toUpperCase() === "HOME" &&
+          fresh.createdAt &&
+          new Date(fresh.createdAt).getTime() <= cutoff.getTime();
+        if (!checkInPassed && !isHomeHoldTimeout) return;
+
         const meta =
           fresh.meta && typeof fresh.meta === "object" ? { ...fresh.meta } : {};
         meta.expired = {
-          reason: "payment_timeout",
+          reason: checkInPassed ? "check_in_passed_unpaid" : "payment_timeout",
           at: new Date().toISOString(),
         };
 
@@ -112,7 +130,9 @@ const expirePendingHomeBookings = async () => {
           { transaction: tx }
         );
 
-        await releaseHomeCalendarHold({ booking: fresh, transaction: tx });
+        if (String(fresh.inventory_type || "").toUpperCase() === "HOME") {
+          await releaseHomeCalendarHold({ booking: fresh, transaction: tx });
+        }
         didExpire = true;
       });
       if (didExpire) expired += 1;
@@ -139,12 +159,12 @@ export const startBookingCleanupScheduler = () => {
   });
 
   setInterval(() => {
-    expirePendingHomeBookings().catch((err) => {
+    expirePendingBookings().catch((err) => {
       console.error("[booking-cleanup] sweep error:", err?.message || err);
     });
   }, Number.isFinite(tickMs) && tickMs > 0 ? tickMs : DEFAULT_TICK_MS);
 
-  expirePendingHomeBookings().catch((err) => {
+  expirePendingBookings().catch((err) => {
     console.error("[booking-cleanup] initial sweep error:", err?.message || err);
   });
 };

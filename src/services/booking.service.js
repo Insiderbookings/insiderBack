@@ -10,6 +10,10 @@ import crypto from "crypto";
 import { getWebbedsConfig } from "../providers/webbeds/config.js";
 import { createWebbedsClient } from "../providers/webbeds/client.js";
 import { buildCancelBookingPayload, mapCancelBookingResponse } from "../providers/webbeds/cancelBooking.js";
+import {
+    buildGetBookingDetailsPayload,
+    mapGetBookingDetailsResponse,
+} from "../providers/webbeds/getBookingDetails.js";
 import { mapWebbedsError } from "../utils/webbedsErrorMapper.js";
 
 // ──────────────── Helper – count nights ───────────── */
@@ -109,6 +113,132 @@ const normalizeBookingCode = (value) => {
     return match ? match[1] : null;
 };
 
+const maskSensitiveXml = (xml) => {
+    if (!xml) return xml;
+    return String(xml).replace(/(<password>)(.*?)(<\/password>)/i, "$1***redacted***$3");
+};
+
+const debugWebbedsCancelXml = (label, error, extra = {}) => {
+    if (process.env.WEBBEDS_VERBOSE_LOGS !== "true") return;
+    console.info(`[webbeds][cancel][xml] ${label}`, {
+        code: error?.code || null,
+        details: error?.details || null,
+        ...extra,
+        requestXml: maskSensitiveXml(error?.requestXml || null),
+        responseXml: maskSensitiveXml(error?.responseXml || null),
+    });
+};
+
+const resolveWebbedsCancelTarget = async (booking) => {
+    const flowId =
+        booking?.flow_id ??
+        booking?.meta?.flowId ??
+        booking?.meta?.flow_id ??
+        booking?.pricing_snapshot?.flowId ??
+        booking?.pricing_snapshot?.flow_id ??
+        null;
+
+    let flow = null;
+    if (flowId) {
+        flow = await models.BookingFlow.findByPk(flowId, {
+            attributes: [
+                "id",
+                "status",
+                "final_booking_code",
+                "itinerary_booking_code",
+                "pricing_snapshot_priced",
+                "pricing_snapshot_preauth",
+                "pricing_snapshot_confirmed",
+            ],
+        });
+    }
+
+    const canonicalCode =
+        normalizeBookingCode(flow?.final_booking_code) ??
+        normalizeBookingCode(flow?.itinerary_booking_code) ??
+        normalizeBookingCode(booking?.external_ref) ??
+        null;
+
+    if (!canonicalCode) return null;
+
+    const primaryType = flow?.final_booking_code
+        ? "1"
+        : flow?.itinerary_booking_code
+            ? "2"
+            : String(booking?.status || "").toUpperCase() === "CONFIRMED"
+                ? "1"
+                : "2";
+    const secondaryType = primaryType === "1" ? "2" : "1";
+
+    return {
+        code: canonicalCode,
+        bookingTypes: [primaryType, secondaryType],
+        flow,
+    };
+};
+
+const resolveSupplierPaidAmountForCancel = ({ booking, flow }) => {
+    const pickMaxCharge = (rules) => {
+        const rows = ensureArray(rules);
+        const max = rows
+            .map((rule) => parseAmount(rule?.charge))
+            .filter((value) => Number.isFinite(value) && value >= 0)
+            .reduce((acc, value) => (acc == null || value > acc ? value : acc), null);
+        return max;
+    };
+
+    const confirmationRules =
+        booking?.pricing_snapshot?.confirmationSnapshot?.policies?.cancellationRules;
+
+    const values = [
+        flow?.pricing_snapshot_confirmed?.servicePrice,
+        flow?.pricing_snapshot_confirmed?.price,
+        flow?.pricing_snapshot_preauth?.servicePrice,
+        flow?.pricing_snapshot_preauth?.price,
+        flow?.pricing_snapshot_priced?.servicePrice,
+        flow?.pricing_snapshot_priced?.price,
+        pickMaxCharge(flow?.pricing_snapshot_confirmed?.cancellationRules?.rule),
+        pickMaxCharge(flow?.pricing_snapshot_preauth?.cancellationRules?.rule),
+        pickMaxCharge(flow?.pricing_snapshot_priced?.cancellationRules?.rule),
+        pickMaxCharge(confirmationRules),
+        booking?.pricing_snapshot?.flowSnapshot?.price,
+        booking?.pricing_snapshot?.servicePrice,
+        booking?.pricing_snapshot?.price,
+    ];
+    for (const value of values) {
+        const parsed = parseAmount(value);
+        if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+    }
+    return null;
+};
+
+const checkSupplierAlreadyCancelled = async ({ client, bookingCode }) => {
+    const candidates = ["1", "2"];
+    for (const bookingType of candidates) {
+        try {
+            const payload = buildGetBookingDetailsPayload({
+                bookingCode,
+                bookingType,
+            });
+            const { result } = await client.send("getbookingdetails", payload, {
+                requestId: `cancel-check-${bookingCode}-${bookingType}`,
+                productOverride: null,
+            });
+            const mapped = mapGetBookingDetailsResponse(result);
+            const statusCode = String(mapped?.product?.status?.code || "").trim();
+            const bookingReference = String(mapped?.product?.bookingReference || "")
+                .trim()
+                .toUpperCase();
+            if (statusCode === "1667" || bookingReference.startsWith("CXL-")) {
+                return { cancelled: true, bookingType, statusCode, bookingReference };
+            }
+        } catch (_err) {
+            // Ignore and try the next booking type.
+        }
+    }
+    return { cancelled: false };
+};
+
 const buildHomeCancellationQuote = ({
     policyRaw,
     checkIn,
@@ -123,8 +253,8 @@ const buildHomeCancellationQuote = ({
             policyCode,
             refundPercent: 0,
             refundAmount: 0,
-            cancellable: false,
-            reason: "This reservation is non-refundable.",
+            cancellable: true,
+            reason: "This reservation is non-refundable. Cancellation is allowed with no refund.",
             timeline: null,
         };
     }
@@ -241,19 +371,6 @@ export const processBookingCancellation = async ({
     if (statusLc === "cancelled") throw { status: 400, message: "Booking is already cancelled" };
     if (statusLc === "completed") throw { status: 400, message: "Cannot cancel completed booking" };
 
-    const checkInDate = booking.check_in ? new Date(booking.check_in) : null;
-    const now = new Date();
-    if (checkInDate && checkInDate < now && !bySupport) {
-        throw { status: 400, message: "Bookings that already started cannot be cancelled." };
-    }
-
-    const hoursUntilCheckIn = checkInDate
-        ? (checkInDate.getTime() - now.getTime()) / 36e5
-        : null;
-    if (hoursUntilCheckIn != null && hoursUntilCheckIn < 24 && !bySupport) {
-        throw { status: 400, message: "Bookings cannot be cancelled within 24 hours of check-in." };
-    }
-
     const isHomeBooking =
         String(booking.inventory_type || "").toUpperCase() === "HOME" ||
         String(booking.source || "").toUpperCase() === "HOME";
@@ -367,119 +484,194 @@ export const processBookingCancellation = async ({
             bySupport,
         };
     } else if (isWebbedsBooking) {
-        const confirmationCodes =
-            booking.pricing_snapshot?.confirmationSnapshot?.bookingCodes ?? {};
-        const bookingCode =
-            normalizeBookingCode(confirmationCodes.externalRef) ??
-            normalizeBookingCode(confirmationCodes.voucherId) ??
-            normalizeBookingCode(confirmationCodes.bookingReference) ??
-            normalizeBookingCode(confirmationCodes.itineraryNumber) ??
-            normalizeBookingCode(booking.pricing_snapshot?.bookingCode) ??
-            normalizeBookingCode(booking.pricing_snapshot?.bookingReferenceNumber) ??
-            normalizeBookingCode(booking.external_ref);
-        if (!bookingCode) {
+        const cancelTarget = await resolveWebbedsCancelTarget(booking);
+        if (!cancelTarget?.code) {
             throw { status: 400, message: "Missing booking reference" };
         }
+        const bookingCode = cancelTarget.code;
+        const bookingTypeCandidates = Array.isArray(cancelTarget.bookingTypes)
+            ? cancelTarget.bookingTypes
+            : ["1", "2"];
 
         const paidAmount = Number(booking.gross_price) || 0;
+        const supplierPaidAmount = resolveSupplierPaidAmountForCancel({
+            booking,
+            flow: cancelTarget.flow,
+        });
         let cancelQuote = null;
         let cancelResult = null;
         let penaltyApplied = 0;
         let penaltyCurrency = null;
-        let paymentBalance = paidAmount;
+        let paymentBalance = supplierPaidAmount ?? paidAmount;
         let penaltyAppliedRaw = null;
         let paymentBalanceRaw = null;
+        let selectedBookingType = null;
+        let lastWebbedsError = null;
 
-        try {
-            const client = createWebbedsClient(getWebbedsConfig());
-            const quotePayload = buildCancelBookingPayload({
-                bookingCode,
-                bookingType: 1,
-                confirm: "no",
-                reason,
-                services: [],
-            });
-            const quoteResponse = await client.send("cancelbooking", quotePayload, {
-                requestId: `cancel-${booking.id}`,
-                productOverride: null,
-            });
-            cancelQuote = mapCancelBookingResponse(quoteResponse.result);
+        const client = createWebbedsClient(getWebbedsConfig());
+        for (const candidateType of bookingTypeCandidates) {
+            try {
+                const quotePayload = buildCancelBookingPayload({
+                    bookingCode,
+                    bookingType: candidateType,
+                    confirm: "no",
+                    reason,
+                    services: [],
+                });
+                const quoteResponse = await client.send("cancelbooking", quotePayload, {
+                    requestId: `cancel-${booking.id}`,
+                    productOverride: null,
+                });
+                cancelQuote = mapCancelBookingResponse(quoteResponse.result);
 
-            const penalties = ensureArray(
-                cancelQuote?.services?.[0]?.cancellationPenalties,
-            );
-            const penaltyCandidates = penalties
-                .map((penalty) => {
-                    const raw = sanitizeAmountText(
-                        penalty?.charge ?? penalty?.chargeFormatted,
-                    );
-                    const amount = parseAmount(raw);
-                    if (!Number.isFinite(amount)) return null;
-                    return {
-                        amount,
-                        raw,
-                        currencyShort: penalty?.currencyShort,
-                        currency: penalty?.currency,
+                const penalties = ensureArray(
+                    cancelQuote?.services?.[0]?.cancellationPenalties,
+                );
+                const penaltyCandidates = penalties
+                    .map((penalty) => {
+                        const raw = sanitizeAmountText(
+                            penalty?.charge ?? penalty?.chargeFormatted,
+                        );
+                        const amount = parseAmount(raw);
+                        if (!Number.isFinite(amount)) return null;
+                        return {
+                            amount,
+                            raw,
+                            currencyShort: penalty?.currencyShort,
+                            currency: penalty?.currency,
+                        };
+                    })
+                    .filter(Boolean);
+
+                const selectedPenalty = penaltyCandidates.reduce(
+                    (current, candidate) =>
+                        !current || candidate.amount > current.amount ? candidate : current,
+                    null,
+                );
+
+                penaltyApplied = selectedPenalty?.amount ?? 0;
+                penaltyAppliedRaw =
+                    selectedPenalty?.raw ?? formatAmountForWebbeds(penaltyApplied);
+                penaltyCurrency =
+                    selectedPenalty?.currencyShort ??
+                    selectedPenalty?.currency ??
+                    penalties[0]?.currencyShort ??
+                    penalties[0]?.currency ??
+                    null;
+
+                if (Number.isFinite(supplierPaidAmount)) {
+                    paymentBalance = Math.max(0, supplierPaidAmount - penaltyApplied);
+                    paymentBalanceRaw = formatAmountForWebbeds(paymentBalance);
+                    if (paymentBalanceRaw) {
+                        const parsedBalance = parseAmount(paymentBalanceRaw);
+                        if (Number.isFinite(parsedBalance)) paymentBalance = parsedBalance;
+                    }
+                } else {
+                    paymentBalanceRaw = null;
+                }
+
+                const confirmPayload = buildCancelBookingPayload({
+                    bookingCode,
+                    bookingType: candidateType,
+                    confirm: "yes",
+                    reason,
+                    services: [
+                        {
+                            penaltyApplied: penaltyAppliedRaw ?? penaltyApplied,
+                            ...(paymentBalanceRaw != null
+                                ? { paymentBalance: paymentBalanceRaw }
+                                : {}),
+                        },
+                    ],
+                });
+                try {
+                    const cancelResponse = await client.send("cancelbooking", confirmPayload, {
+                        requestId: `cancel-confirm-${booking.id}`,
+                        productOverride: null,
+                    });
+                    cancelResult = mapCancelBookingResponse(cancelResponse.result);
+                } catch (confirmError) {
+                    throw confirmError;
+                }
+                selectedBookingType = candidateType;
+                break;
+            } catch (error) {
+                if (error?.name === "WebbedsError") {
+                    debugWebbedsCancelXml("attempt_failed", error, {
+                        bookingId: booking.id,
+                        bookingCode,
+                        bookingType: candidateType,
+                    });
+                    lastWebbedsError = error;
+                    if (["210", "211", "212"].includes(String(error.code || "").trim())) {
+                        continue;
+                    }
+                    const mapped = mapWebbedsError(error.code, error.details);
+                    throw {
+                        status: mapped.retryable ? 502 : 400,
+                        message: mapped.userMessage,
                     };
-                })
-                .filter(Boolean);
-
-            const selectedPenalty = penaltyCandidates.reduce(
-                (current, candidate) =>
-                    !current || candidate.amount > current.amount ? candidate : current,
-                null,
-            );
-
-            penaltyApplied = selectedPenalty?.amount ?? 0;
-            penaltyAppliedRaw =
-                selectedPenalty?.raw ?? formatAmountForWebbeds(penaltyApplied);
-            penaltyCurrency =
-                selectedPenalty?.currencyShort ??
-                selectedPenalty?.currency ??
-                penalties[0]?.currencyShort ??
-                penalties[0]?.currency ??
-                null;
-
-            paymentBalance = Math.max(0, paidAmount - penaltyApplied);
-            paymentBalanceRaw = formatAmountForWebbeds(paymentBalance);
-            if (paymentBalanceRaw) {
-                const parsedBalance = parseAmount(paymentBalanceRaw);
-                if (Number.isFinite(parsedBalance)) paymentBalance = parsedBalance;
+                }
+                throw error;
             }
+        }
 
-            const confirmPayload = buildCancelBookingPayload({
-                bookingCode,
-                bookingType: 1,
-                confirm: "yes",
-                reason,
-                services: [
-                    {
-                        penaltyApplied: penaltyAppliedRaw ?? penaltyApplied,
-                        paymentBalance: paymentBalanceRaw ?? paymentBalance,
-                    },
-                ],
-            });
-            const cancelResponse = await client.send("cancelbooking", confirmPayload, {
-                requestId: `cancel-confirm-${booking.id}`,
-                productOverride: null,
-            });
-            cancelResult = mapCancelBookingResponse(cancelResponse.result);
-        } catch (error) {
-            if (error?.name === "WebbedsError") {
-                const mapped = mapWebbedsError(error.code, error.details);
+        if (!cancelResult) {
+            if (lastWebbedsError) {
+                debugWebbedsCancelXml("all_attempts_failed", lastWebbedsError, {
+                    bookingId: booking.id,
+                    bookingCode,
+                    bookingTypesTried: bookingTypeCandidates,
+                });
+                if (String(lastWebbedsError.code || "").trim() === "210") {
+                    const supplierState = await checkSupplierAlreadyCancelled({
+                        client,
+                        bookingCode,
+                    });
+                    if (supplierState.cancelled) {
+                        cancelResult = {
+                            successful: true,
+                            productsLeftOnItinerary: 0,
+                            services: [],
+                            metadata: {
+                                command: "cancelbooking",
+                                transactionId: null,
+                                date: null,
+                                ip: null,
+                            },
+                        };
+                        selectedBookingType = supplierState.bookingType;
+                    }
+                }
+            }
+        }
+
+        if (!cancelResult) {
+            if (lastWebbedsError) {
+                const mapped = mapWebbedsError(lastWebbedsError.code, lastWebbedsError.details);
                 throw {
                     status: mapped.retryable ? 502 : 400,
                     message: mapped.userMessage,
                 };
             }
-            throw error;
+            throw { status: 400, message: "This booking cannot be cancelled." };
         }
 
         if (refundOverride === true) {
             refundPercent = 100;
             refundAmount = wasPaid ? paidAmount : 0;
         } else {
-            refundAmount = wasPaid ? paymentBalance : 0;
+            if (!wasPaid) {
+                refundAmount = 0;
+            } else if (Number.isFinite(supplierPaidAmount) && supplierPaidAmount > 0) {
+                const supplierRefundRatio = Math.max(
+                    0,
+                    Math.min(1, (Number(paymentBalance) || 0) / supplierPaidAmount),
+                );
+                refundAmount = roundCurrency(paidAmount * supplierRefundRatio);
+            } else {
+                refundAmount = Math.min(paidAmount, roundCurrency(Number(paymentBalance) || 0));
+            }
             refundPercent =
                 paidAmount > 0 ? roundCurrency((refundAmount / paidAmount) * 100) : 0;
         }
@@ -493,13 +685,37 @@ export const processBookingCancellation = async ({
             const stripe = await getStripeClient();
             if (!stripe) throw { status: 500, message: "Stripe is not configured" };
 
-            const refundCents = Math.round(refundAmount * 100);
             const paymentIntent = await stripe.paymentIntents.retrieve(
                 booking.payment_intent_id,
             );
             paymentIntentStatus = paymentIntent?.status || null;
 
-            if (refundCents > 0 && paymentIntent?.status === "succeeded") {
+            if (paymentIntent?.status === "succeeded") {
+                const requestedRefundCents = Math.max(0, Math.round(refundAmount * 100));
+                const amountReceivedCents = Math.max(
+                    0,
+                    Number(paymentIntent?.amount_received ?? paymentIntent?.amount ?? 0),
+                );
+                const alreadyRefundedCents = Math.max(
+                    0,
+                    Number(paymentIntent?.amount_refunded ?? 0),
+                );
+                const availableRefundCents = Math.max(
+                    0,
+                    amountReceivedCents - alreadyRefundedCents,
+                );
+                const refundCents = Math.min(requestedRefundCents, availableRefundCents);
+                if (requestedRefundCents > refundCents) {
+                    refundAmount = roundCurrency(refundCents / 100);
+                    refundPercent =
+                        paidAmount > 0 ? roundCurrency((refundAmount / paidAmount) * 100) : 0;
+                }
+                if (refundCents <= 0) {
+                    // Nothing left to refund in Stripe for this payment intent.
+                    refundAmount = 0;
+                    refundPercent = paidAmount > 0 ? 0 : refundPercent;
+                }
+                if (refundCents > 0) {
                 const refund = await stripe.refunds.create({
                     payment_intent: booking.payment_intent_id,
                     amount: refundCents,
@@ -511,6 +727,7 @@ export const processBookingCancellation = async ({
                 });
                 stripeRefundId = refund.id;
                 stripeRefundStatus = refund.status;
+                }
             } else if (paymentIntent?.status === "requires_capture") {
                 await stripe.paymentIntents.cancel(booking.payment_intent_id, {
                     cancellation_reason: "requested_by_customer",
@@ -531,12 +748,15 @@ export const processBookingCancellation = async ({
         cancellationMeta = {
             policy: refundOverride ? "ADMIN_OVERRIDE" : "WEBBEDS",
             bookingCodeUsed: bookingCode,
+            bookingTypeUsed: selectedBookingType ?? null,
+            supplierPaidAmount,
             refundPercent,
             refundAmount,
             currency: refundCurrency,
             penaltyApplied,
             penaltyCurrency,
             paymentBalance,
+            paymentBalanceSent: paymentBalanceRaw ?? null,
             cancelQuote,
             cancelResult,
             paymentIntentStatus,
@@ -546,11 +766,12 @@ export const processBookingCancellation = async ({
             cancelledAt: new Date().toISOString(),
             bySupport,
         };
+
+        if (booking.external_ref !== bookingCode) {
+            await booking.update({ external_ref: bookingCode });
+        }
     } else {
         // Hotel Legacy Logic
-        const hoursUntilCI = (new Date(booking.check_in) - new Date()) / 36e5;
-        if (hoursUntilCI < 24 && !bySupport)
-            throw { status: 400, message: "Cannot cancel booking less than 24 hours before check-in" };
         nextPaymentStatus = wasPaid ? "REFUNDED" : "UNPAID";
         // NOTE: Refunds for Hotels are manual or handled differently in legacy code,
         // assuming default behavior here for now or Admin should use specific tools.

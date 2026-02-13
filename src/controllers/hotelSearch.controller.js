@@ -20,6 +20,10 @@ const FULL_CACHE_STATUS_TTL_SECONDS = Math.max(
   30,
   Number(process.env.WEBBEDS_SEARCH_FULL_CACHE_STATUS_TTL_SECONDS || 90),
 )
+const FULL_CACHE_ENABLED = process.env.WEBBEDS_SEARCH_FULL_CACHE_ENABLED === "true"
+const FULL_CACHE_WARM_ENABLED = process.env.WEBBEDS_SEARCH_WARM_FULL_CACHE_ENABLED === "true"
+const CITY_FETCH_ALL_PAGED_ENABLED =
+  process.env.WEBBEDS_SEARCH_CITY_FETCH_ALL_PAGED_ENABLED === "true"
 
 const iLikeOp = getCaseInsensitiveLikeOp()
 const MOBILE_CLIENT_TYPES = new Set(["mobile", "app", "react-native"])
@@ -439,6 +443,55 @@ export const searchHotels = async (req, res, next) => {
   const clientIsMobile = isMobileClient(req)
 
   try {
+    const searchRequestId = `srch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    let webbedsCalls = 0
+    const callWebbeds = async ({ query: providerQuery, reason }) => {
+      webbedsCalls += 1
+      const callNumber = webbedsCalls
+      const callStart = Date.now()
+      const hotelIdsCount = providerQuery?.hotelIds
+        ? String(providerQuery.hotelIds)
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean).length
+        : null
+      console.log("[hotels.search] webbeds call start", {
+        searchRequestId,
+        callNumber,
+        reason,
+        mode: providerQuery?.mode ?? null,
+        cityCode: providerQuery?.cityCode ?? null,
+        hotelIdsCount,
+        limit: providerQuery?.limit ?? null,
+        offset: providerQuery?.offset ?? null,
+      })
+      try {
+        const result = await runWebbedsSearch({
+          query: providerQuery,
+          user: req.user,
+          headers: req.headers,
+        })
+        console.log("[hotels.search] webbeds call done", {
+          searchRequestId,
+          callNumber,
+          reason,
+          durationMs: Date.now() - callStart,
+          items: Array.isArray(result) ? result.length : null,
+        })
+        return result
+      } catch (err) {
+        console.warn("[hotels.search] webbeds call failed", {
+          searchRequestId,
+          callNumber,
+          reason,
+          durationMs: Date.now() - callStart,
+          status: err?.status ?? null,
+          message: err?.message || "Unknown Webbeds error",
+        })
+        throw err
+      }
+    }
+
     const searchQuery = String(query || q || "").trim()
     const rawSearchMode = String(searchMode ?? mode ?? "").trim().toLowerCase()
     const resolvedSearchMode = rawSearchMode === "city" ? "city" : "hotelids"
@@ -554,7 +607,7 @@ export const searchHotels = async (req, res, next) => {
       resolvedSearchMode === "hotelids" &&
       !hotelName
 
-    if (canUseFullCache && process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true") {
+    if (FULL_CACHE_ENABLED && canUseFullCache && process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true") {
       const buildFullCachePayload = async () => {
         const allHotelIds = await fetchAllHotelIdsByCity(resolvedCityCode, {})
         if (!allHotelIds.length) return null
@@ -584,10 +637,9 @@ export const searchHotels = async (req, res, next) => {
           delete fullProviderQuery.countryCode
         }
 
-        let fullItems = await runWebbedsSearch({
+        let fullItems = await callWebbeds({
           query: fullProviderQuery,
-          user: req.user,
-          headers: req.headers,
+          reason: "full-cache-build",
         })
 
         fullItems = reduceToLite(Array.isArray(fullItems) ? fullItems : [])
@@ -757,11 +809,13 @@ export const searchHotels = async (req, res, next) => {
       const cached = await cache.get(cacheKey)
       if (cached) {
         console.log("[hotels.search] cache hit", {
+          searchRequestId,
           cityCode: resolvedCityCode,
           query: searchQuery || null,
           limit: safeLimit,
           offset: safeOffset,
           hotelIdsCount: cached?.meta?.hotelIdsCount ?? null,
+          webbedsCalls,
         })
         return res.json({
           ...cached,
@@ -781,7 +835,7 @@ export const searchHotels = async (req, res, next) => {
       // Full Availability Search
       try {
         const shouldFetchAllCity =
-          resolvedSearchMode === "city" && effectiveFetchAll
+          resolvedSearchMode === "city" && effectiveFetchAll && CITY_FETCH_ALL_PAGED_ENABLED
 
         if (shouldFetchAllCity) {
           const pageSize = resolveSafeLimit(limit)
@@ -796,10 +850,9 @@ export const searchHotels = async (req, res, next) => {
               limit: pageSize,
               offset: offsetCursor,
             }
-            const pageItems = await runWebbedsSearch({
+            const pageItems = await callWebbeds({
               query: pageQuery,
-              user: req.user,
-              headers: req.headers,
+              reason: "city-fetch-all-page",
             })
             const safeItems = Array.isArray(pageItems) ? pageItems : []
             aggregated = aggregated.concat(safeItems)
@@ -810,10 +863,9 @@ export const searchHotels = async (req, res, next) => {
 
           items = aggregated
         } else {
-          items = await runWebbedsSearch({
+          items = await callWebbeds({
             query: providerQuery,
-            user: req.user,
-            headers: req.headers,
+            reason: "search-primary",
           })
         }
       } catch (err) {
@@ -906,10 +958,12 @@ export const searchHotels = async (req, res, next) => {
     }
 
     console.log("[hotels.search] response count", {
+      searchRequestId,
       items: responsePayload.items.length,
       cityCode: resolvedCityCode,
       searchMode: resolvedSearchMode,
       fetchAll: effectiveFetchAll,
+      webbedsCalls,
     })
 
     if (process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true") {
@@ -925,7 +979,7 @@ export const searchHotels = async (req, res, next) => {
       resolvedSearchMode === "hotelids" &&
       process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true"
 
-    if (shouldWarmFullCache) {
+    if (FULL_CACHE_WARM_ENABLED && shouldWarmFullCache) {
       setTimeout(async () => {
         try {
           const existing = await cache.get(fullCacheKey)
@@ -980,10 +1034,9 @@ export const searchHotels = async (req, res, next) => {
             delete fullProviderQuery.countryCode
           }
 
-          let fullItems = await runWebbedsSearch({
+          let fullItems = await callWebbeds({
             query: fullProviderQuery,
-            user: req.user,
-            headers: req.headers,
+            reason: "full-cache-warm",
           })
 
           fullItems = reduceToLite(Array.isArray(fullItems) ? fullItems : [])

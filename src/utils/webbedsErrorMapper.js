@@ -118,9 +118,14 @@ export const mapWebbedsError = (code, details) => {
   const normalized = normalizeCode(code);
   const def = ERROR_DEFINITIONS.find((entry) => entry.codes.includes(normalized));
   if (def) {
+    const detailText = details ? String(details).trim() : "";
+    const cancellationDetail =
+      def.key === "cancellation_not_allowed" && detailText
+        ? `Supplier rejected cancellation: ${detailText}`
+        : null;
     return {
       errorKey: def.key,
-      userMessage: def.message,
+      userMessage: cancellationDetail || def.message,
       retryable: Boolean(def.retryable),
       code: normalized || null,
       details: details || null,
