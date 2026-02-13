@@ -58,6 +58,11 @@ export default (sequelize) => {
       timestamps: true,
       createdAt: "created_at",
       updatedAt: false,
+      indexes: [
+        { fields: ["flow_id"] },
+        { fields: ["flow_id", "step"] },
+        { unique: true, fields: ["flow_id", "step", "idempotency_key"] },
+      ],
     },
   );
 

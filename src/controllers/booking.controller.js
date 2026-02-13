@@ -77,6 +77,7 @@ const CANCELLATION_POLICY_CODES = {
   STRICT: "STRICT",
   NON_REFUNDABLE: "NON_REFUNDABLE",
 }
+const HOTEL_INVENTORY_TYPES = new Set(["WEBBEDS_HOTEL", "LOCAL_HOTEL"])
 
 const normalizeCancellationPolicy = (value) => {
   if (!value) return null
@@ -377,6 +378,7 @@ const normalizeCancellationRules = (rules) => {
 
 const resolveFlowForBooking = async ({ bookingCode, bookingRef }) => {
   const flowId =
+    bookingRef?.flow?.id ??
     bookingRef?.flowId ??
     bookingRef?.flow_id ??
     bookingRef?.pricing_snapshot?.flowId ??
@@ -1025,6 +1027,13 @@ const mapStay = (row, source) => {
   return {
     id: row.id,
     source,
+    flowId:
+      row.flow_id ??
+      row.flowId ??
+      row.flow?.id ??
+      row.pricing_snapshot?.flowId ??
+      row.pricing_snapshot?.flow_id ??
+      null,
     bookingConfirmation: row.bookingConfirmation ?? row.external_ref ?? null,
 
     hotel_id: isHomeStay ? null : row.hotel_id ?? mergedHotel?.id ?? null,
@@ -2856,7 +2865,7 @@ export const saveHotelConfirmationSnapshot = async (req, res) => {
     if (
       bookingCode &&
       String(booking.source || "").toUpperCase() === "PARTNER" &&
-      String(booking.inventory_type || "").toUpperCase() === "LOCAL_HOTEL"
+      HOTEL_INVENTORY_TYPES.has(String(booking.inventory_type || "").toUpperCase())
     ) {
       const requestId =
         req?.headers?.["x-request-id"] ||

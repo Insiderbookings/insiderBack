@@ -2,7 +2,7 @@
 import { DataTypes } from "sequelize";
 
 const SOURCE_ENUM = ["PARTNER", "OUTSIDE", "VAULT", "HOME"];
-const INVENTORY_ENUM = ["LOCAL_HOTEL", "HOME", "MANUAL_HOTEL"];
+const INVENTORY_ENUM = ["WEBBEDS_HOTEL", "LOCAL_HOTEL", "HOME", "MANUAL_HOTEL"];
 const STATUS_ENUM = ["DRAFT", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"];
 const PAYMENT_STATUS_ENUM = ["UNPAID", "PENDING", "PAID", "REFUNDED"];
 const PRIVACY_ENUM = ["ENTIRE_PLACE", "PRIVATE_ROOM", "SHARED_ROOM"];
@@ -45,7 +45,8 @@ export default (sequelize) => {
       inventory_type: {
         type: DataTypes.ENUM(...INVENTORY_ENUM),
         allowNull: false,
-        defaultValue: "LOCAL_HOTEL",
+        // Default to provider-backed hotel inventory; keep LOCAL_HOTEL for legacy compatibility.
+        defaultValue: "WEBBEDS_HOTEL",
       },
       inventory_id: { type: DataTypes.STRING(80), allowNull: true },
 
@@ -71,9 +72,15 @@ export default (sequelize) => {
       },
       guest_phone: { type: DataTypes.STRING(50) },
 
-      outside: { type: DataTypes.BOOLEAN, defaultValue: false },
-      active: { type: DataTypes.BOOLEAN, defaultValue: true },
+      flow_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "booking_flows", key: "id" },
+        onDelete: "SET NULL",
+        onUpdate: "CASCADE",
+      },
 
+      outside: { type: DataTypes.BOOLEAN, defaultValue: false },
       active: { type: DataTypes.BOOLEAN, defaultValue: true },
 
       privacy_level: {
@@ -132,6 +139,7 @@ export default (sequelize) => {
         { fields: ["payment_status"] },
         { fields: ["source", "external_ref"] },
         { fields: ["inventory_type", "inventory_id"] },
+        { fields: ["flow_id"] },
       ],
     }
   );
@@ -139,6 +147,9 @@ export default (sequelize) => {
   Stay.associate = (models) => {
     Stay.belongsTo(models.User, { foreignKey: "user_id" });
     Stay.belongsTo(models.User, { foreignKey: "influencer_user_id", as: "influencer" });
+    if (models.BookingFlow) {
+      Stay.belongsTo(models.BookingFlow, { foreignKey: "flow_id", as: "flow" });
+    }
     Stay.hasOne(models.Payment, { foreignKey: "stay_id" });
     Stay.hasOne(models.StayHotel, { foreignKey: "stay_id", as: "hotelStay" });
     Stay.hasOne(models.StayHome, { foreignKey: "stay_id", as: "homeStay" });

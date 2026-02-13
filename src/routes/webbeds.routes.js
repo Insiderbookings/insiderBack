@@ -5,7 +5,6 @@ import {
   listExploreCollections,
   search,
   getRooms,
-  saveBooking,
   listCountries,
   listCities,
   listRateBasis,
@@ -15,18 +14,12 @@ import {
   listHotelClassifications,
   listSalutationsCatalog,
   proxyWebbedsImage,
-  confirmBooking,
-  bookItineraryRecheck,
-  bookItineraryPreauth,
-  bookItinerary,
-  cancelBooking,
-  deleteItinerary,
   getBookingDetails,
   createPaymentIntent,
   capturePaymentIntent,
   cancelPaymentIntent,
 } from "../controllers/webbeds.controller.js"
-import { authenticate, requireVerifiedEmail } from "../middleware/auth.js"
+import { authenticate } from "../middleware/auth.js"
 
 const router = Router()
 
@@ -35,13 +28,6 @@ router.get("/rooms", authenticate, getRooms)
 router.post("/create-payment-intent", authenticate, createPaymentIntent)
 router.post("/capture-payment-intent", authenticate, capturePaymentIntent)
 router.post("/cancel-payment-intent", authenticate, cancelPaymentIntent)
-router.post("/savebooking", authenticate, requireVerifiedEmail, saveBooking)
-router.post("/bookitinerary", authenticate, requireVerifiedEmail, bookItinerary)
-router.post("/bookitinerary/recheck", authenticate, requireVerifiedEmail, bookItineraryRecheck)
-router.post("/bookitinerary/preauth", authenticate, requireVerifiedEmail, bookItineraryPreauth)
-router.post("/confirmbooking", authenticate, requireVerifiedEmail, confirmBooking)
-router.post("/cancelbooking", authenticate, cancelBooking)
-router.post("/deleteitinerary", authenticate, deleteItinerary)
 router.get("/booking", authenticate, getBookingDetails)
 router.get("/static/hotels", listStaticHotels)
 router.get("/explore", listExploreHotels)

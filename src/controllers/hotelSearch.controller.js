@@ -132,6 +132,8 @@ const isCacheFilterable = (filters = {}) => {
     filters.business,
     filters.roomAmenity,
     filters.chain,
+    filters.specialDeals,
+    filters.topDeals,
     filters.rateTypes,
     filters.fields,
     filters.roomFields,
@@ -487,6 +489,8 @@ export const searchHotels = async (req, res, next) => {
     const business = req.query.business ?? req.query.businessIds
     const roomAmenity = req.query.roomAmenity ?? req.query.roomAmenityIds
     const chain = req.query.chain ?? req.query.chainIds
+    const specialDeals = req.query.specialDeals ?? req.query.specialDeal
+    const topDeals = req.query.topDeals ?? req.query.topDeal
     const hotelName = req.query.hotelName ?? req.query.nameFilter
     const passengerNationality =
       req.query.passengerNationality ?? req.query.nationality ?? null
@@ -519,6 +523,8 @@ export const searchHotels = async (req, res, next) => {
       business,
       roomAmenity,
       chain,
+      specialDeals,
+      topDeals,
       rateTypes,
       fields,
       roomFields,
@@ -535,6 +541,8 @@ export const searchHotels = async (req, res, next) => {
       business,
       roomAmenity,
       chain,
+      specialDeals,
+      topDeals,
       hotelName,
     ].some(hasFilterValue)
     const canUseFullCache =
@@ -720,6 +728,8 @@ export const searchHotels = async (req, res, next) => {
       leisure,
       business,
       roomAmenity,
+      specialDeals,
+      topDeals,
       lite: useLite,
       fetchAll: effectiveFetchAll,
     }
@@ -822,13 +832,8 @@ export const searchHotels = async (req, res, next) => {
 
       const staticRows = await models.WebbedsHotel.findAll({
         where: { hotel_id: { [Op.in]: targetIds } },
-        include: [{
-          model: models.WebbedsHotelDetail,
-          as: "details",
-          attributes: ["images", "description", "address", "city", "country", "location"],
-        }],
+        attributes: ["hotel_id", "name", "rating", "city_name", "country_name", "images"],
         raw: true,
-        nest: true
       })
 
       // Map back to expected "item" structure for frontend
@@ -840,10 +845,16 @@ export const searchHotels = async (req, res, next) => {
 
         // Pick best image
         let cover = null
-        const images = row.details?.images?.hotelImages || row.details?.images
+        const images = row?.images?.hotelImages ?? row?.images ?? null
         if (images) {
-          const list = Array.isArray(images) ? images : (Array.isArray(images.image) ? images.image : [images.image])
-          cover = list.find(img => img?.url)?.url
+          if (images?.thumb) {
+            cover = images.thumb
+          } else {
+            const list = Array.isArray(images)
+              ? images
+              : (Array.isArray(images.image) ? images.image : [images.image])
+            cover = list.find((img) => img?.url)?.url ?? null
+          }
         }
 
         return {
@@ -855,8 +866,8 @@ export const searchHotels = async (req, res, next) => {
             hotelCode: row.hotel_id,
             hotelName: row.name,
             rating: row.rating,
-            city: row.details?.city,
-            country: row.details?.country,
+            city: row.city_name ?? null,
+            country: row.country_name ?? null,
             images: cover ? { hotelImages: { image: [{ url: cover }] } } : null
           },
           isStatic: true
@@ -959,6 +970,8 @@ export const searchHotels = async (req, res, next) => {
             business: undefined,
             roomAmenity: undefined,
             chain: undefined,
+            specialDeals: undefined,
+            topDeals: undefined,
           }
 
           const fullProviderQuery = { ...fullQuery }

@@ -721,8 +721,9 @@ export const createPaymentIntent = async (req, res, next) => {
       booking_ref,
       user_id: req.user?.id || null,
       influencer_user_id: referral.influencerId,
+      flow_id: flow.id,
       source: "PARTNER",
-      inventory_type: "LOCAL_HOTEL",
+      inventory_type: "WEBBEDS_HOTEL",
       inventory_id: String(resolvedHotelId),
       external_ref: bookingId, // The Webbeds Booking ID
 
@@ -738,10 +739,10 @@ export const createPaymentIntent = async (req, res, next) => {
 
       status: "PENDING",
       payment_status: "UNPAID",
-      payment_status: "UNPAID",
       gross_price: grossTotal,
       currency: finalCurrency,
       pricing_snapshot: {
+        flowId: flow.id,
         totalBeforeDiscount,
         referralFirstBooking: referralFirstBookingPlan?.apply
           ? {
@@ -763,6 +764,7 @@ export const createPaymentIntent = async (req, res, next) => {
         roomName,
         location: inventorySnapshot?.location ?? null,
         guests: { adults, children },
+        flowId: flow.id,
         ...(referral.influencerId
           ? {
             referral: {
@@ -903,6 +905,7 @@ export const createPaymentIntent = async (req, res, next) => {
       paymentIntentId: paymentIntent.id,
       localBookingId: localBooking.id,
       bookingRef: booking_ref,
+      flowId: flow.id,
       pricingSnapshot: {
         totalBeforeDiscount,
         referralFirstBooking: referralFirstBookingPlan?.apply

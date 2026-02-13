@@ -39,6 +39,7 @@ const CANCELLATION_POLICY_CODES = {
     STRICT: "STRICT",
     NON_REFUNDABLE: "NON_REFUNDABLE",
 };
+const HOTEL_INVENTORY_TYPES = new Set(["WEBBEDS_HOTEL", "LOCAL_HOTEL"]);
 
 const normalizeCancellationPolicy = (value) => {
     if (!value) return null;
@@ -258,7 +259,7 @@ export const processBookingCancellation = async ({
         String(booking.source || "").toUpperCase() === "HOME";
     const isWebbedsBooking =
         !isHomeBooking &&
-        String(booking.inventory_type || "").toUpperCase() === "LOCAL_HOTEL" &&
+        HOTEL_INVENTORY_TYPES.has(String(booking.inventory_type || "").toUpperCase()) &&
         String(booking.source || "").toUpperCase() === "PARTNER" &&
         String(booking.external_ref || "").trim().length > 0;
     const wasPaid = String(booking.payment_status || "").toUpperCase() === "PAID";

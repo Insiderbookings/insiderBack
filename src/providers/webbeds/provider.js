@@ -140,6 +140,18 @@ const buildAdvancedConditionsFromQuery = (query = {}) => {
     addEquals("availability", availabilityFlag ? "1" : "0")
   }
 
+  const specialDealsFlag = parseBooleanFlag(
+    query.specialDeals ?? query.specialDeal ?? query.hasSpecialDeals,
+  )
+  if (specialDealsFlag !== null) {
+    addEquals("specialDeals", specialDealsFlag ? "1" : "0")
+  }
+
+  const topDealsFlag = parseBooleanFlag(query.topDeals ?? query.topDeal ?? query.hasTopDeals)
+  if (topDealsFlag !== null) {
+    addEquals("topDeals", topDealsFlag ? "1" : "0")
+  }
+
   const luxuryValue =
     query.luxury ?? query.classification ?? query.starRating ?? query.classificationCode
   if (luxuryValue !== undefined && luxuryValue !== null && luxuryValue !== "") {

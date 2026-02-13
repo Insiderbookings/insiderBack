@@ -13,7 +13,6 @@ export default (sequelize) => {
         onDelete: "CASCADE",
       },
       home_id: { type: DataTypes.INTEGER, allowNull: true },
-      home_unit_id: { type: DataTypes.INTEGER, allowNull: true },
       host_id: { type: DataTypes.INTEGER, allowNull: true },
       checkin_window_start: { type: DataTypes.TIME },
       checkin_window_end: { type: DataTypes.TIME },

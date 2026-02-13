@@ -21,7 +21,6 @@ import StayHomeModel from "./StayHome.js";
 import StayManualModel from "./StayManual.js";
 import PaymentModel from "./Payment.js";
 import CommissionModel from "./Commission.js";
-import InfluencerCommissionModel from "./InfluencerCommission.js";
 import OutsideMetaModel from "./OutsideMeta.js";
 import PayoutAccountModel from "./PayoutAccount.js";
 import PayoutBatchModel from "./PayoutBatch.js";
@@ -144,7 +143,6 @@ const models = {
   StayManual: StayManualModel(sequelize),
   Payment: PaymentModel(sequelize),
   Commission: CommissionModel(sequelize),
-  InfluencerCommission: InfluencerCommissionModel(sequelize),
   InfluencerEventCommission: InfluencerEventCommissionModel(sequelize),
   InfluencerGoal: InfluencerGoalModel(sequelize),
   InfluencerGoalProgress: InfluencerGoalProgressModel(sequelize),

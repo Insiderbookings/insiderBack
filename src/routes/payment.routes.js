@@ -2,11 +2,9 @@
 import { Router } from "express";
 import {
   createCheckoutSession,
-  createAddOnSession,
   handleWebhook,
   validateMerchant,
   processApplePay,
-  createOutsideAddOnsSession,
   createPartnerPaymentIntent,
   confirmPartnerPayment,
   handlePartnerWebhook,
@@ -23,12 +21,8 @@ console.log("[payments] registering /api/payments routes (includes /stripe/webho
 /* Bookings */
 router.post("/stripe/create-session", authenticate, createCheckoutSession);
 router.post("/apple-pay/process",       processApplePay);
-router.post("/booking-addons/create-session", authenticate, createOutsideAddOnsSession);
 router.post("/homes/create-payment-intent", authenticate, requireVerifiedEmail, createHomePaymentIntent);
 router.post("/homes/test/create-payment-intent", authenticate, requireVerifiedEmail, createHomePaymentIntentAppTest);
-
-/* Add-Ons */
-router.post("/upsell/create-session", authenticate, createAddOnSession);
 
 /* Webhook */
 router.post("/stripe/webhook",
@@ -39,10 +33,9 @@ router.post("/stripe/webhook",
 /* Apple Pay merchant validation */
 router.post("/stripe/validate-merchant", validateMerchant);
 
+/* Partner/Tenant checkout flow (still in use by WC tenant sites) */
 router.post("/create-payment-intent", authenticateOrPartnerKey, createPartnerPaymentIntent);
 router.post("/confirm-and-book", authenticateOrPartnerKey, confirmPartnerPayment);
-
-// (opcional) webhook específico de partner si quieres auditar
 router.post("/webhook",
   express.raw({ type: "application/json" }),
   handlePartnerWebhook
