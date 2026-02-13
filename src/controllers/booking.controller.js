@@ -419,6 +419,76 @@ const fetchWebbedsBookingDetails = async ({ bookingCode, requestId }) => {
   }
 }
 
+const WEBBEDS_STATUS_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000
+
+const isPartnerHotelBooking = (booking) =>
+  String(booking?.source || "").toUpperCase() === "PARTNER" &&
+  HOTEL_INVENTORY_TYPES.has(String(booking?.inventory_type || "").toUpperCase())
+
+const resolveCanonicalWebbedsCode = async (booking) => {
+  const bookingCode = booking?.external_ref ? String(booking.external_ref).trim() : null
+  const bookingRef = booking?.toJSON ? booking.toJSON() : booking
+  const flow = await resolveFlowForBooking({ bookingCode, bookingRef })
+  return (
+    String(flow?.final_booking_code || "").trim() ||
+    String(flow?.itinerary_booking_code || "").trim() ||
+    (bookingCode ? String(bookingCode).trim() : null)
+  )
+}
+
+const syncPartnerBookingStatusFromSupplier = async ({ booking, requestId }) => {
+  if (!booking || !isPartnerHotelBooking(booking)) return booking
+
+  const statusNow = String(booking.status || "").toUpperCase()
+  if (statusNow === "CANCELLED" || statusNow === "COMPLETED") return booking
+
+  const meta = booking.meta && typeof booking.meta === "object" ? booking.meta : {}
+  const supplierState = meta.supplierState && typeof meta.supplierState === "object"
+    ? meta.supplierState
+    : {}
+  const checkedAt = supplierState.checkedAt ? Date.parse(supplierState.checkedAt) : NaN
+  if (Number.isFinite(checkedAt) && Date.now() - checkedAt < WEBBEDS_STATUS_SYNC_MIN_INTERVAL_MS) {
+    return booking
+  }
+
+  const canonicalCode = await resolveCanonicalWebbedsCode(booking)
+  if (!canonicalCode) return booking
+
+  const supplier = await fetchWebbedsBookingDetails({
+    bookingCode: canonicalCode,
+    requestId: requestId || `status-sync-${booking.id}`,
+  })
+
+  const supplierStatusCode = String(supplier?.product?.status?.code || "").trim()
+  const supplierBookingReference = String(supplier?.product?.bookingReference || "")
+    .trim()
+    .toUpperCase()
+  const isCancelledInSupplier =
+    supplierStatusCode === "1667" || supplierBookingReference.startsWith("CXL-")
+
+  const nextMeta = {
+    ...meta,
+    supplierState: {
+      ...supplierState,
+      checkedAt: new Date().toISOString(),
+      statusCode: supplierStatusCode || null,
+      bookingReference: supplier?.product?.bookingReference ?? null,
+      canonicalCode,
+    },
+  }
+
+  const updates = { meta: nextMeta }
+  if (isCancelledInSupplier) {
+    updates.status = "CANCELLED"
+    if (!booking.cancelled_at) updates.cancelled_at = new Date()
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await booking.update(updates)
+  }
+  return booking
+}
+
 const resolvePaymentMethodLabel = (provider, existingLabel) => {
   if (existingLabel) return existingLabel
   const normalized = provider ? String(provider).toUpperCase() : ""
@@ -2372,6 +2442,17 @@ export const getBookingsUnified = async (req, res) => {
       offset: latest ? 0 : Number(offset)
     })
 
+    const requestId =
+      req?.headers?.["x-request-id"] ||
+      req?.headers?.["x-correlation-id"] ||
+      `bookings-me-${userId}`
+    for (const row of rows) {
+      await syncPartnerBookingStatusFromSupplier({
+        booking: row,
+        requestId: `${requestId}-booking-${row.id}`,
+      })
+    }
+
     // 3. Mapear y unificar
     const merged = rows
       .map(r => {
@@ -2746,6 +2827,15 @@ export const getBookingById = async (req, res) => {
     if (!isOwner && !isHost && !isStaff && !isMember) {
       return res.status(403).json({ error: "Forbidden" })
     }
+
+    const requestId =
+      req?.headers?.["x-request-id"] ||
+      req?.headers?.["x-correlation-id"] ||
+      `booking-${booking.id}`
+    await syncPartnerBookingStatusFromSupplier({
+      booking,
+      requestId: `${requestId}-status-sync`,
+    })
 
     const addons = booking.AddOns.map((addon) => {
       const pivot = addon.BookingAddOn
