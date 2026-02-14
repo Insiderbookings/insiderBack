@@ -8,6 +8,7 @@ import {
     replyTicket,
     updateTicketStatus,
     getAllTickets,
+    previewTicketAction,
     executeTicketAction,
     reportIssue
 } from "../controllers/support.controller.js";
@@ -40,6 +41,7 @@ router.post("/tickets/:id/reply", authenticate, replyTicket);
 // Admin routes (additional RBAC logic inside controller, but good to have dedicated endpoints too)
 router.get("/admin/tickets", authenticate, getAllTickets); // Admin list
 router.put("/admin/tickets/:id", authenticate, updateTicketStatus); // Update status/priority
+router.post("/admin/tickets/:id/action-preview", authenticate, previewTicketAction); // Preview action impact
 router.post("/admin/tickets/:id/action", authenticate, executeTicketAction); // Admin actions (refund/cancel)
 
 export default router;

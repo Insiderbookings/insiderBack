@@ -1936,7 +1936,10 @@ export const proxyWebbedsImage = async (req, res) => {
       if (contentType) {
         res.setHeader("Content-Type", contentType)
       }
-      res.setHeader("Cache-Control", "public, max-age=86400")
+      res.setHeader(
+        "Cache-Control",
+        "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400, stale-if-error=86400"
+      )
 
       if (!response.body) {
         return res.status(502).json({ error: "Empty image response" })
@@ -1995,7 +1998,10 @@ export const proxyWebbedsImage = async (req, res) => {
 
     const resolvedFormat = targetFormat
     res.setHeader("Content-Type", `image/${resolvedFormat}`)
-    res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800")
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400, stale-if-error=86400"
+    )
     await pipeline(sourceStream, transformer, res)
     return
   } catch (error) {
