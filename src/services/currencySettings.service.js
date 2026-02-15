@@ -7,6 +7,14 @@ const CACHE_TTL_SECONDS = 300;
 
 const normalizeCurrencyCode = (value) => {
   const raw = String(value || "USD").trim().toUpperCase();
+  if (/^\d+$/.test(raw)) {
+    if (raw === "520" || raw === "840") return "USD";
+    if (raw === "978") return "EUR";
+    if (raw === "826") return "GBP";
+    if (raw === "124") return "CAD";
+    if (raw === "036" || raw === "36") return "AUD";
+    return "USD";
+  }
   return raw.slice(0, 3) || "USD";
 };
 

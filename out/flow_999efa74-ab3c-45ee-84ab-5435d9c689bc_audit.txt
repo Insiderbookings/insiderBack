@@ -1,0 +1,30 @@
+flowId=999efa74-ab3c-45ee-84ab-5435d9c689bc
+status=CONFIRMED
+steps=6
+repeatedRequests=0
+changedOccupancy=true
+changedOccupancyValue=2,0,,0
+
+1. GETROOMS (getrooms) Sun Feb 15 2026 14:41:44 GMT-0300 (hora estándar de Argentina)
+   idempotencyKey=null
+   requestHash=73da902d6bd052183466cc6dd2b8fa76b3ef0572
+   requestTags={"adultsCode":["1"],"children":["<child runno=\"0\">17</child>"],"child":["17"],"passengerNationality":["107"],"passengerCountryOfResidence":["107"]}
+2. BLOCK (getrooms) Sun Feb 15 2026 14:41:50 GMT-0300 (hora estándar de Argentina)
+   idempotencyKey=block-999efa74-ab3c-45ee-84ab-5435d9c689bc-eyJob3RlbElkIjoiMzEwODQi
+   requestHash=536525be43fc17a79b19aca16981e8dc7e1a65d0
+   requestTags={"selectedRateBasis":["0"],"allocationDetails":["1771177305000011B1000B0"],"adultsCode":["1"],"children":["<child runno=\"0\">17</child>"],"child":["17"],"passengerNationality":["107"],"passengerCountryOfResidence":["107"]}
+3. SAVEBOOKING (savebooking) Sun Feb 15 2026 14:42:02 GMT-0300 (hora estándar de Argentina)
+   idempotencyKey=save-999efa74-ab3c-45ee-84ab-5435d9c689bc
+   requestHash=b0acaba8ed7af97aad060db8e2085aa8f715377c
+   requestTags={"roomTypeCode":["61374"],"selectedRateBasis":["0"],"allocationDetails":["1771177311000001B1000B0"],"adultsCode":["2"],"actualAdults":["1"],"actualChildren":["<actualChild runno=\"0\">17</actualChild>"],"actualChild":["17"],"extraBed":["0"],"passengerNationality":["107"],"passengerCountryOfResidence":["107"]}
+4. BOOK_NO (bookitinerary) Sun Feb 15 2026 14:42:03 GMT-0300 (hora estándar de Argentina)
+   idempotencyKey=price-999efa74-ab3c-45ee-84ab-5435d9c689bc
+   requestHash=d8c0d673c8fe3185c4bf6f2ddce3ec67318a175d
+5. PREAUTH (bookitinerary) Sun Feb 15 2026 14:42:28 GMT-0300 (hora estándar de Argentina)
+   idempotencyKey=preauth-999efa74-ab3c-45ee-84ab-5435d9c689bc
+   requestHash=2bbba4df5c7bc975323fbfaed63169149d2afe64
+   requestTags={"allocationDetails":["1771177325000001B1000B0"]}
+6. BOOK_YES (bookitinerary) Sun Feb 15 2026 14:42:32 GMT-0300 (hora estándar de Argentina)
+   idempotencyKey=confirm-999efa74-ab3c-45ee-84ab-5435d9c689bc
+   requestHash=0441812d15670be560ab00e8961e37b470889411
+   requestTags={"allocationDetails":["1771177345000001B1000B0"]}
