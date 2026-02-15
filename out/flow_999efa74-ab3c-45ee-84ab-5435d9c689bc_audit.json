@@ -1,0 +1,303 @@
+{
+  "flowId": "999efa74-ab3c-45ee-84ab-5435d9c689bc",
+  "found": true,
+  "flowStatus": "CONFIRMED",
+  "searchContextRooms": [
+    {
+      "adults": 1,
+      "children": [
+        17
+      ]
+    }
+  ],
+  "selectedOfferSummary": {
+    "roomTypeCode": "61374",
+    "rateBasisId": "0",
+    "allocationDetails": "1771177305000011B1000B0",
+    "changedOccupancy": true,
+    "changedOccupancyValue": "2,0,,0",
+    "changedOccupancyText": null,
+    "validForOccupancyDetails": {
+      "adults": 2,
+      "extraBed": 0,
+      "extraBedOccupant": "child"
+    }
+  },
+  "stepCount": 6,
+  "repeatedRequests": [],
+  "rows": [
+    {
+      "idx": 1,
+      "id": "968754a6-c280-45c0-a184-f7ef46706664",
+      "step": "GETROOMS",
+      "command": "getrooms",
+      "idempotencyKey": null,
+      "createdAt": "2026-02-15T17:41:44.723Z",
+      "requestHash": "73da902d6bd052183466cc6dd2b8fa76b3ef0572",
+      "responseHash": "13a3a9c796314a6ccda5a6c4586d892600a33683",
+      "requestXmlLen": 630,
+      "responseXmlLen": 75985,
+      "requestTags": {
+        "adultsCode": [
+          "1"
+        ],
+        "children": [
+          "<child runno=\"0\">17</child>"
+        ],
+        "child": [
+          "17"
+        ],
+        "passengerNationality": [
+          "107"
+        ],
+        "passengerCountryOfResidence": [
+          "107"
+        ]
+      },
+      "responseTags": {
+        "allocationDetails": [
+          "1771177305000011B1000B0",
+          "1771177305000011B1000B1",
+          "1771177305000011B1000B2",
+          "1771177305000011B1000B3",
+          "1771177305000012B1760B6",
+          "1771177305000012B1760B7",
+          "1771177305000012B1760B8",
+          "1771177305000011B1000B4",
+          "1771177305000011B1000B5",
+          "1771177305000011B1000B6",
+          "1771177305000011B1000B7",
+          "1771177305000011B1000B8",
+          "1771177305000011B1000B9",
+          "1771177305000011B1000B10",
+          "1771177305000011B1000B11",
+          "1771177305000012B1760B0",
+          "1771177305000012B1760B1",
+          "1771177305000012B1760B2",
+          "1771177305000012B1760B4",
+          "1771177305000012B1760B3",
+          "1771177305000012B1760B5"
+        ],
+        "extraBed": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0"
+        ],
+        "changedOccupancy": [
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0"
+        ]
+      }
+    },
+    {
+      "idx": 2,
+      "id": "2c8e14eb-fc3f-43d3-9bf6-609038f20641",
+      "step": "BLOCK",
+      "command": "getrooms",
+      "idempotencyKey": "block-999efa74-ab3c-45ee-84ab-5435d9c689bc-eyJob3RlbElkIjoiMzEwODQi",
+      "createdAt": "2026-02-15T17:41:50.059Z",
+      "requestHash": "536525be43fc17a79b19aca16981e8dc7e1a65d0",
+      "responseHash": "d7ff606489eb5b1e2cab40fdf1bd212cc7e08d5f",
+      "requestXmlLen": 786,
+      "responseXmlLen": 33283,
+      "requestTags": {
+        "selectedRateBasis": [
+          "0"
+        ],
+        "allocationDetails": [
+          "1771177305000011B1000B0"
+        ],
+        "adultsCode": [
+          "1"
+        ],
+        "children": [
+          "<child runno=\"0\">17</child>"
+        ],
+        "child": [
+          "17"
+        ],
+        "passengerNationality": [
+          "107"
+        ],
+        "passengerCountryOfResidence": [
+          "107"
+        ]
+      },
+      "responseTags": {
+        "allocationDetails": [
+          "1771177311000001B1000B0",
+          "1771177311000002B1760B4",
+          "1771177311000002B1760B5",
+          "1771177311000001B1000B1",
+          "1771177311000001B1000B2",
+          "1771177311000002B1760B0",
+          "1771177311000002B1760B1",
+          "1771177311000002B1760B3",
+          "1771177311000002B1760B2"
+        ],
+        "extraBed": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0"
+        ],
+        "changedOccupancy": [
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0",
+          "2,0,,0"
+        ]
+      }
+    },
+    {
+      "idx": 3,
+      "id": "3c29f3e0-d681-449d-8879-2b7d68ceda9f",
+      "step": "SAVEBOOKING",
+      "command": "savebooking",
+      "idempotencyKey": "save-999efa74-ab3c-45ee-84ab-5435d9c689bc",
+      "createdAt": "2026-02-15T17:42:02.767Z",
+      "requestHash": "b0acaba8ed7af97aad060db8e2085aa8f715377c",
+      "responseHash": "5ce40b591b9c454319ff3bf0ed35447e907e4efd",
+      "requestXmlLen": 1255,
+      "responseXmlLen": 380,
+      "requestTags": {
+        "roomTypeCode": [
+          "61374"
+        ],
+        "selectedRateBasis": [
+          "0"
+        ],
+        "allocationDetails": [
+          "1771177311000001B1000B0"
+        ],
+        "adultsCode": [
+          "2"
+        ],
+        "actualAdults": [
+          "1"
+        ],
+        "actualChildren": [
+          "<actualChild runno=\"0\">17</actualChild>"
+        ],
+        "actualChild": [
+          "17"
+        ],
+        "extraBed": [
+          "0"
+        ],
+        "passengerNationality": [
+          "107"
+        ],
+        "passengerCountryOfResidence": [
+          "107"
+        ]
+      },
+      "responseTags": {}
+    },
+    {
+      "idx": 4,
+      "id": "2cecb848-7d93-4da3-a535-dd03dfa7fdbc",
+      "step": "BOOK_NO",
+      "command": "bookitinerary",
+      "idempotencyKey": "price-999efa74-ab3c-45ee-84ab-5435d9c689bc",
+      "createdAt": "2026-02-15T17:42:03.952Z",
+      "requestHash": "d8c0d673c8fe3185c4bf6f2ddce3ec67318a175d",
+      "responseHash": "e46a1cb319c4be4f2e38bc3c62b2aefe03056db6",
+      "requestXmlLen": 326,
+      "responseXmlLen": 1897,
+      "requestTags": {},
+      "responseTags": {
+        "allocationDetails": [
+          "1771177325000001B1000B0"
+        ]
+      }
+    },
+    {
+      "idx": 5,
+      "id": "2835e432-c177-4e33-9fad-34021b21797b",
+      "step": "PREAUTH",
+      "command": "bookitinerary",
+      "idempotencyKey": "preauth-999efa74-ab3c-45ee-84ab-5435d9c689bc",
+      "createdAt": "2026-02-15T17:42:28.752Z",
+      "requestHash": "2bbba4df5c7bc975323fbfaed63169149d2afe64",
+      "responseHash": "08c58c4162fbebb22843674c19ca6217396aa115",
+      "requestXmlLen": 1246,
+      "responseXmlLen": 2097,
+      "requestTags": {
+        "allocationDetails": [
+          "1771177325000001B1000B0"
+        ]
+      },
+      "responseTags": {
+        "allocationDetails": [
+          "1771177345000001B1000B0"
+        ]
+      }
+    },
+    {
+      "idx": 6,
+      "id": "716c4d4f-6cb1-4707-a7d1-55bdda063c3a",
+      "step": "BOOK_YES",
+      "command": "bookitinerary",
+      "idempotencyKey": "confirm-999efa74-ab3c-45ee-84ab-5435d9c689bc",
+      "createdAt": "2026-02-15T17:42:32.507Z",
+      "requestHash": "0441812d15670be560ab00e8961e37b470889411",
+      "responseHash": "2305f9bece9278ad2be89782fe43b36e59f97ac4",
+      "requestXmlLen": 818,
+      "responseXmlLen": 43416,
+      "requestTags": {
+        "allocationDetails": [
+          "1771177345000001B1000B0"
+        ]
+      },
+      "responseTags": {}
+    }
+  ]
+}

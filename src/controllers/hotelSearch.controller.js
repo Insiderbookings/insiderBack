@@ -24,6 +24,12 @@ const FULL_CACHE_ENABLED = process.env.WEBBEDS_SEARCH_FULL_CACHE_ENABLED === "tr
 const FULL_CACHE_WARM_ENABLED = process.env.WEBBEDS_SEARCH_WARM_FULL_CACHE_ENABLED === "true"
 const CITY_FETCH_ALL_PAGED_ENABLED =
   process.env.WEBBEDS_SEARCH_CITY_FETCH_ALL_PAGED_ENABLED === "true"
+const CITY_AVAILABILITY_FILL_ENABLED =
+  process.env.WEBBEDS_CITY_AVAILABILITY_FILL_ENABLED !== "false"
+const CITY_AVAILABILITY_FILL_MAX_WINDOWS = Math.max(
+  1,
+  Number(process.env.WEBBEDS_CITY_AVAILABILITY_FILL_MAX_WINDOWS || 8),
+)
 
 const iLikeOp = getCaseInsensitiveLikeOp()
 const MOBILE_CLIENT_TYPES = new Set(["mobile", "app", "react-native"])
@@ -415,6 +421,44 @@ const runWebbedsSearch = async ({ query, user, headers }) => {
 
   return payload
 }
+
+const resolveItemHotelCode = (item) => {
+  const raw =
+    item?.hotelCode ??
+    item?.hotelDetails?.hotelCode ??
+    item?.hotelDetails?.id ??
+    item?.id ??
+    null
+  return raw == null ? "" : String(raw)
+}
+
+const resolvePreferredScore = (item) => {
+  if (item?.preferred || item?.exclusive) return 1
+  if (item?.hotelDetails?.preferred || item?.hotelDetails?.exclusive) return 1
+  return 0
+}
+
+const rankAvailabilityItems = (items = []) =>
+  [...(Array.isArray(items) ? items : [])].sort((a, b) => {
+    const preferredDiff = resolvePreferredScore(b) - resolvePreferredScore(a)
+    if (preferredDiff !== 0) return preferredDiff
+
+    const ratingA = resolveItemRating(a)
+    const ratingB = resolveItemRating(b)
+    const hasRatingA = Number.isFinite(ratingA)
+    const hasRatingB = Number.isFinite(ratingB)
+    if (hasRatingA && hasRatingB && ratingA !== ratingB) return ratingB - ratingA
+    if (hasRatingA !== hasRatingB) return hasRatingA ? -1 : 1
+
+    const priceA = resolveItemPrice(a)
+    const priceB = resolveItemPrice(b)
+    const hasPriceA = Number.isFinite(priceA)
+    const hasPriceB = Number.isFinite(priceB)
+    if (hasPriceA && hasPriceB && priceA !== priceB) return priceA - priceB
+    if (hasPriceA !== hasPriceB) return hasPriceA ? -1 : 1
+
+    return resolveItemHotelCode(a).localeCompare(resolveItemHotelCode(b))
+  })
 
 export const searchHotels = async (req, res, next) => {
   const startTime = Date.now()
@@ -830,6 +874,7 @@ export const searchHotels = async (req, res, next) => {
     const searchStart = Date.now()
     let items = []
     let isStaticResult = false
+    let responseHasMore = false
 
     if (hasRatesParams) {
       // Full Availability Search
@@ -862,11 +907,101 @@ export const searchHotels = async (req, res, next) => {
           }
 
           items = aggregated
+          responseHasMore = false
         } else {
-          items = await callWebbeds({
-            query: providerQuery,
-            reason: "search-primary",
-          })
+          const shouldFillAvailability =
+            CITY_AVAILABILITY_FILL_ENABLED &&
+            clientIsMobile &&
+            resolvedSearchMode === "hotelids" &&
+            resolvedCityCode &&
+            !effectiveFetchAll &&
+            safeOffset === 0
+
+          if (shouldFillAvailability) {
+            const targetCount = safeOffset + safeLimit
+            const idBatchSize = Math.max(safeLimit, Math.min(200, safeLimit * 2))
+            const dedupedItems = []
+            const seenHotelCodes = new Set()
+            let nextIdOffset = safeOffset
+            let exhaustedHotelIds = false
+            let windowIndex = 0
+
+            while (windowIndex < CITY_AVAILABILITY_FILL_MAX_WINDOWS && dedupedItems.length < targetCount) {
+              const windowHotelIds =
+                windowIndex === 0
+                  ? hotelIds
+                  : await fetchHotelIdsByCity(resolvedCityCode, idBatchSize, nextIdOffset, dbFilters)
+
+              if (!windowHotelIds.length) {
+                exhaustedHotelIds = true
+                break
+              }
+
+              nextIdOffset += windowHotelIds.length
+              const windowQuery = {
+                ...providerQuery,
+                hotelIds: windowHotelIds.join(","),
+                limit: undefined,
+                offset: 0,
+              }
+              const windowItems = await callWebbeds({
+                query: windowQuery,
+                reason: windowIndex === 0 ? "search-primary" : "search-backfill",
+              })
+              const safeWindowItems = Array.isArray(windowItems) ? windowItems : []
+
+              for (const item of safeWindowItems) {
+                const hotelCode = resolveItemHotelCode(item)
+                if (!hotelCode || seenHotelCodes.has(hotelCode)) continue
+                seenHotelCodes.add(hotelCode)
+                dedupedItems.push(item)
+              }
+
+              windowIndex += 1
+              if (windowHotelIds.length < idBatchSize) {
+                exhaustedHotelIds = true
+                break
+              }
+            }
+
+            const rankedBackfillItems = rankAvailabilityItems(dedupedItems)
+            items = rankedBackfillItems.slice(safeOffset, safeOffset + safeLimit)
+            responseHasMore = rankedBackfillItems.length > targetCount || !exhaustedHotelIds
+          } else {
+            const shouldUseUnpagedCitySearch =
+              clientIsMobile &&
+              resolvedSearchMode === "city" &&
+              !effectiveFetchAll
+
+            if (shouldUseUnpagedCitySearch) {
+              const fullCityQuery = {
+                ...providerQuery,
+                limit: undefined,
+                offset: 0,
+              }
+              const fullCityItems = await callWebbeds({
+                query: fullCityQuery,
+                reason: "search-primary-unpaged-city",
+              })
+              const safeCityItems = Array.isArray(fullCityItems) ? fullCityItems : []
+              const seenHotelCodes = new Set()
+              const dedupedCityItems = []
+              for (const item of safeCityItems) {
+                const hotelCode = resolveItemHotelCode(item)
+                if (!hotelCode || seenHotelCodes.has(hotelCode)) continue
+                seenHotelCodes.add(hotelCode)
+                dedupedCityItems.push(item)
+              }
+              const rankedCityItems = rankAvailabilityItems(dedupedCityItems)
+              items = rankedCityItems.slice(safeOffset, safeOffset + safeLimit)
+              responseHasMore = rankedCityItems.length > safeOffset + safeLimit
+            } else {
+              items = await callWebbeds({
+                query: providerQuery,
+                reason: "search-primary",
+              })
+            }
+          }
         }
       } catch (err) {
         // If webbeds fails, we could fallback to static, but for now let it throw or handle
@@ -932,7 +1067,7 @@ export const searchHotels = async (req, res, next) => {
     }
     const durationMs = Date.now() - startTime
     const searchDurationMs = Date.now() - searchStart
-    const hasMore = effectiveFetchAll ? false : hotelIds.length === safeLimit
+    const hasMore = effectiveFetchAll ? false : responseHasMore || hotelIds.length === safeLimit
     const responsePayload = {
       items: Array.isArray(items) ? items : [],
       meta: {

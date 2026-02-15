@@ -10,6 +10,7 @@ import { buildBookingEmailPayload } from "../helpers/bookingEmailPayload.js"
 import { triggerBookingAutoPrompts, PROMPT_TRIGGERS } from "../services/chat.service.js"
 import { dispatchBookingConfirmation } from "./payment.controller.js"
 import { convertCurrency } from "../services/currency.service.js"
+import { getMarkup } from "../utils/markup.js"
 import sharp from "sharp"
 
 import { Readable } from "stream"
@@ -107,6 +108,15 @@ const roundCurrency = (value) => {
   const numeric = Number(value || 0)
   if (!Number.isFinite(numeric)) return 0
   return Number.parseFloat(numeric.toFixed(2))
+}
+
+const applyMarkupToAmount = (amount, role) => {
+  const numericAmount = Number(amount)
+  if (!Number.isFinite(numericAmount)) return null
+  if (numericAmount <= 0) return roundCurrency(numericAmount)
+  const markup = Number(getMarkup(role, numericAmount))
+  if (!Number.isFinite(markup) || markup <= 0) return roundCurrency(numericAmount)
+  return roundCurrency(numericAmount * (1 + markup))
 }
 
 const parseCsvList = (value) => {
@@ -365,7 +375,23 @@ export const createPaymentIntent = async (req, res, next) => {
       })
       return res.status(409).json({ error: "Flow pricing unavailable" })
     }
-    const amountUsd = pricedAmount
+    const requestUserRoleRaw = Number(req.user?.role)
+    const requestUserRole = Number.isFinite(requestUserRoleRaw) ? requestUserRoleRaw : 0
+    const publicPricingRole = 0
+    const markupRateRaw = Number(getMarkup(publicPricingRole, pricedAmount))
+    const markupRate = Number.isFinite(markupRateRaw) && markupRateRaw > 0 ? markupRateRaw : 0
+    const providerAmountUsd = roundCurrency(pricedAmount)
+    const amountUsd = applyMarkupToAmount(providerAmountUsd, publicPricingRole)
+    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+      console.warn(`${logPrefix} invalid marked amount`, {
+        flowId,
+        providerAmountUsd,
+        requestUserRole,
+        publicPricingRole,
+        markupRate,
+      })
+      return res.status(409).json({ error: "Flow pricing unavailable" })
+    }
     if (amount != null) {
       const clientAmount = Number(amount)
       if (
@@ -523,14 +549,16 @@ export const createPaymentIntent = async (req, res, next) => {
     if (!finalAmount || !finalCurrency) {
       if (flowId) {
         const fxQuote = flow?.pricing_snapshot_priced?.fxQuote ?? null
-        if (fxQuote?.amount && fxQuote?.currency) {
+        const fxRate = Number(fxQuote?.rate)
+        const fxCurrency = fxQuote?.currency || fxQuote?.targetCurrency || null
+        if (Number.isFinite(fxRate) && fxRate > 0 && fxCurrency) {
           const expiresAt = fxQuote.expiresAt ? Date.parse(fxQuote.expiresAt) : null
           if (expiresAt && Date.now() > expiresAt) {
             return res.status(409).json({ error: "FX quote expired", code: "FX_QUOTE_EXPIRED" })
           }
-          finalAmount = Number(fxQuote.amount)
-          appliedRate = Number(fxQuote.rate) || null
-          finalCurrency = String(fxQuote.currency || fxQuote.targetCurrency || currency).toUpperCase()
+          finalAmount = roundCurrency(amountUsd * fxRate)
+          appliedRate = fxRate
+          finalCurrency = String(fxCurrency || currency).toUpperCase()
           rateSource = fxQuote.source || null
           rateDate = fxQuote.rateDate || null
           fxQuoteUsed = true
@@ -588,6 +616,10 @@ export const createPaymentIntent = async (req, res, next) => {
 
     console.info(`${logPrefix} currency conversion`, {
       base: amountUsd,
+      providerBase: providerAmountUsd,
+      markupRate,
+      requestUserRole,
+      pricingRole: publicPricingRole,
       target: finalAmount,
       currency: finalCurrency,
       rate: appliedRate,
@@ -783,7 +815,11 @@ export const createPaymentIntent = async (req, res, next) => {
             },
           }
           : {}),
-        basePriceUsd: amountUsd,
+        basePriceUsd: providerAmountUsd,
+        chargedBasePriceUsd: amountUsd,
+        publicMarkupRate: markupRate,
+        pricingRole: publicPricingRole,
+        requestUserRole,
         exchangeRate: appliedRate,
         exchangeRateSource: rateSource || null,
         exchangeRateDate: rateDate || null,

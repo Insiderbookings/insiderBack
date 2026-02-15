@@ -276,6 +276,12 @@ const buildOfferPayload = ({
 }) => {
   const ttlSeconds = Number(process.env.FLOW_TOKEN_TTL_SECONDS || 900);
   const now = Date.now();
+  const rateTotal =
+    toNumberSafe(rateBasis?.total) ??
+    toNumberSafe(rateBasis?.totalInRequestedCurrency) ??
+    toNumberSafe(rateBasis?.totalMinimumSelling) ??
+    toNumberSafe(rateBasis?.minimumSelling) ??
+    null;
   // Keep the token small: only essentials to identify the selection and validate TTL/signature.
   return {
     hotelId,
@@ -303,6 +309,7 @@ const buildOfferPayload = ({
     totalFee: rateBasis?.totalFee ?? null,
     propertyFees: rateBasis?.propertyFees ?? [],
     allocationDetails: rateBasis?.allocationDetails ?? null,
+    price: rateTotal,
     createdAt: now,
     exp: now + ttlSeconds * 1000,
   };
@@ -337,19 +344,102 @@ const pickAllocationFromResult = (result) => {
   return null;
 };
 
-const findRateBasisMatch = (mappedHotel, roomTypeCode, rateBasisId) => {
+const resolveRateBasisPrice = (rateBasis) =>
+  toNumberSafe(rateBasis?.total) ??
+  toNumberSafe(rateBasis?.totalInRequestedCurrency) ??
+  toNumberSafe(rateBasis?.totalMinimumSelling) ??
+  toNumberSafe(rateBasis?.minimumSelling) ??
+  null;
+
+const resolveRateBasisNonRefundable = (rateBasis) => {
+  const raw = rateBasis?.rateType?.nonRefundable ?? rateBasis?.nonRefundable;
+  if (raw == null) return null;
+  return toBoolean(raw);
+};
+
+const resolveRateBasisCancelRestricted = (rateBasis) => {
+  const rules = ensureArray(rateBasis?.cancellationRules);
+  if (!rules.length) return null;
+  return rules.some((rule) => toBoolean(rule?.cancelRestricted));
+};
+
+const resolveRateBasisAmendRestricted = (rateBasis) => {
+  const rules = ensureArray(rateBasis?.cancellationRules);
+  if (!rules.length) return null;
+  return rules.some((rule) => toBoolean(rule?.amendRestricted));
+};
+
+const getRateMatchScore = ({ candidate, selected }) => {
+  let score = 0;
+  const candidateAllocation = getText(candidate?.allocationDetails) ?? "";
+  const selectedAllocation = getText(selected?.allocationDetails) ?? "";
+  if (selectedAllocation) {
+    score += candidateAllocation === selectedAllocation ? 120 : -60;
+  }
+
+  const candidateNonRefundable = resolveRateBasisNonRefundable(candidate);
+  const selectedNonRefundable =
+    selected?.nonRefundable == null ? null : toBoolean(selected?.nonRefundable);
+  if (selectedNonRefundable != null && candidateNonRefundable != null) {
+    score += candidateNonRefundable === selectedNonRefundable ? 60 : -60;
+  }
+
+  const candidateCancelRestricted = resolveRateBasisCancelRestricted(candidate);
+  const selectedCancelRestricted =
+    selected?.cancelRestricted == null ? null : toBoolean(selected?.cancelRestricted);
+  if (selectedCancelRestricted != null && candidateCancelRestricted != null) {
+    score += candidateCancelRestricted === selectedCancelRestricted ? 30 : -30;
+  }
+
+  const candidateAmendRestricted = resolveRateBasisAmendRestricted(candidate);
+  const selectedAmendRestricted =
+    selected?.amendRestricted == null ? null : toBoolean(selected?.amendRestricted);
+  if (selectedAmendRestricted != null && candidateAmendRestricted != null) {
+    score += candidateAmendRestricted === selectedAmendRestricted ? 20 : -20;
+  }
+
+  const selectedPrice = toNumberSafe(selected?.price);
+  const candidatePrice = resolveRateBasisPrice(candidate);
+  const priceDiff =
+    Number.isFinite(selectedPrice) && Number.isFinite(candidatePrice)
+      ? Math.abs(candidatePrice - selectedPrice)
+      : Number.MAX_SAFE_INTEGER;
+  if (Number.isFinite(selectedPrice) && Number.isFinite(candidatePrice)) {
+    const safeBase = Math.max(1, Math.abs(selectedPrice));
+    score -= priceDiff / safeBase;
+  }
+
+  return { score, priceDiff };
+};
+
+const findRateBasisMatch = (mappedHotel, selectedOffer = {}) => {
+  const roomTypeCode = selectedOffer?.roomTypeCode;
+  const rateBasisId = selectedOffer?.rateBasisId;
   const rooms = ensureArray(mappedHotel?.rooms);
+  let fallbackCandidates = [];
   for (const room of rooms) {
     const roomTypes = ensureArray(room?.roomTypes);
     for (const rt of roomTypes) {
       if (String(rt?.roomTypeCode ?? "") !== String(roomTypeCode ?? "")) continue;
-      const rb = ensureArray(rt?.rateBases).find(
+      const candidates = ensureArray(rt?.rateBases).filter(
         (rbItem) => String(rbItem?.id ?? "") === String(rateBasisId ?? ""),
       );
-      if (rb) return rb;
+      if (!candidates.length) continue;
+      fallbackCandidates = candidates;
+      const ranked = candidates
+        .map((candidate) => ({
+          candidate,
+          ...getRateMatchScore({ candidate, selected: selectedOffer }),
+        }))
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          return a.priceDiff - b.priceDiff;
+        });
+      if (ranked.length) return ranked[0].candidate;
+      return candidates[0] ?? null;
     }
   }
-  return null;
+  return fallbackCandidates[0] ?? null;
 };
 
 const buildNoAvailabilityError = ({
@@ -371,21 +461,45 @@ const attachOfferTokensToRooms = (mapped, offers = []) => {
   if (!mapped?.hotel?.rooms || !Array.isArray(offers) || !offers.length) return mapped;
   const offerMap = new Map();
   offers.forEach((offer) => {
-    const key = `${String(offer?.roomTypeCode ?? "")}:${String(offer?.rateBasisId ?? "")}`;
-    if (!offerMap.has(key)) {
-      offerMap.set(key, offer?.offerToken ?? null);
-    }
+    const key = `${String(offer?.roomRunno ?? "")}:${String(offer?.roomTypeCode ?? "")}:${String(
+      offer?.rateBasisId ?? "",
+    )}`;
+    const queue = offerMap.get(key) ?? [];
+    queue.push(offer);
+    offerMap.set(key, queue);
   });
   const rooms = ensureArray(mapped.hotel.rooms).map((room) => ({
     ...room,
     roomTypes: ensureArray(room?.roomTypes).map((roomType) => ({
       ...roomType,
-      rateBases: ensureArray(roomType?.rateBases).map((rateBasis) => ({
-        ...rateBasis,
-        offerToken:
-          offerMap.get(`${String(roomType?.roomTypeCode ?? "")}:${String(rateBasis?.id ?? "")}`) ??
-          null,
-      })),
+      rateBases: ensureArray(roomType?.rateBases).map((rateBasis) => {
+        const key = `${String(room?.runno ?? "")}:${String(roomType?.roomTypeCode ?? "")}:${String(
+          rateBasis?.id ?? "",
+        )}`;
+        const queue = offerMap.get(key) ?? [];
+        let offerToken = null;
+        if (queue.length) {
+          const selected = queue
+            .map((offer) => ({
+              offer,
+              ...getRateMatchScore({ candidate: rateBasis, selected: offer }),
+            }))
+            .sort((a, b) => {
+              if (b.score !== a.score) return b.score - a.score;
+              return a.priceDiff - b.priceDiff;
+            })[0]?.offer;
+          if (selected) {
+            offerToken = selected.offerToken ?? null;
+            const idx = queue.indexOf(selected);
+            if (idx >= 0) queue.splice(idx, 1);
+            offerMap.set(key, queue);
+          }
+        }
+        return {
+          ...rateBasis,
+          offerToken,
+        };
+      }),
     })),
   }));
   return {
@@ -793,11 +907,7 @@ export class FlowOrchestratorService {
       logMeta: { flowId },
     });
     const mapped = mapGetRoomsResponse(result);
-    const rateBasis = findRateBasisMatch(
-      mapped?.hotel,
-      flow.selected_offer.roomTypeCode,
-      flow.selected_offer.rateBasisId,
-    );
+    const rateBasis = findRateBasisMatch(mapped?.hotel, flow.selected_offer);
     const allocationIn = flow.allocation_current;
     const newAllocation = getText(rateBasis?.allocationDetails) || allocationIn;
 
@@ -1379,11 +1489,7 @@ export class FlowOrchestratorService {
 
     const mapped = mapGetRoomsResponse(result);
     const rooms = ensureArray(mapped?.hotel?.rooms);
-    const rateBasis = findRateBasisMatch(
-      mapped?.hotel,
-      flow.selected_offer.roomTypeCode,
-      flow.selected_offer.rateBasisId,
-    );
+    const rateBasis = findRateBasisMatch(mapped?.hotel, flow.selected_offer);
     if (!rooms.length || !rateBasis) {
       const error = buildNoAvailabilityError({
         message: "Selected rate is no longer available.",

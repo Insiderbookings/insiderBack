@@ -1,4 +1,4 @@
-import models from "../models/index.js";
+import models, { sequelize } from "../models/index.js";
 import { emitAdminActivity, emitToUser, emitToRoom } from "../websocket/emitter.js";
 import { validationResult } from "express-validator";
 import { Op } from "sequelize";
@@ -21,11 +21,13 @@ const getSupportBotId = () => {
 };
 
 const normalizeRole = (value) => Number(value || 0);
+const SUPPORT_AGENT_ROLES = new Set([1, 7, 8, 100]);
+const SUPPORT_MANAGER_ROLES = new Set([8, 100]);
+const SUPPORT_ASSIGNABLE_ROLES = new Set([1, 7, 8, 100]);
 const isAdminUser = (user) => normalizeRole(user?.role) === 100;
-const isStaffOrAdmin = (user) => {
-    const role = normalizeRole(user?.role);
-    return role === 100 || role === 1;
-};
+const isSupportAgent = (user) => SUPPORT_AGENT_ROLES.has(normalizeRole(user?.role));
+const isSupportManager = (user) => SUPPORT_MANAGER_ROLES.has(normalizeRole(user?.role));
+const isAssignableSupportRole = (role) => SUPPORT_ASSIGNABLE_ROLES.has(normalizeRole(role));
 const normalizeAction = (value) => String(value || "").trim().toUpperCase();
 const normalizeAmount = (value) => {
     const parsed = Number(value);
@@ -273,7 +275,7 @@ export const createTicket = async (req, res, next) => {
             : subject;
 
         const now = new Date();
-        const result = await models.sequelize.transaction(async (transaction) => {
+        const result = await sequelize.transaction(async (transaction) => {
             let chatThread = null;
             let ticket = null;
             let ticketCreated = false;
@@ -438,8 +440,8 @@ export const getTicketDetails = async (req, res, next) => {
 
         if (!ticket) return res.status(404).json({ error: "Ticket not found" });
 
-        // Security check: only owner or Admin (role 100) can view
-        if (ticket.user_id !== req.user.id && req.user.role !== 100) {
+        // Security check: owner, staff or admin can view
+        if (ticket.user_id !== req.user.id && !isSupportAgent(req.user)) {
             return res.status(403).json({ error: "Forbidden" });
         }
 
@@ -447,7 +449,7 @@ export const getTicketDetails = async (req, res, next) => {
         payload.sla = buildSlaSummary({ ticket: payload, messages: payload.messages });
         payload.permissions = {
             canExecuteFinancialActions: canExecuteFinancialAction(req.user),
-            canAssign: isStaffOrAdmin(req.user),
+            canAssign: isSupportManager(req.user),
             canWriteInternalNotes: isAdminUser(req.user),
         };
 
@@ -462,7 +464,8 @@ export const replyTicket = async (req, res, next) => {
         const { id } = req.params;
         const { content, internal = false, metadata = null } = req.body || {};
         const userId = req.user.id;
-        const isAdmin = req.user.role === 100;
+        const isAdmin = isAdminUser(req.user);
+        const isAgent = isSupportAgent(req.user);
         const SUPPORT_BOT_ID = getSupportBotId();
         const isInternal = Boolean(internal);
 
@@ -476,14 +479,14 @@ export const replyTicket = async (req, res, next) => {
         const ticket = await models.SupportTicket.findByPk(id);
         if (!ticket) return res.status(404).json({ error: "Ticket not found" });
 
-        if (ticket.user_id !== userId && !isAdmin) {
+        if (ticket.user_id !== userId && !isAgent) {
             return res.status(403).json({ error: "Forbidden" });
         }
 
         // 1. Create SupportMessage (Admin View)
         const message = await models.SupportMessage.create({
             ticket_id: id,
-            sender_type: isAdmin ? "ADMIN" : "USER",
+            sender_type: isAgent ? "ADMIN" : "USER",
             sender_id: userId,
             content: String(content).trim(),
             metadata: {
@@ -497,13 +500,13 @@ export const replyTicket = async (req, res, next) => {
         if (ticket.chat_thread_id && !isInternal) {
             await postMessage({
                 chatId: ticket.chat_thread_id,
-                senderId: isAdmin ? SUPPORT_BOT_ID : userId, // Admins post as Bot/System
-                senderRole: isAdmin ? "HOST" : "GUEST",
+                senderId: isAgent ? SUPPORT_BOT_ID : userId, // Agents post as Support Bot/System
+                senderRole: isAgent ? "HOST" : "GUEST",
                 body: String(content).trim(),
                 type: "TEXT",
                 metadata: {
                     source: "support",
-                    ...(isAdmin ? { senderName: "BookingGPT Support Team" } : {}),
+                    ...(isAgent ? { senderName: "BookingGPT Support Team" } : {}),
                 },
             });
         }
@@ -511,14 +514,14 @@ export const replyTicket = async (req, res, next) => {
         // Update ticket timestamp
         ticket.last_message_at = new Date();
         // If user replies, reopen ticket if closed (optional logic)
-        if (!isAdmin && ticket.status === 'RESOLVED') ticket.status = 'IN_PROGRESS';
-        // If admin replies, maybe set to IN_PROGRESS
-        if (isAdmin && ticket.status === 'OPEN') ticket.status = 'IN_PROGRESS';
+        if (!isAgent && ticket.status === 'RESOLVED') ticket.status = 'IN_PROGRESS';
+        // If support agent replies, set to IN_PROGRESS
+        if (isAgent && ticket.status === 'OPEN') ticket.status = 'IN_PROGRESS';
 
         await ticket.save();
 
         // Real-time notifications
-        if (isAdmin) {
+        if (isAgent) {
             // Notify User only for external replies
             if (!isInternal) {
                 emitToUser(ticket.user_id, "support:new_message", { ticketId: id, message });
@@ -537,7 +540,7 @@ export const replyTicket = async (req, res, next) => {
 
 export const updateTicketStatus = async (req, res, next) => {
     try {
-        if (!isStaffOrAdmin(req.user)) return res.status(403).json({ error: "Staff or admin access required" });
+        if (!isSupportAgent(req.user)) return res.status(403).json({ error: "Support access required" });
 
         const { id } = req.params;
         const { status, priority, assigned_to } = req.body;
@@ -554,6 +557,9 @@ export const updateTicketStatus = async (req, res, next) => {
         if (status) ticket.status = status;
         if (priority) ticket.priority = priority;
         if (Object.prototype.hasOwnProperty.call(req.body, "assigned_to")) {
+            if (!isSupportManager(req.user)) {
+                return res.status(403).json({ error: "Only support manager can assign tickets" });
+            }
             if (assigned_to == null || assigned_to === "") {
                 ticket.assigned_to = null;
             } else {
@@ -566,8 +572,8 @@ export const updateTicketStatus = async (req, res, next) => {
                 });
                 if (!assignee) return res.status(404).json({ error: "Assignee not found" });
                 const assigneeRole = normalizeRole(assignee.role);
-                if (![1, 100].includes(assigneeRole)) {
-                    return res.status(400).json({ error: "Assignee must be staff/admin" });
+                if (!isAssignableSupportRole(assigneeRole)) {
+                    return res.status(400).json({ error: "Assignee must be a support user" });
                 }
                 ticket.assigned_to = assignee.id;
             }
@@ -620,7 +626,7 @@ export const updateTicketStatus = async (req, res, next) => {
 
 export const previewTicketAction = async (req, res, next) => {
     try {
-        if (!isStaffOrAdmin(req.user)) return res.status(403).json({ error: "Staff or admin access required" });
+        if (!isSupportAgent(req.user)) return res.status(403).json({ error: "Support access required" });
         const { id } = req.params;
         const { action, bookingId } = req.body || {};
         const normalizedAction = normalizeAction(action);
@@ -692,7 +698,7 @@ export const previewTicketAction = async (req, res, next) => {
 
 export const getAllTickets = async (req, res, next) => {
     try {
-        if (!isStaffOrAdmin(req.user)) return res.status(403).json({ error: "Staff or admin access required" });
+        if (!isSupportAgent(req.user)) return res.status(403).json({ error: "Support access required" });
 
         const { status, priority, userId, assignedTo } = req.query;
         const where = {};
