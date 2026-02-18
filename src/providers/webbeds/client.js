@@ -233,10 +233,12 @@ export const createWebbedsClient = ({
     ? normalizedHost
     : `${normalizedHost.replace(/\/+$/, "")}${endpointPath}`
 
-  const requestWithRetry = async (attemptFn) => {
+  const requestWithRetry = async (attemptFn, retriesOverride = null) => {
     let attempt = 0
     let lastError
-    const maxAttempts = Math.max(1, Number.isFinite(retries) ? retries + 1 : 1)
+    const retriesValue = Number(retriesOverride)
+    const resolvedRetries = Number.isFinite(retriesValue) ? retriesValue : retries
+    const maxAttempts = Math.max(1, Number.isFinite(resolvedRetries) ? resolvedRetries + 1 : 1)
 
     while (attempt < maxAttempts) {
       try {
@@ -279,6 +281,7 @@ export const createWebbedsClient = ({
     requestAttributes,
     requestId,
     timeout,
+    retriesOverride,
     useCompression,
     logContext,
     productOverride,
@@ -441,7 +444,7 @@ export const createWebbedsClient = ({
         responseXml,
         durationMs: totalDuration,
       }
-    })
+    }, retriesOverride)
   }
 
   const isTransportParseError = (error) => {
@@ -458,7 +461,7 @@ export const createWebbedsClient = ({
   const send = async (
     command,
     payload = {},
-    { requestId, timeout, requestAttributes, productOverride, logMeta } = {},
+    { requestId, timeout, requestAttributes, productOverride, logMeta, retriesOverride } = {},
   ) => {
     if (!command) {
       throw new Error("WebBeds command is required")
@@ -473,6 +476,7 @@ export const createWebbedsClient = ({
         requestAttributes,
         requestId,
         timeout,
+        retriesOverride,
         useCompression: preferCompressedRequests,
         logContext,
         productOverride,

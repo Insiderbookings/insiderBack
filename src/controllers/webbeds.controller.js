@@ -18,6 +18,13 @@ import { pipeline } from "stream/promises"
 
 import { resolveEnabledCurrency } from "../services/currencySettings.service.js"
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
+import {
+  EXPLORE_RANKING_VERSION,
+  fetchHotelExploreEngagementStats,
+  rankHotelsForExplore,
+  rankHotelSectionsForExplore,
+  resolveExploreRankingVariant,
+} from "../services/exploreRanking.service.js"
 
 
 import { planReferralFirstBookingDiscount } from "../services/referralRewards.service.js"
@@ -1347,6 +1354,7 @@ export const listExploreHotels = async (req, res, next) => {
     ).trim() || null
 
     const coords = resolveExploreCoordinates(req)
+    const rankingVariant = resolveExploreRankingVariant(req)
     const radiusBase = Number(radiusKm)
     const safeRadius = clampNumber(
       Number.isFinite(radiusBase) ? radiusBase : EXPLORE_DEFAULT_RADIUS_KM,
@@ -1371,6 +1379,7 @@ export const listExploreHotels = async (req, res, next) => {
         fallbackCityCode: resolvedFallbackCity,
         lite: useLite,
         imagesLimit: safeImagesLimit,
+        rankingVariant: rankingVariant.variant,
       })
 
     if (cacheKey) {
@@ -1453,7 +1462,7 @@ export const listExploreHotels = async (req, res, next) => {
     }
 
     const pageRows = selectedRows.slice(safeOffset, safeOffset + safeLimit)
-    const items = pageRows
+    let items = pageRows
       .map((row) => {
         const item = formatStaticHotel(row, { imageLimit: safeImagesLimit })
         if (!item) return null
@@ -1465,6 +1474,21 @@ export const listExploreHotels = async (req, res, next) => {
         return item
       })
       .filter(Boolean)
+
+    if (rankingVariant.applied && items.length) {
+      try {
+        const engagementById = await fetchHotelExploreEngagementStats(
+          items.map((item) => item?.id),
+        )
+        items = rankHotelsForExplore(items, {
+          engagementById,
+          coords: coords ? { lat: Number(coords.lat), lng: Number(coords.lng) } : null,
+          debug: rankingVariant.debug,
+        })
+      } catch (error) {
+        console.warn("[webbeds] listExploreHotels ranking failed", error?.message || error)
+      }
+    }
 
     const responsePayload = {
       items,
@@ -1485,6 +1509,12 @@ export const listExploreHotels = async (req, res, next) => {
           }
           : null,
         radiusKm: safeRadius,
+        ranking: {
+          applied: rankingVariant.applied,
+          variant: rankingVariant.variant,
+          version: EXPLORE_RANKING_VERSION,
+          percent: rankingVariant.percent,
+        },
       },
     }
 
@@ -1534,6 +1564,7 @@ export const listExploreCollections = async (req, res, next) => {
     )
 
     const coords = resolveExploreCoordinates(req)
+    const rankingVariant = resolveExploreRankingVariant(req)
     const bucketLat = coords
       ? roundCoordinate(coords.lat, EXPLORE_GEO_BUCKET_PRECISION)
       : null
@@ -1560,6 +1591,7 @@ export const listExploreCollections = async (req, res, next) => {
         fallbackCityCode: resolvedFallbackCity,
         lite: useLite,
         imagesLimit: safeImagesLimit,
+        rankingVariant: rankingVariant.variant,
       })
 
     if (cacheKey) {
@@ -1605,7 +1637,7 @@ export const listExploreCollections = async (req, res, next) => {
 
     const attributes = getStaticHotelAttributes(useLite)
     const include = getStaticHotelIncludes()
-    const sectionsPayload = []
+    let sectionsPayload = []
 
     for (const entry of cityBuckets.slice(0, safeSections)) {
       const code = String(entry.cityCode).trim()
@@ -1634,6 +1666,23 @@ export const listExploreCollections = async (req, res, next) => {
       })
     }
 
+    if (rankingVariant.applied && sectionsPayload.length) {
+      try {
+        const hotelIds = sectionsPayload
+          .flatMap((section) => (Array.isArray(section?.data) ? section.data : []))
+          .map((item) => item?.id)
+          .filter(Boolean)
+        const engagementById = await fetchHotelExploreEngagementStats(hotelIds)
+        sectionsPayload = rankHotelSectionsForExplore(sectionsPayload, {
+          engagementById,
+          coords: coords ? { lat: Number(coords.lat), lng: Number(coords.lng) } : null,
+          debug: rankingVariant.debug,
+        })
+      } catch (error) {
+        console.warn("[webbeds] listExploreCollections ranking failed", error?.message || error)
+      }
+    }
+
     const responsePayload = {
       sections: sectionsPayload,
       meta: {
@@ -1649,6 +1698,12 @@ export const listExploreCollections = async (req, res, next) => {
           : null,
         radiusKm: safeRadius,
         fallbackUsed: sectionsPayload.length === 0,
+        ranking: {
+          applied: rankingVariant.applied,
+          variant: rankingVariant.variant,
+          version: EXPLORE_RANKING_VERSION,
+          percent: rankingVariant.percent,
+        },
       },
     }
 

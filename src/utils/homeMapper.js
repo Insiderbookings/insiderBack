@@ -99,5 +99,6 @@ export const mapHomeToCard = (home) => {
     longitude: Number.isFinite(longitude) ? longitude : null,
     locationLat: Number.isFinite(latitude) ? latitude : null,
     locationLng: Number.isFinite(longitude) ? longitude : null,
+    updatedAt: home.updated_at ?? home.updatedAt ?? null,
   };
 };
