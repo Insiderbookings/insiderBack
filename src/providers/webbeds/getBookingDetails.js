@@ -8,6 +8,17 @@ const normalizeBoolean = (value) => {
     return false
 }
 
+const toOptionalBoolean = (value) => {
+    if (value === true || value === false) return value
+    if (value == null || value === "") return null
+    if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase()
+        if (["1", "true", "yes", "y"].includes(normalized)) return true
+        if (["0", "false", "no", "n"].includes(normalized)) return false
+    }
+    return null
+}
+
 const ensureArray = (value) => {
     if (!value) return []
     return Array.isArray(value) ? value : [value]
@@ -88,6 +99,8 @@ export const mapGetBookingDetailsResponse = (result) => {
         fromDate: rule?.fromDate,
         toDate: rule?.toDate,
         charge: parseFormattedPrice(rule?.charge),
+        cancelRestricted: toOptionalBoolean(rule?.cancelRestricted),
+        amendRestricted: toOptionalBoolean(rule?.amendRestricted),
         details: {
             from: rule?.fromDateDetails,
             to: rule?.toDateDetails,

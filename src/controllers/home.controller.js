@@ -7,6 +7,12 @@ import { HOME_DISCOUNT_RULE_TYPES } from "../models/HomeDiscountRule.js";
 import { resolveGeoFromRequest } from "../utils/geoLocation.js";
 import { mapHomeToCard, getCoverImage } from "../utils/homeMapper.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
+import {
+  EXPLORE_RANKING_VERSION,
+  fetchHomeExploreEngagementStats,
+  rankHomesForExplore,
+  resolveExploreRankingVariant,
+} from "../services/exploreRanking.service.js"
 
 function asBool(value, fallback = false) {
   if (value == null) return fallback;
@@ -19,6 +25,14 @@ const asNumber = (value, fallback = null) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
 };
+
+const parseCoordinateValue = (value, min, max) => {
+  if (value == null || value === "") return null
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return null
+  if (parsed < min || parsed > max) return null
+  return parsed
+}
 
 const normalizeLocationCode = (value) => {
   if (value == null) return null;
@@ -376,6 +390,19 @@ const buildExploreSections = (items) => {
 
 export const listExploreHomes = async (req, res) => {
   try {
+    const rankingVariant = resolveExploreRankingVariant(req)
+    const queryLat = parseCoordinateValue(req.query?.lat, -90, 90)
+    const queryLng = parseCoordinateValue(req.query?.lng, -180, 180)
+    const requestGeo = resolveGeoFromRequest(req)
+    const geoLat = parseCoordinateValue(requestGeo?.latitude, -90, 90)
+    const geoLng = parseCoordinateValue(requestGeo?.longitude, -180, 180)
+    const coords =
+      queryLat != null && queryLng != null
+        ? { lat: queryLat, lng: queryLng, source: "query" }
+        : geoLat != null && geoLng != null
+          ? { lat: geoLat, lng: geoLng, source: "ip" }
+          : null
+
     const limitParam = Number(req.query?.limit);
     const limit =
       Number.isFinite(limitParam) && limitParam > 0
@@ -408,6 +435,8 @@ export const listExploreHomes = async (req, res) => {
             "city",
             "state",
             "country",
+            "latitude",
+            "longitude",
           ],
         },
         {
@@ -440,15 +469,45 @@ export const listExploreHomes = async (req, res) => {
       limit,
     });
 
-    const cards = homes
+    let cards = homes
       .map(mapHomeToExploreCard)
       .filter((item) => item && item.coverImage);
+
+    if (rankingVariant.applied && cards.length) {
+      try {
+        const engagementById = await fetchHomeExploreEngagementStats(
+          cards.map((item) => item?.id),
+        )
+        cards = rankHomesForExplore(cards, {
+          engagementById,
+          coords: coords ? { lat: Number(coords.lat), lng: Number(coords.lng) } : null,
+          debug: rankingVariant.debug,
+        })
+      } catch (error) {
+        console.warn("[listExploreHomes] ranking failed", error?.message || error)
+      }
+    }
 
     const sections = buildExploreSections(cards);
 
     return res.json({
       sections,
       total: cards.length,
+      meta: {
+        ranking: {
+          applied: rankingVariant.applied,
+          variant: rankingVariant.variant,
+          version: EXPLORE_RANKING_VERSION,
+          percent: rankingVariant.percent,
+        },
+        location: coords
+          ? {
+            lat: coords.lat,
+            lng: coords.lng,
+            source: coords.source || null,
+          }
+          : null,
+      },
     });
   } catch (err) {
     console.error("[listExploreHomes]", err);

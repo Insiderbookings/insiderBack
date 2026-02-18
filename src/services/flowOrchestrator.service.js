@@ -15,40 +15,6 @@ import { logCurrencyDebug } from "../utils/currencyDebug.js";
 import { convertCurrency } from "./currency.service.js";
 import { resolveEnabledCurrency } from "./currencySettings.service.js";
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const RETRYABLE_WEBBEDS_CODES = new Set([
-  "8", "20", "25", "31", "67", "900", "901", "53", "63", "5300", "696",
-  "115", "116", "119", "117", "132", "190", "65002", "86000",
-]);
-const RETRYABLE_HTTP_STATUSES = new Set([502, 503, 504]);
-const RETRYABLE_ERRNOS = new Set([
-  "ETIMEDOUT",
-  "ECONNRESET",
-  "ECONNREFUSED",
-  "EAI_AGAIN",
-  "ENOTFOUND",
-]);
-
-const isRetryablePriceError = (error) => {
-  if (!error) return false;
-  if (error.name === "WebbedsError") {
-    const code = error.code != null ? String(error.code) : "";
-    if (RETRYABLE_WEBBEDS_CODES.has(code)) return true;
-    if (error.httpStatus && RETRYABLE_HTTP_STATUSES.has(Number(error.httpStatus))) return true;
-  }
-  if (error.code && RETRYABLE_ERRNOS.has(String(error.code))) return true;
-  if (error.httpStatus && RETRYABLE_HTTP_STATUSES.has(Number(error.httpStatus))) return true;
-  return false;
-};
-
-const getRetryDelayMs = (attempt, baseDelay, maxDelay) => {
-  const cappedBase = Math.max(100, Number(baseDelay) || 600);
-  const max = Math.max(cappedBase, Number(maxDelay) || 5000);
-  const delay = Math.min(cappedBase * Math.pow(2, attempt - 1), max);
-  const jitter = Math.floor(Math.random() * 200);
-  return delay + jitter;
-};
-
 const FLOW_STATUSES = {
   STARTED: "STARTED",
   OFFER_SELECTED: "OFFER_SELECTED",
@@ -74,6 +40,155 @@ const STEP_COMMAND = {
 };
 
 const FLOW_VERBOSE_LOGS = process.env.WEBBEDS_VERBOSE_LOGS === "true";
+const FLOW_RATE_DEBUG_LOGS = String(process.env.FLOW_RATE_DEBUG_LOGS || "")
+  .trim()
+  .toLowerCase() === "true";
+
+const shortDebugToken = (token) => {
+  const text = String(token || "").trim();
+  if (!text) return null;
+  if (text.length <= 20) return text;
+  return `${text.slice(0, 8)}...${text.slice(-8)}`;
+};
+
+const summarizeOfferForDebug = (offer = {}, { includeToken = false } = {}) => {
+  if (!offer || typeof offer !== "object") return null;
+  const summary = {
+    hotelId: offer?.hotelId ?? null,
+    fromDate: offer?.fromDate ?? null,
+    toDate: offer?.toDate ?? null,
+    currency: offer?.currency ?? null,
+    roomRunno: offer?.roomRunno ?? null,
+    roomTypeCode: offer?.roomTypeCode ?? null,
+    roomName: offer?.roomName ?? null,
+    rateBasisId: offer?.rateBasisId ?? null,
+    rateBasisName: offer?.rateBasisName ?? null,
+    allocationDetails: offer?.allocationDetails ?? null,
+    price: toNumberSafe(offer?.price),
+    minimumSelling: toNumberSafe(offer?.minimumSelling),
+    mealPlan: offer?.mealPlan ?? null,
+    nonRefundable:
+      offer?.nonRefundable != null ? toBoolean(offer?.nonRefundable) : null,
+    cancelRestricted:
+      offer?.cancelRestricted != null ? toBoolean(offer?.cancelRestricted) : null,
+    amendRestricted:
+      offer?.amendRestricted != null ? toBoolean(offer?.amendRestricted) : null,
+    changedOccupancy: offer?.changedOccupancy ?? null,
+    changedOccupancyValue: offer?.changedOccupancyValue ?? null,
+  };
+  if (includeToken) {
+    summary.offerToken = shortDebugToken(offer?.offerToken);
+  }
+  return summary;
+};
+
+const summarizeRateBasisForDebug = (rateBasis = {}) => {
+  if (!rateBasis || typeof rateBasis !== "object") return null;
+  return {
+    id: rateBasis?.id ?? null,
+    roomTypeCode: rateBasis?.roomTypeCode ?? null,
+    allocationDetails: getText(rateBasis?.allocationDetails) ?? null,
+    total: toNumberSafe(rateBasis?.total),
+    totalInRequestedCurrency: toNumberSafe(rateBasis?.totalInRequestedCurrency),
+    totalMinimumSelling: toNumberSafe(rateBasis?.totalMinimumSelling),
+    minimumSelling:
+      toNumberSafe(rateBasis?.minimumSelling) ??
+      toNumberSafe(rateBasis?.priceMinimumSelling) ??
+      null,
+    mealPlan: resolveRateBasisMealPlan(rateBasis),
+    nonRefundable: resolveRateBasisNonRefundable(rateBasis),
+    cancelRestricted: resolveRateBasisCancelRestricted(rateBasis),
+    amendRestricted: resolveRateBasisAmendRestricted(rateBasis),
+    changedOccupancy: rateBasis?.changedOccupancy ?? null,
+    changedOccupancyValue: rateBasis?.changedOccupancyValue ?? null,
+  };
+};
+
+const summarizeFlowPricingForDebug = (flow) => ({
+  priced: flow?.pricing_snapshot_priced
+    ? {
+      price: flow.pricing_snapshot_priced.price ?? null,
+      currency: flow.pricing_snapshot_priced.currency ?? null,
+      allocationDetails: flow.pricing_snapshot_priced.allocationDetails ?? null,
+      withinCancellationDeadline:
+        flow.pricing_snapshot_priced.withinCancellationDeadline ?? null,
+    }
+    : null,
+  preauth: flow?.pricing_snapshot_preauth
+    ? {
+      price: flow.pricing_snapshot_preauth.price ?? null,
+      currency: flow.pricing_snapshot_preauth.currency ?? null,
+      allocationDetails: flow.pricing_snapshot_preauth.allocationDetails ?? null,
+      orderCode: flow.pricing_snapshot_preauth.orderCode ?? null,
+      authorisationId: flow.pricing_snapshot_preauth.authorisationId ?? null,
+    }
+    : null,
+  confirmed: flow?.pricing_snapshot_confirmed
+    ? {
+      price:
+        flow.pricing_snapshot_confirmed.servicePrice ??
+        flow.pricing_snapshot_confirmed.price ??
+        null,
+      currency: flow.pricing_snapshot_confirmed.currency ?? null,
+      allocationDetails: flow.pricing_snapshot_confirmed.allocationDetails ?? null,
+      bookingCode: flow.pricing_snapshot_confirmed.bookingCode ?? null,
+      bookingReferenceNumber:
+        flow.pricing_snapshot_confirmed.bookingReferenceNumber ?? null,
+    }
+    : null,
+});
+
+const summarizeRateMatchCandidatesForDebug = (mappedHotel, selectedOffer = {}, limit = 8) => {
+  const roomTypeCode = selectedOffer?.roomTypeCode;
+  const rateBasisId = selectedOffer?.rateBasisId;
+  const rooms = ensureArray(mappedHotel?.rooms);
+  const candidates = [];
+  for (const room of rooms) {
+    for (const roomType of ensureArray(room?.roomTypes)) {
+      if (String(roomType?.roomTypeCode ?? "") !== String(roomTypeCode ?? "")) continue;
+      for (const rateBasis of ensureArray(roomType?.rateBases)) {
+        if (String(rateBasis?.id ?? "") !== String(rateBasisId ?? "")) continue;
+        const scored = getRateMatchScore({ candidate: rateBasis, selected: selectedOffer });
+        candidates.push({
+          roomRunno: room?.runno ?? null,
+          roomTypeCode: roomType?.roomTypeCode ?? null,
+          strictMatch: isStrictRateMatch({ candidate: rateBasis, selected: selectedOffer }),
+          score: Number(scored?.score ?? 0),
+          priceDiff: Number.isFinite(scored?.priceDiff) ? scored.priceDiff : null,
+          rate: summarizeRateBasisForDebug(rateBasis),
+        });
+      }
+    }
+  }
+  return candidates
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (a.priceDiff ?? Number.MAX_SAFE_INTEGER) - (b.priceDiff ?? Number.MAX_SAFE_INTEGER);
+    })
+    .slice(0, limit);
+};
+
+const summarizeWebbedsErrorForDebug = (error) => ({
+  name: error?.name ?? null,
+  message: error?.message ?? null,
+  code: error?.code ?? null,
+  details: error?.details ?? null,
+  httpStatus: error?.httpStatus ?? null,
+  command: error?.command ?? null,
+  metadata: error?.metadata ?? null,
+});
+
+const logFlowRateDebug = (event, payload = {}) => {
+  if (!FLOW_RATE_DEBUG_LOGS) return;
+  try {
+    console.info(`[flows-rate-debug] ${event}`, {
+      ts: new Date().toISOString(),
+      ...payload,
+    });
+  } catch {
+    // ignore logging failures
+  }
+};
 
 const isPrivilegedUser = (user) => {
   const role = Number(user?.role);
@@ -276,12 +391,8 @@ const buildOfferPayload = ({
 }) => {
   const ttlSeconds = Number(process.env.FLOW_TOKEN_TTL_SECONDS || 900);
   const now = Date.now();
-  const rateTotal =
-    toNumberSafe(rateBasis?.total) ??
-    toNumberSafe(rateBasis?.totalInRequestedCurrency) ??
-    toNumberSafe(rateBasis?.totalMinimumSelling) ??
-    toNumberSafe(rateBasis?.minimumSelling) ??
-    null;
+  const rateTotal = resolveRateBasisPrice(rateBasis);
+  const minimumSelling = resolveRateBasisMinimumSelling(rateBasis);
   // Keep the token small: only essentials to identify the selection and validate TTL/signature.
   return {
     hotelId,
@@ -310,6 +421,7 @@ const buildOfferPayload = ({
     propertyFees: rateBasis?.propertyFees ?? [],
     allocationDetails: rateBasis?.allocationDetails ?? null,
     price: rateTotal,
+    minimumSelling,
     createdAt: now,
     exp: now + ttlSeconds * 1000,
   };
@@ -349,6 +461,19 @@ const resolveRateBasisPrice = (rateBasis) =>
   toNumberSafe(rateBasis?.totalInRequestedCurrency) ??
   toNumberSafe(rateBasis?.totalMinimumSelling) ??
   toNumberSafe(rateBasis?.minimumSelling) ??
+  toNumberSafe(
+    rateBasis?.totalFormatted ??
+      rateBasis?.totalInRequestedCurrencyFormatted ??
+      rateBasis?.totalMinimumSellingFormatted ??
+      rateBasis?.minimumSellingFormatted,
+  ) ??
+  null;
+
+const resolveRateBasisMinimumSelling = (rateBasis) =>
+  toNumberSafe(rateBasis?.minimumSelling) ??
+  toNumberSafe(rateBasis?.priceMinimumSelling) ??
+  toNumberSafe(rateBasis?.totalMinimumSelling) ??
+  toNumberSafe(rateBasis?.minimumSellingFormatted ?? rateBasis?.totalMinimumSellingFormatted) ??
   null;
 
 const resolveRateBasisNonRefundable = (rateBasis) => {
@@ -367,6 +492,57 @@ const resolveRateBasisAmendRestricted = (rateBasis) => {
   const rules = ensureArray(rateBasis?.cancellationRules);
   if (!rules.length) return null;
   return rules.some((rule) => toBoolean(rule?.amendRestricted));
+};
+
+const normalizeMatchText = (value) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+const resolveRateBasisMealPlan = (rateBasis) =>
+  getText(rateBasis?.mealPlan) ??
+  getText(rateBasis?.includedMeal?.mealName) ??
+  getText(rateBasis?.includedMeal?.mealTypeName) ??
+  null;
+
+const hasStrictSelectionSignals = (selected = {}) =>
+  Boolean(
+    (selected?.mealPlan && normalizeMatchText(selected.mealPlan)) ||
+      selected?.nonRefundable != null ||
+      selected?.cancelRestricted != null ||
+      selected?.amendRestricted != null,
+  );
+
+const isStrictRateMatch = ({ candidate, selected }) => {
+  if (!selected) return true;
+  const selectedMeal = normalizeMatchText(selected?.mealPlan);
+  const candidateMeal = normalizeMatchText(resolveRateBasisMealPlan(candidate));
+  if (selectedMeal && candidateMeal && selectedMeal !== candidateMeal) return false;
+  if (selectedMeal && !candidateMeal) return false;
+
+  const selectedNonRefundable =
+    selected?.nonRefundable == null ? null : toBoolean(selected?.nonRefundable);
+  const candidateNonRefundable = resolveRateBasisNonRefundable(candidate);
+  if (selectedNonRefundable != null && candidateNonRefundable != null) {
+    if (selectedNonRefundable !== candidateNonRefundable) return false;
+  }
+
+  const selectedCancelRestricted =
+    selected?.cancelRestricted == null ? null : toBoolean(selected?.cancelRestricted);
+  const candidateCancelRestricted = resolveRateBasisCancelRestricted(candidate);
+  if (selectedCancelRestricted != null && candidateCancelRestricted != null) {
+    if (selectedCancelRestricted !== candidateCancelRestricted) return false;
+  }
+
+  const selectedAmendRestricted =
+    selected?.amendRestricted == null ? null : toBoolean(selected?.amendRestricted);
+  const candidateAmendRestricted = resolveRateBasisAmendRestricted(candidate);
+  if (selectedAmendRestricted != null && candidateAmendRestricted != null) {
+    if (selectedAmendRestricted !== candidateAmendRestricted) return false;
+  }
+
+  return true;
 };
 
 const getRateMatchScore = ({ candidate, selected }) => {
@@ -396,6 +572,14 @@ const getRateMatchScore = ({ candidate, selected }) => {
     selected?.amendRestricted == null ? null : toBoolean(selected?.amendRestricted);
   if (selectedAmendRestricted != null && candidateAmendRestricted != null) {
     score += candidateAmendRestricted === selectedAmendRestricted ? 20 : -20;
+  }
+
+  const selectedMealPlan = normalizeMatchText(selected?.mealPlan);
+  const candidateMealPlan = normalizeMatchText(resolveRateBasisMealPlan(candidate));
+  if (selectedMealPlan && candidateMealPlan) {
+    score += selectedMealPlan === candidateMealPlan ? 80 : -80;
+  } else if (selectedMealPlan && !candidateMealPlan) {
+    score -= 40;
   }
 
   const selectedPrice = toNumberSafe(selected?.price);
@@ -430,12 +614,18 @@ const findRateBasisMatch = (mappedHotel, selectedOffer = {}) => {
         .map((candidate) => ({
           candidate,
           ...getRateMatchScore({ candidate, selected: selectedOffer }),
+          strictMatch: isStrictRateMatch({ candidate, selected: selectedOffer }),
         }))
         .sort((a, b) => {
           if (b.score !== a.score) return b.score - a.score;
           return a.priceDiff - b.priceDiff;
         });
-      if (ranked.length) return ranked[0].candidate;
+      if (ranked.length) {
+        const strictSignals = hasStrictSelectionSignals(selectedOffer);
+        const strictCandidate = ranked.find((entry) => entry.strictMatch);
+        if (strictSignals) return strictCandidate?.candidate ?? null;
+        return strictCandidate?.candidate ?? ranked[0].candidate;
+      }
       return candidates[0] ?? null;
     }
   }
@@ -479,21 +669,9 @@ const attachOfferTokensToRooms = (mapped, offers = []) => {
         const queue = offerMap.get(key) ?? [];
         let offerToken = null;
         if (queue.length) {
-          const selected = queue
-            .map((offer) => ({
-              offer,
-              ...getRateMatchScore({ candidate: rateBasis, selected: offer }),
-            }))
-            .sort((a, b) => {
-              if (b.score !== a.score) return b.score - a.score;
-              return a.priceDiff - b.priceDiff;
-            })[0]?.offer;
-          if (selected) {
-            offerToken = selected.offerToken ?? null;
-            const idx = queue.indexOf(selected);
-            if (idx >= 0) queue.splice(idx, 1);
-            offerMap.set(key, queue);
-          }
+          const selected = queue.shift();
+          offerToken = selected?.offerToken ?? null;
+          offerMap.set(key, queue);
         }
         return {
           ...rateBasis,
@@ -570,6 +748,18 @@ const resolveIdempotentStep = async (flowId, step, idempotencyKey) => {
   });
 };
 
+const isIdempotentStepReusableForAllocation = ({ step, allocationCurrent }) => {
+  if (!step) return false;
+  const flowAllocation = getText(allocationCurrent) ?? null;
+  if (!flowAllocation) return true;
+  const stepAllocation =
+    getText(step?.allocation_in ?? step?.allocationIn ?? null) ??
+    getText(step?.allocation_out ?? step?.allocationOut ?? null) ??
+    null;
+  if (!stepAllocation) return true;
+  return String(stepAllocation) === String(flowAllocation);
+};
+
 const getBusinessCardToken = async () => {
   const {
     WEBBEDS_CC_NAME,
@@ -611,6 +801,7 @@ export class FlowOrchestratorService {
       passengerCountryOfResidence,
       cityCode,
       rateBasis,
+      debugTraceId,
     } = body || {};
 
     const userId = resolveUserId(req);
@@ -649,6 +840,19 @@ export class FlowOrchestratorService {
       currencyNormalized: payload.currency ?? null,
       rateBasis: payload.rateBasis ?? null,
       hotelId: resolvedHotelCode,
+    });
+    logFlowRateDebug("start.request", {
+      traceId: debugTraceId ?? null,
+      requestId: getRequestId(req) ?? null,
+      userId,
+      hotelId: resolvedHotelCode,
+      checkIn: fromDate,
+      checkOut: toDate,
+      currency: normalizeCurrency(currency),
+      nationality: ensureNumericCode(passengerNationality, defaultCountryCode),
+      residence: ensureNumericCode(passengerCountryOfResidence, defaultCountryCode),
+      rooms,
+      rateBasis: normalizeRateBasis(rateBasis),
     });
 
     const { result, requestXml, responseXml, metadata } = await this.client.send("getrooms", payload, {
@@ -848,6 +1052,14 @@ export class FlowOrchestratorService {
     });
 
     const responsePayload = attachOfferTokensToRooms(mapped, offers);
+    logFlowRateDebug("start.response", {
+      traceId: debugTraceId ?? null,
+      requestId: getRequestId(req) ?? null,
+      flowId,
+      offersCount: offers.length,
+      offers: offers.slice(0, 10).map((offer) => summarizeOfferForDebug(offer, { includeToken: true })),
+      responseCurrency: mapped?.currency ?? null,
+    });
     return { flowId, offers, flow: serializeFlow(flow), ...responsePayload };
   }
   async select({ body, req }) {
@@ -865,20 +1077,67 @@ export class FlowOrchestratorService {
   }
 
   async block({ body, req }) {
-    const { flowId, offerToken, idempotencyKey: bodyIdempotencyKey } = body || {};
+    const {
+      flowId,
+      offerToken,
+      idempotencyKey: bodyIdempotencyKey,
+      debugTraceId,
+    } = body || {};
     const idempotencyKey = bodyIdempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
 
     const flow = await requireFlowAccess({ flowId, user: req?.user });
-    if (!flow.selected_offer) {
-      if (!offerToken) {
-        throw Object.assign(new Error("offerToken is required to block this flow"), { status: 400 });
+    const providedOffer = offerToken ? verifyOfferToken(offerToken) : null;
+    logFlowRateDebug("block.request", {
+      traceId: debugTraceId ?? null,
+      requestId: getRequestId(req) ?? null,
+      flowId,
+      idempotencyKey: idempotencyKey ?? null,
+      offerToken: shortDebugToken(offerToken),
+      selectedOfferBefore: summarizeOfferForDebug(flow.selected_offer),
+      providedOffer: summarizeOfferForDebug(providedOffer),
+      allocationCurrent: flow.allocation_current ?? null,
+      status: flow.status ?? null,
+    });
+    if (!flow.selected_offer && !providedOffer) {
+      throw Object.assign(new Error("offerToken is required to block this flow"), { status: 400 });
+    }
+
+    if (providedOffer) {
+      const currentOffer = flow.selected_offer || {};
+      const selectionChanged =
+        !flow.selected_offer ||
+        String(currentOffer?.hotelId ?? "") !== String(providedOffer?.hotelId ?? "") ||
+        String(currentOffer?.fromDate ?? "") !== String(providedOffer?.fromDate ?? "") ||
+        String(currentOffer?.toDate ?? "") !== String(providedOffer?.toDate ?? "") ||
+        String(currentOffer?.currency ?? "") !== String(providedOffer?.currency ?? "") ||
+        String(currentOffer?.rooms ?? "") !== String(providedOffer?.rooms ?? "") ||
+        String(currentOffer?.roomRunno ?? "") !== String(providedOffer?.roomRunno ?? "") ||
+        String(currentOffer?.roomTypeCode ?? "") !== String(providedOffer?.roomTypeCode ?? "") ||
+        String(currentOffer?.rateBasisId ?? "") !== String(providedOffer?.rateBasisId ?? "") ||
+        String(currentOffer?.allocationDetails ?? "") !== String(providedOffer?.allocationDetails ?? "");
+
+      if (selectionChanged) {
+        flow.selected_offer = providedOffer;
+        flow.allocation_current = providedOffer.allocationDetails;
+        flow.itinerary_booking_code = null;
+        flow.service_reference_number = null;
+        flow.supplier_order_code = null;
+        flow.supplier_authorisation_id = null;
+        flow.final_booking_code = null;
+        flow.booking_reference_number = null;
+        flow.pricing_snapshot_priced = null;
+        flow.pricing_snapshot_preauth = null;
+        flow.pricing_snapshot_confirmed = null;
+        flow.status = FLOW_STATUSES.OFFER_SELECTED;
+        await flow.save();
+        logFlowRateDebug("block.selection.updated", {
+          traceId: debugTraceId ?? null,
+          flowId,
+          selectedOfferAfter: summarizeOfferForDebug(flow.selected_offer),
+          allocationCurrent: flow.allocation_current ?? null,
+        });
       }
-      const payload = verifyOfferToken(offerToken);
-      flow.selected_offer = payload;
-      flow.allocation_current = payload.allocationDetails;
-      flow.status = FLOW_STATUSES.OFFER_SELECTED;
-      await flow.save();
     }
 
     const reusedStep = await resolveIdempotentStep(flowId, "BLOCK", idempotencyKey);
@@ -910,9 +1169,48 @@ export class FlowOrchestratorService {
     const rateBasis = findRateBasisMatch(mapped?.hotel, flow.selected_offer);
     const allocationIn = flow.allocation_current;
     const newAllocation = getText(rateBasis?.allocationDetails) || allocationIn;
+    logFlowRateDebug("block.match.result", {
+      traceId: debugTraceId ?? null,
+      requestId: getRequestId(req) ?? null,
+      flowId,
+      selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+      candidates: summarizeRateMatchCandidatesForDebug(mapped?.hotel, flow.selected_offer),
+      matchedRateBasis: summarizeRateBasisForDebug(rateBasis),
+      allocationIn,
+      allocationOut: newAllocation,
+      responseCurrency: mapped?.currency ?? null,
+    });
 
+    const matchedPrice = resolveRateBasisPrice(rateBasis);
+    const matchedMinimumSelling = resolveRateBasisMinimumSelling(rateBasis);
+    const matchedMealPlan = resolveRateBasisMealPlan(rateBasis);
+    const matchedNonRefundable = resolveRateBasisNonRefundable(rateBasis);
+    const matchedCancelRestricted = resolveRateBasisCancelRestricted(rateBasis);
+    const matchedAmendRestricted = resolveRateBasisAmendRestricted(rateBasis);
+    const matchedRateBasisName = getText(rateBasis?.description) ?? null;
     const updatedOffer = {
       ...flow.selected_offer,
+      allocationDetails: newAllocation,
+      rateBasisName:
+        matchedRateBasisName ??
+        flow.selected_offer?.rateBasisName ??
+        flow.selected_offer?.rateDescription ??
+        null,
+      price: matchedPrice ?? flow.selected_offer?.price ?? null,
+      minimumSelling: matchedMinimumSelling ?? flow.selected_offer?.minimumSelling ?? null,
+      mealPlan: matchedMealPlan ?? flow.selected_offer?.mealPlan ?? null,
+      nonRefundable:
+        matchedNonRefundable != null
+          ? matchedNonRefundable
+          : flow.selected_offer?.nonRefundable ?? null,
+      cancelRestricted:
+        matchedCancelRestricted != null
+          ? matchedCancelRestricted
+          : flow.selected_offer?.cancelRestricted ?? null,
+      amendRestricted:
+        matchedAmendRestricted != null
+          ? matchedAmendRestricted
+          : flow.selected_offer?.amendRestricted ?? null,
       validForOccupancy: rateBasis?.validForOccupancy ?? flow.selected_offer.validForOccupancy ?? null,
       validForOccupancyDetails:
         rateBasis?.validForOccupancyDetails ?? flow.selected_offer.validForOccupancyDetails ?? null,
@@ -942,6 +1240,14 @@ export class FlowOrchestratorService {
     });
 
     const blockedRate = rateBasis ? { ...rateBasis } : null;
+    logFlowRateDebug("block.response", {
+      traceId: debugTraceId ?? null,
+      flowId,
+      blockedRate: summarizeRateBasisForDebug(blockedRate),
+      flowStatus: flow.status ?? null,
+      selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+      pricing: summarizeFlowPricingForDebug(flow),
+    });
     return {
       flow: serializeFlow(flow),
       blockedRate,
@@ -958,6 +1264,7 @@ export class FlowOrchestratorService {
       rooms: roomsOverride,
       sendCommunicationTo,
       customerReference: customerReferenceRaw,
+      debugTraceId,
     } = body || {};
     const idempotencyKey = body?.idempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
@@ -967,7 +1274,21 @@ export class FlowOrchestratorService {
     }
 
     const reusedStep = await resolveIdempotentStep(flowId, "SAVEBOOKING", idempotencyKey);
-    if (reusedStep) return { flow: serializeFlow(flow), idempotent: true };
+    if (reusedStep) {
+      const reusable = isIdempotentStepReusableForAllocation({
+        step: reusedStep,
+        allocationCurrent: flow.allocation_current,
+      });
+      if (reusable) return { flow: serializeFlow(flow), idempotent: true };
+      logFlowRateDebug("save.idempotency.ignored", {
+        traceId: debugTraceId ?? null,
+        requestId: getRequestId(req) ?? null,
+        flowId,
+        idempotencyKey: idempotencyKey ?? null,
+        allocationCurrent: flow.allocation_current ?? null,
+        stepAllocationIn: reusedStep?.allocation_in ?? reusedStep?.allocationIn ?? null,
+      });
+    }
 
     const context = flow.search_context || {};
     const roomsPayload = parseRoomArray(roomsOverride || context.rooms);
@@ -1092,11 +1413,36 @@ export class FlowOrchestratorService {
       specialRequest,
       customerReference,
     });
-
-    const { result, requestXml, responseXml, metadata } = await this.client.send("savebooking", payload, {
-      requestId: getRequestId(req),
-      logMeta: { flowId },
+    logFlowRateDebug("save.request", {
+      traceId: debugTraceId ?? null,
+      requestId: getRequestId(req) ?? null,
+      flowId,
+      selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+      allocationCurrent: flow.allocation_current ?? null,
+      roomsForSave: roomsForSave.map((room) => ({
+        roomTypeCode: room?.roomTypeCode ?? null,
+        selectedRateBasis: room?.selectedRateBasis ?? null,
+        allocationDetails: room?.allocationDetails ?? null,
+        adults: room?.adults ?? null,
+        children: ensureArray(room?.children),
+        actualAdults: room?.actualAdults ?? null,
+        actualChildren: ensureArray(room?.actualChildren),
+      })),
+      contact: {
+        email: payload?.contact?.email ?? null,
+      },
+      customerReference,
     });
+
+    const { result, requestXml, responseXml, metadata } = await this.client.send(
+      "savebooking",
+      payload,
+      {
+        requestId: getRequestId(req),
+        logMeta: { flowId },
+        retriesOverride: 0,
+      },
+    );
     const mapped = mapSaveBookingResponse(result);
     const serviceRef = mapped.services?.[0]?.returnedServiceCode ?? null;
 
@@ -1104,6 +1450,16 @@ export class FlowOrchestratorService {
     flow.service_reference_number = serviceRef ?? flow.service_reference_number;
     flow.status = FLOW_STATUSES.SAVED;
     await flow.save();
+    logFlowRateDebug("save.response", {
+      traceId: debugTraceId ?? null,
+      requestId: getRequestId(req) ?? null,
+      flowId,
+      itineraryBookingCode: flow.itinerary_booking_code ?? null,
+      serviceReferenceNumber: flow.service_reference_number ?? null,
+      selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+      allocationCurrent: flow.allocation_current ?? null,
+      pricing: summarizeFlowPricingForDebug(flow),
+    });
 
     await logStep({
       flowId,
@@ -1123,7 +1479,7 @@ export class FlowOrchestratorService {
     return { flow: serializeFlow(flow) };
   }
   async price({ body, req }) {
-    const { flowId, idempotencyKey: bodyIdempotencyKey } = body || {};
+    const { flowId, idempotencyKey: bodyIdempotencyKey, debugTraceId } = body || {};
     const idempotencyKey = bodyIdempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
     const flow = await requireFlowAccess({ flowId, user: req?.user });
@@ -1132,7 +1488,21 @@ export class FlowOrchestratorService {
     }
 
     const reusedStep = await resolveIdempotentStep(flowId, "BOOK_NO", idempotencyKey);
-    if (reusedStep) return { flow: serializeFlow(flow), idempotent: true };
+    if (reusedStep) {
+      const reusable = isIdempotentStepReusableForAllocation({
+        step: reusedStep,
+        allocationCurrent: flow.allocation_current,
+      });
+      if (reusable) return { flow: serializeFlow(flow), idempotent: true };
+      logFlowRateDebug("price.idempotency.ignored", {
+        traceId: debugTraceId ?? null,
+        requestId: getRequestId(req) ?? null,
+        flowId,
+        idempotencyKey: idempotencyKey ?? null,
+        allocationCurrent: flow.allocation_current ?? null,
+        stepAllocationIn: reusedStep?.allocation_in ?? reusedStep?.allocationIn ?? null,
+      });
+    }
 
     const payload = buildBookItineraryPayload({
       bookingCode: flow.itinerary_booking_code,
@@ -1141,54 +1511,55 @@ export class FlowOrchestratorService {
       payment: {},
       services: [],
     });
+    logFlowRateDebug("price.request", {
+      traceId: debugTraceId ?? null,
+      requestId: getRequestId(req) ?? null,
+      flowId,
+      itineraryBookingCode: flow.itinerary_booking_code ?? null,
+      serviceReferenceNumber: flow.service_reference_number ?? null,
+      allocationCurrent: flow.allocation_current ?? null,
+      selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+      pricing: summarizeFlowPricingForDebug(flow),
+    });
 
     let result;
     let requestXml;
     let responseXml;
     let metadata;
-    const maxAttempts = Math.max(1, Number(process.env.WEBBEDS_PRICE_RETRY_MAX || 3));
-    const baseDelayMs = Number(process.env.WEBBEDS_PRICE_RETRY_BASE_MS || 600);
-    const maxDelayMs = Number(process.env.WEBBEDS_PRICE_RETRY_MAX_MS || 5000);
-    let lastError = null;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        ({ result, requestXml, responseXml, metadata } = await this.client.send(
-          "bookitinerary",
-          payload,
-          { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
-        ));
-        lastError = null;
-        break;
-      } catch (error) {
-        lastError = error;
-        const retryable = isRetryablePriceError(error);
-        const shouldRetry = retryable && attempt < maxAttempts;
-        console.warn("[flows] price attempt failed", {
-          flowId,
-          attempt,
-          retryable,
-          code: error?.code ?? error?.httpStatus ?? error?.name ?? null,
-          details: error?.details ?? error?.message ?? null,
-        });
-        if (!shouldRetry) break;
-        await sleep(getRetryDelayMs(attempt, baseDelayMs, maxDelayMs));
-      }
-    }
-    if (lastError) {
+    try {
+      ({ result, requestXml, responseXml, metadata } = await this.client.send(
+        "bookitinerary",
+        payload,
+        {
+          requestId: getRequestId(req),
+          productOverride: null,
+          logMeta: { flowId },
+          retriesOverride: 0,
+        },
+      ));
+    } catch (error) {
+      logFlowRateDebug("price.error", {
+        traceId: debugTraceId ?? null,
+        requestId: getRequestId(req) ?? null,
+        flowId,
+        error: summarizeWebbedsErrorForDebug(error),
+        selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+        pricing: summarizeFlowPricingForDebug(flow),
+      });
       await logStep({
         flowId,
         step: "BOOK_NO",
         command: STEP_COMMAND.BOOK_NO,
-        tid: lastError?.metadata?.transactionId,
+        tid: error?.metadata?.transactionId,
         success: false,
-        errorClass: lastError?.name,
-        errorCode: lastError?.code ?? lastError?.httpStatus,
+        errorClass: error?.name,
+        errorCode: error?.code ?? error?.httpStatus,
         allocationIn: flow.allocation_current,
-        requestXml: lastError?.requestXml,
-        responseXml: lastError?.responseXml,
+        requestXml: error?.requestXml,
+        responseXml: error?.responseXml,
         idempotencyKey,
       });
-      throw lastError;
+      throw error;
     }
     const mapped = mapBookItineraryResponse(result);
     const productNode = Array.isArray(result?.product) ? result.product[0] : result?.product;
@@ -1265,6 +1636,18 @@ export class FlowOrchestratorService {
     }
     flow.status = FLOW_STATUSES.PRICED;
     await flow.save();
+    logFlowRateDebug("price.response", {
+      traceId: debugTraceId ?? null,
+      requestId: getRequestId(req) ?? null,
+      flowId,
+      selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+      allocationCurrent: flow.allocation_current ?? null,
+      pricing: summarizeFlowPricingForDebug(flow),
+      mapped: {
+        currencyShort: mapped?.currencyShort ?? null,
+        returnedCode: mapped?.returnedCode ?? null,
+      },
+    });
 
     logCurrencyDebug("flows.price.output", {
       flowId,
@@ -1289,7 +1672,7 @@ export class FlowOrchestratorService {
     return { flow: serializeFlow(flow) };
   }
   async preauth({ body, req }) {
-    const { flowId, paymentIntentId } = body || {};
+    const { flowId, paymentIntentId, debugTraceId } = body || {};
     const idempotencyKey = body?.idempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
     const flow = await requireFlowAccess({ flowId, user: req?.user });
@@ -1324,7 +1707,21 @@ export class FlowOrchestratorService {
     }
 
     const reusedStep = await resolveIdempotentStep(flowId, "PREAUTH", idempotencyKey);
-    if (reusedStep) return { flow: serializeFlow(flow), idempotent: true };
+    if (reusedStep) {
+      const reusable = isIdempotentStepReusableForAllocation({
+        step: reusedStep,
+        allocationCurrent: flow.allocation_current,
+      });
+      if (reusable) return { flow: serializeFlow(flow), idempotent: true };
+      logFlowRateDebug("preauth.idempotency.ignored", {
+        traceId: debugTraceId ?? null,
+        requestId: getRequestId(req) ?? null,
+        flowId,
+        idempotencyKey: idempotencyKey ?? null,
+        allocationCurrent: flow.allocation_current ?? null,
+        stepAllocationIn: reusedStep?.allocation_in ?? reusedStep?.allocationIn ?? null,
+      });
+    }
 
     const token = await getBusinessCardToken();
     const paymentMethod = process.env.WEBBEDS_PAYMENT_METHOD || "CC_PAYMENT_NET";
@@ -1374,6 +1771,16 @@ export class FlowOrchestratorService {
       },
       services,
     });
+    logFlowRateDebug("preauth.request", {
+      traceId: debugTraceId ?? null,
+      requestId: getRequestId(req) ?? null,
+      flowId,
+      paymentIntentId: paymentIntentId ?? null,
+      amount: priceValue ?? null,
+      selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+      allocationCurrent: flow.allocation_current ?? null,
+      pricing: summarizeFlowPricingForDebug(flow),
+    });
 
     let result;
     let requestXml;
@@ -1383,9 +1790,24 @@ export class FlowOrchestratorService {
       ({ result, requestXml, responseXml, metadata } = await this.client.send(
         "bookitinerary",
         payload,
-        { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
+        {
+          requestId: getRequestId(req),
+          productOverride: null,
+          logMeta: { flowId },
+          retriesOverride: 0,
+        },
       ));
     } catch (error) {
+      logFlowRateDebug("preauth.error", {
+        traceId: debugTraceId ?? null,
+        requestId: getRequestId(req) ?? null,
+        flowId,
+        paymentIntentId: paymentIntentId ?? null,
+        amount: priceValue ?? null,
+        error: summarizeWebbedsErrorForDebug(error),
+        selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+        pricing: summarizeFlowPricingForDebug(flow),
+      });
       await logStep({
         flowId,
         step: "PREAUTH",
@@ -1419,6 +1841,17 @@ export class FlowOrchestratorService {
     };
     flow.status = FLOW_STATUSES.PREAUTHED;
     await flow.save();
+    logFlowRateDebug("preauth.response", {
+      traceId: debugTraceId ?? null,
+      requestId: getRequestId(req) ?? null,
+      flowId,
+      paymentIntentId: paymentIntentId ?? null,
+      supplierOrderCode: flow.supplier_order_code ?? null,
+      supplierAuthorisationId: flow.supplier_authorisation_id ?? null,
+      selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+      allocationCurrent: flow.allocation_current ?? null,
+      pricing: summarizeFlowPricingForDebug(flow),
+    });
 
     await logStep({
       flowId,
@@ -1535,7 +1968,7 @@ export class FlowOrchestratorService {
     return { allocationIn, allocationOut: newAllocation };
   }
   async confirm({ body, req }) {
-    const { flowId } = body || {};
+    const { flowId, debugTraceId } = body || {};
     const idempotencyKey = body?.idempotencyKey || req?.headers?.["idempotency-key"];
     if (!flowId) throw Object.assign(new Error("flowId is required"), { status: 400 });
     const flow = await requireFlowAccess({ flowId, user: req?.user });
@@ -1552,7 +1985,21 @@ export class FlowOrchestratorService {
     }
 
     const reusedStep = await resolveIdempotentStep(flowId, "BOOK_YES", idempotencyKey);
-    if (reusedStep) return { flow: serializeFlow(flow), idempotent: true };
+    if (reusedStep) {
+      const reusable = isIdempotentStepReusableForAllocation({
+        step: reusedStep,
+        allocationCurrent: flow.allocation_current,
+      });
+      if (reusable) return { flow: serializeFlow(flow), idempotent: true };
+      logFlowRateDebug("confirm.idempotency.ignored", {
+        traceId: debugTraceId ?? null,
+        requestId: getRequestId(req) ?? null,
+        flowId,
+        idempotencyKey: idempotencyKey ?? null,
+        allocationCurrent: flow.allocation_current ?? null,
+        stepAllocationIn: reusedStep?.allocation_in ?? reusedStep?.allocationIn ?? null,
+      });
+    }
 
     const services = [
       {
@@ -1575,12 +2022,60 @@ export class FlowOrchestratorService {
       },
       services,
     });
+    logFlowRateDebug("confirm.request", {
+      traceId: debugTraceId ?? null,
+      requestId: getRequestId(req) ?? null,
+      flowId,
+      amount: priceValue ?? null,
+      selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+      allocationCurrent: flow.allocation_current ?? null,
+      itineraryBookingCode: flow.itinerary_booking_code ?? null,
+      serviceReferenceNumber: flow.service_reference_number ?? null,
+      supplierOrderCode: flow.supplier_order_code ?? null,
+      supplierAuthorisationId: flow.supplier_authorisation_id ?? null,
+      pricing: summarizeFlowPricingForDebug(flow),
+    });
 
-    const { result, requestXml, responseXml, metadata } = await this.client.send(
-      "bookitinerary",
-      payload,
-      { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
-    );
+    let result;
+    let requestXml;
+    let responseXml;
+    let metadata;
+    try {
+      ({ result, requestXml, responseXml, metadata } = await this.client.send(
+        "bookitinerary",
+        payload,
+        {
+          requestId: getRequestId(req),
+          productOverride: null,
+          logMeta: { flowId },
+          retriesOverride: 0,
+        },
+      ));
+    } catch (error) {
+      logFlowRateDebug("confirm.error", {
+        traceId: debugTraceId ?? null,
+        requestId: getRequestId(req) ?? null,
+        flowId,
+        amount: priceValue ?? null,
+        error: summarizeWebbedsErrorForDebug(error),
+        selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+        pricing: summarizeFlowPricingForDebug(flow),
+      });
+      await logStep({
+        flowId,
+        step: "BOOK_YES",
+        command: STEP_COMMAND.BOOK_YES,
+        tid: error?.metadata?.transactionId,
+        success: false,
+        errorClass: error?.name,
+        errorCode: error?.code ?? error?.httpStatus,
+        allocationIn: flow.allocation_current,
+        requestXml: error?.requestXml,
+        responseXml: error?.responseXml,
+        idempotencyKey,
+      });
+      throw error;
+    }
     const mapped = mapBookItineraryResponse(result);
     const allocationIn = flow.allocation_current;
     const newAllocation = pickAllocationFromResult(result) || allocationIn;
@@ -1604,6 +2099,16 @@ export class FlowOrchestratorService {
     };
     flow.status = FLOW_STATUSES.CONFIRMED;
     await flow.save();
+    logFlowRateDebug("confirm.response", {
+      traceId: debugTraceId ?? null,
+      requestId: getRequestId(req) ?? null,
+      flowId,
+      finalBookingCode: flow.final_booking_code ?? null,
+      bookingReferenceNumber: flow.booking_reference_number ?? null,
+      selectedOffer: summarizeOfferForDebug(flow.selected_offer),
+      allocationCurrent: flow.allocation_current ?? null,
+      pricing: summarizeFlowPricingForDebug(flow),
+    });
 
     await logStep({
       flowId,

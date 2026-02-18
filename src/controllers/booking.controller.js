@@ -225,6 +225,8 @@ const sanitizeConfirmationSnapshot = (raw = {}) => {
         from: trimText(rule?.from, 120),
         to: trimText(rule?.to, 120),
         charge: trimText(rule?.charge, 120),
+        cancelRestricted: rule?.cancelRestricted ?? rule?.cancel_restricted ?? null,
+        amendRestricted: rule?.amendRestricted ?? rule?.amend_restricted ?? null,
       }))
     : []
 
@@ -346,6 +348,15 @@ const pickFirst = (...values) => {
   return null
 }
 
+const normalizeRuleBoolean = (value) => {
+  if (value === true || value === false) return value
+  if (value == null) return null
+  const normalized = String(value).trim().toLowerCase()
+  if (["true", "1", "yes", "y"].includes(normalized)) return true
+  if (["false", "0", "no", "n"].includes(normalized)) return false
+  return null
+}
+
 const normalizeCancellationRules = (rules) => {
   const entries = ensureArray(rules?.rule ?? rules)
   return entries
@@ -372,8 +383,21 @@ const normalizeCancellationRules = (rules) => {
         rule?.price ??
         rule?.formatted ??
         null,
+      cancelRestricted: normalizeRuleBoolean(
+        rule?.cancelRestricted ?? rule?.cancel_restricted
+      ),
+      amendRestricted: normalizeRuleBoolean(
+        rule?.amendRestricted ?? rule?.amend_restricted
+      ),
     }))
-    .filter((rule) => rule.from || rule.to || rule.charge)
+    .filter(
+      (rule) =>
+        rule.from ||
+        rule.to ||
+        rule.charge ||
+        rule.cancelRestricted === true ||
+        rule.amendRestricted === true
+    )
 }
 
 const resolveFlowForBooking = async ({ bookingCode, bookingRef }) => {
@@ -425,22 +449,37 @@ const isPartnerHotelBooking = (booking) =>
   String(booking?.source || "").toUpperCase() === "PARTNER" &&
   HOTEL_INVENTORY_TYPES.has(String(booking?.inventory_type || "").toUpperCase())
 
+const normalizeBookingCodeValue = (value) => {
+  if (value == null) return null
+  const normalized = String(value).trim()
+  return normalized || null
+}
+
 const resolveCanonicalWebbedsCode = async (booking) => {
-  const bookingCode = booking?.external_ref ? String(booking.external_ref).trim() : null
+  const statusNow = String(booking?.status || "").toUpperCase()
+  if (statusNow !== "CONFIRMED") return null
+
+  const bookingCode = normalizeBookingCodeValue(booking?.external_ref)
   const bookingRef = booking?.toJSON ? booking.toJSON() : booking
   const flow = await resolveFlowForBooking({ bookingCode, bookingRef })
-  return (
-    String(flow?.final_booking_code || "").trim() ||
-    String(flow?.itinerary_booking_code || "").trim() ||
-    (bookingCode ? String(bookingCode).trim() : null)
-  )
+
+  const finalCode = normalizeBookingCodeValue(flow?.final_booking_code)
+  if (finalCode) return finalCode
+
+  const itineraryCode = normalizeBookingCodeValue(flow?.itinerary_booking_code)
+  if (bookingCode && itineraryCode && bookingCode === itineraryCode) {
+    // Avoid querying getbookingdetails with the saved-booking intermediate code.
+    return null
+  }
+
+  return bookingCode
 }
 
 const syncPartnerBookingStatusFromSupplier = async ({ booking, requestId }) => {
   if (!booking || !isPartnerHotelBooking(booking)) return booking
 
   const statusNow = String(booking.status || "").toUpperCase()
-  if (statusNow === "CANCELLED" || statusNow === "COMPLETED") return booking
+  if (statusNow !== "CONFIRMED") return booking
 
   const meta = booking.meta && typeof booking.meta === "object" ? booking.meta : {}
   const supplierState = meta.supplierState && typeof meta.supplierState === "object"
@@ -2392,13 +2431,14 @@ export const createHomeBooking = async (req, res) => {
 
 export const getBookingsUnified = async (req, res) => {
   try {
-    const { latest, status, includeCancelled, limit = 50, offset = 0 } = req.query
+    const { latest, status, includeCancelled, syncSupplier, limit = 50, offset = 0 } = req.query
     const inventoryQuery = typeof req.query.inventory === "string"
       ? req.query.inventory.trim().toUpperCase()
       : null
 
     const userId = req.user.id
     const includeCancelledFlag = String(includeCancelled || "").toLowerCase() === "true"
+    const shouldSyncSupplier = String(syncSupplier || "").toLowerCase() === "true"
 
     // 1. Buscar usuario
     const user = await models.User.findByPk(userId)
@@ -2442,15 +2482,17 @@ export const getBookingsUnified = async (req, res) => {
       offset: latest ? 0 : Number(offset)
     })
 
-    const requestId =
-      req?.headers?.["x-request-id"] ||
-      req?.headers?.["x-correlation-id"] ||
-      `bookings-me-${userId}`
-    for (const row of rows) {
-      await syncPartnerBookingStatusFromSupplier({
-        booking: row,
-        requestId: `${requestId}-booking-${row.id}`,
-      })
+    if (shouldSyncSupplier) {
+      const requestId =
+        req?.headers?.["x-request-id"] ||
+        req?.headers?.["x-correlation-id"] ||
+        `bookings-me-${userId}`
+      for (const row of rows) {
+        await syncPartnerBookingStatusFromSupplier({
+          booking: row,
+          requestId: `${requestId}-booking-${row.id}`,
+        })
+      }
     }
 
     // 3. Mapear y unificar
@@ -2769,6 +2811,7 @@ export const getBookingsForStaff = async (req, res) => {
 export const getBookingById = async (req, res) => {
   try {
     const { id } = req.params
+    const shouldSyncSupplier = String(req.query?.syncSupplier || "").toLowerCase() === "true"
     const userId = Number(req.user?.id)
     if (!userId) return res.status(401).json({ error: "Unauthorized" })
     const role = Number(req.user?.role)
@@ -2828,14 +2871,16 @@ export const getBookingById = async (req, res) => {
       return res.status(403).json({ error: "Forbidden" })
     }
 
-    const requestId =
-      req?.headers?.["x-request-id"] ||
-      req?.headers?.["x-correlation-id"] ||
-      `booking-${booking.id}`
-    await syncPartnerBookingStatusFromSupplier({
-      booking,
-      requestId: `${requestId}-status-sync`,
-    })
+    if (shouldSyncSupplier) {
+      const requestId =
+        req?.headers?.["x-request-id"] ||
+        req?.headers?.["x-correlation-id"] ||
+        `booking-${booking.id}`
+      await syncPartnerBookingStatusFromSupplier({
+        booking,
+        requestId: `${requestId}-status-sync`,
+      })
+    }
 
     const addons = booking.AddOns.map((addon) => {
       const pivot = addon.BookingAddOn
