@@ -16,6 +16,8 @@ export default (sequelize) => {
       state_code: { type: DataTypes.STRING(60) },
       region_name: { type: DataTypes.STRING(150) },
       region_code: { type: DataTypes.STRING(60) },
+      lat: { type: DataTypes.DECIMAL(11, 8) },
+      lng: { type: DataTypes.DECIMAL(11, 8) },
       metadata: { type: JSON_TYPE },
     },
     {
@@ -37,6 +39,13 @@ export default (sequelize) => {
     if (models.WebbedsHotel) {
       WebbedsCity.hasMany(models.WebbedsHotel, {
         as: "hotels",
+        foreignKey: "city_code",
+        sourceKey: "code",
+      })
+    }
+    if (models.WebbedsCityPlaceMap) {
+      WebbedsCity.hasMany(models.WebbedsCityPlaceMap, {
+        as: "placeMappings",
         foreignKey: "city_code",
         sourceKey: "code",
       })

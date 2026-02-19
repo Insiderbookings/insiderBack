@@ -73,6 +73,7 @@ import HotelRecentViewModel from "./HotelRecentView.js";
 import TaxRateModel from "./TaxRate.js";
 import WebbedsCountryModel from "./WebbedsCountry.js";
 import WebbedsCityModel from "./WebbedsCity.js";
+import WebbedsCityPlaceMapModel from "./WebbedsCityPlaceMap.js";
 import WebbedsHotelModel from "./WebbedsHotel.js";
 import WebbedsHotelImageModel from "./WebbedsHotelImage.js";
 import WebbedsHotelAmenityModel from "./WebbedsHotelAmenity.js";
@@ -201,6 +202,7 @@ const models = {
   GuestProfile: GuestProfileModel(sequelize),
   WebbedsCountry: WebbedsCountryModel(sequelize),
   WebbedsCity: WebbedsCityModel(sequelize),
+  WebbedsCityPlaceMap: WebbedsCityPlaceMapModel(sequelize),
   WebbedsHotel: WebbedsHotelModel(sequelize),
   WebbedsHotelImage: WebbedsHotelImageModel(sequelize),
   WebbedsHotelAmenity: WebbedsHotelAmenityModel(sequelize),

@@ -1738,21 +1738,32 @@ export const listCities = async (req, res, next) => {
   try {
     const {
       q,
+      query,
       countryCode,
+      country,
+      countryName,
       limit = 20,
       offset = 0,
     } = req.query
 
+    const queryText = String(q ?? query ?? "").trim()
+    const rawCountryCode = String(countryCode ?? "").trim()
+    const rawCountryText = String(country ?? countryName ?? "").trim()
     const where = {}
-    if (countryCode) {
-      where.country_code = String(countryCode).trim()
+    if (rawCountryCode) {
+      where.country_code = rawCountryCode
+    } else if (rawCountryText) {
+      where.country_name = { [iLikeOp]: `%${rawCountryText}%` }
     }
-    if (q) {
-      where.name = { [iLikeOp]: `%${q.trim()}%` }
+    if (queryText) {
+      where.name = { [iLikeOp]: `%${queryText}%` }
     }
 
     const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20))
     const safeOffset = Math.max(0, Number(offset) || 0)
+    const hotelCountLiteral = literal(
+      `(SELECT COUNT(*)::int FROM webbeds_hotel h WHERE h.city_code::text = "WebbedsCity"."code"::text AND h.deleted_at IS NULL)`,
+    )
 
     const { rows, count } = await models.WebbedsCity.findAndCountAll({
       where,
@@ -1765,11 +1776,20 @@ export const listCities = async (req, res, next) => {
         "state_code",
         "region_name",
         "region_code",
+        "lat",
+        "lng",
+        [hotelCountLiteral, "hotel_count"],
       ],
-      order: [
-        ["country_name", "ASC"],
-        ["name", "ASC"],
-      ],
+      order: queryText
+        ? [
+            [literal(`"hotel_count"`), "DESC"],
+            ["name", "ASC"],
+            ["country_name", "ASC"],
+          ]
+        : [
+            ["country_name", "ASC"],
+            ["name", "ASC"],
+          ],
       limit: safeLimit,
       offset: safeOffset,
     })
@@ -1783,6 +1803,9 @@ export const listCities = async (req, res, next) => {
       stateCode: row.state_code,
       regionName: row.region_name,
       regionCode: row.region_code,
+      lat: row.lat != null ? Number(row.lat) : null,
+      lng: row.lng != null ? Number(row.lng) : null,
+      hotelCount: Number(row.get?.("hotel_count") ?? row.hotel_count ?? 0) || 0,
     }))
 
     return res.json({

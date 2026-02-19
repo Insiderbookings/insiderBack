@@ -31,6 +31,9 @@ const getClient = () => {
 let webbedsClient = null
 let cachedConfig = null
 let countryNameCache = null
+let hotelChainCodeCache = null
+let hotelClassificationCodeCache = null
+const missingCatalogCodeWarned = new Set()
 const STATIC_CURRENCY = process.env.WEBBEDS_STATIC_CURRENCY || "520"
 const STATIC_OCCUPANCIES =
   process.env.WEBBEDS_STATIC_OCCUPANCIES || "1|0,1|0,2|0"
@@ -126,11 +129,17 @@ const syncOptionCatalog = async ({
     let processed = 0
     for (const option of options) {
       const record = mapOption(option)
-      if (!record?.code) continue
+      if (!record || record.code == null) continue
       await model.upsert(record, { transaction: tx })
       processed += 1
     }
     await tx.commit()
+    if (model === models.WebbedsHotelChain) {
+      hotelChainCodeCache = null
+    }
+    if (model === models.WebbedsHotelClassification) {
+      hotelClassificationCodeCache = null
+    }
     console.info(`[webbeds][static] ${label} synchronized`, { count: processed })
     return { inserted: processed }
   } catch (error) {
@@ -494,10 +503,46 @@ const resolvePasswordMd5 = (config) => {
   return createHash("md5").update(config.password).digest("hex")
 }
 
+const loadCatalogCodeSet = async (model, transaction) => {
+  const rows = await model.findAll({
+    attributes: ["code"],
+    raw: true,
+    transaction,
+  })
+  return new Set(
+    rows
+      .map((row) => toNumberOrNull(row.code))
+      .filter((code) => Number.isFinite(code) && code > 0),
+  )
+}
+
+const resolveCatalogForeignKey = ({ rawValue, catalogCodes, catalogLabel, hotelId }) => {
+  const code = toNumberOrNull(rawValue)
+  if (!Number.isFinite(code) || code <= 0) return null
+  if (catalogCodes?.has(code)) return code
+  const key = `${catalogLabel}:${code}`
+  if (!missingCatalogCodeWarned.has(key)) {
+    missingCatalogCodeWarned.add(key)
+    console.warn("[webbeds][static] missing catalog code, storing null FK", {
+      catalogLabel,
+      code,
+      hotelId,
+    })
+  }
+  return null
+}
+
 const persistHotels = async (hotels, fallbackCityCode) => {
   if (!hotels?.length) return 0
   const tx = await sequelize.transaction()
   try {
+    if (!hotelChainCodeCache) {
+      hotelChainCodeCache = await loadCatalogCodeSet(models.WebbedsHotelChain, tx)
+    }
+    if (!hotelClassificationCodeCache) {
+      hotelClassificationCodeCache = await loadCatalogCodeSet(models.WebbedsHotelClassification, tx)
+    }
+
     let processed = 0
     for (const hotel of hotels) {
       const hotelId = Number(hotel["@_hotelid"] ?? hotel.hotelid) || null
@@ -510,6 +555,18 @@ const persistHotels = async (hotels, fallbackCityCode) => {
       const countryCodeValue = Number(hotel.countryCode) || null
       const lat = hotel.geoPoint?.lat ? Number(hotel.geoPoint.lat) : null
       const lng = hotel.geoPoint?.lng ? Number(hotel.geoPoint.lng) : null
+      const chainCodeValue = resolveCatalogForeignKey({
+        rawValue: hotel.chain,
+        catalogCodes: hotelChainCodeCache,
+        catalogLabel: "hotel_chain",
+        hotelId,
+      })
+      const classificationCodeValue = resolveCatalogForeignKey({
+        rawValue: hotel.rating,
+        catalogCodes: hotelClassificationCodeCache,
+        catalogLabel: "hotel_classification",
+        hotelId,
+      })
 
       await models.WebbedsHotel.upsert(
         {
@@ -537,8 +594,8 @@ const persistHotels = async (hotels, fallbackCityCode) => {
           direct: normalizeBoolean(hotel.direct),
           fire_safety: normalizeBoolean(hotel.fireSafety),
           chain: hotel.chain ?? null,
-           chain_code: toNumberOrNull(hotel.chain),
-           classification_code: toNumberOrNull(hotel.rating),
+          chain_code: chainCodeValue,
+          classification_code: classificationCodeValue,
           hotel_phone: hotel.hotelPhone ?? null,
           hotel_check_in: hotel.hotelCheckIn ?? null,
           hotel_check_out: hotel.hotelCheckOut ?? null,
@@ -1012,9 +1069,11 @@ export const syncWebbedsHotelsIncremental = async ({
 const mapCatalogRecord = (option, { type }) => {
   const code = getOptionValue(option)
   const name = getOptionName(option)
-  if (!code || !name) return null
+  if (code == null) return null
+  const normalizedName = String(name ?? "").trim()
+  if (!normalizedName) return null
   const runno = getOptionRunno(option)
-  const record = { code, name }
+  const record = { code, name: normalizedName }
   if (runno != null) record.runno = runno
   if (type) record.type = type
   return record
