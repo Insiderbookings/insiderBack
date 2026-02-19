@@ -7,7 +7,9 @@
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
     "test": "node --test tests/providers/webbeds/searchHotels.test.js tests/providers/webbeds/provider.test.js",
-    "payments:reconcile-once": "node src/scripts/reconcilePendingPayments.js"
+    "payments:reconcile-once": "node src/scripts/reconcilePendingPayments.js",
+    "webbeds:cities:sync-by-country": "node src/scripts/syncWebbedsCitiesByCountry.js",
+    "webbeds:cities:backfill-coords": "node src/scripts/backfillWebbedsCityCoordinates.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.876.0",

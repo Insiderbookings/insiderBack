@@ -1,3 +1,4 @@
+
 -- Migration: stay_id unification (PostgreSQL)
 -- Run in this order; verify backups before applying.
 
