@@ -1,4 +1,4 @@
-// src/app.js  ─── archivo COMPLETO, línea por línea
+﻿// src/app.js  â”€â”€â”€ archivo COMPLETO, lÃ­nea por lÃ­nea
 import dotenv from "dotenv";
 import dotenvExpand from "dotenv-expand";
 const myEnv = dotenv.config();
@@ -121,7 +121,7 @@ app.use(statusLogger);
 
 /* ---------- Resto de tu API ---------- */
 app.get("/", (req, res) => res.json({ status: "API running" }));
-// Swagger UI para explorar la documentación definida en src/docs/swagger.yaml
+// Swagger UI para explorar la documentaciÃ³n definida en src/docs/swagger.yaml
 app.use("/api/docs", ensureSwaggerAuth, swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
   explorer: true,
   customSiteTitle: "Insider API Docs",
@@ -145,7 +145,7 @@ app.get("/api/docs.json", ensureSwaggerAuth, (req, res) => {
   res.setHeader("Content-Type", "application/json");
   res.send(swaggerDocument);
 });
-// Rate limit básico para rutas de pago (omite webhooks)
+// Rate limit bÃ¡sico para rutas de pago (omite webhooks)
 // rate limiter import moved to header
 const paymentsLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -164,12 +164,17 @@ const authLimiter = rateLimit({
 });
 app.use("/api/auth", authLimiter);
 
-// Restricción de origen por lista blanca (si se define CORS_ALLOWED_ORIGINS)
-const __allowed = (process.env.CORS_ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean)
+// Restriccion de origen por lista blanca (si se define CORS_ALLOWED_ORIGINS)
+const normalizeOrigin = (value) => String(value || "").trim().replace(/\/+$/, "")
+const __allowed = (process.env.CORS_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((s) => normalizeOrigin(s))
+  .filter(Boolean)
 if (__allowed.length > 0) {
   app.use("/api", (req, res, next) => {
-    const origin = req.headers.origin
+    const origin = normalizeOrigin(req.headers.origin)
     if (origin && !__allowed.includes(origin)) {
+      console.warn("[cors] blocked origin", origin)
       return res.status(403).json({ error: "Origin not allowed" })
     }
     return next()
@@ -245,3 +250,5 @@ const PORT = process.env.PORT || 3000;
 
 
 // Forces restart: 2026-01-05
+
+
