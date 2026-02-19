@@ -485,7 +485,18 @@ const resolveCityFromPlace = async ({
   if (!normalizedPlaceId) return null
 
   const mapped = await getMappedCityByPlaceId(normalizedPlaceId)
-  if (mapped?.city) return mapped.city
+  const mappedHotelCount = extractCityHotelCount(mapped?.city)
+  if (mapped?.city && (mappedHotelCount > 0 || !cityToken)) {
+    return mapped.city
+  }
+  if (mapped?.city && PLACE_CITY_MAP_DEBUG) {
+    console.warn("[hotels.search] ignoring stale place mapping (no inventory)", {
+      placeId: normalizedPlaceId,
+      mappedCityCode: mapped.city?.code ?? null,
+      mappedCityName: mapped.city?.name ?? null,
+      mappedHotelCount,
+    })
+  }
 
   const providedLat = parseCoordinateValue(lat)
   const providedLng = parseCoordinateValue(lng)
@@ -1219,6 +1230,13 @@ export const searchHotels = async (req, res, next) => {
     }
 
     if (!hotelIds.length) {
+      console.warn("[hotels.search] no hotels after city resolution", {
+        query: searchQuery || null,
+        placeId: String(placeId || "").trim() || null,
+        resolvedCityCode,
+        resolvedCityName: resolvedCity?.name ?? null,
+        resolvedCountryCode,
+      })
       return res.json({
         items: [],
         meta: {
