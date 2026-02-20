@@ -20,11 +20,8 @@ import { handleWebhook } from "./controllers/payment.controller.js";
 import { setGlobalDispatcher, Agent } from "undici";
 import { ensureDefaultPlatforms } from "./services/platform.service.js";
 import { ensureDefaultCurrencySettings } from "./services/currencySettings.service.js";
-import { startPayoutScheduler } from "./services/payoutScheduler.js";
-import { startInfluencerPayoutScheduler } from "./services/influencerPayoutScheduler.js";
-import { startBookingCleanupScheduler } from "./services/bookingCleanupScheduler.js";
-import { startFxRatesScheduler } from "./services/fxRatesScheduler.js";
-import { startTripHubPackSchedulers, startTripHubPackWorker } from "./services/tripHubPacksQueue.service.js";
+import { startJobScheduler } from "./services/jobScheduler.service.js";
+import { startTripHubPackWorker } from "./services/tripHubPacksQueue.service.js";
 import ensureHomeFavoriteIndexes from "./utils/ensureHomeFavoriteIndexes.js";
 import { initSocketServer } from "./websocket/index.js";
 import diagnoseForeignKeyError from "./utils/diagnoseForeignKeyError.js";
@@ -214,12 +211,8 @@ const PORT = process.env.PORT || 3000;
     await ensureDefaultCurrencySettings();
     await warmSalutationsCache();
     initSocketServer(server);
-    startPayoutScheduler();
-    startInfluencerPayoutScheduler();
-    startBookingCleanupScheduler();
-    startFxRatesScheduler();
+    await startJobScheduler();
     startTripHubPackWorker();
-    startTripHubPackSchedulers();
     server.listen(PORT, () =>
       console.log(`Server listening on port ${PORT}`)
     );

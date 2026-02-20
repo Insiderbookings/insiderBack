@@ -13,6 +13,7 @@ import { buildCancelBookingPayload, mapCancelBookingResponse } from "../provider
 import { tokenizeCard } from "../providers/webbeds/rezpayments.js";
 import { logCurrencyDebug } from "../utils/currencyDebug.js";
 import { convertCurrency } from "./currency.service.js";
+import { runJobFromApi } from "./jobScheduler.service.js";
 import { resolveEnabledCurrency } from "./currencySettings.service.js";
 
 const FLOW_STATUSES = {
@@ -1613,6 +1614,15 @@ export class FlowOrchestratorService {
       Number.isFinite(priceUsd) &&
       priceUsd > 0
     ) {
+      try {
+        await runJobFromApi("fx-rates-sync", {
+          source: "Payment via in-app",
+          triggeredBy: resolveUserId(req),
+        });
+      } catch (error) {
+        console.warn("[flows] fx-rates-sync before price failed", error?.message || error);
+      }
+
       try {
         const ttlSeconds = Number(process.env.FX_QUOTE_TTL_SECONDS || 900);
         const now = Date.now();

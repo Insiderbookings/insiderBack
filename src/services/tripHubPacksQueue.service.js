@@ -20,9 +20,6 @@ const TRIP_HUB_PACKS_ENABLED = String(process.env.TRIP_HUB_PACKS_ENABLED || "tru
 const TRIP_HUB_QUEUE_ENABLED = String(process.env.TRIP_HUB_QUEUE_ENABLED || "true").toLowerCase() !== "false";
 const TRIP_HUB_QUEUE_CONCURRENCY = Number(process.env.TRIP_HUB_QUEUE_CONCURRENCY || 4);
 
-const BASE_REFRESH_TICK_MS = Number(process.env.TRIP_HUB_BASE_REFRESH_TICK_MS || 24 * 60 * 60 * 1000);
-const DELTA_REFRESH_TICK_MS = Number(process.env.TRIP_HUB_DELTA_REFRESH_TICK_MS || 45 * 60 * 1000);
-
 let redisConnection = null;
 let queue = null;
 let scheduler = null;
@@ -266,94 +263,87 @@ const listActiveTripHubZones = async () => {
   return Array.from(zoneMap.values());
 };
 
-export const startTripHubPackSchedulers = () => {
+export const runTripHubBaseRefreshSweep = async () => {
   if (!TRIP_HUB_PACKS_ENABLED) {
-    console.log("[tripHub-packs] schedulers disabled by TRIP_HUB_PACKS_ENABLED");
-    return;
+    return { skipped: true, reason: "TRIP_HUB_PACKS_ENABLED=false" };
   }
 
-  const tickBase = async () => {
-    try {
-      const zones = await listActiveTripHubZones();
-      if (!zones.length) return;
-      const { dateKey } = resolveTripHubTimeBucket();
-      if (!TRIP_HUB_QUEUE_ENABLED || !isRedisConfigured()) {
-        await Promise.all(
-          zones.map((zone) =>
-            generateAndCacheBase({
-              h3: zone.h3,
-              dateKey,
-              location: zone.coords,
-            })
-          )
-        );
-        return;
-      }
-      const queueInstance = getQueue();
-      if (!queueInstance) return;
-      await Promise.all(
-        zones.map((zone) =>
-          queueInstance.add(
-            "base-generate",
-            { h3: zone.h3, dateKey, location: zone.coords },
-            { jobId: buildJobId("base", [zone.h3, dateKey]) }
-          )
-        )
-      );
-    } catch (err) {
-      console.error("[tripHub-packs] base scheduler error", err?.message || err);
-    }
-  };
+  const zones = await listActiveTripHubZones();
+  if (!zones.length) return { skipped: false, zones: 0, queued: 0, generated: 0 };
 
-  const tickDelta = async () => {
-    try {
-      const zones = await listActiveTripHubZones();
-      if (!zones.length) return;
-      await Promise.all(
-        zones.map(async (zone) => {
-          const { dateKey, bucket } = resolveTripHubTimeBucket({ timeZone: zone.timeZone });
-          if (!TRIP_HUB_QUEUE_ENABLED || !isRedisConfigured()) {
-            return generateAndCacheDelta({
-              h3: zone.h3,
-              dateKey,
-              bucket,
-              location: zone.coords,
-              timeZone: zone.timeZone,
-            });
-          }
-          const queueInstance = getQueue();
-          if (!queueInstance) return null;
-          return queueInstance.add(
-            "delta-generate",
-            {
-              h3: zone.h3,
-              dateKey,
-              bucket,
-              location: zone.coords,
-              timeZone: zone.timeZone,
-            },
-            { jobId: buildJobId("delta", [zone.h3, dateKey, bucket]) }
-          );
+  const { dateKey } = resolveTripHubTimeBucket();
+  if (!TRIP_HUB_QUEUE_ENABLED || !isRedisConfigured()) {
+    await Promise.all(
+      zones.map((zone) =>
+        generateAndCacheBase({
+          h3: zone.h3,
+          dateKey,
+          location: zone.coords,
         })
+      )
+    );
+    return { skipped: false, zones: zones.length, queued: 0, generated: zones.length };
+  }
+
+  const queueInstance = getQueue();
+  if (!queueInstance) return { skipped: false, zones: zones.length, queued: 0, generated: 0 };
+
+  await Promise.all(
+    zones.map((zone) =>
+      queueInstance.add(
+        "base-generate",
+        { h3: zone.h3, dateKey, location: zone.coords },
+        { jobId: buildJobId("base", [zone.h3, dateKey]) }
+      )
+    )
+  );
+
+  return { skipped: false, zones: zones.length, queued: zones.length, generated: 0 };
+};
+
+export const runTripHubDeltaRefreshSweep = async () => {
+  if (!TRIP_HUB_PACKS_ENABLED) {
+    return { skipped: true, reason: "TRIP_HUB_PACKS_ENABLED=false" };
+  }
+
+  const zones = await listActiveTripHubZones();
+  if (!zones.length) return { skipped: false, zones: 0, queued: 0, generated: 0 };
+
+  if (!TRIP_HUB_QUEUE_ENABLED || !isRedisConfigured()) {
+    await Promise.all(
+      zones.map(async (zone) => {
+        const { dateKey, bucket } = resolveTripHubTimeBucket({ timeZone: zone.timeZone });
+        return generateAndCacheDelta({
+          h3: zone.h3,
+          dateKey,
+          bucket,
+          location: zone.coords,
+          timeZone: zone.timeZone,
+        });
+      })
+    );
+    return { skipped: false, zones: zones.length, queued: 0, generated: zones.length };
+  }
+
+  const queueInstance = getQueue();
+  if (!queueInstance) return { skipped: false, zones: zones.length, queued: 0, generated: 0 };
+
+  await Promise.all(
+    zones.map(async (zone) => {
+      const { dateKey, bucket } = resolveTripHubTimeBucket({ timeZone: zone.timeZone });
+      return queueInstance.add(
+        "delta-generate",
+        {
+          h3: zone.h3,
+          dateKey,
+          bucket,
+          location: zone.coords,
+          timeZone: zone.timeZone,
+        },
+        { jobId: buildJobId("delta", [zone.h3, dateKey, bucket]) }
       );
-    } catch (err) {
-      console.error("[tripHub-packs] delta scheduler error", err?.message || err);
-    }
-  };
+    })
+  );
 
-  console.log("[tripHub-packs] schedulers started", {
-    baseTickMs: BASE_REFRESH_TICK_MS,
-    deltaTickMs: DELTA_REFRESH_TICK_MS,
-  });
-
-  tickBase().catch((err) => console.error("[tripHub-packs] base initial error", err?.message || err));
-  tickDelta().catch((err) => console.error("[tripHub-packs] delta initial error", err?.message || err));
-
-  setInterval(() => {
-    tickBase().catch((err) => console.error("[tripHub-packs] base tick error", err?.message || err));
-  }, BASE_REFRESH_TICK_MS);
-
-  setInterval(() => {
-    tickDelta().catch((err) => console.error("[tripHub-packs] delta tick error", err?.message || err));
-  }, DELTA_REFRESH_TICK_MS);
+  return { skipped: false, zones: zones.length, queued: zones.length, generated: 0 };
 };
