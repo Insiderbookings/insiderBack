@@ -37,6 +37,7 @@
     "morgan": "^1.10.0",
     "multer": "^2.0.2",
     "mysql2": "^3.14.3",
+    "node-cron": "^4.2.1",
     "nodemailer": "^7.0.3",
     "openai": "^4.74.1",
     "pdfkit": "^0.17.1",

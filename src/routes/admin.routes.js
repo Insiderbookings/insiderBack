@@ -21,6 +21,8 @@ import { adminUpdateUserStatus, adminGetUserListings, adminSendUserAction } from
 import { adminUpdateListingStatus } from "../controllers/adminListing.controller.js"
 import { adminListStays, adminGetStayDetail } from "../controllers/adminStay.controller.js"
 import { getKPIDashboard } from "../controllers/adminKPI.controller.js"
+import { adminListJobs, adminUpdateJob, adminRunJob, adminListJobRuns } from "../controllers/adminJob.controller.js"
+import { adminListFxRateChanges, adminListFxRates, adminUpdateFxRate } from "../controllers/adminFxRate.controller.js"
 
 const router = Router()
 
@@ -96,9 +98,20 @@ router.get("/currencies", authenticate, authorizeRoles(100), adminListCurrencies
 router.post("/currencies/seed", authenticate, authorizeRoles(100), adminSeedCurrencies)
 router.put("/currencies/:code", authenticate, authorizeRoles(100), adminUpdateCurrency)
 
+// FX rates admin
+router.get("/fx-rates", authenticate, authorizeRoles(100), adminListFxRates)
+router.get("/fx-rates/changes", authenticate, authorizeRoles(100), adminListFxRateChanges)
+router.put("/fx-rates/:id", authenticate, authorizeRoles(100), adminUpdateFxRate)
+
 // Payouts mock (trigger manual, admin only)
 router.post("/payouts/mock", authenticate, authorizeRoles(100), runMockPayouts)
 router.post("/payouts/batch", authenticate, authorizeRoles(100), runPayoutBatch)
+
+// Scheduled jobs admin
+router.get("/jobs", authenticate, authorizeRoles(100), adminListJobs)
+router.get("/jobs/:name/logs", authenticate, authorizeRoles(100), adminListJobRuns)
+router.patch("/jobs/:name", authenticate, authorizeRoles(100), adminUpdateJob)
+router.post("/jobs/:name/run", authenticate, authorizeRoles(100), adminRunJob)
 
 export default router
 

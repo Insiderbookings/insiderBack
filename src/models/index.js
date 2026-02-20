@@ -119,6 +119,10 @@ import PushTokenModel from "./PushToken.js";
 import RefreshTokenModel from "./RefreshToken.js";
 import ErrorLogModel from "./ErrorLog.js";
 import ErrorConfigModel from "./ErrorConfig.js";
+import ScheduledJobModel from "./ScheduledJob.js";
+import ScheduledJobRunModel from "./ScheduledJobRun.js";
+import FxRateModel from "./FxRate.js";
+import FxRateChangeLogModel from "./FxRateChangeLog.js";
 
 /* ---------- Construir objetos ---------- */
 const Stay = StayModel(sequelize);
@@ -245,6 +249,10 @@ const models = {
   ItineraryItem: ItineraryItemModel(sequelize),
   ErrorLog: ErrorLogModel(sequelize),
   ErrorConfig: ErrorConfigModel(sequelize),
+  ScheduledJob: ScheduledJobModel(sequelize),
+  ScheduledJobRun: ScheduledJobRunModel(sequelize),
+  FxRate: FxRateModel(sequelize),
+  FxRateChangeLog: FxRateChangeLogModel(sequelize),
 };
 
 /* ---------- Ejecutar asociaciones ---------- */
