@@ -2011,19 +2011,6 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/Ok"
-  /api/hosts/payout-methods:
-    put:
-      tags: [Hosts]
-      summary: Update payout methods
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/GenericRequest"
-      responses:
-        "200":
-          $ref: "#/components/responses/Ok"
   /api/hosts/payout-account:
     get:
       tags: [Hosts]

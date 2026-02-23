@@ -46,22 +46,63 @@ const detectLanguageFromMessages = (messages, fallback) => {
 
 const promptByAction = {
   [NEXT_ACTIONS.ASK_FOR_DESTINATION]: {
-    es: "A donde quieres viajar?",
-    en: "Where do you want to travel?",
+    es: [
+      "¿A dónde te gustaría viajar?",
+      "¿Qué destino tenés en mente?",
+      "Decime a dónde querés ir.",
+    ],
+    en: [
+      "Where do you want to travel?",
+      "What destination are you thinking?",
+      "Tell me where you'd like to go.",
+    ],
   },
   [NEXT_ACTIONS.ASK_FOR_DATES]: {
-    es: "Que fechas quieres reservar?",
-    en: "What dates do you want to book?",
+    es: [
+      "¿Qué fechas tenés en mente?",
+      "¿Cuándo sería el viaje?",
+      "Decime las fechas de entrada y salida.",
+    ],
+    en: [
+      "What dates are you thinking?",
+      "When is the trip?",
+      "Tell me your check-in and check-out dates.",
+    ],
   },
   [NEXT_ACTIONS.ASK_FOR_GUESTS]: {
-    es: "Cuantas personas viajan?",
-    en: "How many guests are traveling?",
+    es: [
+      "¿Cuántas personas viajan?",
+      "¿Cuántos serían?",
+      "Decime cuántos adultos y niños.",
+    ],
+    en: [
+      "How many guests are traveling?",
+      "How many people?",
+      "Tell me how many adults and children.",
+    ],
   },
 };
 
 const promptDatesAndGuests = {
-  es: "Excelente, ¿cuántas personas y cuándo?",
-  en: "Great, how many people and when?",
+  es: [
+    "Genial. ¿Cuántas personas y para qué fechas?",
+    "Perfecto. ¿Cuántos viajan y cuándo?",
+    "Dale. Necesito fechas y cantidad de personas para mostrarte precios y disponibilidad.",
+  ],
+  en: [
+    "Great. How many people and what dates?",
+    "Sure. When are you going and how many guests?",
+    "Got it. I need dates and guest count to show you prices and availability.",
+  ],
+};
+
+/** Pick one variant to avoid repetitive bot-like replies. */
+const pickVariant = (arr, seed) => {
+  if (!Array.isArray(arr) || !arr.length) return null;
+  const idx = typeof seed === "number" && Number.isFinite(seed)
+    ? Math.abs(Math.floor(seed)) % arr.length
+    : Math.floor(Math.random() * arr.length);
+  return arr[idx];
 };
 
 const inputByAction = {
@@ -131,30 +172,49 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
   const missingGuests = missing.includes("GUESTS");
   const multipleMissing = (missingDest ? 1 : 0) + (missingDates ? 1 : 0) + (missingGuests ? 1 : 0) > 1;
 
+  // Seed for variant pick: use message count + total content length so same convo gets variety over turns
+  const seed =
+    (messages?.length ?? 0) * 31 +
+    (messages?.reduce((acc, m) => acc + (m?.content?.length ?? 0), 0) ?? 0);
+
+  // Multiple phrases when asking for several missing fields (avoid single repetitive line)
+  const multipleMissingPhrases = {
+    es: [
+      (list) => `Me encanta la idea. Para mostrarte opciones y precios reales necesito saber ${list}.`,
+      (list) => `Dale, para buscar necesito que me cuentes ${list}. Así te muestro disponibilidad y tarifas.`,
+      (list) => `Genial. Decime ${list} y te armo las mejores opciones con precios y disponibilidad.`,
+      (list) => `Perfecto. Para ver precios y disponibilidad necesito ${list}.`,
+    ],
+    en: [
+      (list) => `Sounds good. To show you real prices and availability I need to know ${list}.`,
+      (list) => `Great. Tell me ${list} and I'll find options with live rates and availability.`,
+      (list) => `Sure. Once I know ${list}, I can show you availability and prices.`,
+      (list) => `Got it. I need ${list} to show you prices and availability.`,
+    ],
+  };
+
   // Only override text if we are NOT running a search (i.e. we are stuck asking for info)
   if (multipleMissing && nextAction !== "RUN_SEARCH") {
     const partsEs = [];
     const partsEn = [];
     if (missingDest) {
-      partsEs.push("a donde queres ir");
+      partsEs.push("a dónde querés ir");
       partsEn.push("where you want to go");
     }
     if (missingDates) {
-      partsEs.push("cuando");
+      partsEs.push("cuándo");
       partsEn.push("when");
     }
     if (missingGuests) {
-      partsEs.push("cuantos son");
+      partsEs.push("cuántos son");
       partsEn.push("how many guests");
     }
 
-    if (language === "es") {
-      const list = partsEs.join(", ").replace(/, ([^,]*)$/, " y $1");
-      replyText = `Me encanta la idea. Para buscar opciones necesito saber ${list}.`;
-    } else {
-      const list = partsEn.join(", ").replace(/, ([^,]*)$/, " and $1");
-      replyText = `Great idea. To find the best options I need to know ${list}.`;
-    }
+    const listEs = partsEs.join(", ").replace(/, ([^,]*)$/, " y $1");
+    const listEn = partsEn.join(", ").replace(/, ([^,]*)$/, " and $1");
+    const phrases = multipleMissingPhrases[language] || multipleMissingPhrases.en;
+    const fn = pickVariant(phrases, seed);
+    replyText = language === "es" ? fn(listEs) : fn(listEn);
     followUps = [];
   } else if (
     nextAction === NEXT_ACTIONS.ASK_FOR_DESTINATION ||
@@ -163,12 +223,12 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
   ) {
     const bothDatesAndGuestsMissing = missingDates && missingGuests;
     if (bothDatesAndGuestsMissing) {
-      replyText = promptDatesAndGuests[language] || promptDatesAndGuests.en;
+      const variants = promptDatesAndGuests[language] || promptDatesAndGuests.en;
+      replyText = Array.isArray(variants) ? pickVariant(variants, seed) : variants;
     } else {
-      replyText =
-        promptByAction[nextAction]?.[language] ||
-        promptByAction[nextAction]?.en ||
-        "Can you clarify?";
+      const byAction = promptByAction[nextAction];
+      const variants = byAction?.[language] || byAction?.en;
+      replyText = Array.isArray(variants) ? pickVariant(variants, seed) : (variants || "Can you clarify?");
     }
     followUps = [];
   } else {
@@ -185,11 +245,39 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
     followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
   }
 
-  if (!replyText) {
-    replyText =
+  if (nextAction === NEXT_ACTIONS.RUN_SEARCH && (missingDates || missingGuests)) {
+    const missingLabelsEs = [];
+    const missingLabelsEn = [];
+    if (missingDates) {
+      missingLabelsEs.push("fechas");
+      missingLabelsEn.push("dates");
+    }
+    if (missingGuests) {
+      missingLabelsEs.push("huespedes");
+      missingLabelsEn.push("guests");
+    }
+    const listEs = missingLabelsEs.join(" y ");
+    const listEn = missingLabelsEn.join(" and ");
+    const staticHint =
       language === "es"
-        ? "Listo. Contame que necesitas y lo resolvemos."
-        : "Got it. Tell me what you need and I will help.";
+        ? `Estas son sugerencias iniciales. Para continuar con disponibilidad y precios reales necesito ${listEs}.`
+        : `These are initial suggestions. To continue with live availability and pricing I need ${listEn}.`;
+    replyText = replyText ? `${staticHint}\n\n${replyText}` : staticHint;
+  }
+
+  if (!replyText) {
+    const fallbackEs = [
+      "Listo. Contame qué necesitás y lo resolvemos.",
+      "Dale, decime en qué te ayudo.",
+      "Acá estoy. ¿En qué andás?",
+    ];
+    const fallbackEn = [
+      "Got it. Tell me what you need and I'll help.",
+      "Sure. What can I do for you?",
+      "Here when you need me. What are you looking for?",
+    ];
+    const fallbacks = language === "es" ? fallbackEs : fallbackEn;
+    replyText = pickVariant(fallbacks, seed);
   }
 
   let combinedInputs = [];

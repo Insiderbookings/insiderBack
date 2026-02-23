@@ -1,6 +1,6 @@
 import { searchHomesForPlan, searchHotelsForPlan } from "../../../services/assistantSearch.service.js";
 
-export const searchStays = async (plan, { limit, maxResults = 5, excludeIds = [] } = {}) => {
+export const searchStays = async (plan, { limit, maxResults = 15, excludeIds = [] } = {}) => {
   const SEARCH_HOMES_ENABLED = false; // Feature flag: Temporarily disabled
 
   const listingTypes =

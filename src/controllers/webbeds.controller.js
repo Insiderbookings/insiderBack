@@ -95,6 +95,34 @@ const isPrivilegedUser = (user) => {
   return role === 1 || role === 100
 }
 
+const resolveReferralContext = async (tokenUser) => {
+  const userId = Number(tokenUser?.id) || null
+  const tokenInfluencerId = Number(tokenUser?.referredByInfluencerId) || null
+  const tokenCodeRaw = String(tokenUser?.referredByCode || "").trim()
+  const tokenCode = tokenCodeRaw || null
+
+  if (!userId) {
+    return { influencerId: tokenInfluencerId, code: tokenCode }
+  }
+
+  if (tokenInfluencerId && tokenCode) {
+    return { influencerId: tokenInfluencerId, code: tokenCode }
+  }
+
+  try {
+    const user = await models.User.findByPk(userId, {
+      attributes: ["id", "referred_by_influencer_id", "referred_by_code"],
+    })
+    return {
+      influencerId: tokenInfluencerId || Number(user?.referred_by_influencer_id) || null,
+      code: tokenCode || user?.referred_by_code || null,
+    }
+  } catch (error) {
+    console.warn("[webbeds] resolve referral context fallback failed", error?.message || error)
+    return { influencerId: tokenInfluencerId, code: tokenCode }
+  }
+}
+
 const maskEmail = (email = "") => {
   const value = String(email || "").trim()
   if (!value) return null
@@ -358,10 +386,7 @@ export const createPaymentIntent = async (req, res, next) => {
       console.warn(`${logPrefix} missing dates`, { resolvedCheckIn, resolvedCheckOut })
       return res.status(400).json({ error: "Missing check-in or check-out dates" })
     }
-    const referral = {
-      influencerId: Number(req.user?.referredByInfluencerId) || null,
-      code: req.user?.referredByCode || null,
-    }
+    const referral = await resolveReferralContext(req.user)
 
     // 1. Create Local Booking Record (PENDING)
     // We store the Webbeds ID as external_ref

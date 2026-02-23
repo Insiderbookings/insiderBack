@@ -6,6 +6,10 @@ import payoutBatchJob from "./payoutBatch.job.js";
 import influencerPayoutBatchJob from "./influencerPayoutBatch.job.js";
 import tripHubBaseRefreshJob from "./tripHubBaseRefresh.job.js";
 import tripHubDeltaRefreshJob from "./tripHubDeltaRefresh.job.js";
+import webbedsCitiesSyncJob from "./webbedsCitiesSync.job.js";
+import webbedsHotelsUpdatedSyncJob from "./webbedsHotelsUpdatedSync.job.js";
+import webbedsHotelsNewSyncJob from "./webbedsHotelsNewSync.job.js";
+import webbedsHotelsFullSyncJob from "./webbedsHotelsFullSync.job.js";
 
 const registry = [
   demoLogJob,
@@ -16,6 +20,10 @@ const registry = [
   influencerPayoutBatchJob,
   tripHubBaseRefreshJob,
   tripHubDeltaRefreshJob,
+  webbedsCitiesSyncJob,
+  webbedsHotelsUpdatedSyncJob,
+  webbedsHotelsNewSyncJob,
+  webbedsHotelsFullSyncJob,
 ];
 
 export const JOB_DEFINITIONS = registry.map((job) => ({

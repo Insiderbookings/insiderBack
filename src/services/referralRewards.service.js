@@ -125,16 +125,20 @@ export const findInfluencerByReferralCode = async (code, transaction) => {
   if (!models.User) return null
   const normalized = normalizeCode(code)
   if (!normalized) return null
-  const where = {
-    role: 2,
-    user_code: { [iLikeOp]: normalized },
-  }
-  const influencer = await models.User.findOne({
-    where,
+  const matches = await models.User.findAll({
+    where: {
+      user_code: { [iLikeOp]: normalized },
+    },
     attributes: ["id", "user_code", "name", "email"],
+    order: [["id", "ASC"]],
+    limit: 2,
     transaction,
   })
-  return influencer
+  if (!matches.length) return null
+  if (matches.length > 1) {
+    throw new ReferralError("Referral code is ambiguous. Please contact support.", 409)
+  }
+  return matches[0]
 }
 
 const ensureEventCommission = async ({
@@ -453,7 +457,12 @@ export const planReferralFirstBookingDiscount = async ({
   }
 
   const existingCount = await models.Booking.count({
-    where: { user_id: userId },
+    where: {
+      user_id: userId,
+      // First-booking discount should depend on successful paid bookings,
+      // not on failed/pending attempts created during checkout retries.
+      payment_status: { [Op.in]: ["PAID", "REFUNDED"] },
+    },
     transaction,
   })
   if (existingCount > 0) {

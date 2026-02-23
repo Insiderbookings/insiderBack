@@ -15,6 +15,9 @@ import {
   recordDiscountCodeStatus,
   applyDiscountCode,
   getInfluencerGoals,
+  becomeInfluencer,
+  updateInfluencerCode,
+  createInfluencerIdentityVerificationSession,
 } from "../controllers/user.controller.js"
 import {
   getPayoutAccount,
@@ -49,7 +52,10 @@ router.get("/me/influencer/payout-account", authenticate, authorizeRoles(2), req
 router.post("/me/influencer/payout-account/stripe/link", authenticate, authorizeRoles(2), requireVerifiedEmail, createStripeOnboardingLink)
 router.post("/me/influencer/payout-account/stripe/update-link", authenticate, authorizeRoles(2), requireVerifiedEmail, createStripeAccountUpdateLink)
 router.post("/me/influencer/payout-account/stripe/refresh", authenticate, authorizeRoles(2), requireVerifiedEmail, refreshStripeAccountStatus)
-router.get("/", authenticate, authorizeRoles(2), getInfluencerReferrals)
+router.post("/me/influencer/verification/identity/session", authenticate, authorizeRoles(2), createInfluencerIdentityVerificationSession)
+router.put("/me/influencer/code", authenticate, authorizeRoles(2), updateInfluencerCode)
+router.post("/me/become-influencer", authenticate, becomeInfluencer)
+router.get("/", authenticate, authorizeRoles(2, 100), getInfluencerReferrals)
 router.post("/admin/influencer/payouts/create", authenticate, authorizeRoles(100), adminCreateInfluencerPayoutBatch)
 router.post("/admin/influencer/payouts/batch", authenticate, authorizeRoles(100), runInfluencerPayoutBatch)
 

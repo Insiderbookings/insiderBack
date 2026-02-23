@@ -373,6 +373,44 @@ const buildItinerary = ({ request, tripContext, suggestions }) => {
   });
 };
 
+const STATIC_SEARCH_RESULTS_LIMIT = 15;
+const LIVE_SEARCH_RESULTS_LIMIT = 120;
+const SEARCH_RESULTS_HARD_CAP = 120;
+
+const clampResultLimit = (value, fallback) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  return Math.min(SEARCH_RESULTS_HARD_CAP, Math.max(1, Math.floor(numeric)));
+};
+
+const hasSearchDates = (plan) =>
+  Boolean(plan?.dates?.checkIn && plan?.dates?.checkOut);
+
+const hasSearchGuests = (plan) => {
+  const adults = Number(plan?.guests?.adults);
+  const total = Number(plan?.guests?.total);
+  return (
+    (Number.isFinite(adults) && adults > 0) ||
+    (Number.isFinite(total) && total > 0)
+  );
+};
+
+const resolveSearchLimits = ({ plan, limits }) => {
+  const isLiveInventoryMode = hasSearchDates(plan) && hasSearchGuests(plan);
+  const defaultMaxResults = isLiveInventoryMode
+    ? LIVE_SEARCH_RESULTS_LIMIT
+    : STATIC_SEARCH_RESULTS_LIMIT;
+  const maxResults = clampResultLimit(limits?.maxResults, defaultMaxResults);
+  return {
+    isLiveInventoryMode,
+    maxResults,
+    limit: {
+      homes: clampResultLimit(limits?.homes, maxResults),
+      hotels: clampResultLimit(limits?.hotels, maxResults),
+    },
+  };
+};
+
 export const runAiTurn = async ({
   sessionId,
   userId,
@@ -479,6 +517,7 @@ export const runAiTurn = async ({
   let carousels = [];
   if (resolvedNextAction === "RUN_SEARCH") {
     const searchStart = Date.now();
+    const searchLimits = resolveSearchLimits({ plan: mergedPlan, limits });
 
     // Check if we have previous results to exclude (for pagination/"more options")
     // Only exclude if the search plan is roughly similar (e.g. same location)
@@ -486,8 +525,8 @@ export const runAiTurn = async ({
     const excludeIds = existingState?.lastResultsContext?.shownIds || [];
 
     inventory = await searchStays(mergedPlan, {
-      limit: limits,
-      maxResults: AI_LIMITS.maxResults,
+      limit: searchLimits.limit,
+      maxResults: searchLimits.maxResults,
       excludeIds
     });
     timings.searchMs = Date.now() - searchStart;

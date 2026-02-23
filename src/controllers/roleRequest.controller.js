@@ -523,8 +523,19 @@ export async function adminApproveFinal(req, res, next) {
     const user = await models.User.findByPk(reqRow.user_id)
     if (!user) return res.status(404).json({ error: "User not found" })
 
-    // Actualiza rol
-    await user.update({ role: reqRow.role_requested, role_pending_info: false })
+    const requestedRole = Number(reqRow.role_requested)
+    const currentRole = Number(user.role || 0)
+    const shouldPromotePrimaryRole = currentRole === 0 || currentRole === requestedRole
+    const nextPrimaryRole = shouldPromotePrimaryRole ? requestedRole : currentRole
+
+    await user.update({ role: nextPrimaryRole, role_pending_info: false })
+
+    if (requestedRole === 6 && models.HostProfile) {
+      await models.HostProfile.findOrCreate({
+        where: { user_id: user.id },
+        defaults: { user_id: user.id, kyc_status: "PENDING", payout_status: "INCOMPLETE" },
+      })
+    }
 
     // Si es operator (5), ya no se crean cuentas WcAccount.
     // El operador accederá al panel dentro de InsiderWeb usando su misma cuenta.

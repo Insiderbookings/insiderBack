@@ -1,5 +1,16 @@
 import { Op } from "sequelize";
 import models from "../models/index.js";
+import {
+  buildHostOnboardingState,
+  ensureHostOnboardingMetadata,
+} from "../utils/hostOnboarding.js";
+import { getStripeClient } from "../services/payoutProviders.js";
+import {
+  confirmPhoneVerificationCode,
+  isPhoneVerificationConfigured,
+  requestPhoneVerificationCode,
+} from "../services/phoneVerification.service.js";
+import { createCurrencyConverter } from "../services/currency.service.js";
 
 const PLATFORM_FEE_PCT = 0.03;
 
@@ -19,7 +30,7 @@ const getCoverImage = (home) => {
 };
 
 const buildStayHomeFilter = (hostId) => ({
-  [Op.or]: [{ host_id: hostId }, { host_id: null }],
+  host_id: hostId,
 });
 
 const getHomeSnapshot = (home) => {
@@ -113,6 +124,74 @@ const toMillis = (value) => {
   return Number.isNaN(time) ? 0 : time;
 };
 
+const asPlainObject = (value) =>
+  value && typeof value === "object" && !Array.isArray(value) ? value : {};
+
+const PHONE_CHANNELS = new Set(["sms", "call"]);
+const PHONE_CODE_PATTERN = /^\d{4,10}$/;
+const PHONE_RESEND_SECONDS_RAW = Number(process.env.PHONE_VERIFICATION_RESEND_SECONDS);
+const PHONE_RESEND_SECONDS =
+  Number.isFinite(PHONE_RESEND_SECONDS_RAW) && PHONE_RESEND_SECONDS_RAW >= 30
+    ? Math.min(PHONE_RESEND_SECONDS_RAW, 300)
+    : 60;
+
+const normalizePhoneChannel = (value) => {
+  const raw = String(value || "").trim().toLowerCase();
+  return PHONE_CHANNELS.has(raw) ? raw : "sms";
+};
+
+const normalizePhoneE164 = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const compact = raw.replace(/[\s\-()]/g, "");
+  if (!compact.startsWith("+")) return "";
+  const normalized = `+${compact.slice(1).replace(/\D/g, "")}`;
+  if (!/^\+[1-9]\d{7,14}$/.test(normalized)) return "";
+  return normalized;
+};
+
+const maskPhone = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "your phone number";
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "your phone number";
+  if (digits.length <= 4) return `+${digits}`;
+  return `+${digits.slice(0, 2)}******${digits.slice(-2)}`;
+};
+
+const resolveIdentityReturnUrl = () => {
+  const explicit = String(process.env.STRIPE_IDENTITY_RETURN_URL || "").trim();
+  if (explicit) return explicit;
+  return "https://bookinggpt.app/host-identity/complete";
+};
+
+const normalizeIdentityReturnUrl = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+    const protocol = String(parsed.protocol || "").toLowerCase();
+    if (protocol !== "https:" && protocol !== "http:") return null;
+    if (isProd && protocol !== "https:") return null;
+
+    const host = String(parsed.hostname || "").toLowerCase();
+    const isBookingHost = host === "bookinggpt.app" || host.endsWith(".bookinggpt.app");
+    const isLocalHost =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host);
+    if (!isBookingHost && !( !isProd && isLocalHost)) return null;
+
+    const path = String(parsed.pathname || "");
+    if (!path.startsWith("/host-identity")) return null;
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
 export const getHostBookingsList = async (req, res) => {
   const hostId = Number(req.user?.id);
   if (!hostId) return res.status(400).json({ error: "Invalid host ID" });
@@ -164,6 +243,8 @@ export const getHostBookingsList = async (req, res) => {
             {
               model: models.Home,
               as: "home",
+              required: true,
+              where: { host_id: hostId },
               attributes: ["id", "title", "city", "country", "status"],
               include: [
                 {
@@ -404,64 +485,70 @@ export const getHostDashboard = async (req, res) => {
   }
 };
 
-  export const getHostEarnings = async (req, res) => {
-    const hostId = Number(req.user?.id);
-    if (!hostId) return res.status(400).json({ error: "Invalid host ID" });
+export const getHostEarnings = async (req, res) => {
+  const hostId = Number(req.user?.id);
+  if (!hostId) return res.status(400).json({ error: "Invalid host ID" });
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const oneYearAgo = new Date(today);
-    oneYearAgo.setUTCFullYear(oneYearAgo.getUTCFullYear() - 1);
+  const requestedCurrency = String(req.query?.currency || "USD").trim().toUpperCase();
+  const currencyConverter = createCurrencyConverter(requestedCurrency);
+  const displayCurrency = currencyConverter.targetCurrency;
 
-    try {
-      await ensurePayoutItemsForHost(hostId);
-      const payoutItems = await models.PayoutItem.findAll({
-        where: { user_id: hostId },
-        include: [
-          {
-            model: models.Stay,
-            as: "stay",
-            required: true,
-            where: { inventory_type: "HOME" },
-            include: [
-              {
-                model: models.StayHome,
-                as: "homeStay",
-                required: true,
-                where: buildStayHomeFilter(hostId),
-                include: [
-                  {
-                    model: models.Home,
-                    as: "home",
-                    attributes: ["id", "title", "host_id"],
-                    include: [
-                      { model: models.HomeAddress, as: "address", attributes: ["city", "country"] },
-                      {
-                        model: models.HomeMedia,
-                        as: "media",
-                        attributes: ["id", "url", "is_cover", "order"],
-                        separate: true,
-                        limit: 1,
-                        order: [
-                          ["is_cover", "DESC"],
-                          ["order", "ASC"],
-                          ["id", "ASC"],
-                        ],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      });
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const oneYearAgo = new Date(today);
+  oneYearAgo.setUTCFullYear(oneYearAgo.getUTCFullYear() - 1);
 
-      const stays = await models.Stay.findAll({
-        where: {
-          inventory_type: "HOME",
-          status: { [Op.in]: ["PENDING", "CONFIRMED", "COMPLETED"] },
-          check_in: { [Op.gte]: formatDate(oneYearAgo) },
+  try {
+    await ensurePayoutItemsForHost(hostId);
+    const payoutItems = await models.PayoutItem.findAll({
+      where: { user_id: hostId },
+      include: [
+        {
+          model: models.Stay,
+          as: "stay",
+          required: true,
+          where: { inventory_type: "HOME" },
+          include: [
+            {
+              model: models.StayHome,
+              as: "homeStay",
+              required: true,
+              where: buildStayHomeFilter(hostId),
+              include: [
+                {
+                  model: models.Home,
+                  as: "home",
+                  required: true,
+                  where: { host_id: hostId },
+                  attributes: ["id", "title", "host_id"],
+                  include: [
+                    { model: models.HomeAddress, as: "address", attributes: ["city", "country"] },
+                    {
+                      model: models.HomeMedia,
+                      as: "media",
+                      attributes: ["id", "url", "is_cover", "order"],
+                      separate: true,
+                      limit: 1,
+                      order: [
+                        ["is_cover", "DESC"],
+                        ["order", "ASC"],
+                        ["id", "ASC"],
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const stays = await models.Stay.findAll({
+      where: {
+        inventory_type: "HOME",
+        status: { [Op.in]: ["PENDING", "CONFIRMED", "COMPLETED"] },
+        check_in: { [Op.gte]: formatDate(oneYearAgo) },
       },
       include: [
         {
@@ -473,6 +560,8 @@ export const getHostDashboard = async (req, res) => {
             {
               model: models.Home,
               as: "home",
+              required: true,
+              where: { host_id: hostId },
               attributes: ["id", "title", "host_id"],
               include: [
                 { model: models.HomeAddress, as: "address", attributes: ["city", "country"] },
@@ -495,94 +584,115 @@ export const getHostDashboard = async (req, res) => {
       ],
     });
 
-      const monthTotals = new Map();
-      const reports = new Map();
-      const listingTotals = new Map();
-      let nightsReserved = 0;
-      let totalStaysCount = 0;
-      const upcoming = [];
-      const paid = [];
-      const staysByMonth = new Map();
+    const monthTotals = new Map();
+    const reports = new Map();
+    const listingTotals = new Map();
+    let nightsReserved = 0;
+    let totalStaysCount = 0;
+    const upcoming = [];
+    const paid = [];
+    const staysByMonth = new Map();
 
-      for (const item of payoutItems) {
-        const stay = item.stay;
-        const stayHostId = stay?.homeStay?.host_id;
-        const home = stay?.homeStay?.home;
-        if (!home || stayHostId !== hostId) continue;
-        const keyDate =
-          parseDateOnly(item.scheduled_for) ||
-          parseDateOnly(stay.check_out) ||
-          parseDateOnly(stay.check_in) ||
-          today;
-        if (keyDate < oneYearAgo) continue;
-        const monthKey = `${keyDate.getUTCFullYear()}-${String(keyDate.getUTCMonth() + 1).padStart(2, "0")}`;
-        const netAmount = Number(item.amount ?? 0);
-        const grossAmount = Number(item.metadata?.gross_price ?? stay.gross_price ?? netAmount);
-        const feeAmount = Number(item.metadata?.fee_amount ?? Math.max(0, grossAmount - netAmount));
-        const taxAmount = Number(stay.taxes_total ?? 0);
-        const stayPayload = {
-          id: stay.id,
-          checkIn: stay.check_in,
-          checkOut: stay.check_out,
-          nights: stay.nights ?? null,
-          amount: netAmount,
-          status: stay.status,
-          paymentStatus: stay.payment_status || null,
-          home: getHomeSnapshot(home),
-        };
+    for (const item of payoutItems) {
+      const stay = item.stay;
+      const stayHostId = stay?.homeStay?.host_id;
+      const home = stay?.homeStay?.home;
+      if (!home || stayHostId !== hostId) continue;
 
-        monthTotals.set(monthKey, (monthTotals.get(monthKey) || 0) + netAmount);
-        reports.set(monthKey, {
-          gross: (reports.get(monthKey)?.gross || 0) + grossAmount,
-          adjustments: 0,
-          serviceFees: (reports.get(monthKey)?.serviceFees || 0) + feeAmount,
-          taxes: (reports.get(monthKey)?.taxes || 0) + taxAmount,
-        });
-        if (!staysByMonth.has(monthKey)) staysByMonth.set(monthKey, []);
-        staysByMonth.get(monthKey).push(stayPayload);
+      const keyDate =
+        parseDateOnly(item.scheduled_for) ||
+        parseDateOnly(stay.check_out) ||
+        parseDateOnly(stay.check_in) ||
+        today;
+      if (keyDate < oneYearAgo) continue;
 
-        const scheduledFor = item.scheduled_for || stay.check_out || stay.check_in || null;
-        const paidAt = item.paid_at || null;
-        const payout = {
-          id: item.id,
-          date: paidAt || scheduledFor,
-          scheduledFor,
-          paidAt,
-          amount: netAmount,
-          status: item.status,
-          home: getHomeSnapshot(home),
-        };
+      const monthKey = `${keyDate.getUTCFullYear()}-${String(keyDate.getUTCMonth() + 1).padStart(2, "0")}`;
+      const sourceCurrency = String(item.currency || stay.currency || "USD").toUpperCase();
+      const sourceNetAmount = Number(item.amount ?? 0);
+      const sourceGrossAmount = Number(item.metadata?.gross_price ?? stay.gross_price ?? sourceNetAmount);
+      const sourceFeeAmount = Number(item.metadata?.fee_amount ?? Math.max(0, sourceGrossAmount - sourceNetAmount));
+      const sourceTaxAmount = Number(stay.taxes_total ?? 0);
 
-        if (item.status === "PAID") {
-          paid.push(payout);
-        } else if (["PENDING", "QUEUED", "PROCESSING", "ON_HOLD"].includes(item.status)) {
-          upcoming.push(payout);
-        }
-      }
+      const [netAmount, grossAmount, feeAmount, taxAmount] = await Promise.all([
+        currencyConverter.convert(sourceNetAmount, sourceCurrency),
+        currencyConverter.convert(sourceGrossAmount, sourceCurrency),
+        currencyConverter.convert(sourceFeeAmount, sourceCurrency),
+        currencyConverter.convert(sourceTaxAmount, sourceCurrency),
+      ]);
 
-      for (const stay of stays) {
-        const stayHostId = stay.homeStay?.host_id;
-        const home = stay.homeStay?.home;
-        if (!home || stayHostId !== hostId) continue;
-        const listingKey = home.id;
-        const amount = Number(stay.gross_price ?? 0);
-        listingTotals.set(listingKey, {
-          home: getHomeSnapshot(home),
-          total: (listingTotals.get(listingKey)?.total || 0) + amount,
-        });
+      const stayPayload = {
+        id: stay.id,
+        checkIn: stay.check_in,
+        checkOut: stay.check_out,
+        nights: stay.nights ?? null,
+        amount: netAmount,
+        currency: displayCurrency,
+        sourceAmount: sourceNetAmount,
+        sourceCurrency,
+        status: stay.status,
+        paymentStatus: stay.payment_status || null,
+        home: getHomeSnapshot(home),
+      };
 
-        const nights = Number(stay.nights ?? 0);
-        if (Number.isFinite(nights) && nights > 0) {
-          nightsReserved += nights;
-          totalStaysCount += 1;
-        }
-      }
-
-      const sortedMonths = Array.from(monthTotals.entries()).sort(([a], [b]) => (a > b ? 1 : -1));
-      const monthlyBars = sortedMonths.map(([key, total]) => {
-        const [year, month] = key.split("-");
-        return { key, year: Number(year), month: Number(month), total };
+      monthTotals.set(monthKey, (monthTotals.get(monthKey) || 0) + netAmount);
+      reports.set(monthKey, {
+        gross: (reports.get(monthKey)?.gross || 0) + grossAmount,
+        adjustments: 0,
+        serviceFees: (reports.get(monthKey)?.serviceFees || 0) + feeAmount,
+        taxes: (reports.get(monthKey)?.taxes || 0) + taxAmount,
       });
+      if (!staysByMonth.has(monthKey)) staysByMonth.set(monthKey, []);
+      staysByMonth.get(monthKey).push(stayPayload);
+
+      const scheduledFor = item.scheduled_for || stay.check_out || stay.check_in || null;
+      const paidAt = item.paid_at || null;
+      const payout = {
+        id: item.id,
+        date: paidAt || scheduledFor,
+        scheduledFor,
+        paidAt,
+        amount: netAmount,
+        currency: displayCurrency,
+        sourceAmount: sourceNetAmount,
+        sourceCurrency,
+        status: item.status,
+        home: getHomeSnapshot(home),
+      };
+
+      if (item.status === "PAID") {
+        paid.push(payout);
+      } else if (["PENDING", "QUEUED", "PROCESSING", "ON_HOLD"].includes(item.status)) {
+        upcoming.push(payout);
+      }
+    }
+
+    for (const stay of stays) {
+      const stayHostId = stay.homeStay?.host_id;
+      const home = stay.homeStay?.home;
+      if (!home || stayHostId !== hostId) continue;
+
+      const listingKey = home.id;
+      const sourceCurrency = String(stay.currency || "USD").toUpperCase();
+      const sourceAmount = Number(stay.gross_price ?? 0);
+      const amount = await currencyConverter.convert(sourceAmount, sourceCurrency);
+
+      listingTotals.set(listingKey, {
+        home: getHomeSnapshot(home),
+        total: (listingTotals.get(listingKey)?.total || 0) + amount,
+      });
+
+      const nights = Number(stay.nights ?? 0);
+      if (Number.isFinite(nights) && nights > 0) {
+        nightsReserved += nights;
+        totalStaysCount += 1;
+      }
+    }
+
+    const sortedMonths = Array.from(monthTotals.entries()).sort(([a], [b]) => (a > b ? 1 : -1));
+    const monthlyBars = sortedMonths.map(([key, total]) => {
+      const [year, month] = key.split("-");
+      return { key, year: Number(year), month: Number(month), total };
+    });
 
     const currentMonthKey = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, "0")}`;
     const currentMonthTotal = monthTotals.get(currentMonthKey) || 0;
@@ -606,6 +716,7 @@ export const getHostDashboard = async (req, res) => {
           serviceFees,
           taxes,
           net,
+          currency: displayCurrency,
           stays: staysByMonth.get(key) || [],
         };
       });
@@ -615,19 +726,19 @@ export const getHostDashboard = async (req, res) => {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10);
 
-      upcoming.sort(
-        (a, b) =>
-          toMillis(a.scheduledFor || a.date) -
-          toMillis(b.scheduledFor || b.date)
-      );
-      paid.sort(
-        (a, b) =>
-          toMillis(b.paidAt || b.scheduledFor || b.date) -
-          toMillis(a.paidAt || a.scheduledFor || a.date)
-      );
+    upcoming.sort(
+      (a, b) =>
+        toMillis(a.scheduledFor || a.date) -
+        toMillis(b.scheduledFor || b.date)
+    );
+    paid.sort(
+      (a, b) =>
+        toMillis(b.paidAt || b.scheduledFor || b.date) -
+        toMillis(a.paidAt || a.scheduledFor || a.date)
+    );
 
     return res.json({
-      currency: "USD",
+      currency: displayCurrency,
       monthSummary: { currentMonthTotal, monthlyBars },
       payouts: {
         upcoming: upcoming.slice(0, 10),
@@ -666,6 +777,7 @@ export const getHostBookingDetail = async (req, res) => {
               model: models.Home,
               as: "home",
               required: true,
+              where: { host_id: hostId },
               attributes: ["id", "title", "status"],
               include: [
                 { model: models.HomeAddress, as: "address", attributes: ["address_line1", "city", "state", "country"] },
@@ -759,6 +871,13 @@ export const getHostListings = async (req, res) => {
   if (!hostId) return res.status(400).json({ error: "Invalid host ID" });
 
   try {
+    const hostProfile = await models.HostProfile.findOne({
+      where: { user_id: hostId },
+      attributes: ["metadata"],
+    });
+    const hostOnboarding = buildHostOnboardingState(hostProfile?.metadata || {});
+    const requiresHostPersonalInfo = !hostOnboarding.completed;
+
     const homes = await models.Home.findAll({
       where: { host_id: hostId },
       attributes: ["id", "title", "status", "property_type", "space_type", "draft_step", "is_visible", "created_at"],
@@ -802,12 +921,294 @@ export const getHostListings = async (req, res) => {
       country: home.address?.country || null,
       isVisible: home.is_visible,
       coverImage: getCoverImage(home),
+      requiresHostPersonalInfo,
     }));
 
-    return res.json({ listings });
+    return res.json({
+      listings,
+      hostOnboarding,
+    });
   } catch (error) {
     console.error("getHostListings error:", error);
     return res.status(500).json({ error: "Unable to load listings" });
+  }
+};
+
+const normalizeHostOnboardingMetadata = (metadataInput = {}) => {
+  const metadata = asPlainObject(metadataInput);
+  const normalized = buildHostOnboardingState(metadata);
+  return {
+    ...metadata,
+    hostOnboarding: {
+      verifyIdentity: normalized.steps.verifyIdentity,
+      confirmRealPerson: normalized.steps.confirmRealPerson,
+      confirmPhone: normalized.steps.confirmPhone,
+    },
+  };
+};
+
+const ensureHostProfileForVerification = async (hostId) => {
+  const [hostProfile] = await models.HostProfile.findOrCreate({
+    where: { user_id: hostId },
+    defaults: {
+      user_id: hostId,
+      kyc_status: "PENDING",
+      payout_status: "INCOMPLETE",
+      metadata: ensureHostOnboardingMetadata({}),
+    },
+  });
+  return hostProfile;
+};
+
+export const requestHostPhoneVerificationCode = async (req, res) => {
+  const hostId = Number(req.user?.id);
+  if (!hostId) return res.status(400).json({ error: "Invalid host ID" });
+
+  const phoneNumber = normalizePhoneE164(req.body?.phoneNumber || req.body?.phone);
+  if (!phoneNumber) {
+    return res.status(400).json({
+      error: "Use a valid phone number in international format (example: +14155552671).",
+    });
+  }
+
+  const channel = normalizePhoneChannel(req.body?.channel);
+  if (!isPhoneVerificationConfigured()) {
+    return res.status(503).json({
+      error: "Phone verification is temporarily unavailable.",
+      code: "PHONE_VERIFICATION_UNAVAILABLE",
+    });
+  }
+
+  try {
+    const hostProfile = await ensureHostProfileForVerification(hostId);
+    const metadata = asPlainObject(hostProfile.metadata);
+    const normalizedOnboarding = buildHostOnboardingState(metadata);
+    if (normalizedOnboarding.steps.confirmPhone) {
+      return res.json({
+        status: "approved",
+        phoneMasked: maskPhone(phoneNumber),
+        channel,
+        hostOnboarding: normalizedOnboarding,
+      });
+    }
+
+    const phoneVerification = asPlainObject(metadata.phoneVerification);
+    const lastRequestedAtMs = Date.parse(String(phoneVerification.requestedAt || ""));
+    if (Number.isFinite(lastRequestedAtMs)) {
+      const elapsed = Date.now() - lastRequestedAtMs;
+      if (elapsed < PHONE_RESEND_SECONDS * 1000) {
+        const remaining = Math.max(1, Math.ceil((PHONE_RESEND_SECONDS * 1000 - elapsed) / 1000));
+        return res.status(429).json({
+          error: `Please wait ${remaining}s before requesting another code.`,
+          resendAfterSeconds: remaining,
+        });
+      }
+    }
+
+    const verification = await requestPhoneVerificationCode({
+      phoneNumber,
+      channel,
+    });
+
+    const nextMetadata = normalizeHostOnboardingMetadata({
+      ...metadata,
+      phoneVerification: {
+        ...phoneVerification,
+        provider: "twilio_verify",
+        status: verification.status || "pending",
+        channel,
+        phoneNumber,
+        phoneMasked: maskPhone(phoneNumber),
+        sid: verification.sid || phoneVerification.sid || null,
+        requestedAt: new Date().toISOString(),
+        resendAfterSeconds: PHONE_RESEND_SECONDS,
+      },
+    });
+
+    await hostProfile.update({
+      metadata: nextMetadata,
+    });
+
+    return res.json({
+      status: "pending",
+      channel,
+      phoneMasked: nextMetadata.phoneVerification.phoneMasked,
+      resendAfterSeconds: PHONE_RESEND_SECONDS,
+    });
+  } catch (error) {
+    const status = Number(error?.status || error?.response?.status || 500);
+    const message =
+      error?.message || error?.response?.data?.error || "Unable to start phone verification right now.";
+    return res.status(status).json({
+      error: message,
+      code: error?.code || "HOST_PHONE_VERIFICATION_REQUEST_FAILED",
+    });
+  }
+};
+
+export const confirmHostPhoneVerificationCode = async (req, res) => {
+  const hostId = Number(req.user?.id);
+  if (!hostId) return res.status(400).json({ error: "Invalid host ID" });
+
+  const code = String(req.body?.code || "").trim();
+  if (!PHONE_CODE_PATTERN.test(code)) {
+    return res.status(400).json({ error: "Enter a valid verification code." });
+  }
+
+  if (!isPhoneVerificationConfigured()) {
+    return res.status(503).json({
+      error: "Phone verification is temporarily unavailable.",
+      code: "PHONE_VERIFICATION_UNAVAILABLE",
+    });
+  }
+
+  try {
+    const hostProfile = await ensureHostProfileForVerification(hostId);
+    const metadata = asPlainObject(hostProfile.metadata);
+    const phoneVerification = asPlainObject(metadata.phoneVerification);
+    const resolvedPhone =
+      normalizePhoneE164(req.body?.phoneNumber || req.body?.phone) ||
+      normalizePhoneE164(phoneVerification.phoneNumber);
+
+    if (!resolvedPhone) {
+      return res.status(400).json({
+        error: "Phone number is required to confirm verification.",
+      });
+    }
+
+    const verification = await confirmPhoneVerificationCode({
+      phoneNumber: resolvedPhone,
+      code,
+    });
+
+    if (!verification.valid) {
+      return res.status(400).json({ error: "Invalid verification code." });
+    }
+
+    const nextMetadata = normalizeHostOnboardingMetadata({
+      ...metadata,
+      phoneVerified: true,
+      phone_verified: true,
+      phoneVerification: {
+        ...phoneVerification,
+        provider: "twilio_verify",
+        status: "approved",
+        channel: phoneVerification.channel || "sms",
+        phoneNumber: resolvedPhone,
+        phoneMasked: maskPhone(resolvedPhone),
+        sid: verification.sid || phoneVerification.sid || null,
+        verifiedAt: new Date().toISOString(),
+      },
+      hostOnboarding: {
+        ...asPlainObject(metadata.hostOnboarding || metadata.host_onboarding),
+        confirmPhone: true,
+        phoneVerified: true,
+      },
+    });
+
+    await Promise.all([
+      hostProfile.update({
+        phone_number: resolvedPhone,
+        metadata: nextMetadata,
+      }),
+      models.User.update(
+        {
+          phone: resolvedPhone,
+        },
+        {
+          where: { id: hostId },
+        }
+      ),
+    ]);
+
+    return res.json({
+      status: "approved",
+      phoneMasked: nextMetadata.phoneVerification.phoneMasked,
+      hostOnboarding: buildHostOnboardingState(nextMetadata),
+    });
+  } catch (error) {
+    const status = Number(error?.status || error?.response?.status || 500);
+    const message =
+      error?.message || error?.response?.data?.error || "Unable to verify the phone code.";
+    return res.status(status).json({
+      error: message,
+      code: error?.code || "HOST_PHONE_VERIFICATION_CONFIRM_FAILED",
+    });
+  }
+};
+
+export const createHostIdentityVerificationSession = async (req, res) => {
+  const hostId = Number(req.user?.id);
+  if (!hostId) return res.status(400).json({ error: "Invalid host ID" });
+
+  try {
+    const stripe = await getStripeClient();
+    if (!stripe) {
+      return res.status(500).json({
+        error: "Identity verification is temporarily unavailable.",
+        code: "HOST_IDENTITY_UNAVAILABLE",
+      });
+    }
+
+    const hostProfile = await models.HostProfile.findOne({
+      where: { user_id: hostId },
+      attributes: ["id", "metadata", "kyc_status"],
+    });
+    if (!hostProfile) {
+      return res.status(404).json({ error: "Host profile not found." });
+    }
+
+    const params = {
+      type: "document",
+      options: {
+        document: {
+          require_matching_selfie: true,
+        },
+      },
+      metadata: {
+        hostId: String(hostId),
+        flow: "host_verify_identity",
+      },
+    };
+    const returnUrl =
+      normalizeIdentityReturnUrl(req.body?.returnUrl) || resolveIdentityReturnUrl();
+    if (returnUrl) params.return_url = returnUrl;
+
+    const session = await stripe.identity.verificationSessions.create(params);
+    const metadata = asPlainObject(hostProfile.metadata);
+    const nextMetadata = {
+      ...metadata,
+      identityVerification: {
+        sessionId: session.id,
+        status: session.status || "requires_input",
+        lastCreatedAt: new Date().toISOString(),
+      },
+      hostOnboarding: {
+        ...asPlainObject(metadata.hostOnboarding),
+      },
+    };
+
+    await hostProfile.update({
+      metadata: nextMetadata,
+      kyc_status: hostProfile.kyc_status || "PENDING",
+    });
+
+    return res.json({
+      sessionId: session.id,
+      status: session.status || "requires_input",
+      url: session.url || null,
+      clientSecret: session.client_secret || null,
+      expiresAt: session.expires_at || null,
+    });
+  } catch (error) {
+    console.error(
+      "createHostIdentityVerificationSession error:",
+      error?.raw?.message || error?.message || error
+    );
+    return res.status(500).json({
+      error: "Unable to start identity verification right now.",
+      code: "HOST_IDENTITY_SESSION_ERROR",
+    });
   }
 };
 
@@ -948,32 +1349,3 @@ export const getHostCalendar = async (req, res) => {
   }
 };
 
-export const updatePayoutMethod = async (req, res) => {
-  const hostId = Number(req.user?.id);
-  const { routingNumber, accountNumber, accountHolder } = req.body;
-
-  if (!hostId) return res.status(400).json({ error: "Invalid host ID" });
-  if (!routingNumber || !accountNumber) {
-    return res.status(400).json({ error: "Routing number and account number are required" });
-  }
-
-  try {
-    const hostProfile = await models.HostProfile.findOne({ where: { user_id: hostId } });
-    if (!hostProfile) {
-      // Should exist due to hooks, but just in case
-      return res.status(404).json({ error: "Host profile not found" });
-    }
-
-    await hostProfile.update({
-      bank_routing_number: routingNumber,
-      bank_account_number: accountNumber,
-      bank_account_holder: accountHolder,
-      payout_status: "READY",
-    });
-
-    return res.json({ success: true, message: "Payout method updated" });
-  } catch (error) {
-    console.error("updatePayoutMethod error:", error);
-    return res.status(500).json({ error: "Unable to update payout method" });
-  }
-};

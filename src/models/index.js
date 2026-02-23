@@ -25,6 +25,7 @@ import OutsideMetaModel from "./OutsideMeta.js";
 import PayoutAccountModel from "./PayoutAccount.js";
 import PayoutBatchModel from "./PayoutBatch.js";
 import PayoutItemModel from "./PayoutItem.js";
+import PayoutReleaseModel from "./PayoutRelease.js";
 import InfluencerEventCommissionModel from "./InfluencerEventCommission.js";
 import InfluencerGoalModel from "./InfluencerGoal.js";
 import InfluencerGoalProgressModel from "./InfluencerGoalProgress.js";
@@ -158,6 +159,7 @@ const models = {
   PayoutAccount: PayoutAccountModel(sequelize),
   PayoutBatch: PayoutBatchModel(sequelize),
   PayoutItem: PayoutItemModel(sequelize),
+  PayoutRelease: PayoutReleaseModel(sequelize),
 
   AddOn: AddOnModel(sequelize),
   AddOnOption: AddOnOptionModel(sequelize),

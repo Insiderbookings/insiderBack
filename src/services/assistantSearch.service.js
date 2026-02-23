@@ -7,10 +7,15 @@ import { mapHomeToCard } from "../utils/homeMapper.js";
 import { formatStaticHotel } from "../utils/webbedsMapper.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 
+const ASSISTANT_SEARCH_MAX_LIMIT = Math.max(
+  20,
+  Math.min(120, Number(process.env.AI_SEARCH_MAX_LIMIT || 120))
+);
+
 const clampLimit = (value, fallback = 6) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
-  return Math.min(20, Math.max(1, Math.floor(numeric)));
+  return Math.min(ASSISTANT_SEARCH_MAX_LIMIT, Math.max(1, Math.floor(numeric)));
 };
 
 const toNumberOrNull = (value) => {
@@ -764,6 +769,15 @@ const buildHotelMatchReasons = ({ plan, hotel }) => {
   return reasons;
 };
 
+const hasExplicitHotelGuests = (plan = {}) => {
+  const adults = toNumberOrNull(plan?.guests?.adults);
+  const total = toNumberOrNull(plan?.guests?.total);
+  return (
+    (Number.isFinite(adults) && adults > 0) ||
+    (Number.isFinite(total) && total > 0)
+  );
+};
+
 const buildHotelOccupancies = (plan = {}) => {
   const adults =
     toNumberOrNull(plan?.guests?.adults) ??
@@ -1110,6 +1124,7 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
 
 const tryRunLiveHotelSearch = async ({ plan, limit, hotelFilters, coordinateFilter }) => {
   if (!plan?.dates?.checkIn || !plan?.dates?.checkOut) return [];
+  if (!hasExplicitHotelGuests(plan)) return [];
   const provider = getLiveHotelProvider();
   if (!provider) return [];
   const locationCodes = await resolveWebbedsLocationCodes(plan?.location || {});

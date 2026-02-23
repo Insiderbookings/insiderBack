@@ -45,6 +45,50 @@ const extractLatestMessageFromBody = (body) => {
   return normalized[normalized.length - 1].content || "";
 };
 
+/**
+ * Build searchContext for client "See all results" navigation when we ran a search.
+ * Used to open Explore/Search with the same params (where, dates, guests, nationality, residence).
+ */
+const buildSearchContext = (result) => {
+  if (result?.nextAction !== "RUN_SEARCH") return null;
+  const plan = result?.plan || {};
+  const state = result?.state || {};
+  const location = plan?.location || {};
+  const dest = state?.destination || {};
+  const where =
+    dest?.name ||
+    [location.city, location.state, location.country].filter(Boolean).join(", ") ||
+    null;
+  if (!where && !dest?.placeId) return null;
+
+  const dates = plan?.dates || state?.dates || {};
+  const guests = plan?.guests || state?.guests || {};
+  const adults = guests.adults ?? 1;
+  const children = guests.children ?? 0;
+  const childrenAges = Array.isArray(guests.childrenAges) ? guests.childrenAges : [];
+
+  let guestsSummary = "";
+  if (adults > 0) guestsSummary = `${adults} adult${adults !== 1 ? "s" : ""}`;
+  if (children > 0) guestsSummary += guestsSummary ? `, ${children} child${children !== 1 ? "ren" : ""}` : `${children} child${children !== 1 ? "ren" : ""}`;
+  if (!guestsSummary) guestsSummary = "1 adult";
+
+  return {
+    where: where || undefined,
+    placeId: dest?.placeId || location?.placeId || undefined,
+    lat: dest?.lat ?? location?.lat ?? undefined,
+    lng: dest?.lon ?? dest?.lng ?? location?.lng ?? location?.lon ?? undefined,
+    country: location?.country || undefined,
+    checkIn: dates.checkIn || undefined,
+    checkOut: dates.checkOut || undefined,
+    adults: Number.isFinite(adults) ? adults : 1,
+    children: Number.isFinite(children) ? children : 0,
+    childrenAges: childrenAges.length ? childrenAges : undefined,
+    guests: guestsSummary,
+    nationality: plan.passengerNationality || undefined,
+    residence: plan.passengerCountryOfResidence || undefined,
+  };
+};
+
 export const handleAiChat = async (req, res) => {
   const userId = getAuthenticatedUserId(req);
   if (!userId) {
@@ -128,6 +172,11 @@ export const handleAiChat = async (req, res) => {
     }
 
     const replyText = result.assistant?.text || result.reply || "";
+    const searchContext = buildSearchContext(result);
+    const counts = {
+      homes: Array.isArray(result.inventory?.homes) ? result.inventory.homes.length : 0,
+      hotels: Array.isArray(result.inventory?.hotels) ? result.inventory.hotels.length : 0,
+    };
     return res.json({
       ok: true,
       conversationId,
@@ -140,10 +189,8 @@ export const handleAiChat = async (req, res) => {
       inventory: result.inventory,
       carousels: Array.isArray(result.carousels) ? result.carousels : [],
       trip: result.trip,
-      counts: {
-        homes: Array.isArray(result.inventory?.homes) ? result.inventory.homes.length : 0,
-        hotels: Array.isArray(result.inventory?.hotels) ? result.inventory.hotels.length : 0,
-      },
+      counts,
+      searchContext: searchContext || undefined,
       followUps: result.followUps,
       intent: result.intent,
       nextAction: result.nextAction,

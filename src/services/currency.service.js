@@ -106,3 +106,49 @@ export const convertCurrency = async (amountInBase, targetCurrency) => {
     missing: meta.missing,
   };
 };
+
+const roundCurrencyAmount = (value) => {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return 0;
+  return Number(numeric.toFixed(2));
+};
+
+// Converts amounts between arbitrary currencies using USD-base FX rates.
+export const createCurrencyConverter = (targetCurrency = FX_BASE_CURRENCY) => {
+  const target = normalizeCode(targetCurrency, FX_BASE_CURRENCY);
+  const rateFromBaseCache = new Map();
+
+  const getRateFromBase = async (currency) => {
+    const code = normalizeCode(currency, FX_BASE_CURRENCY);
+    if (code === FX_BASE_CURRENCY) return 1;
+    if (rateFromBaseCache.has(code)) return rateFromBaseCache.get(code);
+
+    const meta = await getExchangeRateMeta(code);
+    const raw = Number(meta?.rate || 1);
+    const safeRate = Number.isFinite(raw) && raw > 0 ? raw : 1;
+    rateFromBaseCache.set(code, safeRate);
+    return safeRate;
+  };
+
+  const convert = async (amount, sourceCurrency = FX_BASE_CURRENCY) => {
+    const source = normalizeCode(sourceCurrency, FX_BASE_CURRENCY);
+    const numericAmount = Number(amount || 0);
+    if (!Number.isFinite(numericAmount) || numericAmount === 0) return 0;
+    if (source === target) return roundCurrencyAmount(numericAmount);
+
+    const sourceRate = await getRateFromBase(source);
+    const targetRate = await getRateFromBase(target);
+
+    const amountInBase =
+      source === FX_BASE_CURRENCY ? numericAmount : numericAmount / sourceRate;
+    const amountInTarget =
+      target === FX_BASE_CURRENCY ? amountInBase : amountInBase * targetRate;
+
+    return roundCurrencyAmount(amountInTarget);
+  };
+
+  return {
+    targetCurrency: target,
+    convert,
+  };
+};
