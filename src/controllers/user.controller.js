@@ -14,6 +14,15 @@ import {
 
 const DISCOUNT_REMINDER_GRACE_DAYS = 1
 const LOGIN_TOUCH_INTERVAL_MS = 5 * 60 * 1000
+const REFERRAL_FIRST_BOOKING_DEFAULT_PCT = 15
+
+const referralFirstBookingPct = () => {
+  const value = Number(process.env.REFERRAL_FIRST_BOOKING_PCT)
+  if (Number.isFinite(value) && value > 0) {
+    return Math.round(value)
+  }
+  return REFERRAL_FIRST_BOOKING_DEFAULT_PCT
+}
 
 const normalizeDiscountCode = (value) => String(value || "").trim().toUpperCase()
 const isValidEmail = (value = "") =>
@@ -246,6 +255,31 @@ export const getCurrentUser = async (req, res) => {
     if (!plain.lastName && derivedName.lastName) plain.lastName = derivedName.lastName
     if (!plain.name && derivedName.fullName) plain.name = derivedName.fullName
     plain.roleCodes = deriveRoleCodes(plain)
+
+    const referralLinked = Boolean(
+      plain.referredByInfluencerId ??
+        plain.referred_by_influencer_id ??
+        plain.referredByCode ??
+        plain.referred_by_code
+    )
+    if (referralLinked) {
+      const paidCount = models.Booking
+        ? await models.Booking.count({
+            where: {
+              user_id: plain.id,
+              payment_status: { [Op.in]: ["PAID", "REFUNDED"] },
+            },
+          })
+        : 0
+      const status = paidCount > 0 ? "used" : "available"
+      const pct = referralFirstBookingPct()
+      plain.referralFirstBookingStatus = status
+      plain.referralFirstBookingDiscountPct = pct
+      plain.referralFirstBooking = {
+        status,
+        pct,
+      }
+    }
     return res.json(plain)
   } catch (err) {
     console.error("Error getting current user:", err)

@@ -10,6 +10,8 @@ const DEFAULT_BATCH_REPORT_CURRENCY = String(process.env.PAYOUT_BATCH_REPORT_CUR
 const CLAIMABLE_PAYOUT_STATUSES = ["PENDING", "QUEUED"];
 const READY_PAYOUT_ACCOUNT_STATUSES = ["READY", "VERIFIED"];
 const UPCOMING_PAYOUT_STATUSES = ["PENDING", "QUEUED", "PROCESSING", "ON_HOLD"];
+const DEFAULT_CONNECT_RETURN_URL = "https://bookinggpt.app/payout/complete";
+const DEFAULT_CONNECT_REFRESH_URL = "https://bookinggpt.app/payout/refresh";
 
 const getGraceHours = () => {
   const raw = Number(process.env.PAYOUT_GRACE_HOURS || DEFAULT_GRACE_HOURS);
@@ -20,6 +22,56 @@ const resolveEligibleDate = (now = new Date()) => {
   const graceHours = getGraceHours();
   const eligible = new Date(now.getTime() - graceHours * 60 * 60 * 1000);
   return eligible.toISOString().slice(0, 10);
+};
+
+const normalizeStripeConnectRedirectUrl = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+    const protocol = String(parsed.protocol || "").toLowerCase();
+    if (protocol !== "https:" && protocol !== "http:") return null;
+    if (isProd && protocol !== "https:") return null;
+
+    const host = String(parsed.hostname || "").toLowerCase();
+    const isBookingHost =
+      host === "bookinggpt.app" ||
+      host.endsWith(".bookinggpt.app") ||
+      host === "insiderbookings.com" ||
+      host.endsWith(".insiderbookings.com");
+    const isLocalHost =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host);
+
+    if (!isBookingHost && !(!isProd && isLocalHost)) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
+const resolveStripeConnectUrls = (req) => {
+  const defaultRefresh =
+    process.env.STRIPE_CONNECT_REFRESH_URL ||
+    process.env.CLIENT_URL ||
+    DEFAULT_CONNECT_REFRESH_URL;
+  const defaultReturn =
+    process.env.STRIPE_CONNECT_RETURN_URL ||
+    process.env.CLIENT_URL ||
+    DEFAULT_CONNECT_RETURN_URL;
+
+  const refreshUrl =
+    normalizeStripeConnectRedirectUrl(req.body?.refreshUrl) ||
+    normalizeStripeConnectRedirectUrl(defaultRefresh) ||
+    DEFAULT_CONNECT_REFRESH_URL;
+  const returnUrl =
+    normalizeStripeConnectRedirectUrl(req.body?.returnUrl) ||
+    normalizeStripeConnectRedirectUrl(defaultReturn) ||
+    DEFAULT_CONNECT_RETURN_URL;
+
+  return { refreshUrl, returnUrl };
 };
 
 export const isValidDateOnly = (value) => {
@@ -777,8 +829,7 @@ export const createStripeOnboardingLink = async (req, res) => {
   const stripe = await getStripeClient();
   if (!stripe) return res.status(500).json({ error: "Stripe not configured" });
 
-  const refreshUrl = process.env.STRIPE_CONNECT_REFRESH_URL || process.env.CLIENT_URL || "https://example.com/reauth";
-  const returnUrl = process.env.STRIPE_CONNECT_RETURN_URL || process.env.CLIENT_URL || "https://example.com/return";
+  const { refreshUrl, returnUrl } = resolveStripeConnectUrls(req);
   const country = String(req.body?.country || process.env.STRIPE_CONNECT_DEFAULT_COUNTRY || DEFAULT_STRIPE_COUNTRY).toUpperCase();
 
   let account = await models.PayoutAccount.findOne({ where: { user_id: userId, provider: "STRIPE" } });
@@ -833,8 +884,7 @@ export const createStripeAccountUpdateLink = async (req, res) => {
   }
 
   account = await syncStripeAccount(account);
-  const refreshUrl = process.env.STRIPE_CONNECT_REFRESH_URL || process.env.CLIENT_URL || "https://example.com/reauth";
-  const returnUrl = process.env.STRIPE_CONNECT_RETURN_URL || process.env.CLIENT_URL || "https://example.com/return";
+  const { refreshUrl, returnUrl } = resolveStripeConnectUrls(req);
 
   const link = await stripe.accountLinks.create({
     account: account.external_customer_id,

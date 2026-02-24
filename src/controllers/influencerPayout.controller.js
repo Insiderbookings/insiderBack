@@ -123,6 +123,64 @@ const collectEligibleGroups = (rows, map) => {
   });
 };
 
+const loadInfluencerPayoutContext = async ({ limit = 100, eventIds = null } = {}) => {
+  const now = new Date();
+  const groups = new Map();
+  const normalizedEventIds = normalizeEventIds(eventIds);
+  const normalizedLimit = normalizeLimit(limit, 100);
+
+  const eventCommissions = await models.InfluencerEventCommission.findAll({
+    where: buildEligibleClaimWhere({
+      now,
+      eventIds: normalizedEventIds.length ? normalizedEventIds : null,
+    }),
+    order: [["created_at", "ASC"]],
+    limit: 2000,
+  });
+  collectEligibleGroups(eventCommissions, groups);
+
+  const groupList = Array.from(groups.values()).filter((g) => g.total > 0);
+  const limitedGroups = groupList.slice(0, normalizedLimit);
+  const influencerIds = Array.from(
+    new Set(limitedGroups.map((group) => Number(group.influencerId)).filter((id) => id > 0))
+  );
+
+  const identityRows = influencerIds.length && models.GuestProfile
+    ? await models.GuestProfile.findAll({
+        where: { user_id: { [Op.in]: influencerIds } },
+        attributes: ["user_id", "identity_verified", "metadata"],
+      })
+    : [];
+  const identityByInfluencerId = new Map();
+  identityRows.forEach((row) => {
+    const plain = row.get ? row.get({ plain: true }) : row;
+    identityByInfluencerId.set(Number(plain.user_id), isInfluencerIdentityVerified(plain));
+  });
+
+  const payoutAccounts = influencerIds.length
+    ? await models.PayoutAccount.findAll({
+        where: {
+          user_id: { [Op.in]: influencerIds },
+          provider: "STRIPE",
+          status: { [Op.in]: READY_PAYOUT_ACCOUNT_STATUSES },
+        },
+      })
+    : [];
+  const accountByInfluencerId = new Map();
+  payoutAccounts.forEach((account) => {
+    accountByInfluencerId.set(Number(account.user_id), account);
+  });
+
+  return {
+    now,
+    normalizedLimit,
+    groupList,
+    limitedGroups,
+    identityByInfluencerId,
+    accountByInfluencerId,
+  };
+};
+
 export const getInfluencerPayouts = async (req, res) => {
   const userId = Number(req.user?.id);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -188,39 +246,77 @@ export const getInfluencerPayouts = async (req, res) => {
   }
 };
 
+export const previewInfluencerPayoutBatch = async (req, res) => {
+  try {
+    const { limit = 100, eventIds, ids } = req.body || {};
+    const { normalizedLimit, groupList, limitedGroups, identityByInfluencerId, accountByInfluencerId } =
+      await loadInfluencerPayoutContext({ limit, eventIds: eventIds || ids });
+
+    let readyGroups = 0;
+    let identityBlockedGroups = 0;
+    let missingPayoutAccountGroups = 0;
+    let totalReadyAmount = 0;
+    const suggestedEventIds = [];
+
+    const items = limitedGroups.map((group) => {
+      const influencerId = Number(group.influencerId);
+      const hasIdentity = Boolean(identityByInfluencerId.get(influencerId));
+      const hasPayoutAccount = Boolean(accountByInfluencerId.get(influencerId));
+
+      let status = "READY";
+      let reason = null;
+
+      if (!hasIdentity) {
+        status = "IDENTITY_REQUIRED";
+        reason = "Influencer identity verification is incomplete";
+        identityBlockedGroups += 1;
+      } else if (!hasPayoutAccount) {
+        status = "PAYOUT_ACCOUNT_REQUIRED";
+        reason = "Stripe payout account is missing or not ready";
+        missingPayoutAccountGroups += 1;
+      } else {
+        readyGroups += 1;
+        totalReadyAmount += toAmount(group.total);
+        suggestedEventIds.push(...group.eventIds);
+      }
+
+      return {
+        influencerId,
+        currency: group.currency,
+        amount: Number(toAmount(group.total).toFixed(2)),
+        eventCount: Array.isArray(group.eventIds) ? group.eventIds.length : 0,
+        status,
+        reason,
+        hasIdentity,
+        hasPayoutAccount,
+        eventIds: group.eventIds,
+      };
+    });
+
+    return res.json({
+      preview: {
+        generatedAt: new Date().toISOString(),
+        limit: normalizedLimit,
+        totalGroups: groupList.length,
+        consideredGroups: limitedGroups.length,
+        readyGroups,
+        identityBlockedGroups,
+        missingPayoutAccountGroups,
+        totalReadyAmount: Number(totalReadyAmount.toFixed(2)),
+        suggestedEventIds,
+        items,
+      },
+    });
+  } catch (err) {
+    console.error("previewInfluencerPayoutBatch error:", err);
+    return res.status(500).json({ error: "Unable to preview influencer payout batch" });
+  }
+};
+
 export const processInfluencerPayoutBatch = async ({ limit = 100, eventIds = null } = {}) => {
-  const now = new Date();
   const batchId = `INFP-${Date.now().toString(36)}`;
-  const groups = new Map();
-  const normalizedEventIds = normalizeEventIds(eventIds);
-
-  const eventCommissions = await models.InfluencerEventCommission.findAll({
-    where: buildEligibleClaimWhere({
-      now,
-      eventIds: normalizedEventIds.length ? normalizedEventIds : null,
-    }),
-    order: [["created_at", "ASC"]],
-    limit: 2000,
-  });
-
-  collectEligibleGroups(eventCommissions, groups);
-
-  const groupList = Array.from(groups.values()).filter((g) => g.total > 0);
-  const limitedGroups = groupList.slice(0, normalizeLimit(limit, 100));
-  const influencerIds = Array.from(
-    new Set(limitedGroups.map((group) => Number(group.influencerId)).filter((id) => id > 0))
-  );
-  const identityRows = influencerIds.length && models.GuestProfile
-    ? await models.GuestProfile.findAll({
-        where: { user_id: { [Op.in]: influencerIds } },
-        attributes: ["user_id", "identity_verified", "metadata"],
-      })
-    : [];
-  const identityByInfluencerId = new Map();
-  identityRows.forEach((row) => {
-    const plain = row.get ? row.get({ plain: true }) : row;
-    identityByInfluencerId.set(Number(plain.user_id), isInfluencerIdentityVerified(plain));
-  });
+  const { now, groupList, limitedGroups, identityByInfluencerId, accountByInfluencerId } =
+    await loadInfluencerPayoutContext({ limit, eventIds });
 
   let processed = 0;
   let failed = 0;
@@ -237,13 +333,7 @@ export const processInfluencerPayoutBatch = async ({ limit = 100, eventIds = nul
       skipped += 1;
       continue;
     }
-    const account = await models.PayoutAccount.findOne({
-      where: {
-        user_id: group.influencerId,
-        provider: "STRIPE",
-        status: { [Op.in]: READY_PAYOUT_ACCOUNT_STATUSES },
-      },
-    });
+    const account = accountByInfluencerId.get(Number(group.influencerId)) || null;
     if (!account) {
       skipped += 1;
       continue;

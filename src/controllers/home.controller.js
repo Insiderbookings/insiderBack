@@ -1673,11 +1673,6 @@ export const createHomeDraft = async (req, res) => {
       });
       if (!user) throw new Error("USER_NOT_FOUND");
 
-      // Preserve existing privileged roles (influencer/corporate/etc).
-      if (Number(user.role || 0) === 0) {
-        await user.update({ role: 6 }, { transaction });
-      }
-
       const emailVerificationSeed = user.email_verified
         ? {
             emailVerified: true,
@@ -1696,13 +1691,21 @@ export const createHomeDraft = async (req, res) => {
           metadataInput && typeof metadataInput === "object" && !Array.isArray(metadataInput)
             ? metadataInput
             : {};
+        const explicitHostModeUnlocked =
+          metadata.hostModeUnlocked != null || metadata.host_mode_unlocked != null
+            ? asBool(metadata.hostModeUnlocked ?? metadata.host_mode_unlocked, false)
+            : null;
+        const hostModeUnlocked =
+          explicitHostModeUnlocked != null
+            ? explicitHostModeUnlocked
+            : Boolean(Number(user.role || 0) === 6 || buildHostOnboardingState(metadata).completed);
         const existingHostOnboarding =
           metadata.hostOnboarding &&
           typeof metadata.hostOnboarding === "object" &&
           !Array.isArray(metadata.hostOnboarding)
             ? metadata.hostOnboarding
             : {};
-        return ensureHostOnboardingMetadata({
+        const seeded = ensureHostOnboardingMetadata({
           ...metadata,
           ...emailVerificationSeed,
           hostOnboarding: {
@@ -1710,6 +1713,9 @@ export const createHomeDraft = async (req, res) => {
             ...emailVerificationSeed.hostOnboarding,
           },
         });
+        seeded.hostModeUnlocked = hostModeUnlocked;
+        seeded.host_mode_unlocked = hostModeUnlocked;
+        return seeded;
       };
 
       const [hostProfile, hostProfileCreated] = await models.HostProfile.findOrCreate({
@@ -2339,11 +2345,51 @@ export const publishHome = async (req, res) => {
       return res.status(400).json({ error: "Add at least one photo before publishing." });
     }
 
-    const hostProfile = await models.HostProfile.findOne({
-      where: { user_id: hostId },
-      attributes: ["metadata"],
-    });
-    const hostOnboarding = buildHostOnboardingState(hostProfile?.metadata || {});
+    const [hostProfile, user] = await Promise.all([
+      models.HostProfile.findOne({
+        where: { user_id: hostId },
+        attributes: ["id", "metadata"],
+      }),
+      models.User.findByPk(hostId, { attributes: ["id", "role"] }),
+    ]);
+
+    const profileMetadata =
+      hostProfile?.metadata && typeof hostProfile.metadata === "object" && !Array.isArray(hostProfile.metadata)
+        ? hostProfile.metadata
+        : {};
+    const hostModeUnlocked =
+      profileMetadata.hostModeUnlocked != null || profileMetadata.host_mode_unlocked != null
+        ? asBool(profileMetadata.hostModeUnlocked ?? profileMetadata.host_mode_unlocked, false)
+        : false;
+
+    let normalizedMetadata = profileMetadata;
+    if (!hostModeUnlocked) {
+      normalizedMetadata = ensureHostOnboardingMetadata({
+        ...profileMetadata,
+        hostModeUnlocked: true,
+        host_mode_unlocked: true,
+      });
+      normalizedMetadata.hostModeUnlocked = true;
+      normalizedMetadata.host_mode_unlocked = true;
+      if (hostProfile) {
+        await hostProfile.update({ metadata: normalizedMetadata });
+      } else {
+        await models.HostProfile.create({
+          user_id: hostId,
+          kyc_status: "PENDING",
+          payout_status: "INCOMPLETE",
+          metadata: normalizedMetadata,
+        });
+      }
+    }
+
+    // Promote regular users once their first listing reaches submit/review.
+    // Existing privileged roles (e.g. ambassador) are preserved.
+    if (user && Number(user.role || 0) === 0) {
+      await user.update({ role: 6 });
+    }
+
+    const hostOnboarding = buildHostOnboardingState(normalizedMetadata);
     if (!hostOnboarding.completed) {
       await home.update({
         status: "IN_REVIEW",
