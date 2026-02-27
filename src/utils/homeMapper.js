@@ -1,3 +1,5 @@
+import { applyHomePublicMarkup } from "./homePricing.js";
+
 export const getCoverImage = (home) => {
   const media = Array.isArray(home?.media) ? home.media : [];
   const cover =
@@ -76,7 +78,7 @@ export const mapHomeToCard = (home) => {
     country: address.country ?? null,
     spaceType: home.space_type ?? home.spaceType ?? null,
     pricePerNight:
-      pricing?.base_price != null ? Number(pricing.base_price) * 1.1 : null,
+      pricing?.base_price != null ? applyHomePublicMarkup(pricing.base_price) : null,
     currency: pricing?.currency ?? "USD",
     summaryLine: buildSummaryLine(home),
     maxGuests: home.max_guests ?? null,

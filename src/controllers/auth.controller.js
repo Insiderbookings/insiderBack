@@ -75,8 +75,31 @@ const EMAIL_VERIFICATION_MAX_ATTEMPTS =
     : 5;
 const EMAIL_VERIFICATION_SECRET = process.env.EMAIL_VERIFICATION_SECRET || process.env.JWT_SECRET;
 
-const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
-const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+const DEFAULT_GOOGLE_ANDROID_CLIENT_ID =
+  "991272630331-46dbrise1ms2rvmctru26rlg36poanca.apps.googleusercontent.com";
+const DEFAULT_GOOGLE_IOS_CLIENT_ID =
+  "991272630331-ucd9j3tqkvgnnbqe38b3a7mlr3gckn8p.apps.googleusercontent.com";
+const toTrimmedString = (value) => {
+  const normalized = String(value || "").trim();
+  return normalized || null;
+};
+const GOOGLE_WEB_CLIENT_ID = toTrimmedString(process.env.GOOGLE_CLIENT_ID);
+const GOOGLE_WEB_CLIENT_SECRET = toTrimmedString(process.env.GOOGLE_CLIENT_SECRET);
+const GOOGLE_ANDROID_CLIENT_ID =
+  toTrimmedString(process.env.GOOGLE_ANDROID_CLIENT_ID) ||
+  DEFAULT_GOOGLE_ANDROID_CLIENT_ID;
+const GOOGLE_IOS_CLIENT_ID =
+  toTrimmedString(process.env.GOOGLE_IOS_CLIENT_ID) || DEFAULT_GOOGLE_IOS_CLIENT_ID;
+const GOOGLE_EXPO_CLIENT_ID = toTrimmedString(process.env.GOOGLE_EXPO_CLIENT_ID);
+const GOOGLE_ALLOWED_CLIENT_IDS = Array.from(
+  new Set([
+    GOOGLE_WEB_CLIENT_ID,
+    GOOGLE_ANDROID_CLIENT_ID,
+    GOOGLE_IOS_CLIENT_ID,
+    GOOGLE_EXPO_CLIENT_ID,
+  ].filter(Boolean)),
+);
+const googleClient = new OAuth2Client(GOOGLE_WEB_CLIENT_ID || undefined);
 const APPLE_ISSUER = "https://appleid.apple.com";
 const APPLE_CLIENT_ID = process.env.APPLE_CLIENT_ID || process.env.APPLE_BUNDLE_ID;
 const appleJwks = createRemoteJWKSet(new URL("https://appleid.apple.com/auth/keys"));
@@ -1001,12 +1024,34 @@ export const listByHotel = async (req, res, next) => {
    GOOGLE SIGN-IN: Exchange code → tokens → user
    (GIS popup + Authorization Code con PKCE)
    Ruta: POST /auth/google/exchange
-   Body: { code }
+   Body: { code, redirectUri?, codeVerifier?, clientId? }
    ──────────────────────────────────────────────────────────────── */
 export const googleExchange = async (req, res) => {
   try {
-    const { code, redirectUri: clientRedirectUri } = req.body;
+    const {
+      code,
+      redirectUri: clientRedirectUri,
+      codeVerifier: clientCodeVerifier,
+      clientId: requestedClientIdRaw,
+    } = req.body || {};
     if (!code) return res.status(400).json({ error: "Missing code" });
+
+    const requestedClientId = toTrimmedString(requestedClientIdRaw);
+    const clientId = requestedClientId || GOOGLE_WEB_CLIENT_ID;
+    if (!clientId) {
+      return res.status(500).json({ error: "Google OAuth is not configured" });
+    }
+    if (requestedClientId && !GOOGLE_ALLOWED_CLIENT_IDS.includes(requestedClientId)) {
+      return res.status(400).json({ error: "Google OAuth client is not allowed" });
+    }
+    const clientSecret =
+      clientId === GOOGLE_WEB_CLIENT_ID ? GOOGLE_WEB_CLIENT_SECRET : null;
+    const codeVerifier = toTrimmedString(clientCodeVerifier);
+    if (!clientSecret && !codeVerifier) {
+      return res.status(400).json({
+        error: "Missing PKCE code verifier for Google OAuth client",
+      });
+    }
     // Allow mobile / Expo to send their own redirect_uri; keep postmessage as default (web popup)
     const redirectUri = typeof clientRedirectUri === "string" && clientRedirectUri.length
       ? clientRedirectUri
@@ -1018,10 +1063,11 @@ export const googleExchange = async (req, res) => {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         code,
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
+        client_id: clientId,
+        ...(clientSecret ? { client_secret: clientSecret } : {}),
         redirect_uri: redirectUri, // 'postmessage' para web popup; la app puede pasar su URI
         grant_type: "authorization_code",
+        ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
       }),
     });
 
@@ -1036,9 +1082,12 @@ export const googleExchange = async (req, res) => {
     if (!id_token) return res.status(400).json({ error: "No id_token from Google" });
 
     // 2) Verificar id_token (firma + audiencia)
+    const allowedAudiences = GOOGLE_ALLOWED_CLIENT_IDS.length
+      ? GOOGLE_ALLOWED_CLIENT_IDS
+      : [clientId];
     const ticket = await googleClient.verifyIdToken({
       idToken: id_token,
-      audience: GOOGLE_CLIENT_ID,
+      audience: allowedAudiences,
     });
     const payload = ticket.getPayload();
 

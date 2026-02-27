@@ -2,8 +2,8 @@ import models from "../models/index.js";
 import { Op } from "sequelize";
 import { sendPayout, getStripeClient } from "../services/payoutProviders.js";
 import { createCurrencyConverter } from "../services/currency.service.js";
+import { computeHomeFinancialsFromStay } from "../utils/homePricing.js";
 
-const PLATFORM_FEE_PCT = 0.03;
 const DEFAULT_GRACE_HOURS = 72;
 const DEFAULT_STRIPE_COUNTRY = "US";
 const DEFAULT_BATCH_REPORT_CURRENCY = String(process.env.PAYOUT_BATCH_REPORT_CURRENCY || "USD").trim().toUpperCase();
@@ -144,13 +144,6 @@ const maskAccount = (account) => {
   };
 };
 
-const computeNetForStay = (stay) => {
-  const gross = Number(stay.gross_price ?? 0);
-  const fee = Math.max(0, gross * PLATFORM_FEE_PCT);
-  const net = Math.max(0, gross - fee);
-  return { gross, net, fee };
-};
-
 const syncStripeAccount = async (account) => {
   if (!account || account.provider !== "STRIPE") return account;
   const stripeAccountId = account.external_customer_id || account.external_account_id;
@@ -195,23 +188,26 @@ const ensurePayoutItemsForHost = async (hostId) => {
   });
 
   for (const stay of stays) {
-    const { net, gross, fee } = computeNetForStay(stay);
-    const currency = stay.currency || "USD";
+    const financials = computeHomeFinancialsFromStay(stay);
+    const currency = financials.currency || stay.currency || "USD";
     const scheduled_for = stay.check_out || stay.check_in || null;
     try {
       await models.PayoutItem.create({
         stay_id: stay.id,
         user_id: hostId,
-        amount: net,
+        amount: financials.hostPayout,
         currency,
         status: "PENDING",
         scheduled_for,
         metadata: {
           source: "auto-backfill",
           createdAt: new Date(),
-          gross_price: gross,
-          platform_fee_pct: PLATFORM_FEE_PCT,
-          fee_amount: fee,
+          pricing_model: financials.model,
+          guest_total: financials.guestTotal,
+          gross_price: financials.hostSubtotal,
+          fee_amount: financials.hostServiceFee,
+          platform_markup_amount: financials.platformMarkupAmount,
+          effective_platform_revenue: financials.effectivePlatformRevenue,
         },
       });
     } catch (_) {
@@ -243,20 +239,23 @@ const backfillPayoutItems = async (cutoffDate) => {
     .map((stay) => {
       const hostId = stay.homeStay?.host_id;
       if (!hostId) return null;
-      const { net, gross, fee } = computeNetForStay(stay);
+      const financials = computeHomeFinancialsFromStay(stay);
       return {
         stay_id: stay.id,
         user_id: hostId,
-        amount: net,
-        currency: stay.currency || "USD",
+        amount: financials.hostPayout,
+        currency: financials.currency || stay.currency || "USD",
         status: "PENDING",
         scheduled_for: stay.check_out || stay.check_in || null,
         metadata: {
           source: "batch-backfill",
           createdAt: new Date(),
-          gross_price: gross,
-          platform_fee_pct: PLATFORM_FEE_PCT,
-          fee_amount: fee,
+          pricing_model: financials.model,
+          guest_total: financials.guestTotal,
+          gross_price: financials.hostSubtotal,
+          fee_amount: financials.hostServiceFee,
+          platform_markup_amount: financials.platformMarkupAmount,
+          effective_platform_revenue: financials.effectivePlatformRevenue,
         },
       };
     })
@@ -396,8 +395,11 @@ export const previewPayoutBatch = async ({ limit = 100, cutoffDate, itemIds = nu
     const hostId = Number(stay?.homeStay?.host_id || item.user_id || 0) || null;
     const account = hostId ? accountByHostId.get(hostId) || null : null;
     const readiness = resolveItemPayoutReadiness({ hostId, account });
-    const { net, gross, fee } = computeNetForStay(stay);
-    const currency = String(stay?.currency || item.currency || "USD").toUpperCase();
+    const financials = computeHomeFinancialsFromStay(stay);
+    const net = financials.hostPayout;
+    const gross = financials.hostSubtotal;
+    const fee = financials.hostServiceFee;
+    const currency = String(financials.currency || stay?.currency || item.currency || "USD").toUpperCase();
 
     if (readiness.state === "READY") {
       readyCount += 1;
@@ -622,25 +624,28 @@ export const runMockPayouts = async (_req, res) => {
     });
     if (!account) continue;
 
-    const { net, gross, fee } = computeNetForStay(stay);
+    const financials = computeHomeFinancialsFromStay(stay);
 
     await models.PayoutItem.upsert({
       stay_id: stay.id,
       user_id: hostId,
-      amount: net,
-      currency: stay.currency || "USD",
+      amount: financials.hostPayout,
+      currency: financials.currency || stay.currency || "USD",
       status: "PAID",
       paid_at: new Date(),
       scheduled_for: stay.check_out || stay.check_in || null,
       metadata: {
-        gross_price: gross,
-        platform_fee_pct: PLATFORM_FEE_PCT,
-        fee_amount: fee,
+        pricing_model: financials.model,
+        guest_total: financials.guestTotal,
+        gross_price: financials.hostSubtotal,
+        fee_amount: financials.hostServiceFee,
+        platform_markup_amount: financials.platformMarkupAmount,
+        effective_platform_revenue: financials.effectivePlatformRevenue,
         mode: "mock",
       },
     });
     processed += 1;
-    totalNet += net;
+    totalNet += financials.hostPayout;
   }
 
   return res.json({ processed, totalNet, totalEligible: eligibleStays.length });
@@ -736,8 +741,9 @@ export const processPayoutBatch = async ({ limit = 100, cutoffDate, itemIds = nu
       continue;
     }
 
-    const { net, gross, fee } = computeNetForStay(stay);
-    const stayCurrency = String(stay.currency || item.currency || "USD").toUpperCase();
+    const financials = computeHomeFinancialsFromStay(stay);
+    const net = financials.hostPayout;
+    const stayCurrency = String(financials.currency || stay.currency || item.currency || "USD").toUpperCase();
     const payoutIdempotencyKey = String(item.metadata?.provider_idempotency_key || `host_payout_item_${item.id}`);
 
     await item.update({
@@ -747,9 +753,12 @@ export const processPayoutBatch = async ({ limit = 100, cutoffDate, itemIds = nu
       status: "PROCESSING",
       metadata: {
         ...(item.metadata || {}),
-        gross_price: gross,
-        platform_fee_pct: PLATFORM_FEE_PCT,
-        fee_amount: fee,
+        pricing_model: financials.model,
+        guest_total: financials.guestTotal,
+        gross_price: financials.hostSubtotal,
+        fee_amount: financials.hostServiceFee,
+        platform_markup_amount: financials.platformMarkupAmount,
+        effective_platform_revenue: financials.effectivePlatformRevenue,
         provider: account.provider,
         batch_mode: "process",
         provider_idempotency_key: payoutIdempotencyKey,

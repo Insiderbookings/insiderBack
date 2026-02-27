@@ -6,6 +6,7 @@ import { HOME_PROPERTY_TYPES, HOME_SPACE_TYPES } from "../models/Home.js";
 import { HOME_DISCOUNT_RULE_TYPES } from "../models/HomeDiscountRule.js";
 import { resolveGeoFromRequest } from "../utils/geoLocation.js";
 import { mapHomeToCard, getCoverImage } from "../utils/homeMapper.js";
+import { applyHomePublicMarkup } from "../utils/homePricing.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 import {
   buildHostOnboardingState,
@@ -1632,11 +1633,12 @@ export const getPublicHome = async (req, res) => {
     };
     if (home.pricing) {
       if (home.pricing.base_price != null) {
-        home.pricing.base_price = Number(home.pricing.base_price) * 1.1;
+        home.pricing.base_price = applyHomePublicMarkup(home.pricing.base_price);
       }
       if (home.pricing.weekend_price != null) {
-        home.pricing.weekend_price = Number(home.pricing.weekend_price) * 1.1;
+        home.pricing.weekend_price = applyHomePublicMarkup(home.pricing.weekend_price);
       }
+      home.pricing.tax_rate = null;
     }
     home.bedTypes = await ensureDefaultBedTypes(home);
 
@@ -2012,17 +2014,9 @@ export const updateHomePricing = async (req, res) => {
       cleaning_fee: req.body?.cleaningFee != null ? Number(req.body.cleaningFee) : home.pricing?.cleaning_fee,
       extra_guest_fee: req.body?.extraGuestFee != null ? Number(req.body.extraGuestFee) : home.pricing?.extra_guest_fee,
       extra_guest_threshold: req.body?.extraGuestThreshold != null ? Number(req.body.extraGuestThreshold) : home.pricing?.extra_guest_threshold,
-      tax_rate: req.body?.taxRate != null ? Number(req.body.taxRate) : home.pricing?.tax_rate,
+      tax_rate: null,
       pricing_strategy: req.body?.pricingStrategy || home.pricing?.pricing_strategy || null,
     };
-
-    if (payload.tax_rate == null) {
-      const resolvedTaxRate = await resolveTaxRateFromLocation(
-        home.address?.country,
-        home.address?.state
-      );
-      if (resolvedTaxRate != null) payload.tax_rate = resolvedTaxRate;
-    }
 
     if (home.pricing) {
       await home.pricing.update(payload);

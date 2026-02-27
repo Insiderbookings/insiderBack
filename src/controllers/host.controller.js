@@ -11,8 +11,7 @@ import {
   requestPhoneVerificationCode,
 } from "../services/phoneVerification.service.js";
 import { createCurrencyConverter } from "../services/currency.service.js";
-
-const PLATFORM_FEE_PCT = 0.03;
+import { computeHomeFinancialsFromStay } from "../utils/homePricing.js";
 
 // Format YYYY-MM-DD using local time to avoid timezone off-by-one errors
 const formatDate = (date) => {
@@ -44,13 +43,6 @@ const getHomeSnapshot = (home) => {
   };
 };
 
-const computeNetForStay = (stay) => {
-  const gross = Number(stay.gross_price ?? 0);
-  const fee = Math.max(0, gross * PLATFORM_FEE_PCT);
-  const net = Math.max(0, gross - fee);
-  return { gross, fee, net };
-};
-
 const ensurePayoutItemsForHost = async (hostId) => {
   if (!hostId) return;
   const existing = await models.PayoutItem.findAll({
@@ -78,20 +70,23 @@ const ensurePayoutItemsForHost = async (hostId) => {
 
   if (!stays.length) return;
   const payload = stays.map((stay) => {
-    const { gross, fee, net } = computeNetForStay(stay);
+    const financials = computeHomeFinancialsFromStay(stay);
     return {
       stay_id: stay.id,
       user_id: hostId,
-      amount: net,
-      currency: stay.currency || "USD",
+      amount: financials.hostPayout,
+      currency: financials.currency || stay.currency || "USD",
       status: "PENDING",
       scheduled_for: stay.check_out || stay.check_in || null,
       metadata: {
         source: "earnings-backfill",
         createdAt: new Date(),
-        gross_price: gross,
-        platform_fee_pct: PLATFORM_FEE_PCT,
-        fee_amount: fee,
+        pricing_model: financials.model,
+        guest_total: financials.guestTotal,
+        gross_price: financials.hostSubtotal,
+        fee_amount: financials.hostServiceFee,
+        platform_markup_amount: financials.platformMarkupAmount,
+        effective_platform_revenue: financials.effectivePlatformRevenue,
       },
     };
   });
@@ -453,7 +448,7 @@ export const getHostDashboard = async (req, res) => {
     const earningsStart = new Date();
     earningsStart.setDate(1);
     earningsStart.setHours(0, 0, 0, 0);
-    const earningsSum = await models.Stay.sum("gross_price", {
+    const earningsStays = await models.Stay.findAll({
       where: {
         inventory_type: "HOME",
         status: "COMPLETED",
@@ -469,6 +464,10 @@ export const getHostDashboard = async (req, res) => {
         },
       ],
     });
+    const earningsSum = earningsStays.reduce(
+      (sum, stay) => sum + Number(computeHomeFinancialsFromStay(stay).hostPayout || 0),
+      0,
+    );
 
     return res.json({
       reservations: reservationsPayload,
@@ -607,11 +606,12 @@ export const getHostEarnings = async (req, res) => {
       if (keyDate < oneYearAgo) continue;
 
       const monthKey = `${keyDate.getUTCFullYear()}-${String(keyDate.getUTCMonth() + 1).padStart(2, "0")}`;
-      const sourceCurrency = String(item.currency || stay.currency || "USD").toUpperCase();
-      const sourceNetAmount = Number(item.amount ?? 0);
-      const sourceGrossAmount = Number(item.metadata?.gross_price ?? stay.gross_price ?? sourceNetAmount);
-      const sourceFeeAmount = Number(item.metadata?.fee_amount ?? Math.max(0, sourceGrossAmount - sourceNetAmount));
-      const sourceTaxAmount = Number(stay.taxes_total ?? 0);
+      const financials = computeHomeFinancialsFromStay(stay);
+      const sourceCurrency = String(item.currency || financials.currency || stay.currency || "USD").toUpperCase();
+      const sourceNetAmount = Number(item.amount ?? financials.hostPayout ?? 0);
+      const sourceGrossAmount = Number(item.metadata?.gross_price ?? financials.hostSubtotal ?? sourceNetAmount);
+      const sourceFeeAmount = Number(item.metadata?.fee_amount ?? financials.hostServiceFee ?? 0);
+      const sourceTaxAmount = 0;
 
       const [netAmount, grossAmount, feeAmount, taxAmount] = await Promise.all([
         currencyConverter.convert(sourceNetAmount, sourceCurrency),
@@ -672,8 +672,9 @@ export const getHostEarnings = async (req, res) => {
       if (!home || stayHostId !== hostId) continue;
 
       const listingKey = home.id;
-      const sourceCurrency = String(stay.currency || "USD").toUpperCase();
-      const sourceAmount = Number(stay.gross_price ?? 0);
+      const financials = computeHomeFinancialsFromStay(stay);
+      const sourceCurrency = String(financials.currency || stay.currency || "USD").toUpperCase();
+      const sourceAmount = Number(financials.hostPayout ?? 0);
       const amount = await currencyConverter.convert(sourceAmount, sourceCurrency);
 
       listingTotals.set(listingKey, {
@@ -706,7 +707,7 @@ export const getHostEarnings = async (req, res) => {
         const adjustments = values.adjustments || 0;
         const serviceFees = values.serviceFees || 0;
         const taxes = values.taxes || 0;
-        const net = gross + adjustments - serviceFees - taxes;
+        const net = gross + adjustments - serviceFees;
         return {
           key,
           year: Number(year),
@@ -805,6 +806,7 @@ export const getHostBookingDetail = async (req, res) => {
     const home = stay.homeStay?.home
     const pricingSnapshot = stay.pricing_snapshot || stay.meta || {}
     const feeSnapshot = stay.meta?.fees_snapshot || stay.meta?.fees || stay.homeStay?.fees_snapshot || {}
+    const financials = computeHomeFinancialsFromStay(stay)
     const cancellation =
       stay.meta?.cancellationPolicy ||
       stay.homeStay?.house_rules_snapshot?.cancellation_policy ||
@@ -838,17 +840,31 @@ export const getHostBookingDetail = async (req, res) => {
         }
         : null,
       pricing: {
-        currency: stay.currency || pricingSnapshot.currency || "USD",
-        baseSubtotal: pricingSnapshot.subtotalBeforeTax ?? null,
-        nightlyBreakdown: pricingSnapshot.nightlyBreakdown || [],
-        cleaningFee: pricingSnapshot.cleaningFee ?? pricingSnapshot.cleaning_fee ?? null,
-        guestServiceFee: pricingSnapshot.serviceFee ?? pricingSnapshot.service_fee ?? null,
-        taxes: pricingSnapshot.taxAmount ?? pricingSnapshot.taxes ?? null,
-        total: pricingSnapshot.total ?? stay.gross_price ?? null,
+        currency: financials.currency || stay.currency || pricingSnapshot.currency || "USD",
+        pricingModel: financials.model,
+        baseSubtotal:
+          pricingSnapshot.guestBaseSubtotal ?? pricingSnapshot.baseSubtotal ?? financials.guestBaseSubtotal ?? null,
+        extraGuestSubtotal:
+          pricingSnapshot.guestExtraGuestSubtotal ?? pricingSnapshot.extraGuestSubtotal ?? financials.guestExtraGuestSubtotal ?? null,
+        platformMarkupAmount:
+          pricingSnapshot.platformMarkupAmount ?? pricingSnapshot.platform_markup_amount ?? financials.platformMarkupAmount ?? null,
+        discountAmount:
+          pricingSnapshot.guestDiscountAmount ?? pricingSnapshot.discountAmount ?? financials.guestDiscountAmount ?? null,
+        nightlyBreakdown: pricingSnapshot.nightlyBreakdown || financials.nightlyBreakdown || [],
+        cleaningFee: null,
+        guestServiceFee: null,
+        taxes: 0,
+        total: pricingSnapshot.total ?? stay.gross_price ?? financials.guestTotal ?? null,
       },
       hostPayout: {
-        hostServiceFee: pricingSnapshot.hostServiceFee ?? pricingSnapshot.host_service_fee ?? null,
-        hostEarnings: pricingSnapshot.hostEarnings ?? pricingSnapshot.host_earnings ?? null,
+        baseSubtotal:
+          pricingSnapshot.hostBaseSubtotal ?? pricingSnapshot.baseSubtotal ?? financials.hostBaseSubtotal ?? null,
+        extraGuestSubtotal:
+          pricingSnapshot.hostExtraGuestSubtotal ?? financials.hostExtraGuestSubtotal ?? null,
+        hostServiceFee:
+          pricingSnapshot.hostServiceFee ?? pricingSnapshot.host_service_fee ?? financials.hostServiceFee ?? 0,
+        hostEarnings:
+          pricingSnapshot.hostEarnings ?? pricingSnapshot.host_earnings ?? financials.hostPayout ?? null,
       },
       policies: {
         cancellation,

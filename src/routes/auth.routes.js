@@ -69,7 +69,16 @@ router.post(
 );
 
 // Social login
-router.post("/google/exchange", [body("code").notEmpty()], googleExchange);
+router.post(
+  "/google/exchange",
+  [
+    body("code").notEmpty(),
+    body("redirectUri").optional().isString(),
+    body("codeVerifier").optional().isString(),
+    body("clientId").optional().isString(),
+  ],
+  googleExchange,
+);
 router.post("/apple/exchange", [body("identityToken").notEmpty()], appleExchange);
 
 // Auto signup for outside bookings
