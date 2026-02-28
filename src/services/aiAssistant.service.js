@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import models from "../models/index.js";
+import { AI_FLAGS } from "../modules/ai/ai.config.js";
 import { sendPushToUser } from "./pushNotifications.service.js";
 import { getWeatherSummary } from "../modules/ai/tools/tool.weather.js";
 import { getNearbyPlaces } from "../modules/ai/tools/tool.places.js";
@@ -9,6 +10,7 @@ import { enqueueTripHubEnsure } from "./tripHubPacksQueue.service.js";
 const DEFAULT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini";
 const apiKey = process.env.OPENAI_API_KEY;
 let openaiClient = null;
+const DEFAULT_OPENAI_TIMEOUT_MS = Number(process.env.AI_OPENAI_TIMEOUT_MS) || 20000;
 const TRIP_HUB_OPENAI_TIMEOUT_MS = Number(process.env.TRIP_HUB_OPENAI_TIMEOUT_MS) || 60000;
 
 const ensureClient = () => {
@@ -33,7 +35,7 @@ const withTimeout = (promise, ms, label) => {
   });
 };
 
-export const isAssistantEnabled = () => Boolean(apiKey);
+export const isAssistantEnabled = () => Boolean(apiKey) && AI_FLAGS.chatEnabled;
 
 const SPANISH_HINTS = [
   " hola ", " gracias", " por favor", " buenas", " buen dia", " alojamiento",
@@ -277,8 +279,7 @@ const buildUserContextBlock = (rawContext, language) => {
   if (context.recentChats?.length) {
     const chatLines = context.recentChats.map((chat, index) => {
       const title = chat.title || "Chat";
-      const preview = chat.preview ? ` - ${chat.preview}` : "";
-      return `${index + 1}) ${title}${preview}`;
+      return `${index + 1}) ${title}`;
     });
     lines.push(`Recent chats: ${chatLines.join(" | ")}`);
   }
@@ -681,11 +682,15 @@ export const extractSearchPlan = async (messages = [], { now } = {}) => {
     return mergePlan(defaultPlan, { contextText: latestUserMessage });
   }
   try {
-    const completion = await client.chat.completions.create({
-      model: DEFAULT_MODEL,
-      response_format: { type: "json_object" },
-      messages: [...buildPlannerPrompt({ now }), ...normalizedMessages],
-    });
+    const completion = await withTimeout(
+      client.chat.completions.create({
+        model: DEFAULT_MODEL,
+        response_format: { type: "json_object" },
+        messages: [...buildPlannerPrompt({ now }), ...normalizedMessages],
+      }),
+      DEFAULT_OPENAI_TIMEOUT_MS,
+      "extractSearchPlan"
+    );
     const payload = completion.choices?.[0]?.message?.content;
     if (!payload) return mergePlan(defaultPlan, { contextText: latestUserMessage });
     const parsed = JSON.parse(payload);
@@ -1254,7 +1259,7 @@ export const generateAssistantReply = async ({
         `${contextInstruction}\n` +
         `- ${noRepeatInstruction}\n` +
         "- **PRICES & AVAILABILITY**: When the user has NOT yet provided destination + dates + guests, make it clear in a natural way that the options you show are suggestions, and that to see real prices and availability they need to add: where, when, and how many guests. Vary the phrasing (e.g. 'Once you pick dates and guests I can show live prices', 'Add your dates and who's traveling to see availability and rates', 'Set your dates and guests to see real availability'). When they have already provided destination, dates and guests, you can say that the results below have live availability.\n" +
-        "- **MODERN & FUN TONE**: Be enthusiastic. Use varied openers like 'Here we go!', 'Check this out!', 'Sorted!', 'Bingo!', or occasionally 'Boom!'. **Do not overuse any single phrase**.\n" +
+        "- **MODERN & FUN TONE**: Be enthusiastic. Use varied openers like 'Here we go!', 'Check this out!', 'Sorted!', or 'I found a few strong options.' **Do not overuse any single phrase**.\n" +
         "- **OPINIONATED**: After presenting results, add a SHORT comment or 'Hot Take'.\n" +
         "- **STRUCTURE**:\n" +
         "  1. Enthusiastic Opening\n" +
@@ -1323,14 +1328,18 @@ export const generateAssistantReply = async ({
             weather: summary.weather,
           });
 
-    const completion = await client.chat.completions.create({
-      model: DEFAULT_MODEL,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
-      ],
-    });
+    const completion = await withTimeout(
+      client.chat.completions.create({
+        model: DEFAULT_MODEL,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+      }),
+      DEFAULT_OPENAI_TIMEOUT_MS,
+      "generateAssistantReply"
+    );
 
     const payload = completion.choices?.[0]?.message?.content;
     if (!payload) {

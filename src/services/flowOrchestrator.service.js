@@ -729,27 +729,40 @@ const logStep = async ({
   responseXml,
   idempotencyKey,
 }) => {
-  return models.BookingFlowStep.create({
-    id: randomUUID(),
-    flow_id: flowId,
-    step,
-    command,
-    tid,
-    success,
-    error_class: errorClass,
-    error_code: errorCode,
-    allocation_in: allocationIn,
-    allocation_out: allocationOut,
-    booking_code_out: bookingCodeOut,
-    service_ref_out: serviceRefOut,
-    order_code_out: orderCodeOut,
-    authorisation_out: authorisationOut,
-    prices_out: pricesOut,
-    within_cancellation_deadline_out: withinCancellationDeadlineOut,
-    request_xml: redactXml(requestXml),
-    response_xml: redactXml(responseXml),
-    idempotency_key: idempotencyKey || null,
-  });
+  try {
+    return await models.BookingFlowStep.create({
+      id: randomUUID(),
+      flow_id: flowId,
+      step,
+      command,
+      tid,
+      success,
+      error_class: errorClass,
+      error_code: errorCode,
+      allocation_in: allocationIn,
+      allocation_out: allocationOut,
+      booking_code_out: bookingCodeOut,
+      service_ref_out: serviceRefOut,
+      order_code_out: orderCodeOut,
+      authorisation_out: authorisationOut,
+      prices_out: pricesOut,
+      within_cancellation_deadline_out: withinCancellationDeadlineOut,
+      request_xml: redactXml(requestXml),
+      response_xml: redactXml(responseXml),
+      idempotency_key: idempotencyKey || null,
+    });
+  } catch (error) {
+    const isSameStepIdempotencyConflict =
+      error?.name === "SequelizeUniqueConstraintError" &&
+      idempotencyKey &&
+      String(error?.fields?.flow_id ?? "") === String(flowId) &&
+      String(error?.fields?.step ?? "") === String(step) &&
+      String(error?.fields?.idempotency_key ?? "") === String(idempotencyKey);
+    if (!isSameStepIdempotencyConflict) throw error;
+    const existingStep = await resolveIdempotentStep(flowId, step, idempotencyKey);
+    if (existingStep) return existingStep;
+    throw error;
+  }
 };
 
 const resolveIdempotentStep = async (flowId, step, idempotencyKey) => {
@@ -764,12 +777,16 @@ const isIdempotentStepReusableForAllocation = ({ step, allocationCurrent }) => {
   if (!step) return false;
   const flowAllocation = getText(allocationCurrent) ?? null;
   if (!flowAllocation) return true;
-  const stepAllocation =
-    getText(step?.allocation_in ?? step?.allocationIn ?? null) ??
-    getText(step?.allocation_out ?? step?.allocationOut ?? null) ??
-    null;
-  if (!stepAllocation) return true;
-  return String(stepAllocation) === String(flowAllocation);
+  const stepAllocations = [
+    step?.allocation_out,
+    step?.allocationOut,
+    step?.allocation_in,
+    step?.allocationIn,
+  ]
+    .map((value) => getText(value) ?? null)
+    .filter((value, index, items) => value && items.indexOf(value) === index);
+  if (!stepAllocations.length) return true;
+  return stepAllocations.some((value) => String(value) === String(flowAllocation));
 };
 
 const getBusinessCardToken = async () => {

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import {
   createAiChat,
   deleteAiChat,
@@ -11,7 +12,14 @@ import { authenticate } from "../middleware/auth.js";
 const router = Router();
 
 router.use(authenticate);
-router.post("/search", handleAiChat);
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.AI_RATE_LIMIT_MAX || 30),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.post("/search", aiLimiter, handleAiChat);
 router.post("/chats", createAiChat);
 router.get("/chats", listAiChats);
 router.get("/chats/:sessionId", getAiChat);

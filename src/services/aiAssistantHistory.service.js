@@ -1,7 +1,7 @@
 import models, { sequelize } from "../models/index.js";
 
 export const DEFAULT_ASSISTANT_GREETING =
-  "Hi there! I am your Insider assistant. Tell me what kind of home or hotel you're looking for and I'll find it.";
+  "Hi there! I am your Insider assistant. Tell me what kind of hotel you're looking for and I'll find it.";
 
 const MESSAGE_ROLES = ["assistant", "user", "system"];
 
@@ -36,7 +36,13 @@ const hasInventorySnapshot = (snapshot) => {
   return homes > 0 || hotels > 0;
 };
 
-const mapSession = (session) => {
+const normalizeLimit = (value, fallback = 1) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return Math.max(fallback, 1);
+  return Math.max(Math.floor(numeric), 1);
+};
+
+const mapSession = (session, { includeMetadata = true } = {}) => {
   if (!session) return null;
   const data = session.get({ plain: true });
   return {
@@ -47,7 +53,7 @@ const mapSession = (session) => {
     createdAt: data.created_at,
     updatedAt: data.updated_at,
     messageCount: data.message_count ?? 0,
-    metadata: parseJsonField(data.metadata) || null,
+    metadata: includeMetadata ? parseJsonField(data.metadata) || null : null,
   };
 };
 
@@ -114,9 +120,9 @@ export const listAssistantSessionsForUser = async (userId, { limit = 15 } = {}) 
   const rows = await models.AiChatSession.findAll({
     where: { user_id: userId },
     order: [["last_message_at", "DESC"]],
-    limit: Math.max(Number(limit) || 0, 1),
+    limit: normalizeLimit(limit, 15),
   });
-  return rows.map(mapSession);
+  return rows.map((row) => mapSession(row, { includeMetadata: false }));
 };
 
 export const getAssistantSessionForUser = async (sessionId, userId, options = {}) => {
@@ -141,12 +147,12 @@ export const getAssistantSessionWithMessages = async (
   const session = await getAssistantSessionOrThrow(sessionId, userId);
   const rows = await models.AiChatMessage.findAll({
     where: { session_id: sessionId },
-    order: [["created_at", "ASC"]],
-    limit: Math.max(Number(limit) || 0, 1),
+    order: [["created_at", "DESC"]],
+    limit: normalizeLimit(limit, 200),
   });
   return {
     session: mapSession(session),
-    messages: rows.map(mapMessage),
+    messages: rows.reverse().map(mapMessage),
   };
 };
 
@@ -154,10 +160,10 @@ export const fetchAssistantMessages = async (sessionId, userId, { limit = 60 } =
   await getAssistantSessionOrThrow(sessionId, userId);
   const rows = await models.AiChatMessage.findAll({
     where: { session_id: sessionId },
-    order: [["created_at", "ASC"]],
-    limit: Math.max(Number(limit) || 0, 1),
+    order: [["created_at", "DESC"]],
+    limit: normalizeLimit(limit, 60),
   });
-  return rows.map(mapMessage);
+  return rows.reverse().map(mapMessage);
 };
 
 export const appendAssistantChatMessage = async (

@@ -12,9 +12,9 @@ import {
 } from "../services/aiAssistantHistory.service.js";
 
 const QUICK_START_PROMPTS = [
-  "Show me homes for 4 people in downtown Cordoba with parking for the third week of January.",
+  "Show me hotels for 4 people in downtown Cordoba with parking for the third week of January.",
   "Looking for a business-class hotel in Buenos Aires with breakfast included.",
-  "Need a pet-friendly cabin near Bariloche for 6 guests.",
+  "Need a pet-friendly hotel near Bariloche for 6 guests.",
 ];
 
 const normalizeMessagesInput = (messages) => {

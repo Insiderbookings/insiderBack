@@ -74,9 +74,16 @@ const run = async () => {
       type: "number",
       describe: "Limit number of cities when using --country",
     })
+    .option("hotelLimit", {
+      type: "number",
+      describe: "Limit number of hotels processed per city (useful for test runs)",
+    })
     .check((args) => {
       if (!args.city && !args.country && !args.catalog) {
         throw new Error("Provide --city/--country or --catalog")
+      }
+      if (args.hotelLimit != null && (!Number.isFinite(args.hotelLimit) || args.hotelLimit <= 0)) {
+        throw new Error("--hotelLimit must be a positive number")
       }
       return true
     })
@@ -148,6 +155,7 @@ const run = async () => {
     mode: argv.mode,
     dryRun: argv.dryRun,
     cityCount: cityCodes.length,
+    hotelLimit: argv.hotelLimit ?? null,
   })
 
   let failures = 0
@@ -156,13 +164,18 @@ const run = async () => {
     try {
       let summary
       if (argv.mode === "full") {
-        summary = await syncWebbedsHotels({ cityCode, dryRun: argv.dryRun })
+        summary = await syncWebbedsHotels({
+          cityCode,
+          dryRun: argv.dryRun,
+          hotelLimit: argv.hotelLimit,
+        })
       } else {
         summary = await syncWebbedsHotelsIncremental({
           cityCode,
           dryRun: argv.dryRun,
           mode: argv.mode,
           since: argv.since,
+          hotelLimit: argv.hotelLimit,
         })
       }
       console.log("[webbeds-sync] ok", { cityCode, summary })

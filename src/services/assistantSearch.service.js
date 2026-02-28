@@ -11,6 +11,13 @@ const ASSISTANT_SEARCH_MAX_LIMIT = Math.max(
   20,
   Math.min(120, Number(process.env.AI_SEARCH_MAX_LIMIT || 120))
 );
+const DEBUG_ASSISTANT_SEARCH =
+  String(process.env.AI_DEBUG_LOGS || "").trim().toLowerCase() === "true";
+
+const debugSearchLog = (...args) => {
+  if (!DEBUG_ASSISTANT_SEARCH) return;
+  console.log(...args);
+};
 
 const clampLimit = (value, fallback = 6) => {
   const numeric = Number(value);
@@ -465,8 +472,8 @@ const runHomeQuery = async ({
   const amenityFilterKeys = Array.isArray(homeFilters.amenityKeys) ? homeFilters.amenityKeys : [];
   const needsAmenityJoin = Boolean((amenityKeywords && amenityKeywords.length) || amenityFilterKeys.length);
 
-  console.log("[assistant] runHomeQuery executing with where:", JSON.stringify(where));
-  console.log("[assistant] runHomeQuery address include where:", JSON.stringify(include[0].where));
+  debugSearchLog("[assistant] runHomeQuery executing with where:", JSON.stringify(where));
+  debugSearchLog("[assistant] runHomeQuery address include where:", JSON.stringify(include[0].where));
 
   const homes = await models.Home.findAll({
     where,
@@ -522,7 +529,7 @@ const runHomeQuery = async ({
     distinct: true,
   });
 
-  console.log(`[assistant] runHomeQuery found ${homes.length} raw homes`);
+  debugSearchLog(`[assistant] runHomeQuery found ${homes.length} raw homes`);
   return homes;
 };
 
@@ -575,7 +582,7 @@ const mapHomesToResults = ({
 };
 
 export const searchHomesForPlan = async (plan = {}, options = {}) => {
-  console.log("[assistant] plan", JSON.stringify(plan));
+  debugSearchLog("[assistant] plan", JSON.stringify(plan));
   // If the plan has a specific limit, use it, otherwise use the default or requested limit
   const planLimit = typeof plan.limit === "number" && plan.limit > 0 ? plan.limit : null;
   const limit = clampLimit(planLimit || options.limit);
@@ -629,7 +636,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
 
   for (let index = 0; index < attempts.length; index += 1) {
     const attempt = attempts[index];
-    console.log("[assistant] attempt", attempt);
+    debugSearchLog("[assistant] attempt", attempt);
     const homes = await runHomeQuery({
       plan: planWithSort,
       limit,
@@ -646,7 +653,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
       calendarRange,
     });
 
-    console.log(`[assistant] attempt ${JSON.stringify(attempt)} returned ${homes.length} homes`);
+    debugSearchLog(`[assistant] attempt ${JSON.stringify(attempt)} returned ${homes.length} homes`);
 
     const enriched = mapHomesToResults({
       homes,
@@ -660,7 +667,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
       calendarRange,
     });
 
-    console.log(`[assistant] attempt enriched count: ${enriched.length}`);
+    debugSearchLog(`[assistant] attempt enriched count: ${enriched.length}`);
     if (enriched.length) {
       return {
         items: enriched,
@@ -710,7 +717,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
   }
 
   if (hasLocation) {
-    console.log("[assistant] no fallback homes; location constraint present");
+    debugSearchLog("[assistant] no fallback homes; location constraint present");
     return { items: [], matchType: "NONE" };
   }
 
@@ -752,7 +759,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
     };
   }
 
-  console.log("[assistant] final result count 0");
+  debugSearchLog("[assistant] final result count 0");
   return { items: [], matchType: "NONE" };
 };
 
@@ -842,14 +849,14 @@ const resolveAmenityCatalogCodes = async (codes = []) => {
   const numericCodes = new Set(normalizeNumericList(raw));
   const nameCandidates = raw.filter((value) => !Number.isFinite(Number(value)));
   const expandedNames = expandAmenityNameCandidates(nameCandidates);
-  console.log("[assistant][amenities] resolveAmenityCatalogCodes input", {
+  debugSearchLog("[assistant][amenities] resolveAmenityCatalogCodes input", {
     raw,
     numericCount: numericCodes.size,
     nameCandidatesCount: nameCandidates.length,
     expandedNamesCount: expandedNames.length,
   });
   if (!expandedNames.length || !models.WebbedsAmenityCatalog) {
-    console.log("[assistant][amenities] resolveAmenityCatalogCodes resolved (no catalog lookup)", {
+    debugSearchLog("[assistant][amenities] resolveAmenityCatalogCodes resolved (no catalog lookup)", {
       codes: Array.from(numericCodes),
     });
     return Array.from(numericCodes);
@@ -867,7 +874,7 @@ const resolveAmenityCatalogCodes = async (codes = []) => {
   rows.forEach((row) => {
     if (row?.code != null) numericCodes.add(String(row.code));
   });
-  console.log("[assistant][amenities] resolveAmenityCatalogCodes resolved", {
+  debugSearchLog("[assistant][amenities] resolveAmenityCatalogCodes resolved", {
     matchedRows: rows.length,
     codes: Array.from(numericCodes),
   });
@@ -880,7 +887,7 @@ const filterHotelsByAmenities = async (hotels, filters = {}) => {
   const amenityCodes = await resolveAmenityCatalogCodes(requestedCodes);
   const amenityItemIds = normalizeNumericList(requestedItems);
   const requestedNames = expandAmenityNameCandidates(requestedCodes).map((name) => name.toLowerCase());
-  console.log("[assistant][amenities] filterHotelsByAmenities start", {
+  debugSearchLog("[assistant][amenities] filterHotelsByAmenities start", {
     hotelsCount: hotels.length,
     requestedCodes,
     requestedItems,
@@ -908,7 +915,7 @@ const filterHotelsByAmenities = async (hotels, filters = {}) => {
       requestedCodes.length || requestedItems.length
         ? hotels.filter(matchesAmenityKeywords)
         : hotels;
-    console.log("[assistant][amenities] filterHotelsByAmenities fallback (no codes)", {
+    debugSearchLog("[assistant][amenities] filterHotelsByAmenities fallback (no codes)", {
       fallbackCount: fallbackResults.length,
     });
     return fallbackResults;
@@ -932,7 +939,7 @@ const filterHotelsByAmenities = async (hotels, filters = {}) => {
     attributes: ["hotel_id", "catalog_code", "item_id"],
     raw: true,
   });
-  console.log("[assistant][amenities] filterHotelsByAmenities rows", {
+  debugSearchLog("[assistant][amenities] filterHotelsByAmenities rows", {
     rows: rows.length,
   });
   const amenityMap = new Map();
@@ -958,12 +965,12 @@ const filterHotelsByAmenities = async (hotels, filters = {}) => {
   });
   if (!filtered.length && requestedNames.length) {
     const fallbackResults = hotels.filter(matchesAmenityKeywords);
-    console.log("[assistant][amenities] filterHotelsByAmenities fallback (keyword match)", {
+    debugSearchLog("[assistant][amenities] filterHotelsByAmenities fallback (keyword match)", {
       fallbackCount: fallbackResults.length,
     });
     return fallbackResults;
   }
-  console.log("[assistant][amenities] filterHotelsByAmenities done", {
+  debugSearchLog("[assistant][amenities] filterHotelsByAmenities done", {
     filteredCount: filtered.length,
   });
   return filtered;
@@ -1024,7 +1031,7 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
       currency: option?.currency ?? null,
       keys: Object.keys(option || {}).slice(0, 12),
     }));
-    console.log("[assistant][live] options summary", {
+    debugSearchLog("[assistant][live] options summary", {
       optionsCount: options.length,
       groupedCount: grouped.size,
       priceMissing,
@@ -1077,7 +1084,7 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
   if (process.env.WEBBEDS_VERBOSE_LOGS === "true" || process.env.ASSISTANT_DEBUG_HOTEL_MATCH === "true") {
     const foundIds = new Set(records.map((row) => String(row.hotel_id)));
     const missing = hotelCodes.filter((code) => !foundIds.has(String(code)));
-    console.log("[assistant][live] hotel match summary", {
+    debugSearchLog("[assistant][live] hotel match summary", {
       liveCount: hotelCodes.length,
       staticCount: records.length,
       missingCount: missing.length,
@@ -1167,9 +1174,11 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   const limit = clampLimit(planLimit || options.limit);
   const excludeIds = Array.isArray(options.excludeIds) ? options.excludeIds : [];
 
-  console.log(`[DEBUG_SEARCH] searchHotelsForPlan invoked. Limit: ${limit}. Exclude count: ${excludeIds.length}`);
+  debugSearchLog(`[DEBUG_SEARCH] searchHotelsForPlan invoked. Limit: ${limit}. Exclude count: ${excludeIds.length}`);
   if (excludeIds.length > 0) {
-    console.log(`[DEBUG_SEARCH] Exclude Sample: ${excludeIds.slice(0, 3).join(", ")} (Type: ${typeof excludeIds[0]})`);
+    debugSearchLog(
+      `[DEBUG_SEARCH] Exclude Sample: ${excludeIds.slice(0, 3).join(", ")} (Type: ${typeof excludeIds[0]})`
+    );
   }
 
   const prefFilters = deriveFiltersFromPreferences(plan);
@@ -1211,7 +1220,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
 
   if (plan?.location?.city) {
     const filter = buildStringFilter(plan.location.city);
-    console.log(`[DEBUG_SEARCH] Looking up City: "${plan.location.city}" (Filter: ${JSON.stringify(filter)})`);
+    debugSearchLog(`[DEBUG_SEARCH] Looking up City: "${plan.location.city}" (Filter: ${JSON.stringify(filter)})`);
     if (filter) {
       try {
         const foundCities = await models.WebbedsCity.findAll({
@@ -1221,19 +1230,23 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
         });
         if (foundCities?.length) {
           cityCodes = foundCities.map(c => c.code);
-          console.log(`[DEBUG_SEARCH] Found Companies: ${foundCities.map(c => `${c.name} (${c.code}) - ${c.country_name}`).join(", ")}`);
+          debugSearchLog(
+            `[DEBUG_SEARCH] Found Companies: ${foundCities
+              .map((c) => `${c.name} (${c.code}) - ${c.country_name}`)
+              .join(", ")}`
+          );
         } else {
-          console.log(`[DEBUG_SEARCH] No cities found for "${plan.location.city}"`);
+          debugSearchLog(`[DEBUG_SEARCH] No cities found for "${plan.location.city}"`);
         }
       } catch (err) {
-        console.warn("[assistant] city lookup failed", err);
+        debugSearchLog("[assistant] city lookup failed", err);
       }
     }
   }
 
   if (plan?.location?.country) {
     const filter = buildStringFilter(plan.location.country);
-    console.log(`[DEBUG_SEARCH] Looking up Country: "${plan.location.country}"`);
+    debugSearchLog(`[DEBUG_SEARCH] Looking up Country: "${plan.location.country}"`);
     if (filter) {
       try {
         const foundCountries = await models.WebbedsCountry.findAll({
@@ -1243,12 +1256,14 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
         });
         if (foundCountries?.length) {
           countryCodes = foundCountries.map(c => c.code);
-          console.log(`[DEBUG_SEARCH] Found Countries: ${foundCountries.map(c => `${c.name} (${c.code})`).join(", ")}`);
+          debugSearchLog(
+            `[DEBUG_SEARCH] Found Countries: ${foundCountries.map((c) => `${c.name} (${c.code})`).join(", ")}`
+          );
         } else {
-          console.log(`[DEBUG_SEARCH] No countries found for "${plan.location.country}"`);
+          debugSearchLog(`[DEBUG_SEARCH] No countries found for "${plan.location.country}"`);
         }
       } catch (err) {
-        console.warn("[assistant] country lookup failed", err);
+        debugSearchLog("[assistant] country lookup failed", err);
       }
     }
   }
@@ -1280,7 +1295,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     where.preferred = true;
   }
 
-  console.log(`[DEBUG_SEARCH] Final Query "where" clause:`, JSON.stringify(where, null, 2));
+  debugSearchLog(`[DEBUG_SEARCH] Final Query "where" clause:`, JSON.stringify(where, null, 2));
 
   if (excludeIds.length) {
     where.hotel_id = { [Op.notIn]: excludeIds };
@@ -1366,7 +1381,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   }
 
   if (hasLocation) {
-    console.log("[assistant] no fallback hotels; location constraint present");
+    debugSearchLog("[assistant] no fallback hotels; location constraint present");
     return { items: [], matchType: "NONE" };
   }
 
