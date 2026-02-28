@@ -118,6 +118,33 @@ const maskSensitiveXml = (xml) => {
     return String(xml).replace(/(<password>)(.*?)(<\/password>)/i, "$1***redacted***$3");
 };
 
+const buildCancellationMetaPayload = (booking, cancellationMeta) => {
+    if (!cancellationMeta) return booking.meta;
+    return {
+        ...(booking.meta || {}),
+        cancellationPolicy:
+            booking.meta?.cancellationPolicy ??
+            booking.meta?.cancellation_policy ??
+            cancellationMeta.policy ??
+            null,
+        cancellation: cancellationMeta,
+    };
+};
+
+const persistCancellationOutcome = async ({
+    booking,
+    nextPaymentStatus,
+    cancellationMeta,
+}) => {
+    const metaPayload = buildCancellationMetaPayload(booking, cancellationMeta);
+    await booking.update({
+        status: "CANCELLED",
+        payment_status: nextPaymentStatus,
+        cancelled_at: new Date(),
+        ...(metaPayload ? { meta: metaPayload } : {}),
+    });
+};
+
 const debugWebbedsCancelXml = (label, error, extra = {}) => {
     if (process.env.WEBBEDS_VERBOSE_LOGS !== "true") return;
     console.info(`[webbeds][cancel][xml] ${label}`, {
@@ -682,57 +709,96 @@ export const processBookingCancellation = async ({
         let paymentIntentCanceled = false;
 
         if (booking.payment_intent_id) {
-            const stripe = await getStripeClient();
-            if (!stripe) throw { status: 500, message: "Stripe is not configured" };
+            try {
+                const stripe = await getStripeClient();
+                if (!stripe) throw { status: 500, message: "Stripe is not configured" };
 
-            const paymentIntent = await stripe.paymentIntents.retrieve(
-                booking.payment_intent_id,
-            );
-            paymentIntentStatus = paymentIntent?.status || null;
+                const paymentIntent = await stripe.paymentIntents.retrieve(
+                    booking.payment_intent_id,
+                );
+                paymentIntentStatus = paymentIntent?.status || null;
 
-            if (paymentIntent?.status === "succeeded") {
-                const requestedRefundCents = Math.max(0, Math.round(refundAmount * 100));
-                const amountReceivedCents = Math.max(
-                    0,
-                    Number(paymentIntent?.amount_received ?? paymentIntent?.amount ?? 0),
-                );
-                const alreadyRefundedCents = Math.max(
-                    0,
-                    Number(paymentIntent?.amount_refunded ?? 0),
-                );
-                const availableRefundCents = Math.max(
-                    0,
-                    amountReceivedCents - alreadyRefundedCents,
-                );
-                const refundCents = Math.min(requestedRefundCents, availableRefundCents);
-                if (requestedRefundCents > refundCents) {
-                    refundAmount = roundCurrency(refundCents / 100);
-                    refundPercent =
-                        paidAmount > 0 ? roundCurrency((refundAmount / paidAmount) * 100) : 0;
+                if (paymentIntent?.status === "succeeded") {
+                    const requestedRefundCents = Math.max(0, Math.round(refundAmount * 100));
+                    const amountReceivedCents = Math.max(
+                        0,
+                        Number(paymentIntent?.amount_received ?? paymentIntent?.amount ?? 0),
+                    );
+                    const alreadyRefundedCents = Math.max(
+                        0,
+                        Number(paymentIntent?.amount_refunded ?? 0),
+                    );
+                    const availableRefundCents = Math.max(
+                        0,
+                        amountReceivedCents - alreadyRefundedCents,
+                    );
+                    const refundCents = Math.min(requestedRefundCents, availableRefundCents);
+                    if (requestedRefundCents > refundCents) {
+                        refundAmount = roundCurrency(refundCents / 100);
+                        refundPercent =
+                            paidAmount > 0 ? roundCurrency((refundAmount / paidAmount) * 100) : 0;
+                    }
+                    if (refundCents <= 0) {
+                        // Nothing left to refund in Stripe for this payment intent.
+                        refundAmount = 0;
+                        refundPercent = paidAmount > 0 ? 0 : refundPercent;
+                    }
+                    if (refundCents > 0) {
+                        const refund = await stripe.refunds.create({
+                            payment_intent: booking.payment_intent_id,
+                            amount: refundCents,
+                            metadata: {
+                                stayId: String(booking.id),
+                                reason: reason,
+                                source: "WEBBEDS",
+                            },
+                        });
+                        stripeRefundId = refund.id;
+                        stripeRefundStatus = refund.status;
+                    }
+                } else if (paymentIntent?.status === "requires_capture") {
+                    await stripe.paymentIntents.cancel(booking.payment_intent_id, {
+                        cancellation_reason: "requested_by_customer",
+                    });
+                    paymentIntentCanceled = true;
                 }
-                if (refundCents <= 0) {
-                    // Nothing left to refund in Stripe for this payment intent.
-                    refundAmount = 0;
-                    refundPercent = paidAmount > 0 ? 0 : refundPercent;
+            } catch (stripeError) {
+                const refundFailureMeta = {
+                    policy: refundOverride ? "ADMIN_OVERRIDE" : "WEBBEDS",
+                    bookingCodeUsed: bookingCode,
+                    bookingTypeUsed: selectedBookingType ?? null,
+                    supplierPaidAmount,
+                    refundPercent,
+                    refundAmount,
+                    currency: refundCurrency,
+                    penaltyApplied,
+                    penaltyCurrency,
+                    paymentBalance,
+                    paymentBalanceSent: paymentBalanceRaw ?? null,
+                    cancelQuote,
+                    cancelResult,
+                    paymentIntentStatus,
+                    refundId: stripeRefundId,
+                    refundStatus: "FAILED_MANUAL_ACTION",
+                    paymentIntentCanceled,
+                    refundError: stripeError?.message || "Unknown Stripe cancellation/refund error",
+                    cancelledAt: new Date().toISOString(),
+                    bySupport,
+                    manualActionRequired: true,
+                };
+                if (booking.external_ref !== bookingCode) {
+                    await booking.update({ external_ref: bookingCode });
                 }
-                if (refundCents > 0) {
-                const refund = await stripe.refunds.create({
-                    payment_intent: booking.payment_intent_id,
-                    amount: refundCents,
-                    metadata: {
-                        stayId: String(booking.id),
-                        reason: reason,
-                        source: "WEBBEDS",
-                    },
+                await persistCancellationOutcome({
+                    booking,
+                    nextPaymentStatus,
+                    cancellationMeta: refundFailureMeta,
                 });
-                stripeRefundId = refund.id;
-                stripeRefundStatus = refund.status;
-                }
-            } else if (paymentIntent?.status === "requires_capture") {
-                await stripe.paymentIntents.cancel(booking.payment_intent_id, {
-                    cancellation_reason: "requested_by_customer",
-                });
-                paymentIntentCanceled = true;
+                throw {
+                    status: 409,
+                    message:
+                        "The supplier booking was cancelled, but the payment refund requires manual review.",
+                };
             }
         }
 
@@ -789,23 +855,10 @@ export const processBookingCancellation = async ({
         }
     }
 
-    const metaPayload = cancellationMeta
-        ? {
-            ...(booking.meta || {}),
-            cancellationPolicy:
-                booking.meta?.cancellationPolicy ??
-                booking.meta?.cancellation_policy ??
-                cancellationMeta.policy ??
-                null,
-            cancellation: cancellationMeta,
-        }
-        : booking.meta;
-
-    await booking.update({
-        status: "CANCELLED",
-        payment_status: nextPaymentStatus,
-        cancelled_at: new Date(),
-        ...(metaPayload ? { meta: metaPayload } : {}),
+    await persistCancellationOutcome({
+        booking,
+        nextPaymentStatus,
+        cancellationMeta,
     });
 
     // Calendar Cleanup

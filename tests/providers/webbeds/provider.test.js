@@ -18,8 +18,16 @@ const models = modelsModule.default
 
 const createResponseMock = () => {
   const payloads = []
+  let statusCode = 200
   return {
     payloads,
+    get statusCode() {
+      return statusCode
+    },
+    status(code) {
+      statusCode = code
+      return this
+    },
     json(data) {
       payloads.push(data)
       return data
@@ -91,7 +99,18 @@ test("WebbedsProvider.search forwards builder errors to next()", async () => {
     receivedError = error
   }
 
-  await provider.search({ query: {} }, createResponseMock(), next)
+  await provider.search(
+    {
+      query: {
+        mode: "search",
+        cityCode: "364",
+        passengerNationality: "102",
+        passengerCountryOfResidence: "102",
+      },
+    },
+    createResponseMock(),
+    next,
+  )
 
   assert.ok(receivedError instanceof Error)
   assert.match(receivedError.message, /requires valid checkIn and checkOut dates/)
@@ -141,7 +160,7 @@ test("WebbedsProvider.search batches hotelIds when mode=hotelIds", async () => {
 
   assert.equal(firstFieldValues.length, 50)
   assert.equal(secondFieldValues.length, 5)
-  assert.equal(firstPayload.return.filters.city, "364")
-  assert.equal(secondPayload.return.filters.city, "364")
+  assert.equal(firstPayload.return.filters.city, undefined)
+  assert.equal(secondPayload.return.filters.city, undefined)
   assert.deepEqual(res.payloads[0], [])
 })

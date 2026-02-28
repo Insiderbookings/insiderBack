@@ -19,6 +19,8 @@ test("buildSearchHotelsPayload builds rooms, defaults, and filters correctly", (
     checkOut: "2025-12-05",
     occupancies: "3|5-7",
     cityCode: "364",
+    nationality: "102",
+    residence: "102",
     includeNoPrice: true,
     rateBasis: "-1",
     advancedConditions: [
@@ -37,6 +39,8 @@ test("buildSearchHotelsPayload builds rooms, defaults, and filters correctly", (
 
   const [room] = payload.bookingDetails.rooms.room
   assert.equal(room.adultsCode, "3")
+  assert.equal(room.passengerNationality, "102")
+  assert.equal(room.passengerCountryOfResidence, "102")
   assert.equal(room.children["@no"], "2")
   assert.deepEqual(
     room.children.child.map((child) => child["#text"]),
@@ -64,6 +68,8 @@ test("buildSearchHotelsPayload falls back to country filters when no city provid
     checkOut: "2025-12-05",
     countryCode: "178",
     occupancies: "2|0",
+    nationality: "102",
+    residence: "102",
   })
 
   assert.equal(payload.return.filters.country, "178")

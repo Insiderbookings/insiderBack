@@ -263,7 +263,17 @@ const redactXml = (xml) => {
     .replace(/<token>.*?<\/token>/gi, "<token>***redacted***</token>")
     .replace(/<devicePayload>.*?<\/devicePayload>/gi, "<devicePayload>***redacted***</devicePayload>")
     .replace(/<cardNumber>.*?<\/cardNumber>/gi, "<cardNumber>***redacted***</cardNumber>")
-    .replace(/<cvv>.*?<\/cvv>/gi, "<cvv>***redacted***</cvv>");
+    .replace(/<cvv>.*?<\/cvv>/gi, "<cvv>***redacted***</cvv>")
+    .replace(/<authorisationId>.*?<\/authorisationId>/gi, "<authorisationId>***redacted***</authorisationId>")
+    .replace(/<endUserIPAddress>.*?<\/endUserIPAddress>/gi, "<endUserIPAddress>***redacted***</endUserIPAddress>")
+    .replace(/<avsFirstName>.*?<\/avsFirstName>/gi, "<avsFirstName>***redacted***</avsFirstName>")
+    .replace(/<avsLastName>.*?<\/avsLastName>/gi, "<avsLastName>***redacted***</avsLastName>")
+    .replace(/<avsAddress>.*?<\/avsAddress>/gi, "<avsAddress>***redacted***</avsAddress>")
+    .replace(/<avsZip>.*?<\/avsZip>/gi, "<avsZip>***redacted***</avsZip>")
+    .replace(/<avsCountry>.*?<\/avsCountry>/gi, "<avsCountry>***redacted***</avsCountry>")
+    .replace(/<avsCity>.*?<\/avsCity>/gi, "<avsCity>***redacted***</avsCity>")
+    .replace(/<avsEmail>.*?<\/avsEmail>/gi, "<avsEmail>***redacted***</avsEmail>")
+    .replace(/<avsPhone>.*?<\/avsPhone>/gi, "<avsPhone>***redacted***</avsPhone>");
 };
 
 const serializeFlow = (flow) => {
@@ -471,10 +481,11 @@ const resolveRateBasisPrice = (rateBasis) =>
   null;
 
 const resolveRateBasisMinimumSelling = (rateBasis) =>
+  toNumberSafe(rateBasis?.totalMinimumSellingInRequestedCurrency) ??
+  toNumberSafe(rateBasis?.totalMinimumSelling) ??
   toNumberSafe(rateBasis?.minimumSelling) ??
   toNumberSafe(rateBasis?.priceMinimumSelling) ??
-  toNumberSafe(rateBasis?.totalMinimumSelling) ??
-  toNumberSafe(rateBasis?.minimumSellingFormatted ?? rateBasis?.totalMinimumSellingFormatted) ??
+  toNumberSafe(rateBasis?.totalMinimumSellingFormatted ?? rateBasis?.minimumSellingFormatted) ??
   null;
 
 const resolveRateBasisNonRefundable = (rateBasis) => {
@@ -1581,6 +1592,7 @@ export class FlowOrchestratorService {
     flow.pricing_snapshot_priced = {
       currency: baseCurrency,
       price: priceValue != null ? Number(priceValue) : null,
+      minimumSelling: toNumberSafe(flow.selected_offer?.minimumSelling),
       serviceCode: flow.service_reference_number ?? mapped.services?.[0]?.returnedServiceCode ?? null,
       allocationDetails: newAllocation,
       cancellationRules: productNode?.cancellationRules ?? null,
@@ -2262,6 +2274,7 @@ export class FlowOrchestratorService {
 
   async getSteps(flowId, { includeXml = false, user } = {}) {
     await requireFlowAccess({ flowId, user });
+    const allowXml = includeXml && isPrivilegedUser(user);
     const steps = await models.BookingFlowStep.findAll({
       where: { flow_id: flowId },
       order: [["created_at", "ASC"]],
@@ -2285,8 +2298,8 @@ export class FlowOrchestratorService {
         withinCancellationDeadline: plain.within_cancellation_deadline_out,
         pricesOut: plain.prices_out,
         createdAt: plain.created_at,
-        requestXml: includeXml ? plain.request_xml : undefined,
-        responseXml: includeXml ? plain.response_xml : undefined,
+        requestXml: allowXml ? plain.request_xml : undefined,
+        responseXml: allowXml ? plain.response_xml : undefined,
       };
     });
   }

@@ -32,15 +32,20 @@ import statusLogger from "./middleware/statusLogger.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const swaggerDocument = YAML.load(path.resolve(__dirname, "./docs/swagger.yaml"));
+const isProduction = process.env.NODE_ENV === "production";
 const swaggerDemoToken = (() => {
   const raw = process.env.SWAGGER_DEMO_TOKEN || "";
   if (!raw) return "Bearer <pega-tu-token>";
   return raw.toLowerCase().startsWith("bearer ") ? raw : `Bearer ${raw}`;
 })();
-const swaggerAuthUser = process.env.SWAGGER_USER || "insiderbookings";
-const swaggerAuthPassword = process.env.SWAGGER_PASSWORD || "Insider1234#";
+const swaggerAuthUser = String(process.env.SWAGGER_USER || "").trim();
+const swaggerAuthPassword = String(process.env.SWAGGER_PASSWORD || "").trim();
+const swaggerDocsEnabled = !isProduction || Boolean(swaggerAuthUser && swaggerAuthPassword);
 const ensureSwaggerAuth = (() => {
-  if (!swaggerAuthUser || !swaggerAuthPassword) return (req, _res, next) => next();
+  if (!swaggerDocsEnabled) {
+    return (_req, res) => res.status(404).json({ error: "Not found" });
+  }
+  if (!isProduction) return (_req, _res, next) => next();
   return (req, res, next) => {
     const header = req.headers.authorization || "";
     if (!header.startsWith("Basic ")) {
@@ -76,7 +81,26 @@ const ensureHttpsUrl = (label, value) => {
   }
 };
 
-if (process.env.NODE_ENV === "production") {
+const normalizeOrigin = (value) => String(value || "").trim().replace(/\/+$/, "");
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((item) => normalizeOrigin(item))
+  .filter(Boolean);
+const resolveCorsOrigin = (origin, callback) => {
+  const normalizedOrigin = normalizeOrigin(origin);
+  if (!normalizedOrigin) {
+    return callback(null, true);
+  }
+  if (!allowedOrigins.length && !isProduction) {
+    return callback(null, true);
+  }
+  if (allowedOrigins.includes(normalizedOrigin)) {
+    return callback(null, true);
+  }
+  return callback(null, false);
+};
+
+if (isProduction) {
   ensureRequiredEnv([
     "JWT_SECRET",
     "CLIENT_URL",
@@ -85,13 +109,11 @@ if (process.env.NODE_ENV === "production") {
     "STRIPE_WEBHOOK_SECRET",
     "WEBBEDS_TOKENIZER_URL",
     "WEBBEDS_TOKENIZER_AUTH",
+    "SWAGGER_USER",
+    "SWAGGER_PASSWORD",
   ]);
   ensureHttpsUrl("CLIENT_URL", process.env.CLIENT_URL);
-  const origins = (process.env.CORS_ALLOWED_ORIGINS || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  origins.forEach((origin) => ensureHttpsUrl("CORS_ALLOWED_ORIGINS", origin));
+  allowedOrigins.forEach((origin) => ensureHttpsUrl("CORS_ALLOWED_ORIGINS", origin));
 }
 
 const app = express();
@@ -110,7 +132,12 @@ app.use(
 );
 
 /* ---------- Middlewares globales ---------- */
-app.use(cors({ origin: true, credentials: true }));
+app.use(
+  cors({
+    origin: resolveCorsOrigin,
+    credentials: true,
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
@@ -161,21 +188,15 @@ const authLimiter = rateLimit({
 });
 app.use("/api/auth", authLimiter);
 
-// Restriccion de origen por lista blanca (si se define CORS_ALLOWED_ORIGINS)
-const normalizeOrigin = (value) => String(value || "").trim().replace(/\/+$/, "")
-const __allowed = (process.env.CORS_ALLOWED_ORIGINS || "")
-  .split(",")
-  .map((s) => normalizeOrigin(s))
-  .filter(Boolean)
-if (__allowed.length > 0) {
+if (allowedOrigins.length > 0) {
   app.use("/api", (req, res, next) => {
-    const origin = normalizeOrigin(req.headers.origin)
-    if (origin && !__allowed.includes(origin)) {
-      console.warn("[cors] blocked origin", origin)
-      return res.status(403).json({ error: "Origin not allowed" })
+    const origin = normalizeOrigin(req.headers.origin);
+    if (origin && !allowedOrigins.includes(origin)) {
+      console.warn("[cors] blocked origin", origin);
+      return res.status(403).json({ error: "Origin not allowed" });
     }
-    return next()
-  })
+    return next();
+  });
 }
 
 app.use("/api/places", (req, _res, next) => {

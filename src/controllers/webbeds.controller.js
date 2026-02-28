@@ -12,6 +12,7 @@ import { dispatchBookingConfirmation } from "./payment.controller.js"
 import { convertCurrency } from "../services/currency.service.js"
 import { getMarkup } from "../utils/markup.js"
 import sharp from "sharp"
+import { createHash } from "node:crypto"
 
 import { Readable } from "stream"
 import { pipeline } from "stream/promises"
@@ -143,6 +144,96 @@ const roundCurrency = (value) => {
   const numeric = Number(value || 0)
   if (!Number.isFinite(numeric)) return 0
   return Number.parseFloat(numeric.toFixed(2))
+}
+
+const PAYMENT_INTENT_REUSABLE_STATUSES = new Set([
+  "requires_payment_method",
+  "requires_confirmation",
+  "requires_action",
+  "processing",
+  "requires_capture",
+])
+
+const isReusablePaymentIntentStatus = (status) =>
+  PAYMENT_INTENT_REUSABLE_STATUSES.has(String(status || "").toLowerCase())
+
+const buildPaymentScopeKey = ({ flow, bookingId, hotelId, checkIn, checkOut, guests, userId }) => {
+  const selectedOffer = flow?.selected_offer && typeof flow.selected_offer === "object"
+    ? flow.selected_offer
+    : {}
+  const safeAdults = Math.max(1, Number(guests?.adults) || 1)
+  const safeChildren = Math.max(0, Number(guests?.children) || 0)
+  const payload = {
+    version: 1,
+    userId: Number(userId) || 0,
+    flowId: String(flow?.id || ""),
+    bookingId: String(bookingId || ""),
+    hotelId: String(selectedOffer.hotelId ?? hotelId ?? ""),
+    checkIn: String(selectedOffer.fromDate ?? checkIn ?? ""),
+    checkOut: String(selectedOffer.toDate ?? checkOut ?? ""),
+    adults: safeAdults,
+    children: safeChildren,
+    roomRunno: selectedOffer.roomRunno ?? null,
+    roomTypeCode: selectedOffer.roomTypeCode ?? null,
+    rateBasisId: selectedOffer.rateBasisId ?? null,
+    allocationDetails: selectedOffer.allocationDetails ?? null,
+    price: Number.isFinite(Number(selectedOffer.price)) ? Number(selectedOffer.price) : null,
+    minimumSelling:
+      Number.isFinite(Number(selectedOffer.minimumSelling)) ? Number(selectedOffer.minimumSelling) : null,
+  }
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex")
+}
+
+const findPendingBookingByPaymentScope = async ({ userId, flowId, bookingId, paymentScopeKey }) => {
+  const bookings = await models.Booking.findAll({
+    where: {
+      user_id: userId,
+      flow_id: flowId,
+      source: "PARTNER",
+      inventory_type: "WEBBEDS_HOTEL",
+      external_ref: bookingId,
+      status: "PENDING",
+    },
+    order: [["id", "DESC"]],
+  })
+  return (
+    bookings.find((entry) => String(entry?.meta?.paymentScopeKey || "") === String(paymentScopeKey || "")) ||
+    null
+  )
+}
+
+const buildPaymentIntentResponse = ({ booking, paymentIntent, flowId, pricingSnapshot }) => ({
+  clientSecret: paymentIntent?.client_secret || null,
+  paymentIntentId: paymentIntent?.id || null,
+  paymentIntentStatus: paymentIntent?.status || null,
+  localBookingId: booking?.id || null,
+  bookingRef: booking?.booking_ref || null,
+  flowId,
+  pricingSnapshot: pricingSnapshot || booking?.pricing_snapshot || null,
+})
+
+const resolveCanonicalPublicBookingAmount = ({ flow, providerAmount, pricingRole }) => {
+  const providerBase = roundCurrency(providerAmount)
+  const publicMarkedAmount = applyMarkupToAmount(providerBase, pricingRole)
+  const snapshotMinimumSellingRaw = Number(flow?.pricing_snapshot_priced?.minimumSelling)
+  const selectedMinimumSellingRaw = Number(flow?.selected_offer?.minimumSelling)
+  const minimumSellingRaw = Number.isFinite(snapshotMinimumSellingRaw)
+    ? snapshotMinimumSellingRaw
+    : Number.isFinite(selectedMinimumSellingRaw)
+      ? selectedMinimumSellingRaw
+      : null
+  const minimumSelling = Number.isFinite(minimumSellingRaw) && minimumSellingRaw > 0
+    ? roundCurrency(minimumSellingRaw)
+    : null
+  const effectiveAmount =
+    minimumSelling != null
+      ? roundCurrency(Math.max(Number(publicMarkedAmount) || 0, minimumSelling))
+      : publicMarkedAmount
+  return {
+    publicMarkedAmount,
+    minimumSelling,
+    effectiveAmount,
+  }
 }
 
 const applyMarkupToAmount = (amount, role) => {
@@ -391,7 +482,7 @@ export const createPaymentIntent = async (req, res, next) => {
     // 1. Create Local Booking Record (PENDING)
     // We store the Webbeds ID as external_ref
     // and "WEBBEDS" as source
-    const booking_ref = `WB-${Date.now().toString(36).toUpperCase()}`
+    let booking_ref = null
 
     // Convert amounts (server-trusted)
     // WebBeds provides cost in USD; we use the priced flow snapshot as the source of truth.
@@ -413,11 +504,21 @@ export const createPaymentIntent = async (req, res, next) => {
     const markupRateRaw = Number(getMarkup(publicPricingRole, pricedAmount))
     const markupRate = Number.isFinite(markupRateRaw) && markupRateRaw > 0 ? markupRateRaw : 0
     const providerAmountUsd = roundCurrency(pricedAmount)
-    const amountUsd = applyMarkupToAmount(providerAmountUsd, publicPricingRole)
+    const {
+      publicMarkedAmount,
+      minimumSelling,
+      effectiveAmount: amountUsd,
+    } = resolveCanonicalPublicBookingAmount({
+      flow,
+      providerAmount: providerAmountUsd,
+      pricingRole: publicPricingRole,
+    })
     if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
       console.warn(`${logPrefix} invalid marked amount`, {
         flowId,
         providerAmountUsd,
+        publicMarkedAmount,
+        minimumSelling,
         requestUserRole,
         publicPricingRole,
         markupRate,
@@ -433,6 +534,8 @@ export const createPaymentIntent = async (req, res, next) => {
         console.warn(`${logPrefix} client amount mismatch`, {
           clientAmount,
           serverAmount: amountUsd,
+          publicMarkedAmount,
+          minimumSelling,
         })
       }
     }
@@ -781,46 +884,87 @@ export const createPaymentIntent = async (req, res, next) => {
     const totalDiscountAmount = roundCurrency(referralFirstBookingDiscount)
     const grossTotal = roundCurrency(Math.max(0, totalBeforeDiscount - totalDiscountAmount))
 
-    const localBooking = await models.Booking.create({
-      booking_ref,
+    const pricingSnapshotPayload = {
+      flowId: flow.id,
+      totalBeforeDiscount,
+      referralFirstBooking: referralFirstBookingPlan?.apply
+        ? {
+          pct: referralFirstBookingPlan.pct,
+          amount: roundCurrency(referralFirstBookingDiscount),
+          currency: referralFirstBookingPlan.currency,
+          applied: true,
+        }
+        : null,
+      totalDiscountAmount,
+      total: grossTotal,
+      currency: finalCurrency,
+      publicMarkedAmount,
+      minimumSelling,
+      effectivePublicAmount: amountUsd,
+    }
+    const paymentScopeKey = buildPaymentScopeKey({
+      flow,
+      bookingId,
+      hotelId: resolvedHotelId,
+      checkIn: resolvedCheckIn,
+      checkOut: resolvedCheckOut,
+      guests: { adults, children },
+      userId,
+    })
+    let localBooking = await findPendingBookingByPaymentScope({
+      userId,
+      flowId: flow.id,
+      bookingId,
+      paymentScopeKey,
+    })
+
+    if (localBooking?.payment_intent_id) {
+      try {
+        const existingPaymentIntent = await stripe.paymentIntents.retrieve(localBooking.payment_intent_id)
+        if (isReusablePaymentIntentStatus(existingPaymentIntent?.status)) {
+          console.info(`${logPrefix} reusing existing payment intent`, {
+            localBookingId: localBooking.id,
+            paymentIntentId: existingPaymentIntent.id,
+            paymentIntentStatus: existingPaymentIntent.status,
+          })
+          return res.json(
+            buildPaymentIntentResponse({
+              booking: localBooking,
+              paymentIntent: existingPaymentIntent,
+              flowId: flow.id,
+              pricingSnapshot: localBooking.pricing_snapshot || pricingSnapshotPayload,
+            }),
+          )
+        }
+      } catch (paymentIntentLookupError) {
+        console.warn(`${logPrefix} existing payment intent lookup failed`, {
+          localBookingId: localBooking.id,
+          paymentIntentId: localBooking.payment_intent_id,
+          error: paymentIntentLookupError?.message || paymentIntentLookupError,
+        })
+      }
+    }
+
+    const bookingPayload = {
       user_id: req.user?.id || null,
       influencer_user_id: referral.influencerId,
       flow_id: flow.id,
       source: "PARTNER",
       inventory_type: "WEBBEDS_HOTEL",
       inventory_id: String(resolvedHotelId),
-      external_ref: bookingId, // The Webbeds Booking ID
-
+      external_ref: bookingId,
       check_in: resolvedCheckIn,
       check_out: resolvedCheckOut,
-
       guest_name: guestName,
       guest_email: guestEmail,
       guest_phone: holder?.phone || null,
-
       adults,
       children,
-
       status: "PENDING",
       payment_status: "UNPAID",
       gross_price: grossTotal,
       currency: finalCurrency,
-      pricing_snapshot: {
-        flowId: flow.id,
-        totalBeforeDiscount,
-        referralFirstBooking: referralFirstBookingPlan?.apply
-          ? {
-            pct: referralFirstBookingPlan.pct,
-            amount: roundCurrency(referralFirstBookingDiscount),
-            currency: referralFirstBookingPlan.currency,
-            applied: true,
-          }
-          : null,
-        totalDiscountAmount,
-        total: grossTotal,
-        currency: finalCurrency,
-      },
-
+      pricing_snapshot: pricingSnapshotPayload,
       meta: {
         hotelId: resolvedHotelId,
         hotelName: inventorySnapshot?.hotelName ?? null,
@@ -829,6 +973,7 @@ export const createPaymentIntent = async (req, res, next) => {
         location: inventorySnapshot?.location ?? null,
         guests: { adults, children },
         flowId: flow.id,
+        paymentScopeKey,
         ...(referral.influencerId
           ? {
             referral: {
@@ -849,6 +994,8 @@ export const createPaymentIntent = async (req, res, next) => {
           : {}),
         basePriceUsd: providerAmountUsd,
         chargedBasePriceUsd: amountUsd,
+        publicMarkedAmount,
+        minimumSelling,
         publicMarkupRate: markupRate,
         pricingRole: publicPricingRole,
         requestUserRole,
@@ -866,13 +1013,32 @@ export const createPaymentIntent = async (req, res, next) => {
       },
       inventory_snapshot: inventorySnapshot,
       guest_snapshot: guestSnapshot,
-    })
-    console.info(`${logPrefix} local booking created`, {
-      localBookingId: localBooking.id,
-      bookingRef: booking_ref,
-    })
+    }
+    const isExistingBooking = Boolean(localBooking)
+    if (isExistingBooking) {
+      booking_ref = localBooking.booking_ref
+      await localBooking.update({
+        ...bookingPayload,
+        payment_intent_id: null,
+        payment_provider: "STRIPE",
+      })
+      console.info(`${logPrefix} local booking refreshed`, {
+        localBookingId: localBooking.id,
+        bookingRef: booking_ref,
+      })
+    } else {
+      booking_ref = `WB-${Date.now().toString(36).toUpperCase()}`
+      localBooking = await models.Booking.create({
+        booking_ref,
+        ...bookingPayload,
+      })
+      console.info(`${logPrefix} local booking created`, {
+        localBookingId: localBooking.id,
+        bookingRef: booking_ref,
+      })
+    }
 
-    if (models.StayHotel) {
+    if (!isExistingBooking && models.StayHotel) {
       const parsedHotelId = Number(hotelIdValue)
       let hotelIdForStay = Number.isFinite(parsedHotelId) ? parsedHotelId : null
       if (hotelIdForStay != null && models.Hotel) {
@@ -940,8 +1106,10 @@ export const createPaymentIntent = async (req, res, next) => {
       paymentIntentParams.fx_quote = stripeFxQuoteId
     }
 
-    const paymentIntentOptions =
-      stripeFxQuoteId && stripeFxVersion ? { apiVersion: stripeFxVersion } : undefined
+    const paymentIntentOptions = {
+      ...(stripeFxQuoteId && stripeFxVersion ? { apiVersion: stripeFxVersion } : {}),
+      idempotencyKey: `hotel-pi-${paymentScopeKey}`,
+    }
     logStripeFxDebug("paymentIntent.create", {
       amount: amountForStripe,
       currency: currencyUpper.toLowerCase(),
@@ -968,27 +1136,14 @@ export const createPaymentIntent = async (req, res, next) => {
     })
     console.info(`${logPrefix} local booking updated`, { paymentIntentId: paymentIntent.id })
 
-    res.json({
-      clientSecret: paymentIntent.client_secret,
-      paymentIntentId: paymentIntent.id,
-      localBookingId: localBooking.id,
-      bookingRef: booking_ref,
-      flowId: flow.id,
-      pricingSnapshot: {
-        totalBeforeDiscount,
-        referralFirstBooking: referralFirstBookingPlan?.apply
-          ? {
-            pct: referralFirstBookingPlan.pct,
-            amount: roundCurrency(referralFirstBookingDiscount),
-            currency: referralFirstBookingPlan.currency,
-            applied: true,
-          }
-          : null,
-        totalDiscountAmount,
-        total: grossTotal,
-        currency: finalCurrency,
-      },
-    })
+    res.json(
+      buildPaymentIntentResponse({
+        booking: localBooking,
+        paymentIntent,
+        flowId: flow.id,
+        pricingSnapshot: pricingSnapshotPayload,
+      }),
+    )
 
   } catch (error) {
     console.error("[webbeds] createPaymentIntent error", error)

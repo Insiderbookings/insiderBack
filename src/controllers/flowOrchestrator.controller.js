@@ -3,6 +3,10 @@ import { mapWebbedsError } from "../utils/webbedsErrorMapper.js";
 import { logCurrencyDebug } from "../utils/currencyDebug.js";
 
 const service = new FlowOrchestratorService();
+const isPrivilegedUser = (user) => {
+  const role = Number(user?.role);
+  return role === 1 || role === 100;
+};
 
 const wrap = (handler) => async (req, res, next) => {
   try {
@@ -17,12 +21,15 @@ const wrap = (handler) => async (req, res, next) => {
     const payload = { error: error.message || "Unexpected error" };
     if (isWebbedsError) {
       const mapped = mapWebbedsError(error.code, error.details);
-      payload.command = error.command ?? null;
+      const allowInternalDetails = isPrivilegedUser(req?.user);
       payload.code = error.code ?? null;
-      payload.details = error.details ?? null;
-      payload.extraDetails = error.extraDetails ?? null;
-      payload.httpStatus = error.httpStatus ?? null;
-      payload.metadata = error.metadata ?? null;
+      payload.details = allowInternalDetails ? error.details ?? null : mapped.userMessage;
+      if (allowInternalDetails) {
+        payload.command = error.command ?? null;
+        payload.extraDetails = error.extraDetails ?? null;
+        payload.httpStatus = error.httpStatus ?? null;
+        payload.metadata = error.metadata ?? null;
+      }
       payload.errorKey = mapped.errorKey;
       payload.userMessage = mapped.userMessage;
       payload.retryable = mapped.retryable;
