@@ -194,7 +194,7 @@ const pickAmenityLabels = (item, max = 2) => {
     .slice(0, max);
 };
 
-const getTopInventoryPicks = (inventory, max = 3) => {
+const getTopInventoryPicks = (inventory, max = 5) => {
   const hotels = Array.isArray(inventory?.hotels) ? inventory.hotels : [];
   const homes = Array.isArray(inventory?.homes) ? inventory.homes : [];
   const source = hotels.length ? hotels : homes;
@@ -254,7 +254,7 @@ const formatSearchItemSection = (item, index, language) => {
 };
 
 const buildStructuredSearchReply = ({ inventory, plan, language, seed }) => {
-  const picks = getTopInventoryPicks(inventory, 3);
+  const picks = getTopInventoryPicks(inventory, 5);
   if (!picks.length) return null;
 
   const isSpanish = language === "es";

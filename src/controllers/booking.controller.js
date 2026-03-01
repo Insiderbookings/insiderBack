@@ -216,6 +216,38 @@ const resolveFlowForBooking = async ({ bookingCode, bookingRef } = {}) => {
   })
 }
 
+let webbedsClientSingleton = null
+const getWebbedsClient = () => {
+  if (!webbedsClientSingleton) {
+    webbedsClientSingleton = createWebbedsClient(getWebbedsConfig())
+  }
+  return webbedsClientSingleton
+}
+
+const fetchWebbedsBookingDetails = async ({ bookingCode, requestId } = {}) => {
+  const code = bookingCode == null ? null : String(bookingCode).trim()
+  if (!code) return null
+
+  const client = getWebbedsClient()
+  const bookingTypes = ["1", "2"]
+  for (const bookingType of bookingTypes) {
+    try {
+      const payload = buildGetBookingDetailsPayload({
+        bookingCode: code,
+        bookingType,
+      })
+      const { result } = await client.send("getbookingdetails", payload, {
+        requestId: `${requestId || "confirm"}-booking-${bookingType}`,
+        productOverride: null,
+      })
+      return mapGetBookingDetailsResponse(result)
+    } catch (error) {
+      // Keep snapshot generation resilient: try other booking type and fallback to flow/local snapshots.
+    }
+  }
+  return null
+}
+
 const CANCELLATION_POLICY_CODES = {
   FLEXIBLE: "FLEXIBLE",
   MODERATE: "MODERATE",
