@@ -156,6 +156,135 @@ const buildCards = (inventory) => {
   ].filter(Boolean);
 };
 
+const clampText = (value, max = 160) => {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (text.length <= max) return text;
+  return `${text.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+};
+
+const firstSentence = (value) => {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  const match = text.match(/(.+?[.!?])(?:\s|$)/);
+  return clampText(match ? match[1] : text);
+};
+
+const normalizeStars = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return Math.max(1, Math.min(5, Math.round(numeric)));
+};
+
+const pickAmenityLabels = (item, max = 2) => {
+  const raw =
+    (Array.isArray(item?.amenityHighlights) && item.amenityHighlights) ||
+    (Array.isArray(item?.amenities) && item.amenities) ||
+    (Array.isArray(item?.hotelDetails?.amenities) && item.hotelDetails.amenities) ||
+    [];
+  return raw
+    .map((entry) => {
+      if (!entry) return "";
+      if (typeof entry === "string") return entry.trim();
+      if (typeof entry?.name === "string") return entry.name.trim();
+      if (typeof entry?.label === "string") return entry.label.trim();
+      return "";
+    })
+    .filter(Boolean)
+    .slice(0, max);
+};
+
+const getTopInventoryPicks = (inventory, max = 3) => {
+  const hotels = Array.isArray(inventory?.hotels) ? inventory.hotels : [];
+  const homes = Array.isArray(inventory?.homes) ? inventory.homes : [];
+  const source = hotels.length ? hotels : homes;
+  return source.slice(0, max);
+};
+
+const formatSearchItemSection = (item, index, language) => {
+  const isSpanish = language === "es";
+  const name =
+    item?.title ||
+    item?.name ||
+    item?.hotelName ||
+    item?.hotelDetails?.hotelName ||
+    item?.hotelDetails?.name ||
+    (isSpanish ? "Opcion destacada" : "Top pick");
+  const location =
+    item?.locationText ||
+    [item?.city, item?.country].filter(Boolean).join(", ") ||
+    [item?.cityName, item?.countryName].filter(Boolean).join(", ") ||
+    [item?.hotelDetails?.city, item?.hotelDetails?.country].filter(Boolean).join(", ");
+  const description =
+    firstSentence(
+      item?.shortDescription ||
+        item?.description ||
+        item?.hotelDetails?.shortDescription ||
+        item?.hotelDetails?.description
+    ) ||
+    (location
+      ? isSpanish
+        ? `Ubicado en ${location}.`
+        : `Located in ${location}.`
+      : isSpanish
+        ? "Buena opcion para seguir explorando este destino."
+        : "A solid option to keep exploring this destination.");
+  const stars = normalizeStars(
+    item?.stars ??
+      item?.rating ??
+      item?.reviewScore ??
+      item?.hotelDetails?.rating ??
+      item?.hotelPayload?.rating
+  );
+  const amenityLabels = pickAmenityLabels(item, 2);
+
+  const bullets = [];
+  if (stars) {
+    bullets.push(isSpanish ? `${stars} estrellas` : `${stars} stars`);
+  }
+  if (location) {
+    bullets.push(isSpanish ? `Zona: ${location}` : `Area: ${location}`);
+  }
+  amenityLabels.forEach((label) => bullets.push(label));
+
+  const safeBullets = bullets.slice(0, 3);
+  const bulletLines = safeBullets.map((entry) => `- ${clampText(entry, 90)}`).join("\n");
+
+  return `${index + 1}. **${clampText(name, 70)}**\n${description}${bulletLines ? `\n${bulletLines}` : ""}`;
+};
+
+const buildStructuredSearchReply = ({ inventory, plan, language, seed }) => {
+  const picks = getTopInventoryPicks(inventory, 3);
+  if (!picks.length) return null;
+
+  const isSpanish = language === "es";
+  const destination =
+    plan?.location?.city ||
+    plan?.location?.address ||
+    plan?.location?.country ||
+    "";
+  const introVariants = isSpanish
+    ? [
+        `Te dejo ${picks.length} opciones fuertes${destination ? ` en ${destination}` : ""}.`,
+        `Estas son mis ${picks.length} recomendaciones${destination ? ` para ${destination}` : ""}.`,
+        `Acá van ${picks.length} hoteles que vale la pena mirar${destination ? ` en ${destination}` : ""}.`,
+      ]
+    : [
+        `Here are ${picks.length} strong picks${destination ? ` in ${destination}` : ""}.`,
+        `These are my top ${picks.length} recommendations${destination ? ` for ${destination}` : ""}.`,
+        `I pulled ${picks.length} hotel options worth a look${destination ? ` in ${destination}` : ""}.`,
+      ];
+  const outro = isSpanish
+    ? "Abajo te dejo mas opciones para seguir comparando."
+    : "There are more options below if you want to compare further.";
+
+  const sections = picks.map((item, index) =>
+    formatSearchItemSection(item, index, language)
+  );
+  const intro = pickVariant(introVariants, seed) || introVariants[0];
+  return `${intro}\n\n${sections.join("\n\n")}\n\n${outro}`;
+};
+
 export const renderAssistantPayload = async ({ plan, messages, inventory, nextAction, trip, tripContext, userContext, weather, missing = [], visualContext }) => {
   const baseLanguage = normalizeLanguage(plan);
   const language = detectLanguageFromMessages(messages, baseLanguage);
@@ -231,6 +360,29 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
       replyText = Array.isArray(variants) ? pickVariant(variants, seed) : (variants || "Can you clarify?");
     }
     followUps = [];
+  } else if (nextAction === NEXT_ACTIONS.RUN_SEARCH) {
+    const structuredReply = buildStructuredSearchReply({
+      inventory,
+      plan,
+      language,
+      seed,
+    });
+    if (structuredReply) {
+      replyText = structuredReply;
+      followUps = [];
+    } else {
+      const replyPayload = await generateAssistantReply({
+        plan,
+        messages,
+        inventory,
+        trip,
+        tripContext,
+        userContext,
+        weather,
+      });
+      replyText = (replyPayload?.reply || "").trim();
+      followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
+    }
   } else {
     const replyPayload = await generateAssistantReply({
       plan,

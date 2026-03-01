@@ -1232,11 +1232,25 @@ export const capturePaymentIntent = async (req, res, next) => {
 
         // 2. Trigger Chat Auto-Prompts (using Support Bot)
         const supportUserId = process.env.HOTEL_SUPPORT_USER_ID
-        if (supportUserId && booking.user_id) {
+        const supportUserIdValue = supportUserId ? Number(supportUserId) : null
+        if (
+          Number.isFinite(supportUserIdValue) &&
+          supportUserIdValue > 0 &&
+          booking.user_id
+        ) {
+          const supportUser = await models.User.findByPk(supportUserIdValue, {
+            attributes: ["id"],
+          })
+          if (!supportUser) {
+            console.warn(
+              "[webbeds] Skipped chat prompts: HOTEL_SUPPORT_USER_ID not found",
+              { supportUserId: supportUserIdValue, bookingId: booking.id ?? null },
+            )
+          } else {
           triggerBookingAutoPrompts({
             trigger: PROMPT_TRIGGERS.BOOKING_CREATED,
             guestUserId: booking.user_id,
-            hostUserId: Number(supportUserId), // The system/bot user
+            hostUserId: supportUserIdValue, // The system/bot user
             homeId: null, // It's a hotel
             reserveId: booking.id,
             checkIn: booking.check_in,
@@ -1244,6 +1258,7 @@ export const capturePaymentIntent = async (req, res, next) => {
             homeSnapshotName: hotelName,
             homeSnapshotImage: hotelImage,
           }).catch(err => console.error("[webbeds] triggerBookingAutoPrompts failed", err))
+          }
         } else {
           console.warn("[webbeds] Skipped chat prompts: missing HOTEL_SUPPORT_USER_ID or booking.user_id")
         }

@@ -127,7 +127,18 @@ export const dispatchBookingConfirmation = async (booking) => {
     hostUserId = booking.homeStay?.host_id || home?.host_id || booking.meta?.home?.hostId || null;
   } else {
     // For Hotels, use the Support/Bot User
-    hostUserId = process.env.HOTEL_SUPPORT_USER_ID ? Number(process.env.HOTEL_SUPPORT_USER_ID) : null;
+    const supportUserId = process.env.HOTEL_SUPPORT_USER_ID ? Number(process.env.HOTEL_SUPPORT_USER_ID) : null;
+    if (Number.isFinite(supportUserId) && supportUserId > 0) {
+      const supportUser = await models.User.findByPk(supportUserId, { attributes: ["id"] });
+      if (supportUser) {
+        hostUserId = supportUserId;
+      } else {
+        console.warn("[payments] dispatchBookingConfirmation skipped: HOTEL_SUPPORT_USER_ID not found", {
+          supportUserId,
+          bookingId: booking.id ?? null,
+        });
+      }
+    }
   }
 
   const guestUserId = booking.user_id || null;

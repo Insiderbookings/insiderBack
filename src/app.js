@@ -28,11 +28,38 @@ import diagnoseForeignKeyError from "./utils/diagnoseForeignKeyError.js";
 import { warmSalutationsCache } from "./providers/webbeds/salutations.js";
 import globalErrorHandler from "./middleware/globalErrorHandler.js";
 import statusLogger from "./middleware/statusLogger.js";
+import { AI_CHAT_REQUEST_LIMITS } from "./modules/ai/ai.config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const swaggerDocument = YAML.load(path.resolve(__dirname, "./docs/swagger.yaml"));
 const isProduction = process.env.NODE_ENV === "production";
+const createLimitedJsonParser = (limit, { tooLargeMessage, invalidMessage } = {}) => {
+  const parser = express.json({ limit });
+  return (req, res, next) =>
+    parser(req, res, (err) => {
+      if (!err) return next();
+      if (err?.type === "entity.too.large") {
+        return res.status(413).json({
+          error: tooLargeMessage || "Request body is too large.",
+          code: "AI_PAYLOAD_TOO_LARGE",
+        });
+      }
+      if (err instanceof SyntaxError || err?.type === "entity.parse.failed") {
+        return res.status(400).json({
+          error: invalidMessage || "Invalid JSON payload.",
+          code: "AI_INVALID_PAYLOAD",
+        });
+      }
+      return next(err);
+    });
+};
+
+const aiJsonParser = createLimitedJsonParser(AI_CHAT_REQUEST_LIMITS.bodyLimit, {
+  tooLargeMessage: "AI chat payload is too large.",
+  invalidMessage: "Invalid AI chat payload.",
+});
+
 const swaggerDemoToken = (() => {
   const raw = process.env.SWAGGER_DEMO_TOKEN || "";
   if (!raw) return "Bearer <pega-tu-token>";
@@ -138,6 +165,8 @@ app.use(
     credentials: true,
   }),
 );
+app.use("/api/ai", aiJsonParser);
+app.use("/api/assistant", aiJsonParser);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));

@@ -76,6 +76,146 @@ const enumerateStayDates = (from, to) => {
   return dates
 }
 
+const ensureArray = (value) => {
+  if (value == null) return []
+  return Array.isArray(value) ? value.filter((item) => item != null) : [value]
+}
+
+const pickFirst = (...values) => {
+  for (const value of values) {
+    if (value == null) continue
+    if (typeof value === "string" && !value.trim()) continue
+    return value
+  }
+  return null
+}
+
+const isPlainObject = (value) =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value)
+
+const sanitizeSnapshotValue = (value) => {
+  if (value === undefined) return null
+  if (value == null) return null
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeSnapshotValue(item))
+      .filter((item) => item !== undefined)
+  }
+  if (isPlainObject(value)) {
+    const next = {}
+    Object.entries(value).forEach(([key, entry]) => {
+      const sanitized = sanitizeSnapshotValue(entry)
+      if (sanitized !== undefined) next[key] = sanitized
+    })
+    return next
+  }
+  if (typeof value === "number" && Number.isNaN(value)) return null
+  return value
+}
+
+const sanitizeConfirmationSnapshot = (snapshot) => sanitizeSnapshotValue(snapshot)
+
+const mergeSnapshotValues = (baseValue, overrideValue) => {
+  if (overrideValue == null) return baseValue
+  if (Array.isArray(overrideValue)) {
+    return overrideValue.length ? overrideValue : baseValue
+  }
+  if (isPlainObject(baseValue) && isPlainObject(overrideValue)) {
+    const merged = { ...baseValue }
+    Object.entries(overrideValue).forEach(([key, value]) => {
+      merged[key] = mergeSnapshotValues(baseValue?.[key], value)
+    })
+    return merged
+  }
+  if (typeof overrideValue === "string" && !overrideValue.trim()) {
+    return baseValue
+  }
+  return overrideValue
+}
+
+const normalizeCancellationRules = (rules) => {
+  const entries = Array.isArray(rules)
+    ? rules
+    : Array.isArray(rules?.rule)
+      ? rules.rule
+      : rules?.rule
+        ? [rules.rule]
+        : rules
+          ? [rules]
+          : []
+  return entries.filter(Boolean).map((rule) =>
+    sanitizeSnapshotValue({
+      ...rule,
+      fromDate: pickFirst(rule?.fromDate, rule?.from, null),
+      fromDateDetails: pickFirst(rule?.fromDateDetails, null),
+      charge: pickFirst(rule?.charge, rule?.cancelCharge, null),
+      cancelCharge: pickFirst(rule?.cancelCharge, null),
+      cancelRestricted: pickFirst(rule?.cancelRestricted, null),
+      amendRestricted: pickFirst(rule?.amendRestricted, null),
+      noShowPolicy: pickFirst(rule?.noShowPolicy, null),
+    }),
+  )
+}
+
+const resolveCountryNameByCode = async (code) => {
+  const numericCode = Number(code)
+  if (!Number.isFinite(numericCode)) return null
+  const country = await models.WebbedsCountry.findByPk(numericCode, {
+    attributes: ["name"],
+  })
+  return country?.name ?? null
+}
+
+const resolvePaymentMethodLabel = (provider, fallbackLabel = null) => {
+  if (fallbackLabel) return fallbackLabel
+  const normalized = String(provider || "").trim().toLowerCase()
+  if (!normalized) return null
+  if (normalized.includes("stripe") || normalized.includes("card")) return "Card"
+  return normalized.toUpperCase()
+}
+
+const resolveFlowForBooking = async ({ bookingCode, bookingRef } = {}) => {
+  const explicitFlowIds = [
+    bookingRef?.pricing_snapshot?.flowId,
+    bookingRef?.pricing_snapshot?.flow_id,
+    bookingRef?.meta?.flowId,
+    bookingRef?.meta?.flow_id,
+  ]
+    .map((value) => (value == null ? null : String(value).trim()))
+    .filter(Boolean)
+
+  for (const flowId of [...new Set(explicitFlowIds)]) {
+    const flow = await models.BookingFlow.findByPk(flowId)
+    if (flow) return flow
+  }
+
+  const bookingCodeCandidates = [
+    bookingCode,
+    bookingRef?.external_ref,
+    bookingRef?.booking_ref,
+  ]
+    .map((value) => (value == null ? null : String(value).trim()))
+    .filter(Boolean)
+
+  if (!bookingCodeCandidates.length) return null
+
+  const where = {
+    [Op.or]: [
+      { final_booking_code: { [Op.in]: bookingCodeCandidates } },
+      { itinerary_booking_code: { [Op.in]: bookingCodeCandidates } },
+      { booking_reference_number: { [Op.in]: bookingCodeCandidates } },
+    ],
+  }
+  if (Number.isFinite(Number(bookingRef?.user_id))) {
+    where.user_id = Number(bookingRef.user_id)
+  }
+
+  return models.BookingFlow.findOne({
+    where,
+    order: [["updatedAt", "DESC"], ["createdAt", "DESC"]],
+  })
+}
+
 const CANCELLATION_POLICY_CODES = {
   FLEXIBLE: "FLEXIBLE",
   MODERATE: "MODERATE",

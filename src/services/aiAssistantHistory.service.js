@@ -1,4 +1,8 @@
 import models, { sequelize } from "../models/index.js";
+import {
+  AI_CHAT_HISTORY_LIMITS,
+  AI_CHAT_QUOTAS,
+} from "../modules/ai/ai.config.js";
 
 export const DEFAULT_ASSISTANT_GREETING =
   "Hi there! I am your Insider assistant. Tell me what kind of hotel you're looking for and I'll find it.";
@@ -36,11 +40,32 @@ const hasInventorySnapshot = (snapshot) => {
   return homes > 0 || hotels > 0;
 };
 
-const normalizeLimit = (value, fallback = 1) => {
+const normalizeLimit = (value, { fallback = 1, min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
   const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric <= 0) return Math.max(fallback, 1);
-  return Math.max(Math.floor(numeric), 1);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return Math.min(max, Math.max(fallback, min));
+  }
+  return Math.min(max, Math.max(Math.floor(numeric), min));
 };
+
+const quotaError = (message, code, status = 429) => {
+  const error = new Error(message);
+  error.code = code;
+  error.status = status;
+  return error;
+};
+
+const sessionQuotaError = () =>
+  quotaError(
+    "You have reached the maximum number of AI chat sessions. Delete an older chat to continue.",
+    "AI_CHAT_SESSION_QUOTA_EXCEEDED"
+  );
+
+const messageQuotaError = () =>
+  quotaError(
+    "This chat reached the maximum number of messages. Start a new chat to continue.",
+    "AI_CHAT_MESSAGE_QUOTA_EXCEEDED"
+  );
 
 const mapSession = (session, { includeMetadata = true } = {}) => {
   if (!session) return null;
@@ -81,6 +106,12 @@ const notFoundError = () => {
 
 export const createAssistantSessionForUser = async (userId, { greeting } = {}) => {
   if (!userId) throw new Error("userId is required");
+  const activeSessions = await models.AiChatSession.count({
+    where: { user_id: userId },
+  });
+  if (activeSessions >= AI_CHAT_QUOTAS.maxSessionsPerUser) {
+    throw sessionQuotaError();
+  }
   const normalizedGreeting = sanitizeContent(greeting);
   const preview = buildPreview(normalizedGreeting);
   const now = new Date();
@@ -115,12 +146,18 @@ export const createAssistantSessionForUser = async (userId, { greeting } = {}) =
   return mapSession(session);
 };
 
-export const listAssistantSessionsForUser = async (userId, { limit = 15 } = {}) => {
+export const listAssistantSessionsForUser = async (
+  userId,
+  { limit = AI_CHAT_HISTORY_LIMITS.listDefault } = {}
+) => {
   if (!userId) return [];
   const rows = await models.AiChatSession.findAll({
     where: { user_id: userId },
     order: [["last_message_at", "DESC"]],
-    limit: normalizeLimit(limit, 15),
+    limit: normalizeLimit(limit, {
+      fallback: AI_CHAT_HISTORY_LIMITS.listDefault,
+      max: AI_CHAT_HISTORY_LIMITS.listMax,
+    }),
   });
   return rows.map((row) => mapSession(row, { includeMetadata: false }));
 };
@@ -142,13 +179,16 @@ export const getAssistantSessionOrThrow = async (sessionId, userId, options = {}
 export const getAssistantSessionWithMessages = async (
   sessionId,
   userId,
-  { limit = 200 } = {}
+  { limit = AI_CHAT_HISTORY_LIMITS.detailDefault } = {}
 ) => {
   const session = await getAssistantSessionOrThrow(sessionId, userId);
   const rows = await models.AiChatMessage.findAll({
     where: { session_id: sessionId },
     order: [["created_at", "DESC"]],
-    limit: normalizeLimit(limit, 200),
+    limit: normalizeLimit(limit, {
+      fallback: AI_CHAT_HISTORY_LIMITS.detailDefault,
+      max: AI_CHAT_HISTORY_LIMITS.detailMax,
+    }),
   });
   return {
     session: mapSession(session),
@@ -156,12 +196,19 @@ export const getAssistantSessionWithMessages = async (
   };
 };
 
-export const fetchAssistantMessages = async (sessionId, userId, { limit = 60 } = {}) => {
+export const fetchAssistantMessages = async (
+  sessionId,
+  userId,
+  { limit = AI_CHAT_HISTORY_LIMITS.contextDefault } = {}
+) => {
   await getAssistantSessionOrThrow(sessionId, userId);
   const rows = await models.AiChatMessage.findAll({
     where: { session_id: sessionId },
     order: [["created_at", "DESC"]],
-    limit: normalizeLimit(limit, 60),
+    limit: normalizeLimit(limit, {
+      fallback: AI_CHAT_HISTORY_LIMITS.contextDefault,
+      max: AI_CHAT_HISTORY_LIMITS.contextMax,
+    }),
   });
   return rows.reverse().map(mapMessage);
 };
@@ -169,11 +216,18 @@ export const fetchAssistantMessages = async (sessionId, userId, { limit = 60 } =
 export const appendAssistantChatMessage = async (
   sessionId,
   userId,
-  { role = "user", content, planSnapshot = null, inventorySnapshot = null } = {}
+  {
+    role = "user",
+    content,
+    planSnapshot = null,
+    inventorySnapshot = null,
+    reserveSlots = 0,
+  } = {}
 ) => {
   const normalizedRole = MESSAGE_ROLES.includes(role) ? role : "user";
   const sanitized = sanitizeContent(content);
   if (!sanitized) throw new Error("Message content is required");
+  const normalizedReserveSlots = Math.max(0, Math.floor(Number(reserveSlots) || 0));
 
   return sequelize.transaction(async (transaction) => {
     const lock = transaction.LOCK ? transaction.LOCK.UPDATE : undefined;
@@ -183,6 +237,15 @@ export const appendAssistantChatMessage = async (
       lock,
     });
     if (!session) throw notFoundError();
+
+    const currentCount = Number(session.message_count) || 0;
+    const maxCountBeforeInsert = Math.max(
+      1,
+      AI_CHAT_QUOTAS.maxMessagesPerSession - normalizedReserveSlots
+    );
+    if (currentCount >= maxCountBeforeInsert) {
+      throw messageQuotaError();
+    }
 
     const message = await models.AiChatMessage.create(
       {
@@ -196,7 +259,6 @@ export const appendAssistantChatMessage = async (
     );
 
     const preview = buildPreview(sanitized);
-    const currentCount = session.message_count ?? 0;
     const updates = {
       last_message_at: new Date(),
       last_message_preview: preview || session.last_message_preview,
