@@ -443,9 +443,16 @@ const normalizeBooleanFlag = (value, fallback = false) => {
   return fallback;
 };
 
-const buildPlannerPrompt = ({ now } = {}) => {
+const buildPlannerPrompt = ({ now, confirmedSearch } = {}) => {
   const todayLine = buildTodayLine(now);
   const todayBlock = todayLine ? `TODAY CONTEXT:\n${todayLine}\n\n` : "";
+  const confirmedParts = [];
+  if (confirmedSearch?.where) confirmedParts.push(`Destination: "${confirmedSearch.where}"`);
+  if (confirmedSearch?.when) confirmedParts.push(`Dates: "${confirmedSearch.when}"`);
+  if (confirmedSearch?.who) confirmedParts.push(`Guests: "${confirmedSearch.who}"`);
+  const confirmedBlock = confirmedParts.length
+    ? `USER CONFIRMED IN SEARCH BAR: ${confirmedParts.join(", ")}. These are values the user explicitly set. Merge them into the search plan fields. If the intent is SEARCH, these values take priority over any conflicting extraction from text.\n\n`
+    : "";
   return [
     {
       role: "system",
@@ -453,6 +460,7 @@ const buildPlannerPrompt = ({ now } = {}) => {
         "You are a smart travel assistant that analyzes conversations and detects intents. " +
         "Your job is to determine if the user wants to SEARCH for accommodation, just SMALL_TALK, or needs HELP.\n\n" +
         todayBlock +
+        confirmedBlock +
         "INTENT DETECTION RULES:\n" +
         "- SEARCH: Only when the user explicitly mentions looking for accommodation with enough information (location, type, dates, or guests). " +
         "Key verbs: 'search', 'need', 'want', 'show me', 'is there', 'available'.\n" +
@@ -673,7 +681,7 @@ const mergePlan = (raw, { contextText = "" } = {}) => {
   };
 };
 
-export const extractSearchPlan = async (messages = [], { now } = {}) => {
+export const extractSearchPlan = async (messages = [], { now, confirmedSearch } = {}) => {
   const client = ensureClient();
   const normalizedMessages = sanitizeMessages(messages);
   const latestUserMessage =
@@ -686,7 +694,7 @@ export const extractSearchPlan = async (messages = [], { now } = {}) => {
       client.chat.completions.create({
         model: DEFAULT_MODEL,
         response_format: { type: "json_object" },
-        messages: [...buildPlannerPrompt({ now }), ...normalizedMessages],
+        messages: [...buildPlannerPrompt({ now, confirmedSearch }), ...normalizedMessages],
       }),
       DEFAULT_OPENAI_TIMEOUT_MS,
       "extractSearchPlan"
@@ -1232,7 +1240,7 @@ export const generateAssistantReply = async ({
       : "";
 
     const noRepeatInstruction =
-      "Never repeat the same opening or closing phrase in consecutive turns; vary sentence structure and vocabulary.";
+      "CRITICAL: Never repeat the same opening phrase as the previous turn. If your last reply started with 'Here we go', 'Aquí vamos', 'Check this out', or any phrase — that opener is BANNED this turn. Rotate vocabulary, structure and tone every single message.";
 
     if (intent === "TRIP") {
       systemPrompt =
@@ -1259,7 +1267,7 @@ export const generateAssistantReply = async ({
         `${contextInstruction}\n` +
         `- ${noRepeatInstruction}\n` +
         "- **PRICES & AVAILABILITY**: When the user has NOT yet provided destination + dates + guests, make it clear in a natural way that the options you show are suggestions, and that to see real prices and availability they need to add: where, when, and how many guests. Vary the phrasing (e.g. 'Once you pick dates and guests I can show live prices', 'Add your dates and who's traveling to see availability and rates', 'Set your dates and guests to see real availability'). When they have already provided destination, dates and guests, you can say that the results below have live availability.\n" +
-        "- **MODERN & FUN TONE**: Be enthusiastic. Use varied openers like 'Here we go!', 'Check this out!', 'Sorted!', or 'I found a few strong options.' **Do not overuse any single phrase**.\n" +
+        "- **MODERN & FUN TONE**: Be enthusiastic but specific. BANNED openers (never use these): 'Here we go', 'Aquí vamos', 'Let's go', '¡Vamos!', 'Boom', 'Great news', 'Buenas noticias'. Instead, open with something destination-specific or result-specific. Examples: 'Found [N] options in [city].', 'These look solid for your dates.', 'Here's what matched.', 'Good picks in [city] — take a look.', 'Nice — [N] places in [destination].'. In Spanish: 'Acá tenés opciones en [ciudad].', 'Encontré esto para tus fechas.', 'Hay buenas opciones para lo que pedís.'. Vary every turn — no two replies should open the same way.\n" +
         "- **OPINIONATED**: After presenting results, add a SHORT comment or 'Hot Take'.\n" +
         "- **STRUCTURE**:\n" +
         "  1. Enthusiastic Opening\n" +

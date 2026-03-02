@@ -29,6 +29,7 @@ import {
 
 
 import { planReferralFirstBookingDiscount } from "../services/referralRewards.service.js"
+import { FlowOrchestratorService } from "../services/flowOrchestrator.service.js"
 
 
 const provider = new WebbedsProvider()
@@ -1132,7 +1133,9 @@ export const createPaymentIntent = async (req, res, next) => {
     // 3. Update Local Booking with Payment Intent ID
     await localBooking.update({
       payment_intent_id: paymentIntent.id,
-      payment_provider: "STRIPE"
+      payment_provider: "STRIPE",
+      charge_amount_minor: amountForStripe,
+      charge_currency: currencyUpper,
     })
     console.info(`${logPrefix} local booking updated`, { paymentIntentId: paymentIntent.id })
 
@@ -1175,6 +1178,16 @@ export const capturePaymentIntent = async (req, res, next) => {
     const stripe = await getStripeClient()
     const intentId = paymentIntentId || booking?.payment_intent_id
     if (!intentId) return res.status(404).json({ error: "Payment intent not found" })
+
+    // Verify the PI belongs to this booking (prevents cross-PI attack)
+    if (booking.payment_intent_id && intentId !== booking.payment_intent_id && !isPrivilegedUser(req.user)) {
+      console.warn("[webbeds] capturePaymentIntent: PI mismatch", {
+        bookingId: booking.id,
+        bookingPI: booking.payment_intent_id,
+        requestedPI: intentId,
+      })
+      return res.status(403).json({ error: "Payment intent does not belong to this booking" })
+    }
 
     const pi = await stripe.paymentIntents.retrieve(intentId)
     let captureResult = null
@@ -1275,6 +1288,19 @@ export const capturePaymentIntent = async (req, res, next) => {
     })
   } catch (error) {
     console.error("[webbeds] capturePaymentIntent error", error)
+
+    if (booking?.flow_id) {
+      try {
+        const orchestrator = new FlowOrchestratorService()
+        await orchestrator.emergencyCancel({ flowId: booking.flow_id })
+      } catch (cancelErr) {
+        console.error("[webbeds] capturePaymentIntent: emergencyCancel failed", {
+          bookingId: booking?.id,
+          flowId: booking?.flow_id,
+          error: cancelErr?.message,
+        })
+      }
+    }
     next(error)
   }
 }

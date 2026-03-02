@@ -459,9 +459,13 @@ export const runAiTurn = async ({
   });
   const userContext = context && typeof context === "object" ? context : null;
 
+  const confirmedSearch = (userContext && typeof userContext === "object" && userContext.confirmedSearch)
+    ? userContext.confirmedSearch
+    : null;
   const planStart = Date.now();
   const planCandidate = await extractSearchPlan(normalizedMessages, {
     now: userContext?.now || userContext?.localDate || null,
+    confirmedSearch,
   });
   timings.planMs = Date.now() - planStart;
   const { state: nextState, plan: mergedPlanRaw } = applyPlanToState(existingState, planCandidate);

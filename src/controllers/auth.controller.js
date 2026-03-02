@@ -738,7 +738,9 @@ export const registerUser = async (req, res) => {
    USER: LOGIN (local)
    ──────────────────────────────────────────────────────────────── */
 export const loginUser = async (req, res) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: "Email is required" });
   try {
     /* 1 ▸ Buscar usuario por email */
     const user = await models.User.findOne({ where: { email } });
@@ -838,7 +840,7 @@ export const validateToken = async (req, res) => {
       name = user?.name || null;
     }
 
-    return res.json({ valid: true, payload: decoded, name, action });
+    return res.json({ valid: true, payload: { type: decoded.type, action: decoded.action, exp: decoded.exp }, name, action });
   } catch (err) {
     console.log(err);
     return res.status(400).json({

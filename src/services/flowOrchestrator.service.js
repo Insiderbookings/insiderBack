@@ -288,8 +288,8 @@ const serializeFlow = (flow) => {
     allocationCurrent: plain.allocation_current,
     itineraryBookingCode: plain.itinerary_booking_code,
     serviceReferenceNumber: plain.service_reference_number,
-    supplierOrderCode: plain.supplier_order_code,
-    supplierAuthorisationId: plain.supplier_authorisation_id,
+    supplierOrderCode: undefined,
+    supplierAuthorisationId: undefined,
     finalBookingCode: plain.final_booking_code,
     bookingReferenceNumber: plain.booking_reference_number,
     pricingSnapshotPriced: plain.pricing_snapshot_priced,
@@ -2189,11 +2189,29 @@ export class FlowOrchestratorService {
       services: [],
     });
 
-    const { result, requestXml, responseXml, metadata } = await this.client.send(
-      "cancelbooking",
-      payload,
-      { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
-    );
+    let result, requestXml, responseXml, metadata;
+    try {
+      ({ result, requestXml, responseXml, metadata } = await this.client.send(
+        "cancelbooking",
+        payload,
+        { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
+      ));
+    } catch (error) {
+      await logStep({
+        flowId,
+        step: "CANCEL_NO",
+        command: STEP_COMMAND.CANCEL_NO,
+        tid: error?.metadata?.transactionId,
+        success: false,
+        errorClass: error?.name,
+        errorCode: error?.code ?? error?.httpStatus,
+        bookingCodeOut: bookingCode,
+        requestXml: error?.requestXml,
+        responseXml: error?.responseXml,
+        idempotencyKey,
+      });
+      throw error;
+    }
     const mapped = mapCancelBookingResponse(result);
 
     flow.cancel_quote_snapshot = mapped;
@@ -2224,6 +2242,12 @@ export class FlowOrchestratorService {
     const bookingCode = flow.final_booking_code || flow.itinerary_booking_code;
     if (!bookingCode) {
       throw Object.assign(new Error("Flow missing booking code for cancellation"), { status: 400 });
+    }
+    if (flow.status !== FLOW_STATUSES.CANCEL_QUOTED) {
+      throw Object.assign(
+        new Error("cancelQuote must be called before cancel"),
+        { status: 400 },
+      );
     }
 
     const penalty =
@@ -2258,11 +2282,29 @@ export class FlowOrchestratorService {
       services,
     });
 
-    const { result, requestXml, responseXml, metadata } = await this.client.send(
-      "cancelbooking",
-      payload,
-      { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
-    );
+    let result, requestXml, responseXml, metadata;
+    try {
+      ({ result, requestXml, responseXml, metadata } = await this.client.send(
+        "cancelbooking",
+        payload,
+        { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
+      ));
+    } catch (error) {
+      await logStep({
+        flowId,
+        step: "CANCEL_YES",
+        command: STEP_COMMAND.CANCEL_YES,
+        tid: error?.metadata?.transactionId,
+        success: false,
+        errorClass: error?.name,
+        errorCode: error?.code ?? error?.httpStatus,
+        bookingCodeOut: bookingCode,
+        requestXml: error?.requestXml,
+        responseXml: error?.responseXml,
+        idempotencyKey,
+      });
+      throw error;
+    }
     const mapped = mapCancelBookingResponse(result);
 
     flow.cancel_result_snapshot = mapped;
@@ -2287,6 +2329,90 @@ export class FlowOrchestratorService {
   async getFlow(flowId, { user } = {}) {
     const flow = await requireFlowAccess({ flowId, user });
     return serializeFlow(flow);
+  }
+
+  async emergencyCancel({ flowId }) {
+    console.warn("[flows] emergencyCancel: starting automatic cancellation", { flowId });
+    const flow = await models.BookingFlow.findByPk(flowId);
+    if (!flow) {
+      console.error("[flows] emergencyCancel: flow not found", { flowId });
+      return;
+    }
+    if (flow.status !== FLOW_STATUSES.CONFIRMED) {
+      console.warn("[flows] emergencyCancel: flow not in CONFIRMED state, skipping", {
+        flowId,
+        status: flow.status,
+      });
+      return;
+    }
+    const bookingCode = flow.final_booking_code || flow.itinerary_booking_code;
+    if (!bookingCode) {
+      console.error("[flows] emergencyCancel: no booking code available", { flowId });
+      return;
+    }
+
+    // Step 1: CANCEL_NO (get quote)
+    try {
+      const quotePayload = buildCancelBookingPayload({
+        bookingCode,
+        bookingType: 1,
+        confirm: "no",
+        reason: "capture_failure",
+        services: [],
+      });
+      const { result: quoteResult } = await this.client.send("cancelbooking", quotePayload, {
+        logMeta: { flowId },
+      });
+      flow.cancel_quote_snapshot = mapCancelBookingResponse(quoteResult);
+      flow.status = FLOW_STATUSES.CANCEL_QUOTED;
+      await flow.save();
+      console.log("[flows] emergencyCancel: quote obtained", { flowId });
+    } catch (err) {
+      console.error("[flows] emergencyCancel: failed to get cancel quote", {
+        flowId,
+        error: err?.message,
+      });
+      return;
+    }
+
+    // Step 2: CANCEL_YES (confirm cancellation)
+    try {
+      // Echo back the penalty from the quote (mirrors cancel() logic)
+      const quotePenalty = flow.cancel_quote_snapshot?.services?.[0]?.cancellationPenalties?.[0] ?? null;
+      const ecPenaltyApplied = quotePenalty?.charge ?? quotePenalty?.penaltyApplied ?? null;
+      const ecPaidAmount =
+        flow.pricing_snapshot_confirmed?.price ??
+        flow.pricing_snapshot_preauth?.price ??
+        null;
+      const ecPaymentBalance =
+        ecPenaltyApplied != null && ecPaidAmount != null
+          ? Math.max(0, Number(ecPaidAmount) - Number(ecPenaltyApplied))
+          : ecPaidAmount ?? null;
+
+      const confirmPayload = buildCancelBookingPayload({
+        bookingCode,
+        bookingType: 1,
+        confirm: "yes",
+        reason: "capture_failure",
+        services: [{
+          serviceCode: flow.service_reference_number || bookingCode,
+          penaltyApplied: ecPenaltyApplied,
+          paymentBalance: ecPaymentBalance,
+        }],
+      });
+      const { result: cancelResult } = await this.client.send("cancelbooking", confirmPayload, {
+        logMeta: { flowId },
+      });
+      flow.cancel_result_snapshot = mapCancelBookingResponse(cancelResult);
+      flow.status = FLOW_STATUSES.CANCELLED;
+      await flow.save();
+      console.log("[flows] emergencyCancel: booking cancelled successfully", { flowId });
+    } catch (err) {
+      console.error("[flows] emergencyCancel: failed to confirm cancellation", {
+        flowId,
+        error: err?.message,
+      });
+    }
   }
 
   async getSteps(flowId, { includeXml = false, user } = {}) {

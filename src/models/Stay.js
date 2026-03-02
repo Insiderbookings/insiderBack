@@ -113,6 +113,8 @@ export default (sequelize) => {
         defaultValue: "STRIPE",
       },
       payment_intent_id: { type: DataTypes.STRING(100) },
+      charge_amount_minor: { type: DataTypes.INTEGER, allowNull: true },
+      charge_currency: { type: DataTypes.STRING(3), allowNull: true },
 
       booked_at: { type: DataTypes.DATE },
       cancelled_at: { type: DataTypes.DATE },

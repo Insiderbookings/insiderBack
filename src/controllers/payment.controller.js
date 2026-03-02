@@ -710,35 +710,67 @@ export const handleWebhook = async (req, res) => {
       return;
     }
 
+    // Verify the PI in DB matches the one from the webhook (prevents metadata spoofing)
+    if (paymentId && bookingRecord.payment_intent_id && bookingRecord.payment_intent_id !== paymentId) {
+      console.warn("[payments] markBookingAsPaid:pi-mismatch", {
+        bookingId,
+        storedPI: bookingRecord.payment_intent_id,
+        receivedPI: paymentId,
+      });
+      return;
+    }
+
     if (amountMinor != null && currency) {
-      const expectedCurrency = String(bookingRecord.currency || "USD").toUpperCase();
-      const receivedCurrency = String(currency).toUpperCase();
-      if (expectedCurrency !== receivedCurrency) {
-        console.warn("[payments] markBookingAsPaid:currency-mismatch", {
-          bookingId,
-          expectedCurrency,
-          receivedCurrency,
-        });
-        return;
-      }
-      const expectedMinor = toMinorUnits(bookingRecord.gross_price, expectedCurrency);
-      const receivedMinor = Number(amountMinor);
-      const tolerance = Number(process.env.PAYMENT_AMOUNT_TOLERANCE_MINOR || 1);
-      if (!Number.isFinite(expectedMinor) || expectedMinor <= 0) {
-        console.warn("[payments] markBookingAsPaid:invalid-expected-amount", {
-          bookingId,
-          expectedMinor,
-        });
-        return;
-      }
-      if (!Number.isFinite(receivedMinor) || Math.abs(expectedMinor - receivedMinor) > tolerance) {
-        console.warn("[payments] markBookingAsPaid:amount-mismatch", {
-          bookingId,
-          expectedMinor,
-          receivedMinor,
-          tolerance,
-        });
-        return;
+      if (bookingRecord.charge_amount_minor != null && bookingRecord.charge_currency != null) {
+        const storedCurrency = String(bookingRecord.charge_currency).toUpperCase();
+        const receivedCurrency = String(currency).toUpperCase();
+        if (storedCurrency !== receivedCurrency) {
+          console.warn("[payments] markBookingAsPaid:currency-mismatch", {
+            bookingId,
+            storedCurrency,
+            receivedCurrency,
+          });
+          return;
+        }
+        if (Number(amountMinor) !== bookingRecord.charge_amount_minor) {
+          console.warn("[payments] markBookingAsPaid:amount-mismatch", {
+            bookingId,
+            expected: bookingRecord.charge_amount_minor,
+            received: amountMinor,
+          });
+          return;
+        }
+      } else {
+        // fallback for old bookings without charge_amount_minor
+        const expectedCurrency = String(bookingRecord.currency || "USD").toUpperCase();
+        const receivedCurrency = String(currency).toUpperCase();
+        if (expectedCurrency !== receivedCurrency) {
+          console.warn("[payments] markBookingAsPaid:currency-mismatch", {
+            bookingId,
+            expectedCurrency,
+            receivedCurrency,
+          });
+          return;
+        }
+        const expectedMinor = toMinorUnits(bookingRecord.gross_price, expectedCurrency);
+        const receivedMinor = Number(amountMinor);
+        const tolerance = Number(process.env.PAYMENT_AMOUNT_TOLERANCE_MINOR || 1);
+        if (!Number.isFinite(expectedMinor) || expectedMinor <= 0) {
+          console.warn("[payments] markBookingAsPaid:invalid-expected-amount", {
+            bookingId,
+            expectedMinor,
+          });
+          return;
+        }
+        if (!Number.isFinite(receivedMinor) || Math.abs(expectedMinor - receivedMinor) > tolerance) {
+          console.warn("[payments] markBookingAsPaid:amount-mismatch", {
+            bookingId,
+            expectedMinor,
+            receivedMinor,
+            tolerance,
+          });
+          return;
+        }
       }
     }
 
