@@ -201,88 +201,112 @@ const getTopInventoryPicks = (inventory, max = 5) => {
   return source.slice(0, max);
 };
 
-const formatSearchItemSection = (item, index, language) => {
-  const isSpanish = language === "es";
+const decodeHtmlEntities = (str) => {
+  if (!str) return null;
+  return String(str)
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
+};
+
+const toTitleCase = (str) =>
+  String(str || "")
+    .replace(/\b\w+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
+const extractImageUrls = (item, max = 4) => {
+  const imgs =
+    (Array.isArray(item?.images) && item.images) ||
+    (Array.isArray(item?.hotelDetails?.images) && item.hotelDetails.images) ||
+    [];
+  const urls = imgs
+    .map((img) => (typeof img === "string" ? img : img?.url ?? null))
+    .filter(Boolean)
+    .slice(0, max);
+  if (!urls.length && item?.coverImage) urls.push(item.coverImage);
+  if (!urls.length && item?.image) urls.push(item.image);
+  return urls;
+};
+
+const buildHotelPickSection = (item) => {
+  if (!item) return null;
+  const id = String(item.id || item.hotelCode || "");
+  if (!id) return null;
   const name =
-    item?.title ||
-    item?.name ||
-    item?.hotelName ||
-    item?.hotelDetails?.hotelName ||
-    item?.hotelDetails?.name ||
-    (isSpanish ? "Opcion destacada" : "Top pick");
-  const location =
+    item?.title || item?.name || item?.hotelName ||
+    item?.hotelDetails?.hotelName || item?.hotelDetails?.name || "Hotel";
+  const locationRaw =
     item?.locationText ||
     [item?.city, item?.country].filter(Boolean).join(", ") ||
     [item?.cityName, item?.countryName].filter(Boolean).join(", ") ||
-    [item?.hotelDetails?.city, item?.hotelDetails?.country].filter(Boolean).join(", ");
-  const description =
-    firstSentence(
-      item?.shortDescription ||
-        item?.description ||
-        item?.hotelDetails?.shortDescription ||
-        item?.hotelDetails?.description
-    ) ||
-    (location
-      ? isSpanish
-        ? `Ubicado en ${location}.`
-        : `Located in ${location}.`
-      : isSpanish
-        ? "Buena opcion para seguir explorando este destino."
-        : "A solid option to keep exploring this destination.");
+    "";
+  const location = locationRaw ? toTitleCase(locationRaw) : "";
+  const rawDescription =
+    item?.shortDescription || item?.description ||
+    item?.hotelDetails?.shortDescription || item?.hotelDetails?.description || "";
+  const description = clampText(decodeHtmlEntities(rawDescription) || (location ? `Located in ${location}.` : ""), 200);
   const stars = normalizeStars(
-    item?.stars ??
-      item?.rating ??
-      item?.reviewScore ??
-      item?.hotelDetails?.rating ??
-      item?.hotelPayload?.rating
+    item?.stars ?? item?.rating ?? item?.reviewScore ??
+    item?.hotelDetails?.rating ?? item?.hotelPayload?.rating
   );
-  const amenityLabels = pickAmenityLabels(item, 2);
-
-  const bullets = [];
-  if (stars) {
-    bullets.push(isSpanish ? `${stars} estrellas` : `${stars} stars`);
-  }
-  if (location) {
-    bullets.push(isSpanish ? `Zona: ${location}` : `Area: ${location}`);
-  }
-  amenityLabels.forEach((label) => bullets.push(label));
-
-  const safeBullets = bullets.slice(0, 3);
-  const bulletLines = safeBullets.map((entry) => `- ${clampText(entry, 90)}`).join("\n");
-
-  return `${index + 1}. **${clampText(name, 70)}**\n${description}${bulletLines ? `\n${bulletLines}` : ""}`;
+  const amenities = pickAmenityLabels(item, 3);
+  const images = extractImageUrls(item, 4);
+  const priceFrom = item?.pricePerNight ?? item?.price ?? null;
+  const currency = item?.currency || "USD";
+  return {
+    type: "hotelPick",
+    id,
+    name: clampText(name, 80),
+    description,
+    location,
+    stars,
+    amenities,
+    images,
+    priceFrom: Number.isFinite(Number(priceFrom)) ? Number(priceFrom) : null,
+    currency,
+  };
 };
 
-const buildStructuredSearchReply = ({ inventory, plan, language, seed }) => {
+const buildStructuredSearchReply = ({ inventory, plan, language, seed, userName }) => {
   const picks = getTopInventoryPicks(inventory, 5);
   if (!picks.length) return null;
 
   const isSpanish = language === "es";
   const destination =
-    plan?.location?.city ||
-    plan?.location?.address ||
-    plan?.location?.country ||
-    "";
+    plan?.location?.city || plan?.location?.address || plan?.location?.country || "";
+  const name = userName ? String(userName).split(" ")[0] : null;
+
   const introVariants = isSpanish
     ? [
-        `Te dejo ${picks.length} opciones fuertes${destination ? ` en ${destination}` : ""}.`,
-        `Estas son mis ${picks.length} recomendaciones${destination ? ` para ${destination}` : ""}.`,
-        `Acá van ${picks.length} hoteles que vale la pena mirar${destination ? ` en ${destination}` : ""}.`,
+        `${name ? `¡Buena elección, ${name}! Te` : "Te"} dejo las mejores opciones que tenemos${destination ? ` para ${destination}` : ""}.`,
+        `${name ? `${name}, acá` : "Acá"} van las opciones disponibles${destination ? ` en ${destination}` : ""}. Agregá más detalles para afinar la búsqueda.`,
+        `${name ? `${name}, e` : "E"}stas son nuestras recomendaciones${destination ? ` para ${destination}` : ""}. Sumá fechas o guests para ver precios y disponibilidad real.`,
       ]
     : [
-        `Here are ${picks.length} strong picks${destination ? ` in ${destination}` : ""}.`,
-        `These are my top ${picks.length} recommendations${destination ? ` for ${destination}` : ""}.`,
-        `I pulled ${picks.length} hotel options worth a look${destination ? ` in ${destination}` : ""}.`,
+        `${name ? `Nice, ${name}! Here` : "Here"} are the best options we have${destination ? ` for ${destination}` : ""}. Feel free to add more details to refine.`,
+        `${name ? `${name}, these` : "These"} are our top picks${destination ? ` in ${destination}` : ""}. Add dates and guests to see live prices.`,
+        `${name ? `Good call, ${name}! Here` : "Here"} are some solid options${destination ? ` in ${destination}` : ""}. Refine with dates or guest count anytime.`,
       ];
-  const outro = isSpanish
-    ? "Abajo te dejo mas opciones para seguir comparando."
-    : "There are more options below if you want to compare further.";
 
-  const sections = picks.map((item, index) =>
-    formatSearchItemSection(item, index, language)
-  );
+  const outroVariants = isSpanish
+    ? [
+        "Esos son algunos lugares. Agregá las fechas y la cantidad de guests para ver más opciones y disponibilidad real.",
+        "Hay más opciones disponibles. Completá las fechas y guests para afinar los resultados con precios reales.",
+        "Te mostramos estas opciones como punto de partida. Sumá fechas y guests para ver disponibilidad.",
+      ]
+    : [
+        "Those are some options to start with. Add dates and guests to see availability and real pricing.",
+        "There are more options available. Add your dates and guest count to refine results with live prices.",
+        "These are your starting options. Fill in dates and guests to see what's available and at what price.",
+      ];
+
   const intro = pickVariant(introVariants, seed) || introVariants[0];
-  return `${intro}\n\n${sections.join("\n\n")}\n\n${outro}`;
+  const outro = pickVariant(outroVariants, seed + 1) || outroVariants[0];
+  const sections = picks.map(buildHotelPickSection).filter(Boolean);
+  return { intro, outro, sections };
 };
 
 export const renderAssistantPayload = async ({ plan, messages, inventory, nextAction, trip, tripContext, userContext, weather, missing = [], visualContext }) => {
@@ -295,6 +319,7 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
   }
   let replyText = "";
   let followUps = [];
+  let searchSections = [];
 
   const missingDest = missing.includes("DESTINATION");
   const missingDates = missing.includes("DATES");
@@ -361,15 +386,21 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
     }
     followUps = [];
   } else if (nextAction === NEXT_ACTIONS.RUN_SEARCH) {
+    const userName = userContext?.userName || userContext?.name || null;
     const structuredReply = buildStructuredSearchReply({
       inventory,
       plan,
       language,
       seed,
+      userName,
     });
     if (structuredReply) {
-      replyText = structuredReply;
+      replyText = structuredReply.intro;
       followUps = [];
+      searchSections = [
+        ...structuredReply.sections,
+        { type: "outro", text: structuredReply.outro },
+      ];
     } else {
       const replyPayload = await generateAssistantReply({
         plan,
@@ -395,26 +426,6 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
     });
     replyText = (replyPayload?.reply || "").trim();
     followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
-  }
-
-  if (nextAction === NEXT_ACTIONS.RUN_SEARCH && (missingDates || missingGuests)) {
-    const missingLabelsEs = [];
-    const missingLabelsEn = [];
-    if (missingDates) {
-      missingLabelsEs.push("fechas");
-      missingLabelsEn.push("dates");
-    }
-    if (missingGuests) {
-      missingLabelsEs.push("huespedes");
-      missingLabelsEn.push("guests");
-    }
-    const listEs = missingLabelsEs.join(" y ");
-    const listEn = missingLabelsEn.join(" and ");
-    const staticHint =
-      language === "es"
-        ? `Estas son sugerencias iniciales. Para continuar con disponibilidad y precios reales necesito ${listEs}.`
-        : `These are initial suggestions. To continue with live availability and pricing I need ${listEn}.`;
-    replyText = replyText ? `${staticHint}\n\n${replyText}` : staticHint;
   }
 
   if (!replyText) {
@@ -445,7 +456,7 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
     chips: buildChips(followUps),
     cards: buildCards(inventory),
     inputs: combinedInputs,
-    sections: [],
+    sections: searchSections,
     visualContext: visualContext || null
   };
 
