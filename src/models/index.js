@@ -113,7 +113,9 @@ import ReviewModel from "./Review.js";
 import AiChatSessionModel from "./AiChatSession.js";
 import AiChatMessageModel from "./AiChatMessage.js";
 import SupportTicketModel from "./SupportTicket.js";
+import SupportTicketAssigneeModel from "./SupportTicketAssignee.js";
 import SupportMessageModel from "./SupportMessage.js";
+import SupportQuickReplyModel from "./SupportQuickReply.js";
 import AnalyticsEventModel from "./AnalyticsEvent.js";
 import StayIntelligenceModel from "./StayIntelligence.js";
 import PushTokenModel from "./PushToken.js";
@@ -242,7 +244,9 @@ const models = {
   Review: ReviewModel(sequelize),
 
   SupportTicket: SupportTicketModel(sequelize),
+  SupportTicketAssignee: SupportTicketAssigneeModel(sequelize),
   SupportMessage: SupportMessageModel(sequelize),
+  SupportQuickReply: SupportQuickReplyModel(sequelize),
   AnalyticsEvent: AnalyticsEventModel(sequelize),
   StayIntelligence: StayIntelligenceModel(sequelize),
   PushToken: PushTokenModel(sequelize),
