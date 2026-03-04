@@ -8,6 +8,7 @@
     "dev": "nodemon src/app.js",
     "test": "node --test tests/providers/webbeds/searchHotels.test.js tests/providers/webbeds/provider.test.js",
     "payments:reconcile-once": "node src/scripts/reconcilePendingPayments.js",
+    "payments:wallets:check": "node src/scripts/checkStripeWalletSetup.js",
     "webbeds:cities:sync-by-country": "node src/scripts/syncWebbedsCitiesByCountry.js",
     "webbeds:cities:backfill-coords": "node src/scripts/backfillWebbedsCityCoordinates.js"
   },
