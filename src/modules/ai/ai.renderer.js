@@ -231,6 +231,57 @@ const extractImageUrls = (item, max = 4) => {
   return urls;
 };
 
+const AMENITY_CODE_LABELS = {
+  es: {
+    POOL: "piscina", SWIMMING_POOL: "piscina", OUTDOOR_POOL: "piscina exterior",
+    INDOOR_POOL: "piscina climatizada", SPA: "spa", GYM: "gimnasio",
+    FITNESS: "gimnasio", WIFI: "WiFi", PARKING: "estacionamiento",
+    RESTAURANT: "restaurante", BAR: "bar", BEACH: "playa",
+    BREAKFAST: "desayuno incluido", ROOM_SERVICE: "room service",
+    PETS: "admite mascotas", FAMILY: "familiar", TENNIS: "tenis",
+    GOLF: "golf", CASINO: "casino", AIRPORT_SHUTTLE: "traslado al aeropuerto",
+    LAUNDRY: "lavandería", CONFERENCE: "sala de conferencias",
+  },
+  en: {
+    POOL: "pool", SWIMMING_POOL: "pool", OUTDOOR_POOL: "outdoor pool",
+    INDOOR_POOL: "indoor pool", SPA: "spa", GYM: "gym",
+    FITNESS: "fitness center", WIFI: "WiFi", PARKING: "parking",
+    RESTAURANT: "restaurant", BAR: "bar", BEACH: "beach",
+    BREAKFAST: "breakfast included", ROOM_SERVICE: "room service",
+    PETS: "pet-friendly", FAMILY: "family-friendly", TENNIS: "tennis",
+    GOLF: "golf", CASINO: "casino", AIRPORT_SHUTTLE: "airport shuttle",
+    LAUNDRY: "laundry", CONFERENCE: "conference room",
+  },
+};
+
+const buildFilterContext = (plan, language) => {
+  const lang = language === "es" ? "es" : "en";
+  const filters = plan?.hotelFilters || {};
+  const parts = [];
+
+  const minRating = Number(filters.minRating);
+  if (Number.isFinite(minRating) && minRating >= 1 && minRating <= 5) {
+    parts.push(lang === "es" ? `${minRating} estrellas` : `${minRating}-star`);
+  }
+
+  const amenityCodes = Array.isArray(filters.amenityCodes) ? filters.amenityCodes : [];
+  if (amenityCodes.length) {
+    const labelMap = AMENITY_CODE_LABELS[lang] || AMENITY_CODE_LABELS.en;
+    const labels = amenityCodes
+      .map((code) => labelMap[String(code).toUpperCase()] || null)
+      .filter(Boolean)
+      .slice(0, 2);
+    labels.forEach((l) => parts.push(l));
+  }
+
+  const poi = plan?.location?.resolvedPoi?.name;
+  if (poi) {
+    parts.push(lang === "es" ? `cerca de ${poi}` : `near ${poi}`);
+  }
+
+  return parts.length ? parts : null;
+};
+
 const buildHotelPickSection = (item) => {
   if (!item) return null;
   const id = String(item.id || item.hotelCode || "");
@@ -244,13 +295,19 @@ const buildHotelPickSection = (item) => {
     [item?.cityName, item?.countryName].filter(Boolean).join(", ") ||
     "";
   const location = locationRaw ? toTitleCase(locationRaw) : "";
+  const addressRaw =
+    item?.address ||
+    item?.hotelDetails?.address ||
+    item?.fullAddress?.hotelStreetAddress ||
+    null;
+  const address = addressRaw ? toTitleCase(String(addressRaw)) : null;
   const rawDescription =
     item?.shortDescription || item?.description ||
     item?.hotelDetails?.shortDescription || item?.hotelDetails?.description || "";
-  const description = clampText(decodeHtmlEntities(rawDescription) || (location ? `Located in ${location}.` : ""), 200);
+  const description = clampText(decodeHtmlEntities(rawDescription) || (location ? `Located in ${location}.` : ""), 450);
   const stars = normalizeStars(
-    item?.stars ?? item?.rating ?? item?.reviewScore ??
-    item?.hotelDetails?.rating ?? item?.hotelPayload?.rating
+    item?.stars ?? item?.rating ?? item?.classification?.code ??
+    item?.reviewScore ?? item?.hotelDetails?.rating ?? item?.hotelPayload?.rating
   );
   const amenities = pickAmenityLabels(item, 3);
   const images = extractImageUrls(item, 4);
@@ -262,6 +319,7 @@ const buildHotelPickSection = (item) => {
     name: clampText(name, 80),
     description,
     location,
+    address,
     stars,
     amenities,
     images,
@@ -278,33 +336,81 @@ const buildStructuredSearchReply = ({ inventory, plan, language, seed, userName 
   const destination =
     plan?.location?.city || plan?.location?.address || plan?.location?.country || "";
   const name = userName ? String(userName).split(" ")[0] : null;
+  const filterContext = buildFilterContext(plan, language);
+  const hasDates = Boolean(plan?.dates?.checkIn && plan?.dates?.checkOut);
 
-  const introVariants = isSpanish
-    ? [
-        `${name ? `¡Buena elección, ${name}! Te` : "Te"} dejo las mejores opciones que tenemos${destination ? ` para ${destination}` : ""}.`,
-        `${name ? `${name}, acá` : "Acá"} van las opciones disponibles${destination ? ` en ${destination}` : ""}. Agregá más detalles para afinar la búsqueda.`,
-        `${name ? `${name}, e` : "E"}stas son nuestras recomendaciones${destination ? ` para ${destination}` : ""}. Sumá fechas o guests para ver precios y disponibilidad real.`,
-      ]
-    : [
-        `${name ? `Nice, ${name}! Here` : "Here"} are the best options we have${destination ? ` for ${destination}` : ""}. Feel free to add more details to refine.`,
-        `${name ? `${name}, these` : "These"} are our top picks${destination ? ` in ${destination}` : ""}. Add dates and guests to see live prices.`,
-        `${name ? `Good call, ${name}! Here` : "Here"} are some solid options${destination ? ` in ${destination}` : ""}. Refine with dates or guest count anytime.`,
-      ];
+  const dest = destination ? ` para ${destination}` : "";
+  const destEn = destination ? ` for ${destination}` : "";
+  const filterJoined = filterContext
+    ? (isSpanish
+        ? ` con ${filterContext.join(" y ")}`
+        : ` with ${filterContext.join(" and ")}`)
+    : "";
 
-  const outroVariants = isSpanish
-    ? [
-        "Esos son algunos lugares. Agregá las fechas y la cantidad de guests para ver más opciones y disponibilidad real.",
-        "Hay más opciones disponibles. Completá las fechas y guests para afinar los resultados con precios reales.",
-        "Te mostramos estas opciones como punto de partida. Sumá fechas y guests para ver disponibilidad.",
-      ]
-    : [
-        "Those are some options to start with. Add dates and guests to see availability and real pricing.",
-        "There are more options available. Add your dates and guest count to refine results with live prices.",
-        "These are your starting options. Fill in dates and guests to see what's available and at what price.",
-      ];
+  let introVariants;
+  if (filterContext?.length) {
+    introVariants = isSpanish
+      ? [
+          `${name ? `${name}, a` : "A"}cá van los resultados${destination ? ` en ${destination}` : ""}${filterJoined}.`,
+          `Encontré estas opciones${destination ? ` en ${destination}` : ""}${filterJoined}${name ? `, ${name}` : ""}.`,
+          `${name ? `${name}, m` : "M"}irá lo que tenemos${destination ? ` en ${destination}` : ""}${filterJoined}.`,
+        ]
+      : [
+          `${name ? `${name}, here` : "Here"} are the results${destination ? ` in ${destination}` : ""}${filterJoined}.`,
+          `Found options${destination ? ` in ${destination}` : ""}${filterJoined}${name ? ` for you, ${name}` : ""}.`,
+          `${name ? `${name}, take` : "Take"} a look at what we have${destEn}${filterJoined}.`,
+        ];
+  } else {
+    introVariants = isSpanish
+      ? [
+          `${name ? `¡Buena elección, ${name}! Te` : "Te"} dejo las mejores opciones que tenemos${dest}.`,
+          `${name ? `${name}, a` : "A"}cá van mis picks${destination ? ` en ${destination}` : ""}. Agregá fechas y guests para ver precios reales.`,
+          `${name ? `${name}, e` : "E"}stas son nuestras recomendaciones${dest}. Sumá fechas o guests para ver disponibilidad real.`,
+          `Encontré opciones interesantes${destination ? ` en ${destination}` : ""}${name ? `, ${name}` : ""}. Chequeá las cards y completá los detalles para afinar.`,
+          `${name ? `${name}, m` : "M"}irá lo que tenemos${destination ? ` en ${destination}` : ""}. Con fechas y guests te muestro disponibilidad y precios.`,
+        ]
+      : [
+          `${name ? `Nice, ${name}! Here` : "Here"} are the best options we have${destEn}. Add more details to refine.`,
+          `${name ? `${name}, here` : "Here"} are my top picks${destination ? ` in ${destination}` : ""}. Add dates and guests to see live prices.`,
+          `${name ? `Good call, ${name}! These` : "These"} are some solid options${destEn}. Refine with dates or guest count anytime.`,
+          `Found some great spots${destination ? ` in ${destination}` : ""}${name ? ` for you, ${name}` : ""}. Check them out and fill in your dates to see real availability.`,
+          `${name ? `${name}, take` : "Take"} a look at what we have${destEn}. Dates and guests will unlock live pricing.`,
+        ];
+  }
 
-  const intro = pickVariant(introVariants, seed) || introVariants[0];
-  const outro = pickVariant(outroVariants, seed + 1) || outroVariants[0];
+  let outroVariants;
+  if (hasDates) {
+    outroVariants = isSpanish
+      ? [
+          "Tocá cualquier card para ver los detalles y reservar.",
+          "¿Te gusta alguno? Tocá la card para continuar.",
+          "Seleccioná el que más te guste para ver disponibilidad y confirmar.",
+        ]
+      : [
+          "Tap any card to see details and book.",
+          "Like any of these? Tap to continue.",
+          "Select the one you like to check availability and confirm.",
+        ];
+  } else {
+    outroVariants = isSpanish
+      ? [
+          "Agregá las fechas y guests para ver disponibilidad y precios reales.",
+          "Completá fechas y guests para afinar los resultados con precios en vivo.",
+          "Con fechas y cantidad de viajeros te muestro disponibilidad y costos exactos.",
+          "Estos son tus puntos de partida. Sumá los datos de viaje para ver qué hay disponible.",
+          "¿Te gusta alguno? Ingresá fechas y guests para confirmar disponibilidad.",
+        ]
+      : [
+          "Add dates and guests to see availability and live pricing.",
+          "Fill in your travel dates and guest count to get real prices.",
+          "These are your starting options — dates and guests will refine everything.",
+          "Like any of these? Add your dates to check availability.",
+          "Drop in your dates and guest count to see what's actually available.",
+        ];
+  }
+
+  const intro = pickVariant(introVariants) || introVariants[0];
+  const outro = pickVariant(outroVariants) || outroVariants[0];
   const sections = picks.map(buildHotelPickSection).filter(Boolean);
   return { intro, outro, sections };
 };
@@ -326,10 +432,11 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
   const missingGuests = missing.includes("GUESTS");
   const multipleMissing = (missingDest ? 1 : 0) + (missingDates ? 1 : 0) + (missingGuests ? 1 : 0) > 1;
 
-  // Seed for variant pick: use message count + total content length so same convo gets variety over turns
+  // Seed for variant pick: combine message count + content length + timestamp so each call gets genuine variety
   const seed =
     (messages?.length ?? 0) * 31 +
-    (messages?.reduce((acc, m) => acc + (m?.content?.length ?? 0), 0) ?? 0);
+    (messages?.reduce((acc, m) => acc + (m?.content?.length ?? 0), 0) ?? 0) +
+    (Date.now() % 997);
 
   // Multiple phrases when asking for several missing fields (avoid single repetitive line)
   const multipleMissingPhrases = {

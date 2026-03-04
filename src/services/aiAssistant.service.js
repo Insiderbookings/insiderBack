@@ -500,7 +500,9 @@ const buildPlannerPrompt = ({ now, confirmedSearch } = {}) => {
         "User: 'Search nearby' -> intent: SEARCH (uses context location)\n\n" +
 
         "FILTERING & SORTING RULES:\n" +
-        "- Fill location city/state/country and lat/lng when provided. If the user requests proximity (\"1km around Movistar Arena\"), set location.radiusKm and location.landmark.\n" +
+        "- Fill location city/state/country and lat/lng when provided.\n" +
+        "- LANDMARK RULES: If the user mentions a famous place or landmark (\"near Burj Khalifa\", \"cerca del Coliseo\", \"next to Eiffel Tower\"), set location.landmark AND ALSO set location.city/country to the city/country where that landmark is located (e.g., \"Burj Khalifa\" → city:\"Dubai\", country:\"United Arab Emirates\"; \"Eiffel Tower\" → city:\"Paris\", country:\"France\"; \"Coliseo\" → city:\"Rome\", country:\"Italy\"). NEVER put a landmark name in the city field — city must always be an actual city name.\n" +
+        "- If the user requests proximity radius (\"1km around Movistar Arena\"), also set location.radiusKm.\n" +
         "- If the user does NOT specify homes vs hotels, return listingTypes as an empty array (do not assume a default).\n" +
         "- Detect HOME filters: propertyTypes (HOUSE, APARTMENT, CABIN, etc.), spaceTypes (ENTIRE_PLACE, PRIVATE_ROOM, SHARED_ROOM), amenityKeys (e.g., WIFI, FREE_PARKING_ON_PREMISES), and tagKeys (BEACHFRONT, LUXURY, FAMILY). Use uppercase keys.\n" +
         "- For parking requests, set homeFilters.amenityKeys (FREE_PARKING_ON_PREMISES and/or PAID_PARKING_ON_PREMISES).\n" +

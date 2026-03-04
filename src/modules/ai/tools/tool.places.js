@@ -186,6 +186,37 @@ export const getNearbyPlaces = async ({
   }
 };
 
+export const resolvePoiToCoordinates = async (query) => {
+  if (AI_PLACES_DISABLED) return null;
+  if (!query || typeof query !== "string") return null;
+  const apiKey =
+    process.env.GOOGLE_PLACES_API_KEY ||
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.GOOGLE_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const { data } = await axios.get("https://maps.googleapis.com/maps/api/place/textsearch/json", {
+      params: { query: query.trim(), key: apiKey },
+      timeout: 5000,
+    });
+    if (!data || !Array.isArray(data.results) || !data.results.length) return null;
+    const place = data.results[0];
+    const lat = toNumber(place.geometry?.location?.lat);
+    const lng = toNumber(place.geometry?.location?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return {
+      lat,
+      lng,
+      name: place.name || query.trim(),
+      address: place.formatted_address || null,
+    };
+  } catch (err) {
+    console.warn("[ai] resolvePoiToCoordinates failed", err?.message || err);
+    return null;
+  }
+};
+
 export const searchDestinationImages = async (query, limit = 2) => {
   if (AI_PLACES_DISABLED) return [];
   if (!query || typeof query !== "string") return [];

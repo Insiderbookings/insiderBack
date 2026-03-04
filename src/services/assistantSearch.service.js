@@ -6,6 +6,7 @@ import { buildSearchHotelsPayload } from "../providers/webbeds/searchHotels.js";
 import { mapHomeToCard } from "../utils/homeMapper.js";
 import { formatStaticHotel } from "../utils/webbedsMapper.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
+import { resolvePoiToCoordinates } from "../modules/ai/tools/tool.places.js";
 
 const ASSISTANT_SEARCH_MAX_LIMIT = Math.max(
   20,
@@ -81,10 +82,80 @@ const normalizeIdList = (value) => {
   return Array.from(new Set(normalized));
 };
 
+// Maps AI amenity names (English or Spanish) to search terms that match webbeds_amenity_catalog.name.
+// Each key resolves to an OR of LIKE searches — pick terms that cover the catalog entries.
+// Verified against live webbeds_amenity_catalog table.
 const AMENITY_NAME_SYNONYMS = {
-  POOL: ["POOL", "SWIMMING POOL", "OUTDOOR POOL", "INDOOR POOL"],
-  PISCINA: ["POOL", "SWIMMING POOL"],
-  PILETA: ["POOL", "SWIMMING POOL"],
+  // Pool variants
+  POOL:            ["POOL", "SWIMMING POOL"],
+  PISCINA:         ["POOL", "SWIMMING POOL"],
+  PILETA:          ["POOL", "SWIMMING POOL"],
+  "SWIMMING POOL": ["POOL", "SWIMMING POOL"],
+  "OUTDOOR POOL":  ["SWIMMING POOL", "OUTDOOR"],
+  "INDOOR POOL":   ["SWIMMING POOL", "INDOOR"],
+
+  // Gym / Fitness — catalog has: Fitness (98455), Gymnasium (47935), Health And Fitness Facility (1978)
+  GYM:             ["GYM", "GYMNASIUM", "FITNESS", "HEALTH AND FITNESS"],
+  GIMNASIO:        ["GYM", "GYMNASIUM", "FITNESS", "HEALTH AND FITNESS"],
+  FITNESS:         ["FITNESS", "GYM", "GYMNASIUM", "HEALTH AND FITNESS"],
+  "FITNESS CENTER":["FITNESS", "GYM", "GYMNASIUM"],
+
+  // Spa
+  SPA:             ["SPA"],
+  MASAJE:          ["MASSAGE", "SPA"],
+  MASSAGE:         ["MASSAGE", "SPA"],
+
+  // WiFi / Internet — catalog: Complimentary WiFi access (48325), Free Wifi (98445), High Speed Internet (3664)
+  WIFI:            ["WIFI", "WI-FI", "INTERNET"],
+  "WI-FI":         ["WIFI", "WI-FI", "INTERNET"],
+  INTERNET:        ["INTERNET", "WIFI", "WI-FI"],
+
+  // Parking — catalog: Car Parking - Onsite Free/Paid, Valet Parking, Self-parking
+  PARKING:         ["PARKING"],
+  COCHERA:         ["PARKING"],
+  ESTACIONAMIENTO: ["PARKING"],
+  "FREE PARKING":  ["PARKING - ONSITE FREE", "SELF-PARKING - FREE"],
+  "VALET PARKING": ["VALET PARKING"],
+
+  // Jacuzzi / Hot Tub — catalog: Jacuzzi (3891), Bath/Hot spring (100055)
+  JACUZZI:         ["JACUZZI", "HOT SPRING", "HOT TUB"],
+  "HOT TUB":       ["JACUZZI", "HOT SPRING", "HOT TUB"],
+  "HOT SPRING":    ["HOT SPRING", "JACUZZI"],
+
+  // Sauna — catalog: Sauna (650)
+  SAUNA:           ["SAUNA"],
+
+  // Beach — catalog: On-Site Beach (3724), Beach sun loungers, Beach umbrellas
+  BEACH:           ["BEACH"],
+  PLAYA:           ["BEACH"],
+
+  // Pets — catalog: Pets Allowed (606)
+  PET:             ["PET"],
+  PETS:            ["PET"],
+  "PET FRIENDLY":  ["PET"],
+  MASCOTA:         ["PET"],
+  MASCOTAS:        ["PET"],
+
+  // Kids / Family — catalog: Kids Club (1981), Kids Facilities (101105), Kids Play Ground (3294), Family Rooms (101035)
+  KIDS:            ["KIDS", "FAMILY"],
+  "KIDS CLUB":     ["KIDS CLUB"],
+  FAMILY:          ["FAMILY", "KIDS"],
+
+  // Restaurant / Bar — catalog: Restaurant (641), Bar (3134)
+  RESTAURANT:      ["RESTAURANT"],
+  RESTAURANTE:     ["RESTAURANT"],
+  BAR:             ["BAR"],   // LIKE '%BAR%' also matches Barbecue/Barber — acceptable false-positive
+
+  // Casino — catalog: Casino (3164)
+  CASINO:          ["CASINO"],
+
+  // Tennis / Golf — catalog: Tennis Courts (618), Golf Course (1684)
+  TENNIS:          ["TENNIS"],
+  GOLF:            ["GOLF"],
+
+  // Airport shuttle — catalog: Airport Shuttle - Free (3674), Airport shuttle available (665)
+  "AIRPORT SHUTTLE": ["AIRPORT SHUTTLE"],
+  TRANSFER:          ["AIRPORT SHUTTLE"],
 };
 
 const expandAmenityNameCandidates = (candidates = []) => {
@@ -208,10 +279,110 @@ const getLiveHotelProvider = () => {
 const resolveDialect = () =>
   typeof sequelize.getDialect === "function" ? sequelize.getDialect() : "mysql";
 
+// WebBeds classification codes (webbeds_hotel_classification.code) — BIGINT, NOT the star count.
+// Verified against live DB: SELECT code, name FROM webbeds_hotel_classification ORDER BY code.
+const WEBBEDS_CLASSIFICATION_CODE_TO_STARS = {
+  559: 1,   // Economy *
+  560: 2,   // Budget **
+  561: 3,   // Standard ***
+  562: 4,   // Superior ****
+  563: 5,   // Luxury *****
+  // 48055 = Serviced Apartment, 55835 = Unrated — not mapped to stars
+};
+
+// Returns the list of classification_code BIGINTs for hotels with >= minStars.
+const resolveClassificationCodesForMinRating = (minStars) => {
+  return Object.entries(WEBBEDS_CLASSIFICATION_CODE_TO_STARS)
+    .filter(([, stars]) => stars >= minStars)
+    .map(([code]) => Number(code));
+};
+
+// Resolves a hotel's star count from its formatted card (classification.code is a BIGINT code).
+const resolveHotelStars = (hotel) => {
+  const classCode = toNumberOrNull(hotel.classification?.code);
+  if (classCode != null && WEBBEDS_CLASSIFICATION_CODE_TO_STARS[classCode] != null) {
+    return WEBBEDS_CLASSIFICATION_CODE_TO_STARS[classCode];
+  }
+  // fallback: raw rating string (some hotels may populate this)
+  return toNumberOrNull(hotel.rating);
+};
+
+// Strip diacritics so "Dubái" matches "Dubai", "Río" matches "Rio", etc.
+// WebBeds data is in English (no accents), so normalizing search terms is always safe.
+const stripDiacritics = (str) =>
+  str.normalize("NFD").replace(/\p{Diacritic}/gu, "");
+
+// Spanish→English country name aliases for when the AI returns Spanish country names.
+// Keys are lowercase normalized (no diacritics).
+const COUNTRY_NAME_ALIASES_EN = {
+  "emiratos arabes unidos": "United Arab Emirates",
+  "espana": "Spain",
+  "alemania": "Germany",
+  "francia": "France",
+  "italia": "Italy",
+  "grecia": "Greece",
+  "turquia": "Turkey",
+  "tailandia": "Thailand",
+  "reino unido": "United Kingdom",
+  "estados unidos": "United States",
+  "paises bajos": "Netherlands",
+  "belgica": "Belgium",
+  "suiza": "Switzerland",
+  "austria": "Austria",
+  "japon": "Japan",
+  "corea del sur": "South Korea",
+  "india": "India",
+  "china": "China",
+  "singapur": "Singapore",
+  "malasia": "Malaysia",
+  "indonesia": "Indonesia",
+  "vietnam": "Vietnam",
+  "marruecos": "Morocco",
+  "egipto": "Egypt",
+  "sudafrica": "South Africa",
+  "brasil": "Brazil",
+  "mexico": "Mexico",
+  "peru": "Peru",
+  "colombia": "Colombia",
+  "chile": "Chile",
+  "argentina": "Argentina",
+  "republica dominicana": "Dominican Republic",
+  "cuba": "Cuba",
+  "portugal": "Portugal",
+  "croacia": "Croatia",
+  "hungria": "Hungary",
+  "republica checa": "Czech Republic",
+  "rumania": "Romania",
+  "polonia": "Poland",
+  "noruega": "Norway",
+  "suecia": "Sweden",
+  "dinamarca": "Denmark",
+  "finlandia": "Finland",
+  "irlanda": "Ireland",
+  "canada": "Canada",
+  "australia": "Australia",
+  "nueva zelanda": "New Zealand",
+  "israel": "Israel",
+  "jordania": "Jordan",
+  "arabia saudi": "Saudi Arabia",
+  "bahrein": "Bahrain",
+  "catar": "Qatar",
+  "kuwait": "Kuwait",
+  "oman": "Oman",
+};
+
+// Resolve a possibly-Spanish, possibly-accented country name to its English DB equivalent.
+const resolveCountryName = (name) => {
+  if (!name || typeof name !== "string") return name;
+  const key = stripDiacritics(name.trim().toLowerCase());
+  return COUNTRY_NAME_ALIASES_EN[key] || stripDiacritics(name.trim());
+};
+
 const buildStringFilter = (value) => {
   const trimmed = typeof value === "string" ? value.trim() : "";
   if (!trimmed) return null;
-  return { [iLikeOp]: `%${trimmed}%` };
+  const normalized = stripDiacritics(trimmed);
+  return { [iLikeOp]: `%${normalized}%` };
 };
 
 const hasLocationConstraint = (location = {}) => {
@@ -884,17 +1055,29 @@ const resolveAmenityCatalogCodes = async (codes = []) => {
 const filterHotelsByAmenities = async (hotels, filters = {}) => {
   const requestedCodes = Array.isArray(filters.amenityCodes) ? filters.amenityCodes : [];
   const requestedItems = Array.isArray(filters.amenityItemIds) ? filters.amenityItemIds : [];
-  const amenityCodes = await resolveAmenityCatalogCodes(requestedCodes);
   const amenityItemIds = normalizeNumericList(requestedItems);
+
+  // Build per-amenity code groups: each original requested code resolves to a Set of catalog codes.
+  // When filtering, a hotel must match AT LEAST ONE code from EACH group (OR within, AND between).
+  // Example: ['POOL', 'GYM'] → hotel needs any pool code AND any gym code.
+  const codeGroups = requestedCodes.length
+    ? await Promise.all(requestedCodes.map((code) => resolveAmenityCatalogCodes([code])))
+    : [];
+
+  // Flat union of all codes for the SQL IN clause
+  const allCodes = [...new Set(codeGroups.flat())];
+
   const requestedNames = expandAmenityNameCandidates(requestedCodes).map((name) => name.toLowerCase());
+
   debugSearchLog("[assistant][amenities] filterHotelsByAmenities start", {
     hotelsCount: hotels.length,
     requestedCodes,
     requestedItems,
-    resolvedCodes: amenityCodes,
+    codeGroups: codeGroups.map((g, i) => ({ input: requestedCodes[i], codes: g })),
     resolvedItemIds: amenityItemIds,
     requestedNames,
   });
+
   const matchesAmenityKeywords = (hotel) => {
     if (!requestedNames.length) return false;
     const parts = [];
@@ -910,7 +1093,8 @@ const filterHotelsByAmenities = async (hotels, filters = {}) => {
     const blob = parts.filter(Boolean).join(" ").toLowerCase();
     return requestedNames.some((name) => name && blob.includes(name));
   };
-  if (!amenityCodes.length && !amenityItemIds.length) {
+
+  if (!allCodes.length && !amenityItemIds.length) {
     const fallbackResults =
       requestedCodes.length || requestedItems.length
         ? hotels.filter(matchesAmenityKeywords)
@@ -920,16 +1104,18 @@ const filterHotelsByAmenities = async (hotels, filters = {}) => {
     });
     return fallbackResults;
   }
+
   const hotelIds = hotels.map((hotel) => String(hotel.id)).filter(Boolean);
   if (!hotelIds.length) return [];
+
   const amenityWhere = { hotel_id: { [Op.in]: hotelIds } };
-  if (amenityCodes.length && amenityItemIds.length) {
+  if (allCodes.length && amenityItemIds.length) {
     amenityWhere[Op.or] = [
-      { catalog_code: { [Op.in]: amenityCodes } },
+      { catalog_code: { [Op.in]: allCodes } },
       { item_id: { [Op.in]: amenityItemIds } },
     ];
-  } else if (amenityCodes.length) {
-    amenityWhere.catalog_code = { [Op.in]: amenityCodes };
+  } else if (allCodes.length) {
+    amenityWhere.catalog_code = { [Op.in]: allCodes };
   } else if (amenityItemIds.length) {
     amenityWhere.item_id = { [Op.in]: amenityItemIds };
   }
@@ -939,30 +1125,28 @@ const filterHotelsByAmenities = async (hotels, filters = {}) => {
     attributes: ["hotel_id", "catalog_code", "item_id"],
     raw: true,
   });
-  debugSearchLog("[assistant][amenities] filterHotelsByAmenities rows", {
-    rows: rows.length,
-  });
+  debugSearchLog("[assistant][amenities] filterHotelsByAmenities rows", { rows: rows.length });
+
   const amenityMap = new Map();
   rows.forEach((row) => {
     const key = String(row.hotel_id);
-    if (!amenityMap.has(key)) {
-      amenityMap.set(key, { codes: new Set(), items: new Set() });
-    }
-    if (row.catalog_code != null) {
-      amenityMap.get(key).codes.add(String(row.catalog_code));
-    }
-    if (row.item_id) {
-      amenityMap.get(key).items.add(String(row.item_id));
-    }
+    if (!amenityMap.has(key)) amenityMap.set(key, { codes: new Set(), items: new Set() });
+    if (row.catalog_code != null) amenityMap.get(key).codes.add(String(row.catalog_code));
+    if (row.item_id) amenityMap.get(key).items.add(String(row.item_id));
   });
 
   const filtered = hotels.filter((hotel) => {
     const info = amenityMap.get(String(hotel.id));
     if (!info) return false;
-    const hasCodes = !amenityCodes.length || amenityCodes.every((code) => info.codes.has(String(code)));
-    const hasItems = !amenityItemIds.length || amenityItemIds.every((itemId) => info.items.has(String(itemId)));
-    return hasCodes && hasItems;
+    // Each group = one original amenity. Hotel passes if it has ANY code from EACH group (AND of ORs).
+    const hasAllGroups = codeGroups.every(
+      (group) => !group.length || group.some((code) => info.codes.has(String(code)))
+    );
+    // Item IDs are treated individually — hotel needs at least one match.
+    const hasItems = !amenityItemIds.length || amenityItemIds.some((itemId) => info.items.has(String(itemId)));
+    return hasAllGroups && hasItems;
   });
+
   if (!filtered.length && requestedNames.length) {
     const fallbackResults = hotels.filter(matchesAmenityKeywords);
     debugSearchLog("[assistant][amenities] filterHotelsByAmenities fallback (keyword match)", {
@@ -982,9 +1166,12 @@ const applyHotelFilters = async (hotels, filters = {}) => {
     filtered = filtered.filter((hotel) => hotel.preferred);
   }
   if (filters.minRating != null) {
+    const minStar = Math.round(filters.minRating);
     filtered = filtered.filter((hotel) => {
-      const rating = toNumberOrNull(hotel.rating);
-      return rating != null && rating >= filters.minRating;
+      // resolveHotelStars maps WebBeds classification codes (BIGINTs like 563) to star counts (1-5).
+      // hotel.rating is usually null for WebBeds hotels, so the code mapping is the primary source.
+      const stars = resolveHotelStars(hotel);
+      return stars != null && stars >= minStar;
     });
   }
   if ((filters.amenityCodes?.length || filters.amenityItemIds?.length) && filtered.length) {
@@ -1124,6 +1311,7 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
 
   return filteredCards.slice(0, limit).map((hotel) => ({
     ...hotel,
+    stars: resolveHotelStars(hotel),
     inventoryType: "HOTEL",
     matchReasons: buildHotelMatchReasons({ plan, hotel }),
   }));
@@ -1174,13 +1362,6 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   const limit = clampLimit(planLimit || options.limit);
   const excludeIds = Array.isArray(options.excludeIds) ? options.excludeIds : [];
 
-  debugSearchLog(`[DEBUG_SEARCH] searchHotelsForPlan invoked. Limit: ${limit}. Exclude count: ${excludeIds.length}`);
-  if (excludeIds.length > 0) {
-    debugSearchLog(
-      `[DEBUG_SEARCH] Exclude Sample: ${excludeIds.slice(0, 3).join(", ")} (Type: ${typeof excludeIds[0]})`
-    );
-  }
-
   const prefFilters = deriveFiltersFromPreferences(plan);
   const hotelFiltersRaw = plan?.hotelFilters || {};
   const normalizedHotelFilters = {
@@ -1190,6 +1371,48 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     preferredOnly: normalizeBooleanFlag(hotelFiltersRaw.preferredOnly) || prefFilters.hotelPreferredOnly,
     minRating: toNumberOrNull(hotelFiltersRaw.minRating),
   };
+
+  console.log(
+    `[search:hotels] START — city:"${plan?.location?.city || ""}" country:"${plan?.location?.country || ""}"` +
+    ` landmark:"${plan?.location?.landmark || ""}"` +
+    ` minRating:${normalizedHotelFilters.minRating ?? "none"}` +
+    ` amenityCodes:[${normalizedHotelFilters.amenityCodes.join(",")}]` +
+    ` preferredOnly:${normalizedHotelFilters.preferredOnly}` +
+    ` limit:${limit}` +
+    ` excludeIds:${excludeIds.length}`
+  );
+
+  debugSearchLog(`[DEBUG_SEARCH] searchHotelsForPlan invoked. Limit: ${limit}. Exclude count: ${excludeIds.length}`);
+  if (excludeIds.length > 0) {
+    debugSearchLog(
+      `[DEBUG_SEARCH] Exclude Sample: ${excludeIds.slice(0, 3).join(", ")} (Type: ${typeof excludeIds[0]})`
+    );
+  }
+
+  // Resolve landmark to coordinates when the user asked for proximity to a place
+  const planLocation = plan?.location;
+  if (
+    planLocation &&
+    typeof planLocation.landmark === "string" &&
+    planLocation.landmark.trim().length > 0 &&
+    (toNumberOrNull(planLocation.lat) == null || toNumberOrNull(planLocation.lng) == null)
+  ) {
+    const landmarkQuery = [planLocation.landmark.trim(), planLocation.city, planLocation.country]
+      .filter(Boolean)
+      .join(", ");
+    try {
+      const poi = await resolvePoiToCoordinates(landmarkQuery);
+      if (poi) {
+        planLocation.lat = poi.lat;
+        planLocation.lng = poi.lng;
+        planLocation.resolvedPoi = { lat: poi.lat, lng: poi.lng, name: poi.name };
+        debugSearchLog(`[DEBUG_SEARCH] Landmark resolved: "${landmarkQuery}" → ${poi.lat},${poi.lng} (${poi.name})`);
+      }
+    } catch (err) {
+      console.warn("[assistant] resolvePoiToCoordinates failed", { landmark: planLocation.landmark, error: err?.message });
+    }
+  }
+
   const coordinateFilter = buildCoordinateFilterUsingRadius(plan?.location || {});
   const hasLocation = hasLocationConstraint(plan?.location || {});
 
@@ -1230,13 +1453,13 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
         });
         if (foundCities?.length) {
           cityCodes = foundCities.map(c => c.code);
-          debugSearchLog(
-            `[DEBUG_SEARCH] Found Companies: ${foundCities
-              .map((c) => `${c.name} (${c.code}) - ${c.country_name}`)
-              .join(", ")}`
+          console.log(
+            `[search:hotels] Cities found: ${foundCities
+              .map((c) => `${c.name} (code:${c.code}, country:${c.country_name})`)
+              .join(" | ")}`
           );
         } else {
-          debugSearchLog(`[DEBUG_SEARCH] No cities found for "${plan.location.city}"`);
+          console.log(`[search:hotels] No cities found for "${plan.location.city}"`);
         }
       } catch (err) {
         debugSearchLog("[assistant] city lookup failed", err);
@@ -1245,8 +1468,10 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   }
 
   if (plan?.location?.country) {
-    const filter = buildStringFilter(plan.location.country);
-    debugSearchLog(`[DEBUG_SEARCH] Looking up Country: "${plan.location.country}"`);
+    // Translate Spanish country name to English (WebBeds data is in English).
+    const resolvedCountry = resolveCountryName(plan.location.country);
+    const filter = buildStringFilter(resolvedCountry);
+    debugSearchLog(`[DEBUG_SEARCH] Looking up Country: "${plan.location.country}" → resolved: "${resolvedCountry}"`);
     if (filter) {
       try {
         const foundCountries = await models.WebbedsCountry.findAll({
@@ -1256,11 +1481,11 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
         });
         if (foundCountries?.length) {
           countryCodes = foundCountries.map(c => c.code);
-          debugSearchLog(
-            `[DEBUG_SEARCH] Found Countries: ${foundCountries.map((c) => `${c.name} (${c.code})`).join(", ")}`
+          console.log(
+            `[search:hotels] Countries found: ${foundCountries.map((c) => `${c.name} (code:${c.code})`).join(" | ")}`
           );
         } else {
-          debugSearchLog(`[DEBUG_SEARCH] No countries found for "${plan.location.country}"`);
+          console.log(`[search:hotels] No countries found for "${resolvedCountry}"`);
         }
       } catch (err) {
         debugSearchLog("[assistant] country lookup failed", err);
@@ -1268,18 +1493,39 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     }
   }
 
-  // Apply filters with precedence: City Code > City Name > Country Code > Country Name
-  if (cityCodes.length > 0) {
+  // Apply city filter: OR(city_code IN [...], city_name LIKE '%...%') so hotels matched by
+  // coded city AND hotels with only city_name are both included. This is critical for providers
+  // like WebBeds where many hotels have city_name but no city_code (or a different code).
+  if (cityCodes.length > 0 && plan?.location?.city) {
+    const nameFilter = buildStringFilter(plan.location.city);
+    if (nameFilter) {
+      where[Op.or] = [
+        { city_code: { [Op.in]: cityCodes } },
+        { city_name: nameFilter },
+      ];
+    } else {
+      where.city_code = { [Op.in]: cityCodes };
+    }
+  } else if (cityCodes.length > 0) {
     where.city_code = { [Op.in]: cityCodes };
   } else if (plan?.location?.city) {
-    const filter = buildStringFilter(plan.location.city);
-    if (filter) where.city_name = filter;
+    // Guard: if a landmark is set and the city lookup returned 0 codes, the city field might
+    // actually be the landmark name (e.g. AI put "Burj Khalifa" in city instead of landmark).
+    // Adding city_name LIKE '%Burj Khalifa%' would return 0 hotels. Skip this filter so the
+    // coordinate filter (if resolved) or country filter can handle it instead.
+    const hasLandmark = typeof plan?.location?.landmark === "string" && plan.location.landmark.trim().length > 0;
+    if (!hasLandmark) {
+      const filter = buildStringFilter(plan.location.city);
+      if (filter) where.city_name = filter;
+    } else {
+      console.log(`[search:hotels] Skipping city_name fallback (landmark set, city "${plan.location.city}" not found in WebbedsCity)`);
+    }
   }
 
   // Only apply country filter if city didn't capture it (or if checking same country)
   // However, usually we want strict filtering. If city is found, we assume it implies country.
   // If city is NOT found but country IS, we filter by country.
-  if (!where.city_code && !where.city_name) {
+  if (!where[Op.or] && !where.city_code && !where.city_name) {
     if (countryCodes.length > 0) {
       where.country_code = { [Op.in]: countryCodes };
     } else if (plan?.location?.country) {
@@ -1287,12 +1533,32 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
       if (filter) where.country_name = filter;
     }
   }
-  if (coordinateFilter) {
+  // Only use coordinate filter in SQL when there's no city/country filter already applied.
+  // When a city is set, the coordinate comes from a landmark resolution (e.g. "cerca del Burj Khalifa
+  // en Dubai") — hotels in that city may not have lat/lng populated, so adding a bbox AND city filter
+  // would return 0 results. The landmark is used for ranking only (resolvedPoi), not hard filtering.
+  const hasLocationFilter = Boolean(where[Op.or] || where.city_code || where.city_name || where.country_code || where.country_name);
+  if (coordinateFilter && !hasLocationFilter) {
     where.lat = coordinateFilter.latitude;
     where.lng = coordinateFilter.longitude;
   }
-  if (normalizedHotelFilters.preferredOnly) {
-    where.preferred = true;
+  // NOTE: preferredOnly is intentionally NOT added to the SQL WHERE.
+  // Adding preferred=true in SQL would make the relaxed fallback useless (it reuses the
+  // same DB rows — 0 rows if no preferred hotel matches the city+star criteria).
+  // Instead, preferredOnly is enforced by applyHotelFilters (post-filter). When 0 hotels
+  // pass that filter, the relaxed fallback strips it and returns city+star-filtered hotels.
+
+  // Apply SQL-level classification_code filter when minRating is set.
+  // IMPORTANT: classification_code is a BIGINT FK to webbeds_hotel_classification.code —
+  // WebBeds codes are NOT 1-5 (e.g., 563 = Luxury/*****). Use the lookup table.
+  if (normalizedHotelFilters.minRating != null && Number.isFinite(normalizedHotelFilters.minRating)) {
+    const minStar = Math.round(normalizedHotelFilters.minRating);
+    const eligibleCodes = resolveClassificationCodesForMinRating(minStar);
+    if (eligibleCodes.length) {
+      where.classification_code = { [Op.in]: eligibleCodes };
+      debugSearchLog(`[DEBUG_SEARCH] SQL minRating filter: classification_code IN (${eligibleCodes.join(",")}) [minStar=${minStar}]`);
+      console.log(`[search:hotels] SQL star filter: ${minStar}★+ → classification_code IN (${eligibleCodes.join(",")})`);
+    }
   }
 
   debugSearchLog(`[DEBUG_SEARCH] Final Query "where" clause:`, JSON.stringify(where, null, 2));
@@ -1301,10 +1567,10 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     where.hotel_id = { [Op.notIn]: excludeIds };
   }
 
+  // When minRating is set, SQL already pre-filters by classification_code so fetchMultiplier=1 is
+  // sufficient (no over-fetch needed). For amenity codes we still need the multiplier.
   const fetchMultiplier =
-    normalizedHotelFilters.amenityCodes.length ||
-      normalizedHotelFilters.amenityItemIds.length ||
-      normalizedHotelFilters.minRating != null
+    normalizedHotelFilters.amenityCodes.length || normalizedHotelFilters.amenityItemIds.length
       ? 3
       : 1;
   const fetchLimit = clampLimit(limit * fetchMultiplier);
@@ -1356,31 +1622,67 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   });
 
   let cards = hotels.map(formatStaticHotel).filter(Boolean);
+  console.log(`[search:hotels] DB → ${hotels.length} hotels fetched, ${cards.length} mapped OK`);
+
   cards = await applyHotelFilters(cards, normalizedHotelFilters);
+  console.log(`[search:hotels] Post-filter → ${cards.length} hotels passed (minRating:${normalizedHotelFilters.minRating ?? "none"}, amenityCodes:[${normalizedHotelFilters.amenityCodes.join(",")}], preferredOnly:${normalizedHotelFilters.preferredOnly})`);
+
+  // When city was used as SQL filter (coordinate skipped), apply proximity as a soft post-filter.
+  // Only keep hotels that have lat/lng AND are within the landmark bbox.
+  // If none have coordinates → fall through with all city results (better than nothing).
+  if (coordinateFilter && hasLocationFilter) {
+    const nearbyCards = cards.filter(
+      (card) => card.geoPoint && matchesCoordinateFilter(card.geoPoint, coordinateFilter)
+    );
+    if (nearbyCards.length) {
+      cards = nearbyCards;
+      debugSearchLog(`[DEBUG_SEARCH] Proximity post-filter: ${nearbyCards.length} of ${cards.length + (cards.length - nearbyCards.length)} hotels near landmark`);
+    } else {
+      debugSearchLog(`[DEBUG_SEARCH] Proximity post-filter: no hotels with geoPoint near landmark, returning all city results`);
+    }
+  }
+
   cards = cards
     .map((hotel) => ({
       ...hotel,
+      stars: resolveHotelStars(hotel),
       inventoryType: "HOTEL",
       matchReasons: buildHotelMatchReasons({ plan, hotel }),
     }))
     .slice(0, limit);
   if (cards.length) {
+    console.log(`[search:hotels] RESULT: EXACT — ${cards.length} items`);
     return { items: cards, matchType: "EXACT" };
   }
 
+  // Relaxed fallback: strip amenity/preferred filters but keep star filter.
+  // Because SQL already pre-filters by classification_code, `hotels` here are already star-correct —
+  // so even without the post-filter, we only show hotels of the requested star category.
+  console.log(`[search:hotels] strict=0 → relaxed fallback (${hotels.length} DB hotels, dropping amenity/preferred filters)`);
   let relaxedCards = hotels.map(formatStaticHotel).filter(Boolean);
+  if (normalizedHotelFilters.minRating != null) {
+    const starOnlyFilters = { ...normalizedHotelFilters, amenityCodes: [], amenityItemIds: [], preferredOnly: false };
+    const starFiltered = await applyHotelFilters(relaxedCards, starOnlyFilters);
+    // SQL pre-filter guarantees these hotels have the right classification_code, so
+    // starFiltered should be non-empty. If somehow 0 (edge case), fall through with
+    // SQL-pre-filtered hotels (still correct star category, just missing post-filter validation).
+    if (starFiltered.length) relaxedCards = starFiltered;
+  }
   relaxedCards = relaxedCards
     .map((hotel) => ({
       ...hotel,
+      stars: resolveHotelStars(hotel),
       inventoryType: "HOTEL",
       matchReasons: [...buildHotelMatchReasons({ plan, hotel }), "Opciones recomendadas con filtros flexibles"],
     }))
     .slice(0, limit);
   if (relaxedCards.length) {
+    console.log(`[search:hotels] RESULT: SIMILAR (relaxed) — ${relaxedCards.length} items`);
     return { items: relaxedCards, matchType: "SIMILAR" };
   }
 
   if (hasLocation) {
+    console.log(`[search:hotels] RESULT: NONE — location constraint present but 0 matches`);
     debugSearchLog("[assistant] no fallback hotels; location constraint present");
     return { items: [], matchType: "NONE" };
   }
@@ -1441,10 +1743,13 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     .filter(Boolean)
     .map((hotel) => ({
       ...hotel,
+      stars: resolveHotelStars(hotel),
       inventoryType: "HOTEL",
       matchReasons: [...buildHotelMatchReasons({ plan, hotel }), "Opciones recomendadas basadas en tu busqueda"],
     }))
     .slice(0, limit);
 
-  return { items: fallbackCards, matchType: fallbackCards.length ? "SIMILAR" : "NONE" };
+  const finalMatchType = fallbackCards.length ? "SIMILAR" : "NONE";
+  console.log(`[search:hotels] RESULT: ${finalMatchType} (global fallback) — ${fallbackCards.length} items`);
+  return { items: fallbackCards, matchType: finalMatchType };
 };
