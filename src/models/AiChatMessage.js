@@ -33,6 +33,7 @@ export default (sequelize) => {
       },
       plan_snapshot: { type: JSON_TYPE },
       inventory_snapshot: { type: JSON_TYPE },
+      ui_snapshot: { type: JSON_TYPE },
       deleted_at: { type: DataTypes.DATE },
     },
     {

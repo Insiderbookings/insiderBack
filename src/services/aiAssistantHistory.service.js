@@ -94,6 +94,7 @@ const mapMessage = (message) => {
     updatedAt: data.updated_at,
     planSnapshot: parseJsonField(data.plan_snapshot) || null,
     inventorySnapshot: parseJsonField(data.inventory_snapshot) || null,
+    ui: parseJsonField(data.ui_snapshot) || null,
   };
 };
 
@@ -221,6 +222,7 @@ export const appendAssistantChatMessage = async (
     content,
     planSnapshot = null,
     inventorySnapshot = null,
+    uiSnapshot = null,
     reserveSlots = 0,
   } = {}
 ) => {
@@ -254,6 +256,7 @@ export const appendAssistantChatMessage = async (
         content: sanitized,
         plan_snapshot: planSnapshot ?? null,
         inventory_snapshot: inventorySnapshot ?? null,
+        ui_snapshot: uiSnapshot ?? null,
       },
       { transaction }
     );

@@ -327,6 +327,7 @@ export const handleAiChat = async (req, res) => {
           content: result.reply || "Ok.",
           planSnapshot: result.plan,
           inventorySnapshot: result.inventory,
+          uiSnapshot: result.ui ?? null,
         });
         try {
           await saveAssistantState({

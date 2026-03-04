@@ -68,6 +68,8 @@ const hasDestination = (state) => {
   if (!state) return false;
   if (state.destination?.name) return true;
   if (state.destination?.lat != null && state.destination?.lon != null) return true;
+  // A landmark (e.g. "Burj Khalifa") counts as a destination even without a city
+  if (typeof state.searchPlan?.location?.landmark === "string" && state.searchPlan.location.landmark.trim()) return true;
   return false;
 };
 
