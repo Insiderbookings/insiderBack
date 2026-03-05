@@ -509,6 +509,7 @@ const buildPlannerPrompt = ({ now, confirmedSearch } = {}) => {
         "- Detect HOTEL filters: amenityCodes from catalog names, amenityItemIds when numeric IDs are provided, preferredOnly flag, and minRating based on star ranks.\n" +
         "- If the user mentions pool/piscina/pileta, include hotelFilters.amenityCodes with \"POOL\".\n" +
         "- PREFERENCES (preferences.areaPreference): Extract from phrases like 'quiet', 'tranquilo', 'near coast/beach', 'cerca de la playa', 'city center', 'centro', 'family-friendly', 'familia', 'luxury', 'lujo', 'budget', 'económico'. Use: QUIET, BEACH_COAST, CITY_CENTER, FAMILY_FRIENDLY, LUXURY, BUDGET. Put all that apply in preferences.areaPreference array. Optional preferences.preferenceNotes: short free text for other wishes.\n" +
+        "- NEARBY INTEREST (preferences.nearbyInterest): Extract as a short English search phrase when the user wants to be near a specific type of place or establishment that is NOT already covered by areaPreference. Examples: 'cerca de comida vegana' → 'vegan food', 'cerca de restaurantes de sushi' → 'sushi restaurants', 'near a park' → 'park', 'close to the metro' → 'metro station', 'near nightlife' → 'nightlife bars', 'cerca de museos' → 'museums'. Leave null when not mentioned, or when intent is already covered by CITY_CENTER/BEACH_COAST in areaPreference.\n" +
         "- Map preferences to filters: BEACH_COAST -> homeFilters.tagKeys BEACHFRONT when HOMES; LUXURY -> hotelFilters.preferredOnly or homeFilters.tagKeys LUXURY; BUDGET -> sortBy PRICE_ASC or budget.max; QUIET/FAMILY_FRIENDLY -> preferenceNotes so assistant can acknowledge.\n" +
         "- Capture guest requirements (adults, children, pets) plus requested bedrooms, beds, bathrooms, or total guests for homes.\n" +
         "- If the user says cheap/budget/economico/barato/ahorrar WITHOUT an explicit numeric amount, set sortBy PRICE_ASC and DO NOT set budget.max.\n" +
@@ -530,7 +531,7 @@ const buildPlannerPrompt = ({ now, confirmedSearch } = {}) => {
         "location": {"city": string|null, "state": string|null, "country": string|null, "lat": number|null, "lng": number|null, "radiusKm": number|null, "landmark": string|null},
         "dates": {"checkIn": "YYYY-MM-DD" | null, "checkOut": "YYYY-MM-DD" | null, "flexible": boolean},
         "guests": {"adults": number|null, "children": number|null, "infants": number|null, "pets": number|null, "total": number|null},
-        "preferences": {"areaPreference": string[], "preferenceNotes": string[]},
+        "preferences": {"areaPreference": string[], "preferenceNotes": string[], "nearbyInterest": string|null},
         "homeFilters": {
           "propertyTypes": string[],
           "spaceTypes": string[],
@@ -563,7 +564,7 @@ const defaultPlan = {
   location: { city: null, state: null, country: null, lat: null, lng: null, radiusKm: null, landmark: null },
   dates: { checkIn: null, checkOut: null, flexible: true },
   guests: { adults: null, children: null, infants: null, pets: null, total: null },
-  preferences: { areaPreference: [], preferenceNotes: [] },
+  preferences: { areaPreference: [], preferenceNotes: [], nearbyInterest: null },
   homeFilters: {
     propertyTypes: [],
     spaceTypes: [],
@@ -664,6 +665,13 @@ const mergePlan = (raw, { contextText = "" } = {}) => {
   normalizedDates.checkOut = normalizeDateString(rawDates.checkOut ?? normalizedDates.checkOut);
   normalizedDates.flexible = normalizeBooleanFlag(rawDates.flexible, defaultPlan.dates.flexible);
 
+  const rawPreferences = raw.preferences || {};
+  const nearbyInterestRaw = rawPreferences.nearbyInterest ?? null;
+  const nearbyInterest =
+    typeof nearbyInterestRaw === "string" && nearbyInterestRaw.trim().length
+      ? nearbyInterestRaw.trim()
+      : null;
+
   const { amenities, ...rawPlan } = raw;
   return {
     ...defaultPlan,
@@ -673,6 +681,17 @@ const mergePlan = (raw, { contextText = "" } = {}) => {
     location: mergedLocation,
     dates: normalizedDates,
     guests: { ...defaultPlan.guests, ...(raw.guests || {}) },
+    preferences: {
+      ...defaultPlan.preferences,
+      ...rawPreferences,
+      areaPreference: Array.isArray(rawPreferences.areaPreference)
+        ? rawPreferences.areaPreference.map((s) => String(s || "").trim().toUpperCase()).filter(Boolean)
+        : [],
+      preferenceNotes: Array.isArray(rawPreferences.preferenceNotes)
+        ? rawPreferences.preferenceNotes.filter(Boolean)
+        : [],
+      nearbyInterest,
+    },
     homeFilters,
     hotelFilters,
     budget: { ...defaultPlan.budget, ...(raw.budget || {}) },

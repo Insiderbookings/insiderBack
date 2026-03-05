@@ -43,7 +43,7 @@ const toMeters = (km) => Math.round(Number(km || 0) * 1000);
 
 const degreesToRadians = (deg) => (deg * Math.PI) / 180;
 
-const computeDistanceKm = (from, to) => {
+export const computeDistanceKm = (from, to) => {
   if (!from || !to) return null;
   const earthRadiusKm = 6371;
   const dLat = degreesToRadians(to.lat - from.lat);

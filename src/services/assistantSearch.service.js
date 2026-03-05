@@ -6,7 +6,7 @@ import { buildSearchHotelsPayload } from "../providers/webbeds/searchHotels.js";
 import { mapHomeToCard } from "../utils/homeMapper.js";
 import { formatStaticHotel } from "../utils/webbedsMapper.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
-import { resolvePoiToCoordinates } from "../modules/ai/tools/tool.places.js";
+import { resolvePoiToCoordinates, getNearbyPlaces, computeDistanceKm } from "../modules/ai/tools/tool.places.js";
 
 const ASSISTANT_SEARCH_MAX_LIMIT = Math.max(
   20,
@@ -411,6 +411,95 @@ const resolveGuestTotal = (plan) => {
 };
 
 const resolveBudgetMax = (plan) => toNumberOrNull(plan?.budget?.max);
+
+/**
+ * Resolves a proximity anchor for hotel sorting.
+ * Returns { type: "CITY_CENTER", anchor: {lat, lng} }
+ * or      { type: "NEARBY_INTEREST", places: [{location:{lat,lng}, ...}] }
+ * or null when no proximity intent is present.
+ */
+const resolveProximityAnchor = async (plan) => {
+  const areaPrefs = Array.isArray(plan?.preferences?.areaPreference)
+    ? plan.preferences.areaPreference.map((s) => String(s || "").toUpperCase())
+    : [];
+  const nearbyInterest =
+    typeof plan?.preferences?.nearbyInterest === "string" && plan.preferences.nearbyInterest.trim().length
+      ? plan.preferences.nearbyInterest.trim()
+      : null;
+  const city = plan?.location?.city || null;
+  const country = plan?.location?.country || null;
+
+  // CITY_CENTER: geocode "city center {city}, {country}"
+  if (areaPrefs.includes("CITY_CENTER") && city) {
+    const query = ["city center", city, country].filter(Boolean).join(", ");
+    try {
+      const poi = await resolvePoiToCoordinates(query);
+      if (poi?.lat && poi?.lng) {
+        console.log(`[search:hotels] CITY_CENTER anchor: ${poi.lat},${poi.lng} (${poi.name})`);
+        return { type: "CITY_CENTER", anchor: { lat: poi.lat, lng: poi.lng } };
+      }
+    } catch (err) {
+      console.warn("[search:hotels] CITY_CENTER geocode failed", err?.message);
+    }
+  }
+
+  // NEARBY_INTEREST: geocode city → find nearby places matching the interest
+  if (nearbyInterest && city) {
+    const cityQuery = [city, country].filter(Boolean).join(", ");
+    try {
+      const cityPoi = await resolvePoiToCoordinates(cityQuery);
+      if (cityPoi?.lat && cityPoi?.lng) {
+        const places = await getNearbyPlaces({
+          location: { lat: cityPoi.lat, lng: cityPoi.lng },
+          radiusKm: 10,
+          keyword: nearbyInterest,
+          limit: 6,
+        });
+        const validPlaces = places.filter((p) => p?.location?.lat && p?.location?.lng);
+        if (validPlaces.length) {
+          console.log(`[search:hotels] nearbyInterest "${nearbyInterest}": ${validPlaces.length} places found`);
+          return { type: "NEARBY_INTEREST", places: validPlaces };
+        }
+      }
+    } catch (err) {
+      console.warn("[search:hotels] nearbyInterest resolve failed", err?.message);
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Sorts hotel cards by proximity to an anchor resolved by resolveProximityAnchor().
+ * Hotels without geoPoint go to the end.
+ */
+const sortByProximity = (cards, proximityAnchor) => {
+  if (!proximityAnchor) return cards;
+
+  const getDistanceForCard = (card) => {
+    const gp = card.geoPoint;
+    if (!gp?.lat || !gp?.lng) return Number.MAX_SAFE_INTEGER;
+
+    if (proximityAnchor.type === "CITY_CENTER") {
+      return computeDistanceKm(gp, proximityAnchor.anchor) ?? Number.MAX_SAFE_INTEGER;
+    }
+
+    if (proximityAnchor.type === "NEARBY_INTEREST") {
+      // Minimum distance to any of the matching places
+      let minDist = Number.MAX_SAFE_INTEGER;
+      for (const place of proximityAnchor.places) {
+        if (!place.location?.lat || !place.location?.lng) continue;
+        const d = computeDistanceKm(gp, place.location);
+        if (d != null && d < minDist) minDist = d;
+      }
+      return minDist;
+    }
+
+    return Number.MAX_SAFE_INTEGER;
+  };
+
+  return [...cards].sort((a, b) => getDistanceForCard(a) - getDistanceForCard(b));
+};
 
 /** Preference intents: QUIET, BEACH_COAST, CITY_CENTER, FAMILY_FRIENDLY, LUXURY, BUDGET → filters */
 const deriveFiltersFromPreferences = (plan = {}) => {
@@ -1180,7 +1269,7 @@ const applyHotelFilters = async (hotels, filters = {}) => {
   return filtered;
 };
 
-const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, coordinateFilter }) => {
+const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, coordinateFilter, proximityAnchor = null }) => {
   if (!Array.isArray(options) || !options.length) return [];
   const debugLive =
     process.env.WEBBEDS_VERBOSE_LOGS === "true" || process.env.ASSISTANT_DEBUG_HOTEL_MATCH === "true";
@@ -1303,11 +1392,27 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
   if (coordinateFilter) {
     filteredCards = filteredCards.filter((card) => matchesCoordinateFilter(card.geoPoint, coordinateFilter));
   }
-  filteredCards.sort((a, b) => {
-    const priceA = toNumberOrNull(a.pricePerNight) ?? Number.MAX_SAFE_INTEGER;
-    const priceB = toNumberOrNull(b.pricePerNight) ?? Number.MAX_SAFE_INTEGER;
-    return priceA - priceB;
-  });
+
+  // Apply budget.max filter when the user specified an explicit numeric price cap.
+  const budgetMax = resolveBudgetMax(plan);
+  if (budgetMax != null) {
+    filteredCards = filteredCards.filter(
+      (card) => toNumberOrNull(card.pricePerNight) == null || toNumberOrNull(card.pricePerNight) <= budgetMax
+    );
+  }
+
+  // Proximity sort takes priority when user requested CITY_CENTER or nearbyInterest.
+  // Otherwise fall back to plan.sortBy (default PRICE_ASC).
+  if (proximityAnchor) {
+    filteredCards = sortByProximity(filteredCards, proximityAnchor);
+  } else {
+    const sortByLive = String(plan?.sortBy || "PRICE_ASC").trim().toUpperCase();
+    filteredCards.sort((a, b) => {
+      const priceA = toNumberOrNull(a.pricePerNight) ?? Number.MAX_SAFE_INTEGER;
+      const priceB = toNumberOrNull(b.pricePerNight) ?? Number.MAX_SAFE_INTEGER;
+      return sortByLive === "PRICE_DESC" ? priceB - priceA : priceA - priceB;
+    });
+  }
 
   return filteredCards.slice(0, limit).map((hotel) => ({
     ...hotel,
@@ -1317,7 +1422,7 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
   }));
 };
 
-const tryRunLiveHotelSearch = async ({ plan, limit, hotelFilters, coordinateFilter }) => {
+const tryRunLiveHotelSearch = async ({ plan, limit, hotelFilters, coordinateFilter, proximityAnchor = null }) => {
   if (!plan?.dates?.checkIn || !plan?.dates?.checkOut) return [];
   if (!hasExplicitHotelGuests(plan)) return [];
   const provider = getLiveHotelProvider();
@@ -1351,6 +1456,7 @@ const tryRunLiveHotelSearch = async ({ plan, limit, hotelFilters, coordinateFilt
       limit,
       hotelFilters,
       coordinateFilter,
+      proximityAnchor,
     });
   } catch (error) {
     console.warn("[assistant] live hotel search failed", error?.message || error);
@@ -1416,11 +1522,15 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   const coordinateFilter = buildCoordinateFilterUsingRadius(plan?.location || {});
   const hasLocation = hasLocationConstraint(plan?.location || {});
 
+  // Resolve proximity anchor once — used by both live and static hotel paths.
+  const proximityAnchor = await resolveProximityAnchor(plan);
+
   const liveResults = await tryRunLiveHotelSearch({
     plan,
     limit,
     hotelFilters: normalizedHotelFilters,
     coordinateFilter,
+    proximityAnchor,
   });
 
   if (liveResults.length) {
@@ -1640,6 +1750,30 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     } else {
       debugSearchLog(`[DEBUG_SEARCH] Proximity post-filter: no hotels with geoPoint near landmark, returning all city results`);
     }
+  }
+
+  // Apply budget.max filter when the user specified an explicit numeric price cap.
+  const budgetMax = resolveBudgetMax(plan);
+  if (budgetMax != null) {
+    const beforeBudget = cards.length;
+    cards = cards.filter(
+      (card) => toNumberOrNull(card.pricePerNight) == null || toNumberOrNull(card.pricePerNight) <= budgetMax
+    );
+    console.log(`[search:hotels] Budget filter (max ${budgetMax}): ${beforeBudget} → ${cards.length} hotels`);
+  }
+
+  // Proximity sort takes priority when user requested CITY_CENTER or nearbyInterest.
+  // Otherwise fall back to plan.sortBy (default PRICE_ASC).
+  if (proximityAnchor) {
+    cards = sortByProximity(cards, proximityAnchor);
+  } else {
+    const sortByStatic = String(plan?.sortBy || "PRICE_ASC").trim().toUpperCase();
+    if (sortByStatic === "PRICE_DESC") {
+      cards.sort((a, b) => (toNumberOrNull(b.pricePerNight) ?? 0) - (toNumberOrNull(a.pricePerNight) ?? 0));
+    } else if (sortByStatic === "PRICE_ASC") {
+      cards.sort((a, b) => (toNumberOrNull(a.pricePerNight) ?? Number.MAX_SAFE_INTEGER) - (toNumberOrNull(b.pricePerNight) ?? Number.MAX_SAFE_INTEGER));
+    }
+    // POPULARITY and RELEVANCE: DB already ordered by preferred DESC, priority DESC — keep as-is.
   }
 
   cards = cards
