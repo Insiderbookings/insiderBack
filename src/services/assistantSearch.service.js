@@ -6,11 +6,24 @@ import { buildSearchHotelsPayload } from "../providers/webbeds/searchHotels.js";
 import { mapHomeToCard } from "../utils/homeMapper.js";
 import { formatStaticHotel } from "../utils/webbedsMapper.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
+import { resolvePoiToCoordinates, getNearbyPlaces, computeDistanceKm } from "../modules/ai/tools/tool.places.js";
+
+const ASSISTANT_SEARCH_MAX_LIMIT = Math.max(
+  20,
+  Math.min(120, Number(process.env.AI_SEARCH_MAX_LIMIT || 120))
+);
+const DEBUG_ASSISTANT_SEARCH =
+  String(process.env.AI_DEBUG_LOGS || "").trim().toLowerCase() === "true";
+
+const debugSearchLog = (...args) => {
+  if (!DEBUG_ASSISTANT_SEARCH) return;
+  console.log(...args);
+};
 
 const clampLimit = (value, fallback = 6) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
-  return Math.min(20, Math.max(1, Math.floor(numeric)));
+  return Math.min(ASSISTANT_SEARCH_MAX_LIMIT, Math.max(1, Math.floor(numeric)));
 };
 
 const toNumberOrNull = (value) => {
@@ -69,10 +82,80 @@ const normalizeIdList = (value) => {
   return Array.from(new Set(normalized));
 };
 
+// Maps AI amenity names (English or Spanish) to search terms that match webbeds_amenity_catalog.name.
+// Each key resolves to an OR of LIKE searches — pick terms that cover the catalog entries.
+// Verified against live webbeds_amenity_catalog table.
 const AMENITY_NAME_SYNONYMS = {
-  POOL: ["POOL", "SWIMMING POOL", "OUTDOOR POOL", "INDOOR POOL"],
-  PISCINA: ["POOL", "SWIMMING POOL"],
-  PILETA: ["POOL", "SWIMMING POOL"],
+  // Pool variants
+  POOL:            ["POOL", "SWIMMING POOL"],
+  PISCINA:         ["POOL", "SWIMMING POOL"],
+  PILETA:          ["POOL", "SWIMMING POOL"],
+  "SWIMMING POOL": ["POOL", "SWIMMING POOL"],
+  "OUTDOOR POOL":  ["SWIMMING POOL", "OUTDOOR"],
+  "INDOOR POOL":   ["SWIMMING POOL", "INDOOR"],
+
+  // Gym / Fitness — catalog has: Fitness (98455), Gymnasium (47935), Health And Fitness Facility (1978)
+  GYM:             ["GYM", "GYMNASIUM", "FITNESS", "HEALTH AND FITNESS"],
+  GIMNASIO:        ["GYM", "GYMNASIUM", "FITNESS", "HEALTH AND FITNESS"],
+  FITNESS:         ["FITNESS", "GYM", "GYMNASIUM", "HEALTH AND FITNESS"],
+  "FITNESS CENTER":["FITNESS", "GYM", "GYMNASIUM"],
+
+  // Spa
+  SPA:             ["SPA"],
+  MASAJE:          ["MASSAGE", "SPA"],
+  MASSAGE:         ["MASSAGE", "SPA"],
+
+  // WiFi / Internet — catalog: Complimentary WiFi access (48325), Free Wifi (98445), High Speed Internet (3664)
+  WIFI:            ["WIFI", "WI-FI", "INTERNET"],
+  "WI-FI":         ["WIFI", "WI-FI", "INTERNET"],
+  INTERNET:        ["INTERNET", "WIFI", "WI-FI"],
+
+  // Parking — catalog: Car Parking - Onsite Free/Paid, Valet Parking, Self-parking
+  PARKING:         ["PARKING"],
+  COCHERA:         ["PARKING"],
+  ESTACIONAMIENTO: ["PARKING"],
+  "FREE PARKING":  ["PARKING - ONSITE FREE", "SELF-PARKING - FREE"],
+  "VALET PARKING": ["VALET PARKING"],
+
+  // Jacuzzi / Hot Tub — catalog: Jacuzzi (3891), Bath/Hot spring (100055)
+  JACUZZI:         ["JACUZZI", "HOT SPRING", "HOT TUB"],
+  "HOT TUB":       ["JACUZZI", "HOT SPRING", "HOT TUB"],
+  "HOT SPRING":    ["HOT SPRING", "JACUZZI"],
+
+  // Sauna — catalog: Sauna (650)
+  SAUNA:           ["SAUNA"],
+
+  // Beach — catalog: On-Site Beach (3724), Beach sun loungers, Beach umbrellas
+  BEACH:           ["BEACH"],
+  PLAYA:           ["BEACH"],
+
+  // Pets — catalog: Pets Allowed (606)
+  PET:             ["PET"],
+  PETS:            ["PET"],
+  "PET FRIENDLY":  ["PET"],
+  MASCOTA:         ["PET"],
+  MASCOTAS:        ["PET"],
+
+  // Kids / Family — catalog: Kids Club (1981), Kids Facilities (101105), Kids Play Ground (3294), Family Rooms (101035)
+  KIDS:            ["KIDS", "FAMILY"],
+  "KIDS CLUB":     ["KIDS CLUB"],
+  FAMILY:          ["FAMILY", "KIDS"],
+
+  // Restaurant / Bar — catalog: Restaurant (641), Bar (3134)
+  RESTAURANT:      ["RESTAURANT"],
+  RESTAURANTE:     ["RESTAURANT"],
+  BAR:             ["BAR"],   // LIKE '%BAR%' also matches Barbecue/Barber — acceptable false-positive
+
+  // Casino — catalog: Casino (3164)
+  CASINO:          ["CASINO"],
+
+  // Tennis / Golf — catalog: Tennis Courts (618), Golf Course (1684)
+  TENNIS:          ["TENNIS"],
+  GOLF:            ["GOLF"],
+
+  // Airport shuttle — catalog: Airport Shuttle - Free (3674), Airport shuttle available (665)
+  "AIRPORT SHUTTLE": ["AIRPORT SHUTTLE"],
+  TRANSFER:          ["AIRPORT SHUTTLE"],
 };
 
 const expandAmenityNameCandidates = (candidates = []) => {
@@ -196,10 +279,110 @@ const getLiveHotelProvider = () => {
 const resolveDialect = () =>
   typeof sequelize.getDialect === "function" ? sequelize.getDialect() : "mysql";
 
+// WebBeds classification codes (webbeds_hotel_classification.code) — BIGINT, NOT the star count.
+// Verified against live DB: SELECT code, name FROM webbeds_hotel_classification ORDER BY code.
+const WEBBEDS_CLASSIFICATION_CODE_TO_STARS = {
+  559: 1,   // Economy *
+  560: 2,   // Budget **
+  561: 3,   // Standard ***
+  562: 4,   // Superior ****
+  563: 5,   // Luxury *****
+  // 48055 = Serviced Apartment, 55835 = Unrated — not mapped to stars
+};
+
+// Returns the list of classification_code BIGINTs for hotels with >= minStars.
+const resolveClassificationCodesForMinRating = (minStars) => {
+  return Object.entries(WEBBEDS_CLASSIFICATION_CODE_TO_STARS)
+    .filter(([, stars]) => stars >= minStars)
+    .map(([code]) => Number(code));
+};
+
+// Resolves a hotel's star count from its formatted card (classification.code is a BIGINT code).
+const resolveHotelStars = (hotel) => {
+  const classCode = toNumberOrNull(hotel.classification?.code);
+  if (classCode != null && WEBBEDS_CLASSIFICATION_CODE_TO_STARS[classCode] != null) {
+    return WEBBEDS_CLASSIFICATION_CODE_TO_STARS[classCode];
+  }
+  // fallback: raw rating string (some hotels may populate this)
+  return toNumberOrNull(hotel.rating);
+};
+
+// Strip diacritics so "Dubái" matches "Dubai", "Río" matches "Rio", etc.
+// WebBeds data is in English (no accents), so normalizing search terms is always safe.
+const stripDiacritics = (str) =>
+  str.normalize("NFD").replace(/\p{Diacritic}/gu, "");
+
+// Spanish→English country name aliases for when the AI returns Spanish country names.
+// Keys are lowercase normalized (no diacritics).
+const COUNTRY_NAME_ALIASES_EN = {
+  "emiratos arabes unidos": "United Arab Emirates",
+  "espana": "Spain",
+  "alemania": "Germany",
+  "francia": "France",
+  "italia": "Italy",
+  "grecia": "Greece",
+  "turquia": "Turkey",
+  "tailandia": "Thailand",
+  "reino unido": "United Kingdom",
+  "estados unidos": "United States",
+  "paises bajos": "Netherlands",
+  "belgica": "Belgium",
+  "suiza": "Switzerland",
+  "austria": "Austria",
+  "japon": "Japan",
+  "corea del sur": "South Korea",
+  "india": "India",
+  "china": "China",
+  "singapur": "Singapore",
+  "malasia": "Malaysia",
+  "indonesia": "Indonesia",
+  "vietnam": "Vietnam",
+  "marruecos": "Morocco",
+  "egipto": "Egypt",
+  "sudafrica": "South Africa",
+  "brasil": "Brazil",
+  "mexico": "Mexico",
+  "peru": "Peru",
+  "colombia": "Colombia",
+  "chile": "Chile",
+  "argentina": "Argentina",
+  "republica dominicana": "Dominican Republic",
+  "cuba": "Cuba",
+  "portugal": "Portugal",
+  "croacia": "Croatia",
+  "hungria": "Hungary",
+  "republica checa": "Czech Republic",
+  "rumania": "Romania",
+  "polonia": "Poland",
+  "noruega": "Norway",
+  "suecia": "Sweden",
+  "dinamarca": "Denmark",
+  "finlandia": "Finland",
+  "irlanda": "Ireland",
+  "canada": "Canada",
+  "australia": "Australia",
+  "nueva zelanda": "New Zealand",
+  "israel": "Israel",
+  "jordania": "Jordan",
+  "arabia saudi": "Saudi Arabia",
+  "bahrein": "Bahrain",
+  "catar": "Qatar",
+  "kuwait": "Kuwait",
+  "oman": "Oman",
+};
+
+// Resolve a possibly-Spanish, possibly-accented country name to its English DB equivalent.
+const resolveCountryName = (name) => {
+  if (!name || typeof name !== "string") return name;
+  const key = stripDiacritics(name.trim().toLowerCase());
+  return COUNTRY_NAME_ALIASES_EN[key] || stripDiacritics(name.trim());
+};
+
 const buildStringFilter = (value) => {
   const trimmed = typeof value === "string" ? value.trim() : "";
   if (!trimmed) return null;
-  return { [iLikeOp]: `%${trimmed}%` };
+  const normalized = stripDiacritics(trimmed);
+  return { [iLikeOp]: `%${normalized}%` };
 };
 
 const hasLocationConstraint = (location = {}) => {
@@ -228,6 +411,95 @@ const resolveGuestTotal = (plan) => {
 };
 
 const resolveBudgetMax = (plan) => toNumberOrNull(plan?.budget?.max);
+
+/**
+ * Resolves a proximity anchor for hotel sorting.
+ * Returns { type: "CITY_CENTER", anchor: {lat, lng} }
+ * or      { type: "NEARBY_INTEREST", places: [{location:{lat,lng}, ...}] }
+ * or null when no proximity intent is present.
+ */
+const resolveProximityAnchor = async (plan) => {
+  const areaPrefs = Array.isArray(plan?.preferences?.areaPreference)
+    ? plan.preferences.areaPreference.map((s) => String(s || "").toUpperCase())
+    : [];
+  const nearbyInterest =
+    typeof plan?.preferences?.nearbyInterest === "string" && plan.preferences.nearbyInterest.trim().length
+      ? plan.preferences.nearbyInterest.trim()
+      : null;
+  const city = plan?.location?.city || null;
+  const country = plan?.location?.country || null;
+
+  // CITY_CENTER: geocode "city center {city}, {country}"
+  if (areaPrefs.includes("CITY_CENTER") && city) {
+    const query = ["city center", city, country].filter(Boolean).join(", ");
+    try {
+      const poi = await resolvePoiToCoordinates(query);
+      if (poi?.lat && poi?.lng) {
+        console.log(`[search:hotels] CITY_CENTER anchor: ${poi.lat},${poi.lng} (${poi.name})`);
+        return { type: "CITY_CENTER", anchor: { lat: poi.lat, lng: poi.lng } };
+      }
+    } catch (err) {
+      console.warn("[search:hotels] CITY_CENTER geocode failed", err?.message);
+    }
+  }
+
+  // NEARBY_INTEREST: geocode city → find nearby places matching the interest
+  if (nearbyInterest && city) {
+    const cityQuery = [city, country].filter(Boolean).join(", ");
+    try {
+      const cityPoi = await resolvePoiToCoordinates(cityQuery);
+      if (cityPoi?.lat && cityPoi?.lng) {
+        const places = await getNearbyPlaces({
+          location: { lat: cityPoi.lat, lng: cityPoi.lng },
+          radiusKm: 10,
+          keyword: nearbyInterest,
+          limit: 6,
+        });
+        const validPlaces = places.filter((p) => p?.location?.lat && p?.location?.lng);
+        if (validPlaces.length) {
+          console.log(`[search:hotels] nearbyInterest "${nearbyInterest}": ${validPlaces.length} places found`);
+          return { type: "NEARBY_INTEREST", places: validPlaces };
+        }
+      }
+    } catch (err) {
+      console.warn("[search:hotels] nearbyInterest resolve failed", err?.message);
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Sorts hotel cards by proximity to an anchor resolved by resolveProximityAnchor().
+ * Hotels without geoPoint go to the end.
+ */
+const sortByProximity = (cards, proximityAnchor) => {
+  if (!proximityAnchor) return cards;
+
+  const getDistanceForCard = (card) => {
+    const gp = card.geoPoint;
+    if (!gp?.lat || !gp?.lng) return Number.MAX_SAFE_INTEGER;
+
+    if (proximityAnchor.type === "CITY_CENTER") {
+      return computeDistanceKm(gp, proximityAnchor.anchor) ?? Number.MAX_SAFE_INTEGER;
+    }
+
+    if (proximityAnchor.type === "NEARBY_INTEREST") {
+      // Minimum distance to any of the matching places
+      let minDist = Number.MAX_SAFE_INTEGER;
+      for (const place of proximityAnchor.places) {
+        if (!place.location?.lat || !place.location?.lng) continue;
+        const d = computeDistanceKm(gp, place.location);
+        if (d != null && d < minDist) minDist = d;
+      }
+      return minDist;
+    }
+
+    return Number.MAX_SAFE_INTEGER;
+  };
+
+  return [...cards].sort((a, b) => getDistanceForCard(a) - getDistanceForCard(b));
+};
 
 /** Preference intents: QUIET, BEACH_COAST, CITY_CENTER, FAMILY_FRIENDLY, LUXURY, BUDGET → filters */
 const deriveFiltersFromPreferences = (plan = {}) => {
@@ -460,8 +732,8 @@ const runHomeQuery = async ({
   const amenityFilterKeys = Array.isArray(homeFilters.amenityKeys) ? homeFilters.amenityKeys : [];
   const needsAmenityJoin = Boolean((amenityKeywords && amenityKeywords.length) || amenityFilterKeys.length);
 
-  console.log("[assistant] runHomeQuery executing with where:", JSON.stringify(where));
-  console.log("[assistant] runHomeQuery address include where:", JSON.stringify(include[0].where));
+  debugSearchLog("[assistant] runHomeQuery executing with where:", JSON.stringify(where));
+  debugSearchLog("[assistant] runHomeQuery address include where:", JSON.stringify(include[0].where));
 
   const homes = await models.Home.findAll({
     where,
@@ -517,7 +789,7 @@ const runHomeQuery = async ({
     distinct: true,
   });
 
-  console.log(`[assistant] runHomeQuery found ${homes.length} raw homes`);
+  debugSearchLog(`[assistant] runHomeQuery found ${homes.length} raw homes`);
   return homes;
 };
 
@@ -570,7 +842,7 @@ const mapHomesToResults = ({
 };
 
 export const searchHomesForPlan = async (plan = {}, options = {}) => {
-  console.log("[assistant] plan", JSON.stringify(plan));
+  debugSearchLog("[assistant] plan", JSON.stringify(plan));
   // If the plan has a specific limit, use it, otherwise use the default or requested limit
   const planLimit = typeof plan.limit === "number" && plan.limit > 0 ? plan.limit : null;
   const limit = clampLimit(planLimit || options.limit);
@@ -624,7 +896,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
 
   for (let index = 0; index < attempts.length; index += 1) {
     const attempt = attempts[index];
-    console.log("[assistant] attempt", attempt);
+    debugSearchLog("[assistant] attempt", attempt);
     const homes = await runHomeQuery({
       plan: planWithSort,
       limit,
@@ -641,7 +913,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
       calendarRange,
     });
 
-    console.log(`[assistant] attempt ${JSON.stringify(attempt)} returned ${homes.length} homes`);
+    debugSearchLog(`[assistant] attempt ${JSON.stringify(attempt)} returned ${homes.length} homes`);
 
     const enriched = mapHomesToResults({
       homes,
@@ -655,7 +927,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
       calendarRange,
     });
 
-    console.log(`[assistant] attempt enriched count: ${enriched.length}`);
+    debugSearchLog(`[assistant] attempt enriched count: ${enriched.length}`);
     if (enriched.length) {
       return {
         items: enriched,
@@ -705,7 +977,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
   }
 
   if (hasLocation) {
-    console.log("[assistant] no fallback homes; location constraint present");
+    debugSearchLog("[assistant] no fallback homes; location constraint present");
     return { items: [], matchType: "NONE" };
   }
 
@@ -747,7 +1019,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
     };
   }
 
-  console.log("[assistant] final result count 0");
+  debugSearchLog("[assistant] final result count 0");
   return { items: [], matchType: "NONE" };
 };
 
@@ -762,6 +1034,15 @@ const buildHotelMatchReasons = ({ plan, hotel }) => {
     reasons.push("Hotel preferido de WebBeds");
   }
   return reasons;
+};
+
+const hasExplicitHotelGuests = (plan = {}) => {
+  const adults = toNumberOrNull(plan?.guests?.adults);
+  const total = toNumberOrNull(plan?.guests?.total);
+  return (
+    (Number.isFinite(adults) && adults > 0) ||
+    (Number.isFinite(total) && total > 0)
+  );
 };
 
 const buildHotelOccupancies = (plan = {}) => {
@@ -828,14 +1109,14 @@ const resolveAmenityCatalogCodes = async (codes = []) => {
   const numericCodes = new Set(normalizeNumericList(raw));
   const nameCandidates = raw.filter((value) => !Number.isFinite(Number(value)));
   const expandedNames = expandAmenityNameCandidates(nameCandidates);
-  console.log("[assistant][amenities] resolveAmenityCatalogCodes input", {
+  debugSearchLog("[assistant][amenities] resolveAmenityCatalogCodes input", {
     raw,
     numericCount: numericCodes.size,
     nameCandidatesCount: nameCandidates.length,
     expandedNamesCount: expandedNames.length,
   });
   if (!expandedNames.length || !models.WebbedsAmenityCatalog) {
-    console.log("[assistant][amenities] resolveAmenityCatalogCodes resolved (no catalog lookup)", {
+    debugSearchLog("[assistant][amenities] resolveAmenityCatalogCodes resolved (no catalog lookup)", {
       codes: Array.from(numericCodes),
     });
     return Array.from(numericCodes);
@@ -853,7 +1134,7 @@ const resolveAmenityCatalogCodes = async (codes = []) => {
   rows.forEach((row) => {
     if (row?.code != null) numericCodes.add(String(row.code));
   });
-  console.log("[assistant][amenities] resolveAmenityCatalogCodes resolved", {
+  debugSearchLog("[assistant][amenities] resolveAmenityCatalogCodes resolved", {
     matchedRows: rows.length,
     codes: Array.from(numericCodes),
   });
@@ -863,17 +1144,29 @@ const resolveAmenityCatalogCodes = async (codes = []) => {
 const filterHotelsByAmenities = async (hotels, filters = {}) => {
   const requestedCodes = Array.isArray(filters.amenityCodes) ? filters.amenityCodes : [];
   const requestedItems = Array.isArray(filters.amenityItemIds) ? filters.amenityItemIds : [];
-  const amenityCodes = await resolveAmenityCatalogCodes(requestedCodes);
   const amenityItemIds = normalizeNumericList(requestedItems);
+
+  // Build per-amenity code groups: each original requested code resolves to a Set of catalog codes.
+  // When filtering, a hotel must match AT LEAST ONE code from EACH group (OR within, AND between).
+  // Example: ['POOL', 'GYM'] → hotel needs any pool code AND any gym code.
+  const codeGroups = requestedCodes.length
+    ? await Promise.all(requestedCodes.map((code) => resolveAmenityCatalogCodes([code])))
+    : [];
+
+  // Flat union of all codes for the SQL IN clause
+  const allCodes = [...new Set(codeGroups.flat())];
+
   const requestedNames = expandAmenityNameCandidates(requestedCodes).map((name) => name.toLowerCase());
-  console.log("[assistant][amenities] filterHotelsByAmenities start", {
+
+  debugSearchLog("[assistant][amenities] filterHotelsByAmenities start", {
     hotelsCount: hotels.length,
     requestedCodes,
     requestedItems,
-    resolvedCodes: amenityCodes,
+    codeGroups: codeGroups.map((g, i) => ({ input: requestedCodes[i], codes: g })),
     resolvedItemIds: amenityItemIds,
     requestedNames,
   });
+
   const matchesAmenityKeywords = (hotel) => {
     if (!requestedNames.length) return false;
     const parts = [];
@@ -889,26 +1182,29 @@ const filterHotelsByAmenities = async (hotels, filters = {}) => {
     const blob = parts.filter(Boolean).join(" ").toLowerCase();
     return requestedNames.some((name) => name && blob.includes(name));
   };
-  if (!amenityCodes.length && !amenityItemIds.length) {
+
+  if (!allCodes.length && !amenityItemIds.length) {
     const fallbackResults =
       requestedCodes.length || requestedItems.length
         ? hotels.filter(matchesAmenityKeywords)
         : hotels;
-    console.log("[assistant][amenities] filterHotelsByAmenities fallback (no codes)", {
+    debugSearchLog("[assistant][amenities] filterHotelsByAmenities fallback (no codes)", {
       fallbackCount: fallbackResults.length,
     });
     return fallbackResults;
   }
+
   const hotelIds = hotels.map((hotel) => String(hotel.id)).filter(Boolean);
   if (!hotelIds.length) return [];
+
   const amenityWhere = { hotel_id: { [Op.in]: hotelIds } };
-  if (amenityCodes.length && amenityItemIds.length) {
+  if (allCodes.length && amenityItemIds.length) {
     amenityWhere[Op.or] = [
-      { catalog_code: { [Op.in]: amenityCodes } },
+      { catalog_code: { [Op.in]: allCodes } },
       { item_id: { [Op.in]: amenityItemIds } },
     ];
-  } else if (amenityCodes.length) {
-    amenityWhere.catalog_code = { [Op.in]: amenityCodes };
+  } else if (allCodes.length) {
+    amenityWhere.catalog_code = { [Op.in]: allCodes };
   } else if (amenityItemIds.length) {
     amenityWhere.item_id = { [Op.in]: amenityItemIds };
   }
@@ -918,38 +1214,36 @@ const filterHotelsByAmenities = async (hotels, filters = {}) => {
     attributes: ["hotel_id", "catalog_code", "item_id"],
     raw: true,
   });
-  console.log("[assistant][amenities] filterHotelsByAmenities rows", {
-    rows: rows.length,
-  });
+  debugSearchLog("[assistant][amenities] filterHotelsByAmenities rows", { rows: rows.length });
+
   const amenityMap = new Map();
   rows.forEach((row) => {
     const key = String(row.hotel_id);
-    if (!amenityMap.has(key)) {
-      amenityMap.set(key, { codes: new Set(), items: new Set() });
-    }
-    if (row.catalog_code != null) {
-      amenityMap.get(key).codes.add(String(row.catalog_code));
-    }
-    if (row.item_id) {
-      amenityMap.get(key).items.add(String(row.item_id));
-    }
+    if (!amenityMap.has(key)) amenityMap.set(key, { codes: new Set(), items: new Set() });
+    if (row.catalog_code != null) amenityMap.get(key).codes.add(String(row.catalog_code));
+    if (row.item_id) amenityMap.get(key).items.add(String(row.item_id));
   });
 
   const filtered = hotels.filter((hotel) => {
     const info = amenityMap.get(String(hotel.id));
     if (!info) return false;
-    const hasCodes = !amenityCodes.length || amenityCodes.every((code) => info.codes.has(String(code)));
-    const hasItems = !amenityItemIds.length || amenityItemIds.every((itemId) => info.items.has(String(itemId)));
-    return hasCodes && hasItems;
+    // Each group = one original amenity. Hotel passes if it has ANY code from EACH group (AND of ORs).
+    const hasAllGroups = codeGroups.every(
+      (group) => !group.length || group.some((code) => info.codes.has(String(code)))
+    );
+    // Item IDs are treated individually — hotel needs at least one match.
+    const hasItems = !amenityItemIds.length || amenityItemIds.some((itemId) => info.items.has(String(itemId)));
+    return hasAllGroups && hasItems;
   });
+
   if (!filtered.length && requestedNames.length) {
     const fallbackResults = hotels.filter(matchesAmenityKeywords);
-    console.log("[assistant][amenities] filterHotelsByAmenities fallback (keyword match)", {
+    debugSearchLog("[assistant][amenities] filterHotelsByAmenities fallback (keyword match)", {
       fallbackCount: fallbackResults.length,
     });
     return fallbackResults;
   }
-  console.log("[assistant][amenities] filterHotelsByAmenities done", {
+  debugSearchLog("[assistant][amenities] filterHotelsByAmenities done", {
     filteredCount: filtered.length,
   });
   return filtered;
@@ -961,9 +1255,12 @@ const applyHotelFilters = async (hotels, filters = {}) => {
     filtered = filtered.filter((hotel) => hotel.preferred);
   }
   if (filters.minRating != null) {
+    const minStar = Math.round(filters.minRating);
     filtered = filtered.filter((hotel) => {
-      const rating = toNumberOrNull(hotel.rating);
-      return rating != null && rating >= filters.minRating;
+      // resolveHotelStars maps WebBeds classification codes (BIGINTs like 563) to star counts (1-5).
+      // hotel.rating is usually null for WebBeds hotels, so the code mapping is the primary source.
+      const stars = resolveHotelStars(hotel);
+      return stars != null && stars >= minStar;
     });
   }
   if ((filters.amenityCodes?.length || filters.amenityItemIds?.length) && filtered.length) {
@@ -972,7 +1269,7 @@ const applyHotelFilters = async (hotels, filters = {}) => {
   return filtered;
 };
 
-const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, coordinateFilter }) => {
+const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, coordinateFilter, proximityAnchor = null }) => {
   if (!Array.isArray(options) || !options.length) return [];
   const debugLive =
     process.env.WEBBEDS_VERBOSE_LOGS === "true" || process.env.ASSISTANT_DEBUG_HOTEL_MATCH === "true";
@@ -1010,7 +1307,7 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
       currency: option?.currency ?? null,
       keys: Object.keys(option || {}).slice(0, 12),
     }));
-    console.log("[assistant][live] options summary", {
+    debugSearchLog("[assistant][live] options summary", {
       optionsCount: options.length,
       groupedCount: grouped.size,
       priceMissing,
@@ -1063,7 +1360,7 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
   if (process.env.WEBBEDS_VERBOSE_LOGS === "true" || process.env.ASSISTANT_DEBUG_HOTEL_MATCH === "true") {
     const foundIds = new Set(records.map((row) => String(row.hotel_id)));
     const missing = hotelCodes.filter((code) => !foundIds.has(String(code)));
-    console.log("[assistant][live] hotel match summary", {
+    debugSearchLog("[assistant][live] hotel match summary", {
       liveCount: hotelCodes.length,
       staticCount: records.length,
       missingCount: missing.length,
@@ -1095,21 +1392,39 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
   if (coordinateFilter) {
     filteredCards = filteredCards.filter((card) => matchesCoordinateFilter(card.geoPoint, coordinateFilter));
   }
-  filteredCards.sort((a, b) => {
-    const priceA = toNumberOrNull(a.pricePerNight) ?? Number.MAX_SAFE_INTEGER;
-    const priceB = toNumberOrNull(b.pricePerNight) ?? Number.MAX_SAFE_INTEGER;
-    return priceA - priceB;
-  });
+
+  // Apply budget.max filter when the user specified an explicit numeric price cap.
+  const budgetMax = resolveBudgetMax(plan);
+  if (budgetMax != null) {
+    filteredCards = filteredCards.filter(
+      (card) => toNumberOrNull(card.pricePerNight) == null || toNumberOrNull(card.pricePerNight) <= budgetMax
+    );
+  }
+
+  // Proximity sort takes priority when user requested CITY_CENTER or nearbyInterest.
+  // Otherwise fall back to plan.sortBy (default PRICE_ASC).
+  if (proximityAnchor) {
+    filteredCards = sortByProximity(filteredCards, proximityAnchor);
+  } else {
+    const sortByLive = String(plan?.sortBy || "PRICE_ASC").trim().toUpperCase();
+    filteredCards.sort((a, b) => {
+      const priceA = toNumberOrNull(a.pricePerNight) ?? Number.MAX_SAFE_INTEGER;
+      const priceB = toNumberOrNull(b.pricePerNight) ?? Number.MAX_SAFE_INTEGER;
+      return sortByLive === "PRICE_DESC" ? priceB - priceA : priceA - priceB;
+    });
+  }
 
   return filteredCards.slice(0, limit).map((hotel) => ({
     ...hotel,
+    stars: resolveHotelStars(hotel),
     inventoryType: "HOTEL",
     matchReasons: buildHotelMatchReasons({ plan, hotel }),
   }));
 };
 
-const tryRunLiveHotelSearch = async ({ plan, limit, hotelFilters, coordinateFilter }) => {
+const tryRunLiveHotelSearch = async ({ plan, limit, hotelFilters, coordinateFilter, proximityAnchor = null }) => {
   if (!plan?.dates?.checkIn || !plan?.dates?.checkOut) return [];
+  if (!hasExplicitHotelGuests(plan)) return [];
   const provider = getLiveHotelProvider();
   if (!provider) return [];
   const locationCodes = await resolveWebbedsLocationCodes(plan?.location || {});
@@ -1141,6 +1456,7 @@ const tryRunLiveHotelSearch = async ({ plan, limit, hotelFilters, coordinateFilt
       limit,
       hotelFilters,
       coordinateFilter,
+      proximityAnchor,
     });
   } catch (error) {
     console.warn("[assistant] live hotel search failed", error?.message || error);
@@ -1152,11 +1468,6 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   const limit = clampLimit(planLimit || options.limit);
   const excludeIds = Array.isArray(options.excludeIds) ? options.excludeIds : [];
 
-  console.log(`[DEBUG_SEARCH] searchHotelsForPlan invoked. Limit: ${limit}. Exclude count: ${excludeIds.length}`);
-  if (excludeIds.length > 0) {
-    console.log(`[DEBUG_SEARCH] Exclude Sample: ${excludeIds.slice(0, 3).join(", ")} (Type: ${typeof excludeIds[0]})`);
-  }
-
   const prefFilters = deriveFiltersFromPreferences(plan);
   const hotelFiltersRaw = plan?.hotelFilters || {};
   const normalizedHotelFilters = {
@@ -1166,14 +1477,60 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     preferredOnly: normalizeBooleanFlag(hotelFiltersRaw.preferredOnly) || prefFilters.hotelPreferredOnly,
     minRating: toNumberOrNull(hotelFiltersRaw.minRating),
   };
+
+  console.log(
+    `[search:hotels] START — city:"${plan?.location?.city || ""}" country:"${plan?.location?.country || ""}"` +
+    ` landmark:"${plan?.location?.landmark || ""}"` +
+    ` minRating:${normalizedHotelFilters.minRating ?? "none"}` +
+    ` amenityCodes:[${normalizedHotelFilters.amenityCodes.join(",")}]` +
+    ` preferredOnly:${normalizedHotelFilters.preferredOnly}` +
+    ` limit:${limit}` +
+    ` excludeIds:${excludeIds.length}`
+  );
+
+  debugSearchLog(`[DEBUG_SEARCH] searchHotelsForPlan invoked. Limit: ${limit}. Exclude count: ${excludeIds.length}`);
+  if (excludeIds.length > 0) {
+    debugSearchLog(
+      `[DEBUG_SEARCH] Exclude Sample: ${excludeIds.slice(0, 3).join(", ")} (Type: ${typeof excludeIds[0]})`
+    );
+  }
+
+  // Resolve landmark to coordinates when the user asked for proximity to a place
+  const planLocation = plan?.location;
+  if (
+    planLocation &&
+    typeof planLocation.landmark === "string" &&
+    planLocation.landmark.trim().length > 0 &&
+    (toNumberOrNull(planLocation.lat) == null || toNumberOrNull(planLocation.lng) == null)
+  ) {
+    const landmarkQuery = [planLocation.landmark.trim(), planLocation.city, planLocation.country]
+      .filter(Boolean)
+      .join(", ");
+    try {
+      const poi = await resolvePoiToCoordinates(landmarkQuery);
+      if (poi) {
+        planLocation.lat = poi.lat;
+        planLocation.lng = poi.lng;
+        planLocation.resolvedPoi = { lat: poi.lat, lng: poi.lng, name: poi.name };
+        debugSearchLog(`[DEBUG_SEARCH] Landmark resolved: "${landmarkQuery}" → ${poi.lat},${poi.lng} (${poi.name})`);
+      }
+    } catch (err) {
+      console.warn("[assistant] resolvePoiToCoordinates failed", { landmark: planLocation.landmark, error: err?.message });
+    }
+  }
+
   const coordinateFilter = buildCoordinateFilterUsingRadius(plan?.location || {});
   const hasLocation = hasLocationConstraint(plan?.location || {});
+
+  // Resolve proximity anchor once — used by both live and static hotel paths.
+  const proximityAnchor = await resolveProximityAnchor(plan);
 
   const liveResults = await tryRunLiveHotelSearch({
     plan,
     limit,
     hotelFilters: normalizedHotelFilters,
     coordinateFilter,
+    proximityAnchor,
   });
 
   if (liveResults.length) {
@@ -1196,7 +1553,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
 
   if (plan?.location?.city) {
     const filter = buildStringFilter(plan.location.city);
-    console.log(`[DEBUG_SEARCH] Looking up City: "${plan.location.city}" (Filter: ${JSON.stringify(filter)})`);
+    debugSearchLog(`[DEBUG_SEARCH] Looking up City: "${plan.location.city}" (Filter: ${JSON.stringify(filter)})`);
     if (filter) {
       try {
         const foundCities = await models.WebbedsCity.findAll({
@@ -1206,19 +1563,25 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
         });
         if (foundCities?.length) {
           cityCodes = foundCities.map(c => c.code);
-          console.log(`[DEBUG_SEARCH] Found Companies: ${foundCities.map(c => `${c.name} (${c.code}) - ${c.country_name}`).join(", ")}`);
+          console.log(
+            `[search:hotels] Cities found: ${foundCities
+              .map((c) => `${c.name} (code:${c.code}, country:${c.country_name})`)
+              .join(" | ")}`
+          );
         } else {
-          console.log(`[DEBUG_SEARCH] No cities found for "${plan.location.city}"`);
+          console.log(`[search:hotels] No cities found for "${plan.location.city}"`);
         }
       } catch (err) {
-        console.warn("[assistant] city lookup failed", err);
+        debugSearchLog("[assistant] city lookup failed", err);
       }
     }
   }
 
   if (plan?.location?.country) {
-    const filter = buildStringFilter(plan.location.country);
-    console.log(`[DEBUG_SEARCH] Looking up Country: "${plan.location.country}"`);
+    // Translate Spanish country name to English (WebBeds data is in English).
+    const resolvedCountry = resolveCountryName(plan.location.country);
+    const filter = buildStringFilter(resolvedCountry);
+    debugSearchLog(`[DEBUG_SEARCH] Looking up Country: "${plan.location.country}" → resolved: "${resolvedCountry}"`);
     if (filter) {
       try {
         const foundCountries = await models.WebbedsCountry.findAll({
@@ -1228,28 +1591,51 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
         });
         if (foundCountries?.length) {
           countryCodes = foundCountries.map(c => c.code);
-          console.log(`[DEBUG_SEARCH] Found Countries: ${foundCountries.map(c => `${c.name} (${c.code})`).join(", ")}`);
+          console.log(
+            `[search:hotels] Countries found: ${foundCountries.map((c) => `${c.name} (code:${c.code})`).join(" | ")}`
+          );
         } else {
-          console.log(`[DEBUG_SEARCH] No countries found for "${plan.location.country}"`);
+          console.log(`[search:hotels] No countries found for "${resolvedCountry}"`);
         }
       } catch (err) {
-        console.warn("[assistant] country lookup failed", err);
+        debugSearchLog("[assistant] country lookup failed", err);
       }
     }
   }
 
-  // Apply filters with precedence: City Code > City Name > Country Code > Country Name
-  if (cityCodes.length > 0) {
+  // Apply city filter: OR(city_code IN [...], city_name LIKE '%...%') so hotels matched by
+  // coded city AND hotels with only city_name are both included. This is critical for providers
+  // like WebBeds where many hotels have city_name but no city_code (or a different code).
+  if (cityCodes.length > 0 && plan?.location?.city) {
+    const nameFilter = buildStringFilter(plan.location.city);
+    if (nameFilter) {
+      where[Op.or] = [
+        { city_code: { [Op.in]: cityCodes } },
+        { city_name: nameFilter },
+      ];
+    } else {
+      where.city_code = { [Op.in]: cityCodes };
+    }
+  } else if (cityCodes.length > 0) {
     where.city_code = { [Op.in]: cityCodes };
   } else if (plan?.location?.city) {
-    const filter = buildStringFilter(plan.location.city);
-    if (filter) where.city_name = filter;
+    // Guard: if a landmark is set and the city lookup returned 0 codes, the city field might
+    // actually be the landmark name (e.g. AI put "Burj Khalifa" in city instead of landmark).
+    // Adding city_name LIKE '%Burj Khalifa%' would return 0 hotels. Skip this filter so the
+    // coordinate filter (if resolved) or country filter can handle it instead.
+    const hasLandmark = typeof plan?.location?.landmark === "string" && plan.location.landmark.trim().length > 0;
+    if (!hasLandmark) {
+      const filter = buildStringFilter(plan.location.city);
+      if (filter) where.city_name = filter;
+    } else {
+      console.log(`[search:hotels] Skipping city_name fallback (landmark set, city "${plan.location.city}" not found in WebbedsCity)`);
+    }
   }
 
   // Only apply country filter if city didn't capture it (or if checking same country)
   // However, usually we want strict filtering. If city is found, we assume it implies country.
   // If city is NOT found but country IS, we filter by country.
-  if (!where.city_code && !where.city_name) {
+  if (!where[Op.or] && !where.city_code && !where.city_name) {
     if (countryCodes.length > 0) {
       where.country_code = { [Op.in]: countryCodes };
     } else if (plan?.location?.country) {
@@ -1257,24 +1643,44 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
       if (filter) where.country_name = filter;
     }
   }
-  if (coordinateFilter) {
+  // Only use coordinate filter in SQL when there's no city/country filter already applied.
+  // When a city is set, the coordinate comes from a landmark resolution (e.g. "cerca del Burj Khalifa
+  // en Dubai") — hotels in that city may not have lat/lng populated, so adding a bbox AND city filter
+  // would return 0 results. The landmark is used for ranking only (resolvedPoi), not hard filtering.
+  const hasLocationFilter = Boolean(where[Op.or] || where.city_code || where.city_name || where.country_code || where.country_name);
+  if (coordinateFilter && !hasLocationFilter) {
     where.lat = coordinateFilter.latitude;
     where.lng = coordinateFilter.longitude;
   }
-  if (normalizedHotelFilters.preferredOnly) {
-    where.preferred = true;
+  // NOTE: preferredOnly is intentionally NOT added to the SQL WHERE.
+  // Adding preferred=true in SQL would make the relaxed fallback useless (it reuses the
+  // same DB rows — 0 rows if no preferred hotel matches the city+star criteria).
+  // Instead, preferredOnly is enforced by applyHotelFilters (post-filter). When 0 hotels
+  // pass that filter, the relaxed fallback strips it and returns city+star-filtered hotels.
+
+  // Apply SQL-level classification_code filter when minRating is set.
+  // IMPORTANT: classification_code is a BIGINT FK to webbeds_hotel_classification.code —
+  // WebBeds codes are NOT 1-5 (e.g., 563 = Luxury/*****). Use the lookup table.
+  if (normalizedHotelFilters.minRating != null && Number.isFinite(normalizedHotelFilters.minRating)) {
+    const minStar = Math.round(normalizedHotelFilters.minRating);
+    const eligibleCodes = resolveClassificationCodesForMinRating(minStar);
+    if (eligibleCodes.length) {
+      where.classification_code = { [Op.in]: eligibleCodes };
+      debugSearchLog(`[DEBUG_SEARCH] SQL minRating filter: classification_code IN (${eligibleCodes.join(",")}) [minStar=${minStar}]`);
+      console.log(`[search:hotels] SQL star filter: ${minStar}★+ → classification_code IN (${eligibleCodes.join(",")})`);
+    }
   }
 
-  console.log(`[DEBUG_SEARCH] Final Query "where" clause:`, JSON.stringify(where, null, 2));
+  debugSearchLog(`[DEBUG_SEARCH] Final Query "where" clause:`, JSON.stringify(where, null, 2));
 
   if (excludeIds.length) {
     where.hotel_id = { [Op.notIn]: excludeIds };
   }
 
+  // When minRating is set, SQL already pre-filters by classification_code so fetchMultiplier=1 is
+  // sufficient (no over-fetch needed). For amenity codes we still need the multiplier.
   const fetchMultiplier =
-    normalizedHotelFilters.amenityCodes.length ||
-      normalizedHotelFilters.amenityItemIds.length ||
-      normalizedHotelFilters.minRating != null
+    normalizedHotelFilters.amenityCodes.length || normalizedHotelFilters.amenityItemIds.length
       ? 3
       : 1;
   const fetchLimit = clampLimit(limit * fetchMultiplier);
@@ -1326,32 +1732,92 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   });
 
   let cards = hotels.map(formatStaticHotel).filter(Boolean);
+  console.log(`[search:hotels] DB → ${hotels.length} hotels fetched, ${cards.length} mapped OK`);
+
   cards = await applyHotelFilters(cards, normalizedHotelFilters);
+  console.log(`[search:hotels] Post-filter → ${cards.length} hotels passed (minRating:${normalizedHotelFilters.minRating ?? "none"}, amenityCodes:[${normalizedHotelFilters.amenityCodes.join(",")}], preferredOnly:${normalizedHotelFilters.preferredOnly})`);
+
+  // When city was used as SQL filter (coordinate skipped), apply proximity as a soft post-filter.
+  // Only keep hotels that have lat/lng AND are within the landmark bbox.
+  // If none have coordinates → fall through with all city results (better than nothing).
+  if (coordinateFilter && hasLocationFilter) {
+    const nearbyCards = cards.filter(
+      (card) => card.geoPoint && matchesCoordinateFilter(card.geoPoint, coordinateFilter)
+    );
+    if (nearbyCards.length) {
+      cards = nearbyCards;
+      debugSearchLog(`[DEBUG_SEARCH] Proximity post-filter: ${nearbyCards.length} of ${cards.length + (cards.length - nearbyCards.length)} hotels near landmark`);
+    } else {
+      debugSearchLog(`[DEBUG_SEARCH] Proximity post-filter: no hotels with geoPoint near landmark, returning all city results`);
+    }
+  }
+
+  // Apply budget.max filter when the user specified an explicit numeric price cap.
+  const budgetMax = resolveBudgetMax(plan);
+  if (budgetMax != null) {
+    const beforeBudget = cards.length;
+    cards = cards.filter(
+      (card) => toNumberOrNull(card.pricePerNight) == null || toNumberOrNull(card.pricePerNight) <= budgetMax
+    );
+    console.log(`[search:hotels] Budget filter (max ${budgetMax}): ${beforeBudget} → ${cards.length} hotels`);
+  }
+
+  // Proximity sort takes priority when user requested CITY_CENTER or nearbyInterest.
+  // Otherwise fall back to plan.sortBy (default PRICE_ASC).
+  if (proximityAnchor) {
+    cards = sortByProximity(cards, proximityAnchor);
+  } else {
+    const sortByStatic = String(plan?.sortBy || "PRICE_ASC").trim().toUpperCase();
+    if (sortByStatic === "PRICE_DESC") {
+      cards.sort((a, b) => (toNumberOrNull(b.pricePerNight) ?? 0) - (toNumberOrNull(a.pricePerNight) ?? 0));
+    } else if (sortByStatic === "PRICE_ASC") {
+      cards.sort((a, b) => (toNumberOrNull(a.pricePerNight) ?? Number.MAX_SAFE_INTEGER) - (toNumberOrNull(b.pricePerNight) ?? Number.MAX_SAFE_INTEGER));
+    }
+    // POPULARITY and RELEVANCE: DB already ordered by preferred DESC, priority DESC — keep as-is.
+  }
+
   cards = cards
     .map((hotel) => ({
       ...hotel,
+      stars: resolveHotelStars(hotel),
       inventoryType: "HOTEL",
       matchReasons: buildHotelMatchReasons({ plan, hotel }),
     }))
     .slice(0, limit);
   if (cards.length) {
+    console.log(`[search:hotels] RESULT: EXACT — ${cards.length} items`);
     return { items: cards, matchType: "EXACT" };
   }
 
+  // Relaxed fallback: strip amenity/preferred filters but keep star filter.
+  // Because SQL already pre-filters by classification_code, `hotels` here are already star-correct —
+  // so even without the post-filter, we only show hotels of the requested star category.
+  console.log(`[search:hotels] strict=0 → relaxed fallback (${hotels.length} DB hotels, dropping amenity/preferred filters)`);
   let relaxedCards = hotels.map(formatStaticHotel).filter(Boolean);
+  if (normalizedHotelFilters.minRating != null) {
+    const starOnlyFilters = { ...normalizedHotelFilters, amenityCodes: [], amenityItemIds: [], preferredOnly: false };
+    const starFiltered = await applyHotelFilters(relaxedCards, starOnlyFilters);
+    // SQL pre-filter guarantees these hotels have the right classification_code, so
+    // starFiltered should be non-empty. If somehow 0 (edge case), fall through with
+    // SQL-pre-filtered hotels (still correct star category, just missing post-filter validation).
+    if (starFiltered.length) relaxedCards = starFiltered;
+  }
   relaxedCards = relaxedCards
     .map((hotel) => ({
       ...hotel,
+      stars: resolveHotelStars(hotel),
       inventoryType: "HOTEL",
       matchReasons: [...buildHotelMatchReasons({ plan, hotel }), "Opciones recomendadas con filtros flexibles"],
     }))
     .slice(0, limit);
   if (relaxedCards.length) {
+    console.log(`[search:hotels] RESULT: SIMILAR (relaxed) — ${relaxedCards.length} items`);
     return { items: relaxedCards, matchType: "SIMILAR" };
   }
 
   if (hasLocation) {
-    console.log("[assistant] no fallback hotels; location constraint present");
+    console.log(`[search:hotels] RESULT: NONE — location constraint present but 0 matches`);
+    debugSearchLog("[assistant] no fallback hotels; location constraint present");
     return { items: [], matchType: "NONE" };
   }
 
@@ -1411,10 +1877,13 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     .filter(Boolean)
     .map((hotel) => ({
       ...hotel,
+      stars: resolveHotelStars(hotel),
       inventoryType: "HOTEL",
       matchReasons: [...buildHotelMatchReasons({ plan, hotel }), "Opciones recomendadas basadas en tu busqueda"],
     }))
     .slice(0, limit);
 
-  return { items: fallbackCards, matchType: fallbackCards.length ? "SIMILAR" : "NONE" };
+  const finalMatchType = fallbackCards.length ? "SIMILAR" : "NONE";
+  console.log(`[search:hotels] RESULT: ${finalMatchType} (global fallback) — ${fallbackCards.length} items`);
+  return { items: fallbackCards, matchType: finalMatchType };
 };

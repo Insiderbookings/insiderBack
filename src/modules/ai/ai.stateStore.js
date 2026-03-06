@@ -1,5 +1,13 @@
 import models from "../../models/index.js";
 
+const DEBUG_AI_STATE_STORE =
+  String(process.env.AI_DEBUG_LOGS || "").trim().toLowerCase() === "true";
+
+const debugStateStore = (...args) => {
+  if (!DEBUG_AI_STATE_STORE) return;
+  console.log(...args);
+};
+
 const DEFAULT_STATE = {
   stage: "NEED_DESTINATION",
   destination: {
@@ -156,11 +164,12 @@ export const loadAssistantState = async ({ sessionId, userId }) => {
   const metadata = parseMetadata(session.metadata);
   const state = metadata.aiState || metadata.ai_state || null;
 
-  // DEBUG PERSISTENCE
   if (state?.lastResultsContext?.shownIds?.length) {
-    console.log(`[DEBUG_STORE] LOADED state for ${sessionId}. ShownIds: ${state.lastResultsContext.shownIds.length}`);
+    debugStateStore(
+      `[DEBUG_STORE] LOADED state for ${sessionId}. ShownIds: ${state.lastResultsContext.shownIds.length}`
+    );
   } else {
-    console.log(`[DEBUG_STORE] LOADED state for ${sessionId}. ShownIds: 0 (or null)`);
+    debugStateStore(`[DEBUG_STORE] LOADED state for ${sessionId}. ShownIds: 0 (or null)`);
   }
 
   return normalizeState(state);
@@ -180,9 +189,8 @@ export const saveAssistantState = async ({ sessionId, userId, state }) => {
 
   nextMetadata.aiState = normalizeState(state);
 
-  // DEBUG PERSISTENCE
   const count = nextMetadata.aiState?.lastResultsContext?.shownIds?.length || 0;
-  console.log(`[DEBUG_STORE] SAVING state for ${sessionId}. ShownIds: ${count}`);
+  debugStateStore(`[DEBUG_STORE] SAVING state for ${sessionId}. ShownIds: ${count}`);
 
   // Force update by passing a new object reference
   await session.update({ metadata: nextMetadata });

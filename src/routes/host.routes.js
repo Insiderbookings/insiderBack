@@ -4,10 +4,12 @@ import {
   getHostDashboard,
   getHostBookingDetail,
   getHostListings,
+  createHostIdentityVerificationSession,
+  requestHostPhoneVerificationCode,
+  confirmHostPhoneVerificationCode,
   getHostCalendar,
   getHostBookingsList,
   getHostEarnings,
-  updatePayoutMethod,
 } from "../controllers/host.controller.js";
 import { getHostCalendarDetail, upsertHostCalendarDay, getArrivalGuide, updateArrivalGuide } from "../controllers/home.controller.js";
 import {
@@ -22,6 +24,10 @@ import {
 
 const router = Router();
 
+router.post("/verification/identity/session", authenticate, createHostIdentityVerificationSession);
+router.post("/verification/phone/request", authenticate, requestHostPhoneVerificationCode);
+router.post("/verification/phone/confirm", authenticate, confirmHostPhoneVerificationCode);
+
 router.use(authenticate, authorizeRoles(6));
 
 router.get("/dashboard", getHostDashboard);
@@ -34,7 +40,6 @@ router.patch("/calendar/:homeId/day", upsertHostCalendarDay);
 router.get("/listings/:homeId/arrival-guide", getArrivalGuide);
 router.put("/listings/:homeId/arrival-guide", updateArrivalGuide);
 router.get("/bookings", getHostBookingsList);
-router.put("/payout-methods", requireVerifiedEmail, updatePayoutMethod);
 router.get("/payout-account", requireVerifiedEmail, getPayoutAccount);
 router.put("/payout-account", requireVerifiedEmail, upsertPayoutAccount);
 router.get("/payouts", requireVerifiedEmail, listHostPayouts);

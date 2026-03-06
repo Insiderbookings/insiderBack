@@ -1,11 +1,28 @@
 ﻿import bcrypt from "bcrypt"
 import models, { sequelize } from "../models/index.js"
+import crypto from "node:crypto"
 import { Op } from "sequelize" // â† Agregar esta importaciÃ³n
 import { sendMail } from "../helpers/mailer.js"
 import { ReferralError, linkReferralCodeForUser, loadInfluencerIncentives, recordInfluencerEvent } from "../services/referralRewards.service.js"
+import { processInfluencerPayoutBatch } from "./influencerPayout.controller.js"
+import { deriveRoleCodes } from "../utils/userCapabilities.js"
+import { getStripeClient } from "../services/payoutProviders.js"
+import {
+  ensureInfluencerOnboardingMetadata,
+  isInfluencerIdentityVerified,
+} from "../utils/influencerOnboarding.js"
 
 const DISCOUNT_REMINDER_GRACE_DAYS = 1
 const LOGIN_TOUCH_INTERVAL_MS = 5 * 60 * 1000
+const REFERRAL_FIRST_BOOKING_DEFAULT_PCT = 15
+
+const referralFirstBookingPct = () => {
+  const value = Number(process.env.REFERRAL_FIRST_BOOKING_PCT)
+  if (Number.isFinite(value) && value > 0) {
+    return Math.round(value)
+  }
+  return REFERRAL_FIRST_BOOKING_DEFAULT_PCT
+}
 
 const normalizeDiscountCode = (value) => String(value || "").trim().toUpperCase()
 const isValidEmail = (value = "") =>
@@ -75,6 +92,121 @@ const ensureDiscountCodeLock = async (user) => {
   return user
 }
 
+const asPlainObject = (value) =>
+  value && typeof value === "object" && !Array.isArray(value) ? value : {}
+
+const USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+const INFLUENCER_CODE_MIN_LENGTH = 4
+const INFLUENCER_CODE_MAX_LENGTH = 6
+const INFLUENCER_CODE_PATTERN = new RegExp(
+  `^[A-Z0-9]{${INFLUENCER_CODE_MIN_LENGTH},${INFLUENCER_CODE_MAX_LENGTH}}$`
+)
+const USER_CODE_LENGTH_RAW = Number(
+  process.env.INFLUENCER_USER_CODE_LENGTH || INFLUENCER_CODE_MAX_LENGTH
+)
+const USER_CODE_LENGTH =
+  Number.isFinite(USER_CODE_LENGTH_RAW) &&
+  USER_CODE_LENGTH_RAW >= INFLUENCER_CODE_MIN_LENGTH &&
+  USER_CODE_LENGTH_RAW <= INFLUENCER_CODE_MAX_LENGTH
+    ? Math.trunc(USER_CODE_LENGTH_RAW)
+    : INFLUENCER_CODE_MAX_LENGTH
+
+const DEFAULT_INFLUENCER_IDENTITY_RETURN_URL = "https://bookinggpt.app/influencer-identity/complete"
+const normalizeInfluencerCode = (value) => String(value || "").trim().toUpperCase()
+const isValidInfluencerCode = (value) =>
+  INFLUENCER_CODE_PATTERN.test(normalizeInfluencerCode(value))
+
+const generateCandidateUserCode = () => {
+  let output = ""
+  const bytes = crypto.randomBytes(USER_CODE_LENGTH)
+  for (let index = 0; index < USER_CODE_LENGTH; index += 1) {
+    output += USER_CODE_ALPHABET[bytes[index] % USER_CODE_ALPHABET.length]
+  }
+  return output
+}
+
+const findUserByInfluencerCode = async ({ code, transaction }) =>
+  models.User.findOne({
+    where: sequelize.where(
+      sequelize.fn("lower", sequelize.col("user_code")),
+      normalizeInfluencerCode(code).toLowerCase()
+    ),
+    attributes: ["id", "user_code"],
+    transaction,
+  })
+
+const ensureInfluencerUserCode = async ({ user, transaction }) => {
+  const existing = normalizeInfluencerCode(user?.user_code)
+  if (existing) {
+    if (existing !== user.user_code) {
+      await user.update({ user_code: existing }, { transaction })
+    }
+    return existing
+  }
+
+  for (let attempts = 0; attempts < 25; attempts += 1) {
+    const code = generateCandidateUserCode()
+    const duplicate = await findUserByInfluencerCode({ code, transaction })
+    if (!duplicate || Number(duplicate.id) === Number(user.id)) {
+      await user.update({ user_code: code }, { transaction })
+      return code
+    }
+  }
+
+  throw new Error("Unable to generate influencer code")
+}
+
+const ensureInfluencerGuestProfile = async ({ userId, transaction }) => {
+  if (!models.GuestProfile) return null
+  const [profile] = await models.GuestProfile.findOrCreate({
+    where: { user_id: userId },
+    defaults: {
+      user_id: userId,
+      identity_verified: false,
+      metadata: ensureInfluencerOnboardingMetadata({}),
+    },
+    transaction,
+  })
+  return profile
+}
+
+const resolveInfluencerIdentityReturnUrl = () => {
+  const explicit = String(
+    process.env.STRIPE_INFLUENCER_IDENTITY_RETURN_URL ||
+      process.env.STRIPE_IDENTITY_RETURN_URL ||
+      ""
+  ).trim()
+  if (explicit) return explicit
+  return DEFAULT_INFLUENCER_IDENTITY_RETURN_URL
+}
+
+const normalizeInfluencerIdentityReturnUrl = (value) => {
+  const raw = String(value || "").trim()
+  if (!raw) return null
+  try {
+    const parsed = new URL(raw)
+    const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production"
+    const protocol = String(parsed.protocol || "").toLowerCase()
+    if (protocol !== "https:" && protocol !== "http:") return null
+    if (isProd && protocol !== "https:") return null
+
+    const host = String(parsed.hostname || "").toLowerCase()
+    const isBookingHost = host === "bookinggpt.app" || host.endsWith(".bookinggpt.app")
+    const isLocalHost =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)
+    if (!isBookingHost && !(!isProd && isLocalHost)) return null
+
+    const path = String(parsed.pathname || "")
+    if (!path.startsWith("/influencer-identity")) return null
+
+    return parsed.toString()
+  } catch {
+    return null
+  }
+}
+
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ GET /api/users/me â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const getCurrentUser = async (req, res) => {
   try {
@@ -122,6 +254,32 @@ export const getCurrentUser = async (req, res) => {
     if (!plain.firstName && derivedName.firstName) plain.firstName = derivedName.firstName
     if (!plain.lastName && derivedName.lastName) plain.lastName = derivedName.lastName
     if (!plain.name && derivedName.fullName) plain.name = derivedName.fullName
+    plain.roleCodes = deriveRoleCodes(plain)
+
+    const referralLinked = Boolean(
+      plain.referredByInfluencerId ??
+        plain.referred_by_influencer_id ??
+        plain.referredByCode ??
+        plain.referred_by_code
+    )
+    if (referralLinked) {
+      const paidCount = models.Booking
+        ? await models.Booking.count({
+            where: {
+              user_id: plain.id,
+              payment_status: { [Op.in]: ["PAID", "REFUNDED"] },
+            },
+          })
+        : 0
+      const status = paidCount > 0 ? "used" : "available"
+      const pct = referralFirstBookingPct()
+      plain.referralFirstBookingStatus = status
+      plain.referralFirstBookingDiscountPct = pct
+      plain.referralFirstBooking = {
+        status,
+        pct,
+      }
+    }
     return res.json(plain)
   } catch (err) {
     console.error("Error getting current user:", err)
@@ -392,7 +550,8 @@ export const becomeHost = async (req, res) => {
       const user = await models.User.findByPk(userId, { transaction: t, lock: t.LOCK.UPDATE })
       if (!user) throw new Error("User not found")
 
-      if (user.role !== 6) {
+      // Keep existing privileged roles (e.g. influencer) and only promote regular users.
+      if (Number(user.role || 0) === 0) {
         await user.update({ role: 6 }, { transaction: t })
       }
 
@@ -444,6 +603,227 @@ export const becomeHost = async (req, res) => {
       return res.status(404).json({ error: "User not found" })
     }
     return res.status(500).json({ error: "Unable to create host profile" })
+  }
+}
+
+export const becomeInfluencer = async (req, res) => {
+  const userId = Number(req.user?.id)
+  if (!userId) return res.status(401).json({ error: "Unauthorized" })
+
+  try {
+    const result = await sequelize.transaction(async (transaction) => {
+      const user = await models.User.findByPk(userId, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      })
+      if (!user) throw new Error("User not found")
+
+      // Preserve privileged roles and only promote regular users.
+      if (Number(user.role || 0) === 0) {
+        await user.update({ role: 2 }, { transaction })
+      }
+
+      await ensureInfluencerUserCode({ user, transaction })
+      const guestProfile = await ensureInfluencerGuestProfile({ userId, transaction })
+      if (guestProfile) {
+        const guestProfilePlain =
+          typeof guestProfile.get === "function"
+            ? guestProfile.get({ plain: true })
+            : guestProfile
+        const nextMetadata = ensureInfluencerOnboardingMetadata(guestProfilePlain)
+        await guestProfile.update({ metadata: nextMetadata }, { transaction })
+      }
+
+      return models.User.findByPk(userId, {
+        attributes: [
+          "id",
+          "name",
+          "email",
+          "role",
+          "user_code",
+          "avatar_url",
+          "email_verified",
+        ],
+        include: [
+          { model: models.HostProfile, as: "hostProfile" },
+          { model: models.GuestProfile, as: "guestProfile" },
+        ],
+        transaction,
+      })
+    })
+
+    return res.json({
+      message: "Influencer profile ready",
+      user: result,
+    })
+  } catch (err) {
+    console.error("Error creating influencer profile:", err)
+    if (err.message === "User not found") {
+      return res.status(404).json({ error: "User not found" })
+    }
+    return res.status(500).json({ error: "Unable to activate influencer profile" })
+  }
+}
+
+export const updateInfluencerCode = async (req, res) => {
+  const userId = Number(req.user?.id)
+  if (!userId) return res.status(401).json({ error: "Unauthorized" })
+
+  const submittedCode = normalizeInfluencerCode(req.body?.code || req.body?.userCode)
+  if (!isValidInfluencerCode(submittedCode)) {
+    return res.status(400).json({
+      error: `Code must be ${INFLUENCER_CODE_MIN_LENGTH}-${INFLUENCER_CODE_MAX_LENGTH} characters (letters and numbers only).`,
+      code: "INFLUENCER_CODE_INVALID",
+    })
+  }
+
+  try {
+    const result = await sequelize.transaction(async (transaction) => {
+      const user = await models.User.findByPk(userId, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      })
+      if (!user) throw new Error("User not found")
+
+      const duplicate = await findUserByInfluencerCode({
+        code: submittedCode,
+        transaction,
+      })
+      if (duplicate && Number(duplicate.id) !== Number(userId)) {
+        const err = new Error("Code already in use")
+        err.code = "INFLUENCER_CODE_DUPLICATE"
+        throw err
+      }
+
+      const currentCode = normalizeInfluencerCode(user.user_code)
+      if (currentCode !== submittedCode) {
+        await user.update({ user_code: submittedCode }, { transaction })
+      }
+
+      return models.User.findByPk(userId, {
+        attributes: [
+          "id",
+          "name",
+          "email",
+          "role",
+          "user_code",
+          "avatar_url",
+          "email_verified",
+        ],
+        include: [
+          { model: models.HostProfile, as: "hostProfile" },
+          { model: models.GuestProfile, as: "guestProfile" },
+        ],
+        transaction,
+      })
+    })
+
+    return res.json({
+      message: "Ambassador code updated",
+      code: submittedCode,
+      user: result,
+    })
+  } catch (err) {
+    if (err.message === "User not found") {
+      return res.status(404).json({ error: "User not found" })
+    }
+    if (err.code === "INFLUENCER_CODE_DUPLICATE") {
+      return res.status(409).json({
+        error: "This code is already in use. Please choose another one.",
+        code: "INFLUENCER_CODE_DUPLICATE",
+      })
+    }
+
+    console.error("Error updating influencer code:", err)
+    return res.status(500).json({ error: "Unable to update ambassador code" })
+  }
+}
+
+export const createInfluencerIdentityVerificationSession = async (req, res) => {
+  const userId = Number(req.user?.id)
+  if (!userId) return res.status(401).json({ error: "Unauthorized" })
+
+  try {
+    const stripe = await getStripeClient()
+    if (!stripe) {
+      return res.status(500).json({
+        error: "Identity verification is temporarily unavailable.",
+        code: "INFLUENCER_IDENTITY_UNAVAILABLE",
+      })
+    }
+
+    const guestProfile = await ensureInfluencerGuestProfile({ userId, transaction: null })
+    if (!guestProfile) {
+      return res.status(404).json({ error: "Guest profile not found." })
+    }
+
+    const guestProfilePlain =
+      typeof guestProfile.get === "function"
+        ? guestProfile.get({ plain: true })
+        : guestProfile
+    const metadata = asPlainObject(guestProfilePlain.metadata)
+    if (isInfluencerIdentityVerified(guestProfilePlain)) {
+      return res.json({
+        sessionId:
+          metadata?.influencerIdentityVerification?.sessionId ||
+          metadata?.influencer_identity_verification?.sessionId ||
+          null,
+        status: "verified",
+        url: null,
+        clientSecret: null,
+        expiresAt: null,
+      })
+    }
+
+    const params = {
+      type: "document",
+      options: {
+        document: {
+          require_matching_selfie: true,
+        },
+      },
+      metadata: {
+        influencerId: String(userId),
+        userId: String(userId),
+        flow: "influencer_verify_identity",
+      },
+    }
+    const returnUrl =
+      normalizeInfluencerIdentityReturnUrl(req.body?.returnUrl) ||
+      resolveInfluencerIdentityReturnUrl()
+    if (returnUrl) params.return_url = returnUrl
+
+    const session = await stripe.identity.verificationSessions.create(params)
+    const nextMetadata = ensureInfluencerOnboardingMetadata({
+      ...metadata,
+      influencerIdentityVerification: {
+        ...asPlainObject(metadata.influencerIdentityVerification),
+        sessionId: session.id,
+        status: session.status || "requires_input",
+        lastCreatedAt: new Date().toISOString(),
+      },
+    })
+
+    await guestProfile.update({
+      metadata: nextMetadata,
+    })
+
+    return res.json({
+      sessionId: session.id,
+      status: session.status || "requires_input",
+      url: session.url || null,
+      clientSecret: session.client_secret || null,
+      expiresAt: session.expires_at || null,
+    })
+  } catch (error) {
+    console.error(
+      "createInfluencerIdentityVerificationSession error:",
+      error?.raw?.message || error?.message || error
+    )
+    return res.status(500).json({
+      error: "Unable to start identity verification right now.",
+      code: "INFLUENCER_IDENTITY_SESSION_ERROR",
+    })
   }
 }
 
@@ -750,19 +1130,17 @@ export const adminCreateInfluencerPayoutBatch = async (req, res) => {
     const role = Number(req.user?.role)
     if (role !== 100) return res.status(403).json({ error: "Forbidden" })
 
-    const { ids = [], payoutBatchId } = req.body || {}
+    const { ids = [] } = req.body || {}
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: "ids array required" })
     }
 
-    const batchId = payoutBatchId || `IBP-${Date.now().toString(36)}`
-    const { Op } = await import("sequelize")
-    const [count] = await models.InfluencerEventCommission.update(
-      { status: "paid", paid_at: new Date(), payout_batch_id: batchId },
-      { where: { id: { [Op.in]: ids }, status: { [Op.in]: ["eligible", "hold"] } } }
-    )
+    const result = await processInfluencerPayoutBatch({
+      limit: Math.max(1, ids.length),
+      eventIds: ids,
+    })
 
-    return res.json({ updated: count, batchId })
+    return res.json(result)
   } catch (err) {
     console.error("adminCreateInfluencerPayoutBatch:", err)
     return res.status(500).json({ error: "Server error" })
@@ -790,22 +1168,37 @@ export const getInfluencerReferrals = async (req, res) => {
       limit: 500,
     })
 
-    // Para cada usuario, contar sus bookings confirmadas
-    const results = await Promise.all(
-      referrals.map(async (u) => {
-        const plainUser = u.get({ plain: true })
-        const bookingsCount = await models.Booking.count({
-          where: {
-            user_id: u.id,
-            status: "CONFIRMED",
-          }
-        })
-        return {
-          ...plainUser,
-          bookingsCount,
-        }
+    const referralIds = referrals.map((referral) => Number(referral.id)).filter((id) => Number.isFinite(id))
+    const bookingCountsByUserId = new Map()
+
+    if (referralIds.length) {
+      const bookingCounts = await models.Booking.findAll({
+        where: {
+          user_id: { [Op.in]: referralIds },
+          status: "CONFIRMED",
+        },
+        attributes: [
+          "user_id",
+          [sequelize.fn("COUNT", sequelize.col("id")), "bookingsCount"],
+        ],
+        group: ["user_id"],
+        raw: true,
       })
-    )
+
+      bookingCounts.forEach((row) => {
+        const id = Number(row?.user_id)
+        if (!Number.isFinite(id)) return
+        bookingCountsByUserId.set(id, Number(row?.bookingsCount || 0))
+      })
+    }
+
+    const results = referrals.map((u) => {
+      const plainUser = u.get({ plain: true })
+      return {
+        ...plainUser,
+        bookingsCount: bookingCountsByUserId.get(Number(u.id)) || 0,
+      }
+    })
 
     return res.json(results)
   } catch (err) {

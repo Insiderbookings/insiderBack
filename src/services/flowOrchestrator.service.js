@@ -13,6 +13,7 @@ import { buildCancelBookingPayload, mapCancelBookingResponse } from "../provider
 import { tokenizeCard } from "../providers/webbeds/rezpayments.js";
 import { logCurrencyDebug } from "../utils/currencyDebug.js";
 import { convertCurrency } from "./currency.service.js";
+import { runJobFromApi } from "./jobScheduler.service.js";
 import { resolveEnabledCurrency } from "./currencySettings.service.js";
 
 const FLOW_STATUSES = {
@@ -262,7 +263,17 @@ const redactXml = (xml) => {
     .replace(/<token>.*?<\/token>/gi, "<token>***redacted***</token>")
     .replace(/<devicePayload>.*?<\/devicePayload>/gi, "<devicePayload>***redacted***</devicePayload>")
     .replace(/<cardNumber>.*?<\/cardNumber>/gi, "<cardNumber>***redacted***</cardNumber>")
-    .replace(/<cvv>.*?<\/cvv>/gi, "<cvv>***redacted***</cvv>");
+    .replace(/<cvv>.*?<\/cvv>/gi, "<cvv>***redacted***</cvv>")
+    .replace(/<authorisationId>.*?<\/authorisationId>/gi, "<authorisationId>***redacted***</authorisationId>")
+    .replace(/<endUserIPAddress>.*?<\/endUserIPAddress>/gi, "<endUserIPAddress>***redacted***</endUserIPAddress>")
+    .replace(/<avsFirstName>.*?<\/avsFirstName>/gi, "<avsFirstName>***redacted***</avsFirstName>")
+    .replace(/<avsLastName>.*?<\/avsLastName>/gi, "<avsLastName>***redacted***</avsLastName>")
+    .replace(/<avsAddress>.*?<\/avsAddress>/gi, "<avsAddress>***redacted***</avsAddress>")
+    .replace(/<avsZip>.*?<\/avsZip>/gi, "<avsZip>***redacted***</avsZip>")
+    .replace(/<avsCountry>.*?<\/avsCountry>/gi, "<avsCountry>***redacted***</avsCountry>")
+    .replace(/<avsCity>.*?<\/avsCity>/gi, "<avsCity>***redacted***</avsCity>")
+    .replace(/<avsEmail>.*?<\/avsEmail>/gi, "<avsEmail>***redacted***</avsEmail>")
+    .replace(/<avsPhone>.*?<\/avsPhone>/gi, "<avsPhone>***redacted***</avsPhone>");
 };
 
 const serializeFlow = (flow) => {
@@ -277,8 +288,8 @@ const serializeFlow = (flow) => {
     allocationCurrent: plain.allocation_current,
     itineraryBookingCode: plain.itinerary_booking_code,
     serviceReferenceNumber: plain.service_reference_number,
-    supplierOrderCode: plain.supplier_order_code,
-    supplierAuthorisationId: plain.supplier_authorisation_id,
+    supplierOrderCode: undefined,
+    supplierAuthorisationId: undefined,
     finalBookingCode: plain.final_booking_code,
     bookingReferenceNumber: plain.booking_reference_number,
     pricingSnapshotPriced: plain.pricing_snapshot_priced,
@@ -470,10 +481,11 @@ const resolveRateBasisPrice = (rateBasis) =>
   null;
 
 const resolveRateBasisMinimumSelling = (rateBasis) =>
+  toNumberSafe(rateBasis?.totalMinimumSellingInRequestedCurrency) ??
+  toNumberSafe(rateBasis?.totalMinimumSelling) ??
   toNumberSafe(rateBasis?.minimumSelling) ??
   toNumberSafe(rateBasis?.priceMinimumSelling) ??
-  toNumberSafe(rateBasis?.totalMinimumSelling) ??
-  toNumberSafe(rateBasis?.minimumSellingFormatted ?? rateBasis?.totalMinimumSellingFormatted) ??
+  toNumberSafe(rateBasis?.totalMinimumSellingFormatted ?? rateBasis?.minimumSellingFormatted) ??
   null;
 
 const resolveRateBasisNonRefundable = (rateBasis) => {
@@ -717,27 +729,40 @@ const logStep = async ({
   responseXml,
   idempotencyKey,
 }) => {
-  return models.BookingFlowStep.create({
-    id: randomUUID(),
-    flow_id: flowId,
-    step,
-    command,
-    tid,
-    success,
-    error_class: errorClass,
-    error_code: errorCode,
-    allocation_in: allocationIn,
-    allocation_out: allocationOut,
-    booking_code_out: bookingCodeOut,
-    service_ref_out: serviceRefOut,
-    order_code_out: orderCodeOut,
-    authorisation_out: authorisationOut,
-    prices_out: pricesOut,
-    within_cancellation_deadline_out: withinCancellationDeadlineOut,
-    request_xml: redactXml(requestXml),
-    response_xml: redactXml(responseXml),
-    idempotency_key: idempotencyKey || null,
-  });
+  try {
+    return await models.BookingFlowStep.create({
+      id: randomUUID(),
+      flow_id: flowId,
+      step,
+      command,
+      tid,
+      success,
+      error_class: errorClass,
+      error_code: errorCode,
+      allocation_in: allocationIn,
+      allocation_out: allocationOut,
+      booking_code_out: bookingCodeOut,
+      service_ref_out: serviceRefOut,
+      order_code_out: orderCodeOut,
+      authorisation_out: authorisationOut,
+      prices_out: pricesOut,
+      within_cancellation_deadline_out: withinCancellationDeadlineOut,
+      request_xml: redactXml(requestXml),
+      response_xml: redactXml(responseXml),
+      idempotency_key: idempotencyKey || null,
+    });
+  } catch (error) {
+    const isSameStepIdempotencyConflict =
+      error?.name === "SequelizeUniqueConstraintError" &&
+      idempotencyKey &&
+      String(error?.fields?.flow_id ?? "") === String(flowId) &&
+      String(error?.fields?.step ?? "") === String(step) &&
+      String(error?.fields?.idempotency_key ?? "") === String(idempotencyKey);
+    if (!isSameStepIdempotencyConflict) throw error;
+    const existingStep = await resolveIdempotentStep(flowId, step, idempotencyKey);
+    if (existingStep) return existingStep;
+    throw error;
+  }
 };
 
 const resolveIdempotentStep = async (flowId, step, idempotencyKey) => {
@@ -752,12 +777,16 @@ const isIdempotentStepReusableForAllocation = ({ step, allocationCurrent }) => {
   if (!step) return false;
   const flowAllocation = getText(allocationCurrent) ?? null;
   if (!flowAllocation) return true;
-  const stepAllocation =
-    getText(step?.allocation_in ?? step?.allocationIn ?? null) ??
-    getText(step?.allocation_out ?? step?.allocationOut ?? null) ??
-    null;
-  if (!stepAllocation) return true;
-  return String(stepAllocation) === String(flowAllocation);
+  const stepAllocations = [
+    step?.allocation_out,
+    step?.allocationOut,
+    step?.allocation_in,
+    step?.allocationIn,
+  ]
+    .map((value) => getText(value) ?? null)
+    .filter((value, index, items) => value && items.indexOf(value) === index);
+  if (!stepAllocations.length) return true;
+  return stepAllocations.some((value) => String(value) === String(flowAllocation));
 };
 
 const getBusinessCardToken = async () => {
@@ -1580,6 +1609,7 @@ export class FlowOrchestratorService {
     flow.pricing_snapshot_priced = {
       currency: baseCurrency,
       price: priceValue != null ? Number(priceValue) : null,
+      minimumSelling: toNumberSafe(flow.selected_offer?.minimumSelling),
       serviceCode: flow.service_reference_number ?? mapped.services?.[0]?.returnedServiceCode ?? null,
       allocationDetails: newAllocation,
       cancellationRules: productNode?.cancellationRules ?? null,
@@ -1613,6 +1643,15 @@ export class FlowOrchestratorService {
       Number.isFinite(priceUsd) &&
       priceUsd > 0
     ) {
+      try {
+        await runJobFromApi("fx-rates-sync", {
+          source: "Payment via in-app",
+          triggeredBy: resolveUserId(req),
+        });
+      } catch (error) {
+        console.warn("[flows] fx-rates-sync before price failed", error?.message || error);
+      }
+
       try {
         const ttlSeconds = Number(process.env.FX_QUOTE_TTL_SECONDS || 900);
         const now = Date.now();
@@ -2150,11 +2189,29 @@ export class FlowOrchestratorService {
       services: [],
     });
 
-    const { result, requestXml, responseXml, metadata } = await this.client.send(
-      "cancelbooking",
-      payload,
-      { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
-    );
+    let result, requestXml, responseXml, metadata;
+    try {
+      ({ result, requestXml, responseXml, metadata } = await this.client.send(
+        "cancelbooking",
+        payload,
+        { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
+      ));
+    } catch (error) {
+      await logStep({
+        flowId,
+        step: "CANCEL_NO",
+        command: STEP_COMMAND.CANCEL_NO,
+        tid: error?.metadata?.transactionId,
+        success: false,
+        errorClass: error?.name,
+        errorCode: error?.code ?? error?.httpStatus,
+        bookingCodeOut: bookingCode,
+        requestXml: error?.requestXml,
+        responseXml: error?.responseXml,
+        idempotencyKey,
+      });
+      throw error;
+    }
     const mapped = mapCancelBookingResponse(result);
 
     flow.cancel_quote_snapshot = mapped;
@@ -2185,6 +2242,12 @@ export class FlowOrchestratorService {
     const bookingCode = flow.final_booking_code || flow.itinerary_booking_code;
     if (!bookingCode) {
       throw Object.assign(new Error("Flow missing booking code for cancellation"), { status: 400 });
+    }
+    if (flow.status !== FLOW_STATUSES.CANCEL_QUOTED) {
+      throw Object.assign(
+        new Error("cancelQuote must be called before cancel"),
+        { status: 400 },
+      );
     }
 
     const penalty =
@@ -2219,11 +2282,29 @@ export class FlowOrchestratorService {
       services,
     });
 
-    const { result, requestXml, responseXml, metadata } = await this.client.send(
-      "cancelbooking",
-      payload,
-      { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
-    );
+    let result, requestXml, responseXml, metadata;
+    try {
+      ({ result, requestXml, responseXml, metadata } = await this.client.send(
+        "cancelbooking",
+        payload,
+        { requestId: getRequestId(req), productOverride: null, logMeta: { flowId } },
+      ));
+    } catch (error) {
+      await logStep({
+        flowId,
+        step: "CANCEL_YES",
+        command: STEP_COMMAND.CANCEL_YES,
+        tid: error?.metadata?.transactionId,
+        success: false,
+        errorClass: error?.name,
+        errorCode: error?.code ?? error?.httpStatus,
+        bookingCodeOut: bookingCode,
+        requestXml: error?.requestXml,
+        responseXml: error?.responseXml,
+        idempotencyKey,
+      });
+      throw error;
+    }
     const mapped = mapCancelBookingResponse(result);
 
     flow.cancel_result_snapshot = mapped;
@@ -2250,8 +2331,93 @@ export class FlowOrchestratorService {
     return serializeFlow(flow);
   }
 
+  async emergencyCancel({ flowId }) {
+    console.warn("[flows] emergencyCancel: starting automatic cancellation", { flowId });
+    const flow = await models.BookingFlow.findByPk(flowId);
+    if (!flow) {
+      console.error("[flows] emergencyCancel: flow not found", { flowId });
+      return;
+    }
+    if (flow.status !== FLOW_STATUSES.CONFIRMED) {
+      console.warn("[flows] emergencyCancel: flow not in CONFIRMED state, skipping", {
+        flowId,
+        status: flow.status,
+      });
+      return;
+    }
+    const bookingCode = flow.final_booking_code || flow.itinerary_booking_code;
+    if (!bookingCode) {
+      console.error("[flows] emergencyCancel: no booking code available", { flowId });
+      return;
+    }
+
+    // Step 1: CANCEL_NO (get quote)
+    try {
+      const quotePayload = buildCancelBookingPayload({
+        bookingCode,
+        bookingType: 1,
+        confirm: "no",
+        reason: "capture_failure",
+        services: [],
+      });
+      const { result: quoteResult } = await this.client.send("cancelbooking", quotePayload, {
+        logMeta: { flowId },
+      });
+      flow.cancel_quote_snapshot = mapCancelBookingResponse(quoteResult);
+      flow.status = FLOW_STATUSES.CANCEL_QUOTED;
+      await flow.save();
+      console.log("[flows] emergencyCancel: quote obtained", { flowId });
+    } catch (err) {
+      console.error("[flows] emergencyCancel: failed to get cancel quote", {
+        flowId,
+        error: err?.message,
+      });
+      return;
+    }
+
+    // Step 2: CANCEL_YES (confirm cancellation)
+    try {
+      // Echo back the penalty from the quote (mirrors cancel() logic)
+      const quotePenalty = flow.cancel_quote_snapshot?.services?.[0]?.cancellationPenalties?.[0] ?? null;
+      const ecPenaltyApplied = quotePenalty?.charge ?? quotePenalty?.penaltyApplied ?? null;
+      const ecPaidAmount =
+        flow.pricing_snapshot_confirmed?.price ??
+        flow.pricing_snapshot_preauth?.price ??
+        null;
+      const ecPaymentBalance =
+        ecPenaltyApplied != null && ecPaidAmount != null
+          ? Math.max(0, Number(ecPaidAmount) - Number(ecPenaltyApplied))
+          : ecPaidAmount ?? null;
+
+      const confirmPayload = buildCancelBookingPayload({
+        bookingCode,
+        bookingType: 1,
+        confirm: "yes",
+        reason: "capture_failure",
+        services: [{
+          serviceCode: flow.service_reference_number || bookingCode,
+          penaltyApplied: ecPenaltyApplied,
+          paymentBalance: ecPaymentBalance,
+        }],
+      });
+      const { result: cancelResult } = await this.client.send("cancelbooking", confirmPayload, {
+        logMeta: { flowId },
+      });
+      flow.cancel_result_snapshot = mapCancelBookingResponse(cancelResult);
+      flow.status = FLOW_STATUSES.CANCELLED;
+      await flow.save();
+      console.log("[flows] emergencyCancel: booking cancelled successfully", { flowId });
+    } catch (err) {
+      console.error("[flows] emergencyCancel: failed to confirm cancellation", {
+        flowId,
+        error: err?.message,
+      });
+    }
+  }
+
   async getSteps(flowId, { includeXml = false, user } = {}) {
     await requireFlowAccess({ flowId, user });
+    const allowXml = includeXml && isPrivilegedUser(user);
     const steps = await models.BookingFlowStep.findAll({
       where: { flow_id: flowId },
       order: [["created_at", "ASC"]],
@@ -2275,8 +2441,8 @@ export class FlowOrchestratorService {
         withinCancellationDeadline: plain.within_cancellation_deadline_out,
         pricesOut: plain.prices_out,
         createdAt: plain.created_at,
-        requestXml: includeXml ? plain.request_xml : undefined,
-        responseXml: includeXml ? plain.response_xml : undefined,
+        requestXml: allowXml ? plain.request_xml : undefined,
+        responseXml: allowXml ? plain.response_xml : undefined,
       };
     });
   }

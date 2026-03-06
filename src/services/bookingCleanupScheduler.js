@@ -4,9 +4,7 @@ import models, { sequelize } from "../models/index.js";
 import { finalizeBookingAfterPayment } from "../controllers/payment.controller.js";
 
 const DEFAULT_TTL_MINUTES = 30;
-const DEFAULT_TICK_MS = 5 * 60 * 1000;
 const DEFAULT_LIMIT = 200;
-const DEFAULT_RECONCILIATION_TICK_MS = 30 * 60 * 1000;
 const DEFAULT_RECONCILIATION_MIN_AGE_MINUTES = 10;
 const DEFAULT_RECONCILIATION_CANCEL_AFTER_HOURS = 24;
 const STRIPE_PENDING_RETRYABLE_STATUSES = new Set([
@@ -84,7 +82,7 @@ const releaseHomeCalendarHold = async ({ booking, transaction }) => {
   }
 };
 
-const expirePendingBookings = async () => {
+export const expirePendingBookings = async () => {
   const ttlMinutes = Number(process.env.HOME_BOOKING_PENDING_TTL_MINUTES || DEFAULT_TTL_MINUTES);
   if (!Number.isFinite(ttlMinutes) || ttlMinutes <= 0) {
     console.log("[booking-cleanup] disabled: HOME_BOOKING_PENDING_TTL_MINUTES invalid");
@@ -374,67 +372,7 @@ export const runPendingStripeReconciliationSweep = async () => {
   return stats;
 };
 
-export const startBookingCleanupScheduler = () => {
-  const cleanupEnabled =
-    String(process.env.HOME_BOOKING_PENDING_SWEEP_ENABLED || "true").toLowerCase() === "true";
-  if (!cleanupEnabled) {
-    console.log("[booking-cleanup] disabled by HOME_BOOKING_PENDING_SWEEP_ENABLED");
-  }
-
-  if (cleanupEnabled) {
-    const tickMs = Number(process.env.HOME_BOOKING_PENDING_SWEEP_TICK_MS || DEFAULT_TICK_MS);
-    console.log("[booking-cleanup] started", {
-      ttlMinutes: Number(process.env.HOME_BOOKING_PENDING_TTL_MINUTES || DEFAULT_TTL_MINUTES),
-      tickMs,
-    });
-
-    setInterval(() => {
-      expirePendingBookings().catch((err) => {
-        console.error("[booking-cleanup] sweep error:", err?.message || err);
-      });
-    }, Number.isFinite(tickMs) && tickMs > 0 ? tickMs : DEFAULT_TICK_MS);
-
-    expirePendingBookings().catch((err) => {
-      console.error("[booking-cleanup] initial sweep error:", err?.message || err);
-    });
-  }
-
-  const reconciliationEnabled =
-    String(process.env.STRIPE_PENDING_RECONCILIATION_ENABLED || "true").toLowerCase() === "true";
-  if (!reconciliationEnabled) {
-    console.log("[booking-reconcile] disabled by STRIPE_PENDING_RECONCILIATION_ENABLED");
-    return;
-  }
-
-  const reconciliationTickMs = Number(
-    process.env.STRIPE_PENDING_RECONCILIATION_TICK_MS || DEFAULT_RECONCILIATION_TICK_MS
-  );
-  console.log("[booking-reconcile] started", {
-    tickMs: reconciliationTickMs,
-    minAgeMinutes: Number(
-      process.env.STRIPE_PENDING_RECONCILIATION_MIN_AGE_MINUTES ||
-        DEFAULT_RECONCILIATION_MIN_AGE_MINUTES
-    ),
-    cancelAfterHours: Number(
-      process.env.STRIPE_PENDING_RECONCILIATION_CANCEL_AFTER_HOURS ||
-        DEFAULT_RECONCILIATION_CANCEL_AFTER_HOURS
-    ),
-  });
-
-  setInterval(() => {
-    runPendingStripeReconciliationSweep()
-      .then((stats) => console.log("[booking-reconcile] sweep", stats))
-      .catch((err) => console.error("[booking-reconcile] sweep error:", err?.message || err));
-  }, Number.isFinite(reconciliationTickMs) && reconciliationTickMs > 0
-    ? reconciliationTickMs
-    : DEFAULT_RECONCILIATION_TICK_MS);
-
-  runPendingStripeReconciliationSweep()
-    .then((stats) => console.log("[booking-reconcile] initial sweep", stats))
-    .catch((err) => console.error("[booking-reconcile] initial sweep error:", err?.message || err));
-};
-
 export default {
-  startBookingCleanupScheduler,
+  expirePendingBookings,
   runPendingStripeReconciliationSweep,
 };

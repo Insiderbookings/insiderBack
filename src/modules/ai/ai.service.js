@@ -46,6 +46,33 @@ const normalizeMessages = (messages = []) =>
       .filter(Boolean)
     : [];
 
+const YYYY_MM_DD = /^\d{4}-\d{2}-\d{2}$/;
+
+const injectConfirmedSearchIntoPlan = (plan, confirmedSearch) => {
+  if (!plan || !confirmedSearch || typeof confirmedSearch !== "object") return;
+  if (confirmedSearch.when && String(confirmedSearch.when).trim()) {
+    const whenStr = String(confirmedSearch.when).trim();
+    const parts = whenStr.split("|").map((p) => String(p).trim()).filter(Boolean);
+    const checkIn = parts[0] && YYYY_MM_DD.test(parts[0]) ? parts[0] : null;
+    const checkOut = parts[1] && YYYY_MM_DD.test(parts[1]) ? parts[1] : null;
+    if (checkIn) {
+      if (!plan.dates || typeof plan.dates !== "object") plan.dates = {};
+      plan.dates.checkIn = checkIn;
+      if (checkOut) plan.dates.checkOut = checkOut;
+    }
+  }
+  if (confirmedSearch.who && String(confirmedSearch.who).trim()) {
+    const whoStr = String(confirmedSearch.who).trim();
+    const adultsMatch = whoStr.match(/(\d+)\s*adults?/i);
+    const childrenMatch = whoStr.match(/(\d+)\s*children?/i);
+    const adults = adultsMatch ? Math.max(1, parseInt(adultsMatch[1], 10)) : 1;
+    const children = childrenMatch ? Math.max(0, parseInt(childrenMatch[1], 10)) : 0;
+    if (!plan.guests || typeof plan.guests !== "object") plan.guests = {};
+    plan.guests.adults = adults;
+    plan.guests.children = children;
+  }
+};
+
 const applyPlanDefaults = (plan, state) => {
   const nextPlan = { ...(plan || {}) };
   if (!Array.isArray(nextPlan.listingTypes) || !nextPlan.listingTypes.length) {
@@ -373,6 +400,81 @@ const buildItinerary = ({ request, tripContext, suggestions }) => {
   });
 };
 
+const STATIC_SEARCH_RESULTS_LIMIT = 15;
+const LIVE_SEARCH_RESULTS_LIMIT = 120;
+const SEARCH_RESULTS_HARD_CAP = 120;
+
+const clampResultLimit = (value, fallback) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  return Math.min(SEARCH_RESULTS_HARD_CAP, Math.max(1, Math.floor(numeric)));
+};
+
+const hasSearchDates = (plan) =>
+  Boolean(plan?.dates?.checkIn && plan?.dates?.checkOut);
+
+const hasSearchGuests = (plan) => {
+  const adults = Number(plan?.guests?.adults);
+  const total = Number(plan?.guests?.total);
+  return (
+    (Number.isFinite(adults) && adults > 0) ||
+    (Number.isFinite(total) && total > 0)
+  );
+};
+
+/** Tomorrow and day-after in YYYY-MM-DD for default search when user did not provide dates. */
+const getDefaultSearchDates = () => {
+  const now = new Date();
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const dayAfter = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
+  const pad = (n) => String(n).padStart(2, "0");
+  return {
+    checkIn: `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`,
+    checkOut: `${dayAfter.getFullYear()}-${pad(dayAfter.getMonth() + 1)}-${pad(dayAfter.getDate())}`,
+  };
+};
+
+/**
+ * When running search with destination but missing dates/guests, fill defaults so we return results with rates.
+ * Returns true if any default was applied (caller can tell user "we assumed X; you can change them").
+ */
+const applySearchDefaultsWhenMissing = (plan) => {
+  if (!plan || typeof plan !== "object") return false;
+  let assumed = false;
+  if (!hasSearchDates(plan)) {
+    const def = getDefaultSearchDates();
+    if (!plan.dates || typeof plan.dates !== "object") plan.dates = {};
+    plan.dates.checkIn = plan.dates.checkIn || def.checkIn;
+    plan.dates.checkOut = plan.dates.checkOut || def.checkOut;
+    assumed = true;
+  }
+  if (!hasSearchGuests(plan)) {
+    if (!plan.guests || typeof plan.guests !== "object") plan.guests = {};
+    if (!Number.isFinite(plan.guests.adults) || plan.guests.adults < 1) {
+      plan.guests.adults = 1;
+      plan.guests.children = plan.guests.children ?? 0;
+      assumed = true;
+    }
+  }
+  return assumed;
+};
+
+const resolveSearchLimits = ({ plan, limits }) => {
+  const isLiveInventoryMode = hasSearchDates(plan) && hasSearchGuests(plan);
+  const defaultMaxResults = isLiveInventoryMode
+    ? LIVE_SEARCH_RESULTS_LIMIT
+    : STATIC_SEARCH_RESULTS_LIMIT;
+  const maxResults = clampResultLimit(limits?.maxResults, defaultMaxResults);
+  return {
+    isLiveInventoryMode,
+    maxResults,
+    limit: {
+      homes: clampResultLimit(limits?.homes, maxResults),
+      hotels: clampResultLimit(limits?.hotels, maxResults),
+    },
+  };
+};
+
 export const runAiTurn = async ({
   sessionId,
   userId,
@@ -421,11 +523,16 @@ export const runAiTurn = async ({
   });
   const userContext = context && typeof context === "object" ? context : null;
 
+  const confirmedSearch = (userContext && typeof userContext === "object" && userContext.confirmedSearch)
+    ? userContext.confirmedSearch
+    : null;
   const planStart = Date.now();
   const planCandidate = await extractSearchPlan(normalizedMessages, {
     now: userContext?.now || userContext?.localDate || null,
+    confirmedSearch,
   });
   timings.planMs = Date.now() - planStart;
+  injectConfirmedSearchIntoPlan(planCandidate, confirmedSearch);
   const { state: nextState, plan: mergedPlanRaw } = applyPlanToState(existingState, planCandidate);
   const planWithUi = applyUiEventToPlan(mergedPlanRaw, uiEvent);
   const mergedPlan = applyPlanDefaults(planWithUi, nextState);
@@ -477,8 +584,12 @@ export const runAiTurn = async ({
 
   let inventory = buildEmptyInventory();
   let carousels = [];
+  let assumedSearchDefaults = false;
   if (resolvedNextAction === "RUN_SEARCH") {
+    // Propose dates/guests when missing so we return results with rates and tell user they can change them
+    assumedSearchDefaults = applySearchDefaultsWhenMissing(mergedPlan);
     const searchStart = Date.now();
+    const searchLimits = resolveSearchLimits({ plan: mergedPlan, limits });
 
     // Check if we have previous results to exclude (for pagination/"more options")
     // Only exclude if the search plan is roughly similar (e.g. same location)
@@ -486,8 +597,8 @@ export const runAiTurn = async ({
     const excludeIds = existingState?.lastResultsContext?.shownIds || [];
 
     inventory = await searchStays(mergedPlan, {
-      limit: limits,
-      maxResults: AI_LIMITS.maxResults,
+      limit: searchLimits.limit,
+      maxResults: searchLimits.maxResults,
       excludeIds
     });
     timings.searchMs = Date.now() - searchStart;
@@ -508,7 +619,9 @@ export const runAiTurn = async ({
   }
 
   let trip = null;
-  if (tripRequest) {
+  // Trip (post-booking assist) only when not in PLANNING or LOCATION mode (pre-trip planning / destination info)
+  const isPlanningOrLocation = resolvedIntent === INTENTS.PLANNING || resolvedIntent === INTENTS.LOCATION;
+  if (tripRequest && !isPlanningOrLocation) {
     const tripStart = Date.now();
     const location = await resolveTripLocation(nextState.tripContext, nextState, mergedPlan, userContext);
     if (location) {
@@ -581,9 +694,14 @@ export const runAiTurn = async ({
   const hasNoResults = (!inventory.homes?.length && !inventory.hotels?.length);
   const isAskingForDetails = [NEXT_ACTIONS.ASK_FOR_DATES, NEXT_ACTIONS.ASK_FOR_GUESTS].includes(resolvedNextAction);
 
-  if (destinationName && (hasNoResults || isAskingForDetails) && !trip) {
+  const wantsDestinationPhotos =
+    resolvedNextAction === "RUN_LOCATION" ||
+    resolvedNextAction === "RUN_PLANNING" ||
+    hasNoResults ||
+    isAskingForDetails;
+  if (destinationName && wantsDestinationPhotos && !trip) {
     try {
-      const images = await searchDestinationImages(destinationName, 2);
+      const images = await searchDestinationImages(destinationName, 3);
       if (images.length) {
         visualContext = {
           type: "destination_gallery",
@@ -607,7 +725,8 @@ export const runAiTurn = async ({
     userContext,
     weather: resolvedWeather,
     missing: outcome.missing,
-    visualContext
+    visualContext,
+    assumedSearchDefaults,
   });
   debugTripHub("reply", {
     sessionId,

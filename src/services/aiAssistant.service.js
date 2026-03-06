@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import models from "../models/index.js";
+import { AI_FLAGS } from "../modules/ai/ai.config.js";
 import { sendPushToUser } from "./pushNotifications.service.js";
 import { getWeatherSummary } from "../modules/ai/tools/tool.weather.js";
 import { getNearbyPlaces } from "../modules/ai/tools/tool.places.js";
@@ -9,6 +10,7 @@ import { enqueueTripHubEnsure } from "./tripHubPacksQueue.service.js";
 const DEFAULT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini";
 const apiKey = process.env.OPENAI_API_KEY;
 let openaiClient = null;
+const DEFAULT_OPENAI_TIMEOUT_MS = Number(process.env.AI_OPENAI_TIMEOUT_MS) || 20000;
 const TRIP_HUB_OPENAI_TIMEOUT_MS = Number(process.env.TRIP_HUB_OPENAI_TIMEOUT_MS) || 60000;
 
 const ensureClient = () => {
@@ -33,7 +35,7 @@ const withTimeout = (promise, ms, label) => {
   });
 };
 
-export const isAssistantEnabled = () => Boolean(apiKey);
+export const isAssistantEnabled = () => Boolean(apiKey) && AI_FLAGS.chatEnabled;
 
 const SPANISH_HINTS = [
   " hola ", " gracias", " por favor", " buenas", " buen dia", " alojamiento",
@@ -277,8 +279,7 @@ const buildUserContextBlock = (rawContext, language) => {
   if (context.recentChats?.length) {
     const chatLines = context.recentChats.map((chat, index) => {
       const title = chat.title || "Chat";
-      const preview = chat.preview ? ` - ${chat.preview}` : "";
-      return `${index + 1}) ${title}${preview}`;
+      return `${index + 1}) ${title}`;
     });
     lines.push(`Recent chats: ${chatLines.join(" | ")}`);
   }
@@ -414,7 +415,7 @@ const normalizeSortBy = (value) => {
 };
 
 const normalizeIntent = (value, fallback) => {
-  const allowed = new Set(["SEARCH", "SMALL_TALK", "HELP", "TRIP"]);
+  const allowed = new Set(["SEARCH", "SMALL_TALK", "HELP", "TRIP", "PLANNING", "LOCATION"]);
   if (!value || typeof value !== "string") return fallback;
   const normalized = value.trim().toUpperCase();
   return allowed.has(normalized) ? normalized : fallback;
@@ -442,24 +443,33 @@ const normalizeBooleanFlag = (value, fallback = false) => {
   return fallback;
 };
 
-const buildPlannerPrompt = ({ now } = {}) => {
+const buildPlannerPrompt = ({ now, confirmedSearch } = {}) => {
   const todayLine = buildTodayLine(now);
   const todayBlock = todayLine ? `TODAY CONTEXT:\n${todayLine}\n\n` : "";
+  const confirmedParts = [];
+  if (confirmedSearch?.where) confirmedParts.push(`Destination: "${confirmedSearch.where}"`);
+  if (confirmedSearch?.when) confirmedParts.push(`Dates: "${confirmedSearch.when}"`);
+  if (confirmedSearch?.who) confirmedParts.push(`Guests: "${confirmedSearch.who}"`);
+  const confirmedBlock = confirmedParts.length
+    ? `USER CONFIRMED IN SEARCH BAR: ${confirmedParts.join(", ")}. These are values the user explicitly set. Merge them into the search plan fields. If the intent is SEARCH, these values take priority over any conflicting extraction from text.\n\n`
+    : "";
   return [
     {
       role: "system",
       content:
         "You are a smart travel assistant that analyzes conversations and detects intents. " +
-        "Your job is to determine if the user wants to SEARCH for accommodation, just SMALL_TALK, or needs HELP.\n\n" +
+        "Your job is to determine if the user wants to SEARCH for accommodation, PLANNING (plan a trip), LOCATION (info about a place), HELP, or SMALL_TALK.\n\n" +
         todayBlock +
+        confirmedBlock +
         "INTENT DETECTION RULES:\n" +
-        "- SEARCH: Only when the user explicitly mentions looking for accommodation with enough information (location, type, dates, or guests). " +
-        "Key verbs: 'search', 'need', 'want', 'show me', 'is there', 'available'.\n" +
-        "- SMALL_TALK: Greetings, farewells, thanks, personal questions, casual conversation without search intent.\n" +
+        "- SEARCH: User wants to find or book accommodation (hotels, homes). Key verbs: 'search', 'need', 'want', 'show me', 'buscar', 'reservar'. Use when the goal is to see options with availability/prices.\n" +
+        "- PLANNING: User asks to plan or organize a trip (itinerary, day-by-day, strategy). Phrases: 'planificar (mi) viaje', 'organizar el viaje', 'armar itinerario', 'plan my trip', 'help me plan', 'quiero planear'. Goal = get a plan (days, activities, constraints), not just list hotels.\n" +
+        "- LOCATION: User asks for information about a destination (what to see, where to stay, how to get around). Phrases: 'contame de [lugar]', 'qué hay en [lugar]', 'info sobre [lugar]', 'tell me about [place]', 'what to do in', 'dónde alojarse en'. Goal = destination guide, not search results.\n" +
+        "- SMALL_TALK: Greetings, farewells, thanks, personal questions, casual conversation without search/planning/location intent.\n" +
         "- HELP: Questions about functionality, assistant capabilities, or general information about accommodation types.\n\n" +
 
-        "IMPORTANT: If the user expresses a desire to travel ('I want to go to...', 'Quiero viajar a...') or provides a destination with travel context, use SEARCH intent.\n" +
-        "Use SEARCH when the user's goal is to find options or plan a trip, even if details are missing.\n\n" +
+        "IMPORTANT: If the user says they want to travel or go somewhere AND asks to 'plan' or 'organize' the trip, use PLANNING. If they ask 'what to do in X' or 'tell me about X', use LOCATION. If they want to see/book accommodation options, use SEARCH.\n" +
+        "Use SEARCH when the user's goal is to find accommodation options (with availability). Use PLANNING when the goal is to get a trip plan. Use LOCATION when the goal is to learn about a place.\n\n" +
 
         "SPECIAL LOCATION HANDLING:\n" +
         "- If the user says 'nearby', 'Nearby', 'User's Current Location', or 'current location':\n" +
@@ -485,19 +495,26 @@ const buildPlannerPrompt = ({ now } = {}) => {
         "User: 'Hi, how are you?' -> intent: SMALL_TALK\n" +
         "User: 'What types of accommodation do you have?' -> intent: HELP\n" +
         "User: 'Looking for a house in Cordoba for 4' -> intent: SEARCH\n" +
-        "User: 'Hey, do you have something cool?' -> intent: SMALL_TALK (lacks specific info)\n" +
         "User: 'I want to go to Bariloche' -> intent: SEARCH (implied search)\n" +
         "User: 'Show me hotels in CABA' -> intent: SEARCH\n" +
-        "User: 'Search nearby' -> intent: SEARCH (uses context location)\n\n" +
+        "User: 'Search nearby' -> intent: SEARCH (uses context location)\n" +
+        "User: 'Plan my trip to Tokyo' -> intent: PLANNING\n" +
+        "User: 'Quiero planificar un viaje a Roma' -> intent: PLANNING\n" +
+        "User: 'Tell me about Miami' -> intent: LOCATION\n" +
+        "User: 'Qué hay para hacer en Barcelona?' -> intent: LOCATION\n" +
+        "User: 'Contame de Dubai' -> intent: LOCATION\n\n" +
 
         "FILTERING & SORTING RULES:\n" +
-        "- Fill location city/state/country and lat/lng when provided. If the user requests proximity (\"1km around Movistar Arena\"), set location.radiusKm and location.landmark.\n" +
+        "- Fill location city/state/country and lat/lng when provided.\n" +
+        "- LANDMARK RULES: If the user mentions a famous place or landmark (\"near Burj Khalifa\", \"cerca del Coliseo\", \"next to Eiffel Tower\"), set location.landmark AND ALSO set location.city/country to the city/country where that landmark is located (e.g., \"Burj Khalifa\" → city:\"Dubai\", country:\"United Arab Emirates\"; \"Eiffel Tower\" → city:\"Paris\", country:\"France\"; \"Coliseo\" → city:\"Rome\", country:\"Italy\"). NEVER put a landmark name in the city field — city must always be an actual city name.\n" +
+        "- If the user requests proximity radius (\"1km around Movistar Arena\"), also set location.radiusKm.\n" +
         "- If the user does NOT specify homes vs hotels, return listingTypes as an empty array (do not assume a default).\n" +
         "- Detect HOME filters: propertyTypes (HOUSE, APARTMENT, CABIN, etc.), spaceTypes (ENTIRE_PLACE, PRIVATE_ROOM, SHARED_ROOM), amenityKeys (e.g., WIFI, FREE_PARKING_ON_PREMISES), and tagKeys (BEACHFRONT, LUXURY, FAMILY). Use uppercase keys.\n" +
         "- For parking requests, set homeFilters.amenityKeys (FREE_PARKING_ON_PREMISES and/or PAID_PARKING_ON_PREMISES).\n" +
         "- Detect HOTEL filters: amenityCodes from catalog names, amenityItemIds when numeric IDs are provided, preferredOnly flag, and minRating based on star ranks.\n" +
         "- If the user mentions pool/piscina/pileta, include hotelFilters.amenityCodes with \"POOL\".\n" +
         "- PREFERENCES (preferences.areaPreference): Extract from phrases like 'quiet', 'tranquilo', 'near coast/beach', 'cerca de la playa', 'city center', 'centro', 'family-friendly', 'familia', 'luxury', 'lujo', 'budget', 'económico'. Use: QUIET, BEACH_COAST, CITY_CENTER, FAMILY_FRIENDLY, LUXURY, BUDGET. Put all that apply in preferences.areaPreference array. Optional preferences.preferenceNotes: short free text for other wishes.\n" +
+        "- NEARBY INTEREST (preferences.nearbyInterest): Extract as a short English search phrase when the user wants to be near a specific type of place or establishment that is NOT already covered by areaPreference. Examples: 'cerca de comida vegana' → 'vegan food', 'cerca de restaurantes de sushi' → 'sushi restaurants', 'near a park' → 'park', 'close to the metro' → 'metro station', 'near nightlife' → 'nightlife bars', 'cerca de museos' → 'museums'. Leave null when not mentioned, or when intent is already covered by CITY_CENTER/BEACH_COAST in areaPreference.\n" +
         "- Map preferences to filters: BEACH_COAST -> homeFilters.tagKeys BEACHFRONT when HOMES; LUXURY -> hotelFilters.preferredOnly or homeFilters.tagKeys LUXURY; BUDGET -> sortBy PRICE_ASC or budget.max; QUIET/FAMILY_FRIENDLY -> preferenceNotes so assistant can acknowledge.\n" +
         "- Capture guest requirements (adults, children, pets) plus requested bedrooms, beds, bathrooms, or total guests for homes.\n" +
         "- If the user says cheap/budget/economico/barato/ahorrar WITHOUT an explicit numeric amount, set sortBy PRICE_ASC and DO NOT set budget.max.\n" +
@@ -514,12 +531,12 @@ const buildPlannerPrompt = ({ now } = {}) => {
 
         "Respond ONLY with a valid JSON object with this schema:\n" +
         `{
-        "intent": "SEARCH" | "SMALL_TALK" | "HELP",
+        "intent": "SEARCH" | "SMALL_TALK" | "HELP" | "PLANNING" | "LOCATION",
         "listingTypes": ["HOMES","HOTELS"],
         "location": {"city": string|null, "state": string|null, "country": string|null, "lat": number|null, "lng": number|null, "radiusKm": number|null, "landmark": string|null},
         "dates": {"checkIn": "YYYY-MM-DD" | null, "checkOut": "YYYY-MM-DD" | null, "flexible": boolean},
         "guests": {"adults": number|null, "children": number|null, "infants": number|null, "pets": number|null, "total": number|null},
-        "preferences": {"areaPreference": string[], "preferenceNotes": string[]},
+        "preferences": {"areaPreference": string[], "preferenceNotes": string[], "nearbyInterest": string|null},
         "homeFilters": {
           "propertyTypes": string[],
           "spaceTypes": string[],
@@ -552,7 +569,7 @@ const defaultPlan = {
   location: { city: null, state: null, country: null, lat: null, lng: null, radiusKm: null, landmark: null },
   dates: { checkIn: null, checkOut: null, flexible: true },
   guests: { adults: null, children: null, infants: null, pets: null, total: null },
-  preferences: { areaPreference: [], preferenceNotes: [] },
+  preferences: { areaPreference: [], preferenceNotes: [], nearbyInterest: null },
   homeFilters: {
     propertyTypes: [],
     spaceTypes: [],
@@ -653,6 +670,13 @@ const mergePlan = (raw, { contextText = "" } = {}) => {
   normalizedDates.checkOut = normalizeDateString(rawDates.checkOut ?? normalizedDates.checkOut);
   normalizedDates.flexible = normalizeBooleanFlag(rawDates.flexible, defaultPlan.dates.flexible);
 
+  const rawPreferences = raw.preferences || {};
+  const nearbyInterestRaw = rawPreferences.nearbyInterest ?? null;
+  const nearbyInterest =
+    typeof nearbyInterestRaw === "string" && nearbyInterestRaw.trim().length
+      ? nearbyInterestRaw.trim()
+      : null;
+
   const { amenities, ...rawPlan } = raw;
   return {
     ...defaultPlan,
@@ -662,6 +686,17 @@ const mergePlan = (raw, { contextText = "" } = {}) => {
     location: mergedLocation,
     dates: normalizedDates,
     guests: { ...defaultPlan.guests, ...(raw.guests || {}) },
+    preferences: {
+      ...defaultPlan.preferences,
+      ...rawPreferences,
+      areaPreference: Array.isArray(rawPreferences.areaPreference)
+        ? rawPreferences.areaPreference.map((s) => String(s || "").trim().toUpperCase()).filter(Boolean)
+        : [],
+      preferenceNotes: Array.isArray(rawPreferences.preferenceNotes)
+        ? rawPreferences.preferenceNotes.filter(Boolean)
+        : [],
+      nearbyInterest,
+    },
     homeFilters,
     hotelFilters,
     budget: { ...defaultPlan.budget, ...(raw.budget || {}) },
@@ -672,7 +707,7 @@ const mergePlan = (raw, { contextText = "" } = {}) => {
   };
 };
 
-export const extractSearchPlan = async (messages = [], { now } = {}) => {
+export const extractSearchPlan = async (messages = [], { now, confirmedSearch } = {}) => {
   const client = ensureClient();
   const normalizedMessages = sanitizeMessages(messages);
   const latestUserMessage =
@@ -681,11 +716,15 @@ export const extractSearchPlan = async (messages = [], { now } = {}) => {
     return mergePlan(defaultPlan, { contextText: latestUserMessage });
   }
   try {
-    const completion = await client.chat.completions.create({
-      model: DEFAULT_MODEL,
-      response_format: { type: "json_object" },
-      messages: [...buildPlannerPrompt({ now }), ...normalizedMessages],
-    });
+    const completion = await withTimeout(
+      client.chat.completions.create({
+        model: DEFAULT_MODEL,
+        response_format: { type: "json_object" },
+        messages: [...buildPlannerPrompt({ now, confirmedSearch }), ...normalizedMessages],
+      }),
+      DEFAULT_OPENAI_TIMEOUT_MS,
+      "extractSearchPlan"
+    );
     const payload = completion.choices?.[0]?.message?.content;
     if (!payload) return mergePlan(defaultPlan, { contextText: latestUserMessage });
     const parsed = JSON.parse(payload);
@@ -1007,11 +1046,12 @@ export const generateAssistantReply = async ({
   tripContext = null,
   userContext = null,
   weather = null,
+  replyMode = null,
 } = {}) => {
   const client = ensureClient();
   const normalized = sanitizeMessages(messages);
   const latestUserMessage = [...normalized].reverse().find((msg) => msg.role === "user")?.content ?? "";
-  const intent = plan?.intent || "SMALL_TALK";
+  const intent = replyMode === "planning" ? "PLANNING" : replyMode === "location" ? "LOCATION" : (plan?.intent || "SMALL_TALK");
   const modismos = Array.isArray(plan?.notes) ? plan.notes.join(", ") : "";
   const planLanguage = typeof plan?.language === "string" ? plan.language : null;
   const targetLanguage = detectLanguageFromText(latestUserMessage, planLanguage || "en");
@@ -1226,6 +1266,9 @@ export const generateAssistantReply = async ({
       ? "IMPORTANT: You HAVE access to the user's active booking/trip in the 'USER CONTEXT' section below. If the user asks about their booking, reservation, or trip details, USE that information to answer."
       : "";
 
+    const noRepeatInstruction =
+      "CRITICAL: Never repeat the same opening phrase as the previous turn. If your last reply started with 'Here we go', 'Aquí vamos', 'Check this out', or any phrase — that opener is BANNED this turn. Rotate vocabulary, structure and tone every single message.";
+
     if (intent === "TRIP") {
       systemPrompt =
         "You are a travel planner helping a guest who already booked a stay.\n" +
@@ -1233,11 +1276,62 @@ export const generateAssistantReply = async ({
         `${languageGuard}\n` +
         `${todayBlock}` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
+        `- ${noRepeatInstruction}\n` +
         "- Vary your wording: e.g. 'Here are some nearby spots.', 'I put together a few options around you.', 'These are solid picks for your stay.' (or equivalent in the user's language). Avoid repeating the same opener.\n" +
         "- Use the provided trip context and suggestions to summarize nearby options.\n" +
         "- If an itinerary is provided, mention that a day-by-day plan is ready.\n" +
         "- Keep the reply concise and helpful, highlighting top-rated or closest options.\n" +
         "- followUps: Ask what category or day to refine. Vary phrasing.\n" +
+        "- You may use 1–2 tasteful emojis (e.g. ✨ 📍 🗓) to keep the tone friendly.\n" +
+        (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
+    } else if (intent === "PLANNING") {
+      const dest = plan?.location?.city || plan?.location?.country || "";
+      systemPrompt =
+        "You are a travel planner. The user asked you to PLAN or ORGANIZE a trip (itinerary, strategy). Your reply must be structured, complete and useful.\n" +
+        `${langLine}\n` +
+        `${languageGuard}\n` +
+        `${todayBlock}` +
+        "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
+        `- ${noRepeatInstruction}\n` +
+        "- **CRITICAL — DO NOT BLOCK:** If the user did NOT specify dates, duration, budget or number of guests, do NOT list them as 'missing' or 'what you need'. Do NOT ask for them before giving the plan. Instead, ASSUME reasonable defaults (e.g. 7 days, 2 adults, moderate budget, flexible dates) and mention it in ONE short line at the start only (e.g. 'Asumo 7 días y 2 adultos; si es distinto decime.' or 'Assuming a week and 2 travelers — say if you want something different.'). Then deliver the FULL plan. The user must receive a complete, actionable plan in this reply.\n" +
+        "- **Opening line:** Start your reply with a short opening line (e.g. in Spanish: '¡Gran destino! Dubai es un destino que combina lujo, cultura y modernidad.' or in English: 'Great destination! Dubai is a place that blends luxury, culture and modernity.'). Then continue with the structured plan.\n" +
+        "- Structure your reply with clear sections using Markdown: ## for main sections, ### for subsections, bullet points for lists. Do NOT wrap section headers in bold: write '## Section' and '### Subsection', not '**## Section**'.\n" +
+        "- **Response structure:** Opening line, then one-line assumption if needed, then full plan (objective, strategic base, day-by-day structure, tips), then one short question at the end.\n" +
+        "- **Planning checklist to cover (adapt to what the user asked):**\n" +
+        "  1. Objetivo del viaje (descansar, conocer, comer bien, naturaleza, etc.)\n" +
+        "  2. Restricciones o supuestos (solo si aplican; si asumiste duración/huéspedes, no repitas como 'falta')\n" +
+        "  3. Base estratégica: zona de alojamiento que reduzca traslados\n" +
+        "  4. Estructura simple: 1 actividad ancla por día + 1–2 complementarias + descanso\n" +
+        "  5. Rutas lógicas por barrios/zonas\n" +
+        "  6. Puntos críticos: lo que requiere reserva\n" +
+        "  7. Plan B por clima/cansancio\n" +
+        "  8. Balance y costeo aproximado\n" +
+        "- Be concise per section; use bullets. One question at the end (e.g. '¿Querés que baje a hoteles concretos?' / 'Want me to suggest specific hotels?').\n" +
+        (dest ? `- The user mentioned destination: ${dest}. Use it in your plan.\n` : "") +
+        (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
+    } else if (intent === "LOCATION") {
+      const dest = plan?.location?.city || plan?.location?.country || "";
+      systemPrompt =
+        "You are a travel expert. The user asked for INFORMATION about a destination (what to see, where to stay, how to get around). Your reply must be a complete, clear guide.\n" +
+        `${langLine}\n` +
+        `${languageGuard}\n` +
+        `${todayBlock}` +
+        "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
+        `- ${noRepeatInstruction}\n` +
+        "- **DO NOT BLOCK:** If the user did not specify dates or guests, do not ask for them or list them as missing. Deliver the full guide; you can assume 'a typical stay' (e.g. 5–7 days) in one short line if needed, then continue with the guide.\n" +
+        "- **Opening line:** Start your reply with a short opening line (e.g. in Spanish: '¡Gran destino! Dubai es un destino que...' or in English: 'Great destination! Dubai is a place that...'). Then the full guide.\n" +
+        "- Structure your reply with Markdown: ## for main sections, ### for subsections, bullet points for lists. Do NOT wrap section headers in bold: write '## Section' and '### Subsection', not '**## Section**'.\n" +
+        "- **Response structure:** Opening line, then full guide; end with one short question.\n" +
+        "- **Location guide checklist to cover (adapt to the place):**\n" +
+        "  1. Mapa mental: qué es el lugar y para quién sirve\n" +
+        "  2. Imperdibles + actividades por gusto\n" +
+        "  3. Dónde alojarte y por qué\n" +
+        "  4. Cómo moverte y tiempos\n" +
+        "  5. Cuántos días conviene\n" +
+        "  6. Costos y riesgos\n" +
+        "  7. Mini itinerarios listos para usar\n" +
+        "- Be concise; use bullets. One question at the end.\n" +
+        (dest ? `- The user asked about: ${dest}. Personalize the guide for this place.\n` : "") +
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     } else if (intent === "SEARCH") {
       systemPrompt =
@@ -1247,15 +1341,18 @@ export const generateAssistantReply = async ({
         `${todayBlock}` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
         `${contextInstruction}\n` +
-        "- **MODERN & FUN TONE**: Be enthusiastic. Use varied openers like 'Here we go!', 'Check this out!', 'Sorted!', 'Bingo!', or occasionally 'Boom!'. **Do not overuse any single phrase**.\n" +
+        `- ${noRepeatInstruction}\n` +
+        "- **PRICES & AVAILABILITY**: When the user has NOT yet provided destination + dates + guests, make it clear in a natural way that the options you show are suggestions, and that to see real prices and availability they need to add: where, when, and how many guests. Vary the phrasing (e.g. 'Once you pick dates and guests I can show live prices', 'Add your dates and who's traveling to see availability and rates', 'Set your dates and guests to see real availability'). When they have already provided destination, dates and guests, you can say that the results below have live availability.\n" +
+        "- **MODERN & FUN TONE**: Be enthusiastic but specific. BANNED openers (never use these): 'Here we go', 'Aquí vamos', 'Let's go', '¡Vamos!', 'Boom', 'Great news', 'Buenas noticias'. Instead, open with something destination-specific or result-specific. Examples: 'Found [N] options in [city].', 'These look solid for your dates.', 'Here's what matched.', 'Good picks in [city] — take a look.', 'Nice — [N] places in [destination].'. In Spanish: 'Acá tenés opciones en [ciudad].', 'Encontré esto para tus fechas.', 'Hay buenas opciones para lo que pedís.'. Vary every turn — no two replies should open the same way.\n" +
         "- **OPINIONATED**: After presenting results, add a SHORT comment or 'Hot Take'.\n" +
         "- **STRUCTURE**:\n" +
         "  1. Enthusiastic Opening\n" +
         "  2. (Optional) Hot Take / Opinion\n" +
         "  3. **Crucial**: Explain that these are just a few top picks and you can show more. **IMPORTANT: VARY THIS PHRASE EVERY TIME**. Do not typically say the exact same thing.\n" +
-        "  4. Closing Guidance: 'Ready to check availability for dates?'\n" +
+        "  4. Closing: use one of several possible phrases (e.g. 'Ready to check availability?', 'Pick your dates to see rates.', 'Add dates and guests to see live prices.'). Do not always use the same closing.\n" +
         "- If NO results: Be helpful. 'Ouch, nothing exactly there. Try changing dates.'\n" +
         "- followUps: 3-4 distinct options.\n" +
+        "- **EMOJIS**: You may use a few tasteful emojis in your reply (e.g. ✨ 🏨 🌟 📍 🗓) to keep the tone friendly and modern. Do not overuse; one or two per message is enough.\n" +
         "- **STRICT RULES**:\n" +
         "  - **TRAVEL ONLY**: You are a travel assistant. If the user talks about politics, religion, or off-topic subjects, politely refuse: 'I can only help with travel and bookings.'\n" +
         "  - **RESPECT**: Never use offensive language. Be professional yet fun.\n" +
@@ -1271,10 +1368,12 @@ export const generateAssistantReply = async ({
         `${todayBlock}` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
         `${contextInstruction}\n` +
+        `- ${noRepeatInstruction}\n` +
         "- Vary your tone: sometimes more direct ('You can search by destination and dates'), sometimes warmer ('I can help you find a place — just tell me where and when'). Avoid robotic or repeated phrasing.\n" +
-        "- Explain what you can do: search for homes and hotels, filter by amenities, dates, budget.\n" +
+        "- Explain what you can do: search for homes and hotels, filter by amenities, dates, budget. Mention that to see prices and availability they need to enter destination, dates and guests.\n" +
         "- If the user asks about their booking, CONFIRM you see it using the context below.\n" +
         "- followUps: Suggestions on how to start searching. Vary wording (e.g. 'Search for a stay', 'Pick dates and guests', 'Tell me your destination').\n" +
+        "- You may use 1–2 tasteful emojis (e.g. ✨ 🏨 👋) to keep the tone friendly.\n" +
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     } else {
       // SMALL_TALK
@@ -1285,10 +1384,12 @@ export const generateAssistantReply = async ({
         `${todayBlock}` +
         "Always return JSON with shape {\"reply\": string, \"followUps\": string[]}.\n" +
         `${contextInstruction}\n` +
+        `- ${noRepeatInstruction}\n` +
         "- Reply naturally and in a friendly way. Vary your replies: avoid always saying 'How can I help?' or 'What would you like to know?' Use alternatives like 'What are you in the mood for?', 'Tell me what you have in mind.', 'I’m here to help — what do you need?' (or equivalent in the user's language).\n" +
         "- If they mention destinations without asking for a search, ask for more details before searching.\n" +
         "- DO NOT assume they want to search unless explicitly requested.\n" +
         "- followUps: Natural questions to continue the conversation or guide them towards search. Vary the phrasing.\n" +
+        "- You may use 1–2 tasteful emojis in your reply (e.g. ✨ 👋 🏨) to keep the tone friendly.\n" +
         (modismos ? `- The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
     }
 
@@ -1305,20 +1406,30 @@ export const generateAssistantReply = async ({
             tripContext,
             trip: tripSummary,
           })
-          : JSON.stringify({
-            latestUserMessage,
-            conversationHistory: normalized.slice(-4),
-            weather: summary.weather,
-          });
+          : intent === "PLANNING" || intent === "LOCATION"
+            ? JSON.stringify({
+              latestUserMessage,
+              plan: { location: plan?.location, dates: plan?.dates, guests: plan?.guests, preferences: plan?.preferences },
+              conversationHistory: normalized.slice(-4),
+            })
+            : JSON.stringify({
+              latestUserMessage,
+              conversationHistory: normalized.slice(-4),
+              weather: summary.weather,
+            });
 
-    const completion = await client.chat.completions.create({
-      model: DEFAULT_MODEL,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
-      ],
-    });
+    const completion = await withTimeout(
+      client.chat.completions.create({
+        model: DEFAULT_MODEL,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+      }),
+      DEFAULT_OPENAI_TIMEOUT_MS,
+      "generateAssistantReply"
+    );
 
     const payload = completion.choices?.[0]?.message?.content;
     if (!payload) {
@@ -1345,6 +1456,32 @@ export const generateAssistantReply = async ({
           targetLanguage === "es"
             ? ["Restaurantes cercanos", "Armar itinerario", "Compras cerca"]
             : ["Nearby restaurants", "Build itinerary", "Shopping nearby"],
+      };
+    } else if (intent === "PLANNING") {
+      const reply = pickLanguageText(
+        targetLanguage,
+        "I can help you plan your trip: objectives, constraints, where to stay, day-by-day structure, and practical tips. Tell me your destination and dates (or flexibility) to get started.",
+        "Puedo ayudarte a planificar tu viaje: objetivo, restricciones, dónde alojarte, estructura día a día y tips. Decime destino y fechas (o flexibilidad) para arrancar."
+      );
+      return {
+        reply,
+        followUps:
+          targetLanguage === "es"
+            ? ["Buscar hoteles", "Ver itinerario ejemplo", "Cambiar fechas"]
+            : ["Search hotels", "See sample itinerary", "Change dates"],
+      };
+    } else if (intent === "LOCATION") {
+      const reply = pickLanguageText(
+        targetLanguage,
+        "I can give you a guide for that destination: what to see, where to stay, how to get around, and how many days to spend. Which place are you interested in?",
+        "Puedo armarte una guía de ese destino: qué ver, dónde alojarte, cómo moverte y cuántos días conviene. ¿Qué lugar te interesa?"
+      );
+      return {
+        reply,
+        followUps:
+          targetLanguage === "es"
+            ? ["Buscar alojamiento ahí", "Ver opciones", "Otro destino"]
+            : ["Search accommodation there", "See options", "Another destination"],
       };
     } else if (intent === "SEARCH") {
       const reply =

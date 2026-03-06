@@ -6,7 +6,12 @@ import { HOME_PROPERTY_TYPES, HOME_SPACE_TYPES } from "../models/Home.js";
 import { HOME_DISCOUNT_RULE_TYPES } from "../models/HomeDiscountRule.js";
 import { resolveGeoFromRequest } from "../utils/geoLocation.js";
 import { mapHomeToCard, getCoverImage } from "../utils/homeMapper.js";
+import { applyHomePublicMarkup } from "../utils/homePricing.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
+import {
+  buildHostOnboardingState,
+  ensureHostOnboardingMetadata,
+} from "../utils/hostOnboarding.js";
 import {
   EXPLORE_RANKING_VERSION,
   fetchHomeExploreEngagementStats,
@@ -1628,11 +1633,12 @@ export const getPublicHome = async (req, res) => {
     };
     if (home.pricing) {
       if (home.pricing.base_price != null) {
-        home.pricing.base_price = Number(home.pricing.base_price) * 1.1;
+        home.pricing.base_price = applyHomePublicMarkup(home.pricing.base_price);
       }
       if (home.pricing.weekend_price != null) {
-        home.pricing.weekend_price = Number(home.pricing.weekend_price) * 1.1;
+        home.pricing.weekend_price = applyHomePublicMarkup(home.pricing.weekend_price);
       }
+      home.pricing.tax_rate = null;
     }
     home.bedTypes = await ensureDefaultBedTypes(home);
 
@@ -1661,27 +1667,121 @@ export const createHomeDraft = async (req, res) => {
     if (!HOME_SPACE_TYPES.includes(spaceType)) spaceType = "ENTIRE_PLACE";
     if (!LISTING_TYPES.includes(listingType)) listingType = "STANDARD";
 
-    const home = await models.Home.create({
-      host_id: hostId,
-      property_type: propertyType,
-      space_type: spaceType,
-      listing_type: listingType,
-      max_guests: Number(maxGuests) || 1,
-      bedrooms: Number(bedrooms) || 1,
-      beds: Number(beds) || 1,
-      bathrooms: Number(bathrooms) || 1,
-      status: "DRAFT",
-      draft_step: 1,
+    const result = await sequelize.transaction(async (transaction) => {
+      const user = await models.User.findByPk(hostId, {
+        attributes: ["id", "role", "email_verified"],
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (!user) throw new Error("USER_NOT_FOUND");
+
+      const emailVerificationSeed = user.email_verified
+        ? {
+            emailVerified: true,
+            email_verified: true,
+            realPersonConfirmed: true,
+            real_person_confirmed: true,
+            hostOnboarding: {
+              confirmRealPerson: true,
+              realPersonConfirmed: true,
+            },
+          }
+        : {};
+
+      const mergeHostOnboardingSeed = (metadataInput = {}) => {
+        const metadata =
+          metadataInput && typeof metadataInput === "object" && !Array.isArray(metadataInput)
+            ? metadataInput
+            : {};
+        const explicitHostModeUnlocked =
+          metadata.hostModeUnlocked != null || metadata.host_mode_unlocked != null
+            ? asBool(metadata.hostModeUnlocked ?? metadata.host_mode_unlocked, false)
+            : null;
+        const hostModeUnlocked =
+          explicitHostModeUnlocked != null
+            ? explicitHostModeUnlocked
+            : Boolean(Number(user.role || 0) === 6 || buildHostOnboardingState(metadata).completed);
+        const existingHostOnboarding =
+          metadata.hostOnboarding &&
+          typeof metadata.hostOnboarding === "object" &&
+          !Array.isArray(metadata.hostOnboarding)
+            ? metadata.hostOnboarding
+            : {};
+        const seeded = ensureHostOnboardingMetadata({
+          ...metadata,
+          ...emailVerificationSeed,
+          hostOnboarding: {
+            ...existingHostOnboarding,
+            ...emailVerificationSeed.hostOnboarding,
+          },
+        });
+        seeded.hostModeUnlocked = hostModeUnlocked;
+        seeded.host_mode_unlocked = hostModeUnlocked;
+        return seeded;
+      };
+
+      const [hostProfile, hostProfileCreated] = await models.HostProfile.findOrCreate({
+        where: { user_id: hostId },
+        defaults: {
+          user_id: hostId,
+          kyc_status: "PENDING",
+          payout_status: "INCOMPLETE",
+          metadata: mergeHostOnboardingSeed({}),
+        },
+        transaction,
+      });
+
+      if (!hostProfileCreated) {
+        const nextMetadata = mergeHostOnboardingSeed(hostProfile?.metadata || {});
+        const current = hostProfile?.metadata || {};
+        if (JSON.stringify(nextMetadata) !== JSON.stringify(current)) {
+          await hostProfile.update({ metadata: nextMetadata }, { transaction });
+        }
+      }
+
+      const home = await models.Home.create(
+        {
+          host_id: hostId,
+          property_type: propertyType,
+          space_type: spaceType,
+          listing_type: listingType,
+          max_guests: Number(maxGuests) || 1,
+          bedrooms: Number(bedrooms) || 1,
+          beds: Number(beds) || 1,
+          bathrooms: Number(bathrooms) || 1,
+          status: "DRAFT",
+          draft_step: 1,
+        },
+        { transaction }
+      );
+
+      await models.HomePricing.create(
+        {
+          home_id: home.id,
+          currency: req.body?.currency || "USD",
+          base_price: Number(req.body?.basePrice) || 0,
+        },
+        { transaction }
+      );
+
+      const metadata = hostProfileCreated
+        ? mergeHostOnboardingSeed({})
+        : mergeHostOnboardingSeed(hostProfile?.metadata || {});
+
+      return {
+        home,
+        hostOnboarding: buildHostOnboardingState(metadata),
+      };
     });
 
-    await models.HomePricing.create({
-      home_id: home.id,
-      currency: req.body?.currency || "USD",
-      base_price: Number(req.body?.basePrice) || 0,
+    return res.status(201).json({
+      ...(typeof result.home?.toJSON === "function" ? result.home.toJSON() : result.home),
+      hostOnboarding: result.hostOnboarding,
     });
-
-    return res.status(201).json(home);
   } catch (err) {
+    if (err?.message === "USER_NOT_FOUND") {
+      return res.status(404).json({ error: "User not found" });
+    }
     console.error("[createHomeDraft]", err);
     return res.status(500).json({ error: "Failed to create home draft" });
   }
@@ -1914,17 +2014,9 @@ export const updateHomePricing = async (req, res) => {
       cleaning_fee: req.body?.cleaningFee != null ? Number(req.body.cleaningFee) : home.pricing?.cleaning_fee,
       extra_guest_fee: req.body?.extraGuestFee != null ? Number(req.body.extraGuestFee) : home.pricing?.extra_guest_fee,
       extra_guest_threshold: req.body?.extraGuestThreshold != null ? Number(req.body.extraGuestThreshold) : home.pricing?.extra_guest_threshold,
-      tax_rate: req.body?.taxRate != null ? Number(req.body.taxRate) : home.pricing?.tax_rate,
+      tax_rate: null,
       pricing_strategy: req.body?.pricingStrategy || home.pricing?.pricing_strategy || null,
     };
-
-    if (payload.tax_rate == null) {
-      const resolvedTaxRate = await resolveTaxRateFromLocation(
-        home.address?.country,
-        home.address?.state
-      );
-      if (resolvedTaxRate != null) payload.tax_rate = resolvedTaxRate;
-    }
 
     if (home.pricing) {
       await home.pricing.update(payload);
@@ -2247,6 +2339,69 @@ export const publishHome = async (req, res) => {
       return res.status(400).json({ error: "Add at least one photo before publishing." });
     }
 
+    const [hostProfile, user] = await Promise.all([
+      models.HostProfile.findOne({
+        where: { user_id: hostId },
+        attributes: ["id", "metadata"],
+      }),
+      models.User.findByPk(hostId, { attributes: ["id", "role"] }),
+    ]);
+
+    const profileMetadata =
+      hostProfile?.metadata && typeof hostProfile.metadata === "object" && !Array.isArray(hostProfile.metadata)
+        ? hostProfile.metadata
+        : {};
+    const hostModeUnlocked =
+      profileMetadata.hostModeUnlocked != null || profileMetadata.host_mode_unlocked != null
+        ? asBool(profileMetadata.hostModeUnlocked ?? profileMetadata.host_mode_unlocked, false)
+        : false;
+
+    let normalizedMetadata = profileMetadata;
+    if (!hostModeUnlocked) {
+      normalizedMetadata = ensureHostOnboardingMetadata({
+        ...profileMetadata,
+        hostModeUnlocked: true,
+        host_mode_unlocked: true,
+      });
+      normalizedMetadata.hostModeUnlocked = true;
+      normalizedMetadata.host_mode_unlocked = true;
+      if (hostProfile) {
+        await hostProfile.update({ metadata: normalizedMetadata });
+      } else {
+        await models.HostProfile.create({
+          user_id: hostId,
+          kyc_status: "PENDING",
+          payout_status: "INCOMPLETE",
+          metadata: normalizedMetadata,
+        });
+      }
+    }
+
+    // Promote regular users once their first listing reaches submit/review.
+    // Existing privileged roles (e.g. ambassador) are preserved.
+    if (user && Number(user.role || 0) === 0) {
+      await user.update({ role: 6 });
+    }
+
+    const hostOnboarding = buildHostOnboardingState(normalizedMetadata);
+    if (!hostOnboarding.completed) {
+      await home.update({
+        status: "IN_REVIEW",
+        is_visible: false,
+        draft_step: Math.max(home.draft_step, 20),
+      });
+
+      return res.json({
+        id: home.id,
+        status: home.status,
+        isVisible: home.is_visible,
+        code: "HOST_PERSONAL_INFO_REQUIRED",
+        requiresHostPersonalInfo: true,
+        hostOnboarding,
+        message: "Complete your personal information to publish this listing.",
+      });
+    }
+
     await home.update({
       status: "PUBLISHED",
       is_visible: true,
@@ -2316,6 +2471,8 @@ export const getHomeById = async (req, res) => {
       host: hostBadges,
     };
     home.bedTypes = await ensureDefaultBedTypes(home);
+    home.hostOnboarding = buildHostOnboardingState(home?.host?.hostProfile?.metadata || {});
+    home.requiresHostPersonalInfo = !home.hostOnboarding.completed;
     return res.json(home);
   } catch (err) {
     console.error("[getHomeById]", err);

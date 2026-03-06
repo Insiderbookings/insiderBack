@@ -61,6 +61,19 @@ export default (sequelize) => {
     SupportTicket.associate = (models) => {
         SupportTicket.belongsTo(models.User, { foreignKey: "user_id", as: "user" });
         SupportTicket.belongsTo(models.User, { foreignKey: "assigned_to", as: "assignee" });
+        if (models.SupportTicketAssignee) {
+            SupportTicket.hasMany(models.SupportTicketAssignee, {
+                foreignKey: "ticket_id",
+                as: "assignmentLinks",
+                onDelete: "CASCADE",
+            });
+            SupportTicket.belongsToMany(models.User, {
+                through: models.SupportTicketAssignee,
+                foreignKey: "ticket_id",
+                otherKey: "user_id",
+                as: "assignees",
+            });
+        }
         SupportTicket.hasMany(models.SupportMessage, {
             foreignKey: "ticket_id",
             as: "messages",

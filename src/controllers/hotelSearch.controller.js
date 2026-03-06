@@ -300,18 +300,23 @@ const fetchCityByCode = async (code) =>
     raw: true,
   })
 
-const findCityCandidates = async ({ query, countryCode, countryName, limit = 25 }) => {
-  const trimmed = String(query || "").trim()
-  if (!trimmed) return []
+const shouldRelaxCountryNameFilter = ({ countryCode, countryName }) =>
+  !countryCode && Boolean(String(countryName || "").trim())
 
-  const where = buildCityWhereFilter({
-    countryCode,
-    countryName,
-    query: trimmed,
-  })
-
-  return models.WebbedsCity.findAll({
-    where,
+const queryCityCandidates = ({
+  query,
+  countryCode,
+  countryName,
+  limit,
+  requireCoordinates = false,
+}) =>
+  models.WebbedsCity.findAll({
+    where: buildCityWhereFilter({
+      countryCode,
+      countryName,
+      query,
+      requireCoordinates,
+    }),
     attributes: [
       "code",
       "name",
@@ -330,6 +335,35 @@ const findCityCandidates = async ({ query, countryCode, countryName, limit = 25 
     limit,
     raw: true,
   })
+
+const findCityCandidates = async ({ query, countryCode, countryName, limit = 25 }) => {
+  const trimmed = String(query || "").trim()
+  if (!trimmed) return []
+
+  const primaryCandidates = await queryCityCandidates({
+    query: trimmed,
+    countryCode,
+    countryName,
+    limit,
+  })
+  if (primaryCandidates.length || !shouldRelaxCountryNameFilter({ countryCode, countryName })) {
+    return primaryCandidates
+  }
+
+  const relaxedCandidates = await queryCityCandidates({
+    query: trimmed,
+    countryCode,
+    countryName: null,
+    limit,
+  })
+  if (relaxedCandidates.length && PLACE_CITY_MAP_DEBUG) {
+    console.warn("[hotels.search] city candidates relaxed countryName filter", {
+      query: trimmed,
+      countryName,
+      count: relaxedCandidates.length,
+    })
+  }
+  return relaxedCandidates
 }
 
 const findCoordinateCandidates = async ({
@@ -337,32 +371,35 @@ const findCoordinateCandidates = async ({
   countryName,
   query,
   limit = 120,
-}) =>
-  models.WebbedsCity.findAll({
-    where: buildCityWhereFilter({
-      countryCode,
-      countryName,
-      query,
-      requireCoordinates: true,
-    }),
-    attributes: [
-      "code",
-      "name",
-      "country_code",
-      "country_name",
-      "state_name",
-      "state_code",
-      "lat",
-      "lng",
-      [CITY_HOTEL_COUNT_LITERAL, "hotel_count"],
-    ],
-    order: [
-      [literal(`"hotel_count"`), "DESC"],
-      ["name", "ASC"],
-    ],
-    limit: Math.max(20, Math.min(300, Number(limit) || 120)),
-    raw: true,
+}) => {
+  const normalizedLimit = Math.max(20, Math.min(300, Number(limit) || 120))
+  const primaryCandidates = await queryCityCandidates({
+    query,
+    countryCode,
+    countryName,
+    limit: normalizedLimit,
+    requireCoordinates: true,
   })
+  if (primaryCandidates.length || !shouldRelaxCountryNameFilter({ countryCode, countryName })) {
+    return primaryCandidates
+  }
+
+  const relaxedCandidates = await queryCityCandidates({
+    query,
+    countryCode,
+    countryName: null,
+    limit: normalizedLimit,
+    requireCoordinates: true,
+  })
+  if (relaxedCandidates.length && PLACE_CITY_MAP_DEBUG) {
+    console.warn("[hotels.search] coordinate candidates relaxed countryName filter", {
+      query: String(query || "").trim() || null,
+      countryName,
+      count: relaxedCandidates.length,
+    })
+  }
+  return relaxedCandidates
+}
 
 const rankCityCandidate = ({ candidate, cityToken, stateHint, targetLat = null, targetLng = null }) => {
   const normalizedName = String(candidate?.name || "").trim().toUpperCase()
@@ -718,6 +755,45 @@ const reduceToLite = (items = []) =>
     }
   })
 
+const hasRenderableHotelIdentity = (item) => {
+  if (!item || typeof item !== "object") return false
+  const hotelCode =
+    item?.hotelCode ??
+    item?.hotelDetails?.hotelCode ??
+    item?.hotel_id ??
+    item?.hotelId ??
+    item?.id ??
+    null
+  if (hotelCode == null || String(hotelCode).trim() === "") return false
+
+  const nameCandidates = [
+    item?.hotelName,
+    item?.name,
+    item?.title,
+    item?.hotelDetails?.hotelName,
+    item?.hotelDetails?.name,
+  ]
+  return nameCandidates.some((candidate) => String(candidate ?? "").trim())
+}
+
+const sanitizeRenderableHotelItems = (items = [], context = {}) => {
+  if (!Array.isArray(items)) return []
+  const filtered = items.filter(hasRenderableHotelIdentity)
+  const dropped = items.length - filtered.length
+  if (dropped > 0) {
+    console.warn("[hotels.search] dropped non-renderable items", {
+      searchRequestId: context.searchRequestId ?? null,
+      stage: context.stage ?? null,
+      dropped,
+      before: items.length,
+      after: filtered.length,
+      cityCode: context.cityCode ?? null,
+      query: context.query ?? null,
+    })
+  }
+  return filtered
+}
+
 const fetchHotelIdsByName = async (query, limit = DEFAULT_LIMIT, offset = 0, filters = {}) => {
   const trimmed = String(query || "").trim()
   if (!trimmed) return []
@@ -1004,6 +1080,26 @@ export const searchHotels = async (req, res, next) => {
       : countryCode
         ? String(countryCode).trim()
         : null
+
+    if (resolvedSearchMode === "city" && !resolvedCityCode) {
+      console.warn("[hotels.search] unresolved city in city mode", {
+        query: searchQuery || null,
+        placeId: String(placeId || "").trim() || null,
+        country: String(country || "").trim() || null,
+      })
+      return res.json({
+        items: [],
+        meta: {
+          cached: false,
+          fallback: "no-city",
+          cityCode: null,
+          countryCode: resolvedCountryCode,
+          query: searchQuery || null,
+          total: 0,
+        },
+      })
+    }
+
     const mustFetchAllHotelIds = Boolean(
       resolvedSearchMode === "hotelids" && resolvedCityCode && hasRatesParams,
     )
@@ -1130,6 +1226,12 @@ export const searchHotels = async (req, res, next) => {
         })
 
         fullItems = reduceToLite(Array.isArray(fullItems) ? fullItems : [])
+        fullItems = sanitizeRenderableHotelItems(fullItems, {
+          searchRequestId,
+          stage: "full-cache-build",
+          cityCode: resolvedCityCode,
+          query: searchQuery || null,
+        })
         const fullPayload = {
           items: fullItems,
           meta: {
@@ -1173,8 +1275,14 @@ export const searchHotels = async (req, res, next) => {
         const filteredItems = hasAnyFilter
           ? filterCachedItems(sourceItems, cacheFilters)
           : sourceItems
-        const pagedItems = filteredItems.slice(safeOffset, safeOffset + safeLimit)
-        const hasMore = filteredItems.length > safeOffset + safeLimit
+        const sanitizedItems = sanitizeRenderableHotelItems(filteredItems, {
+          searchRequestId,
+          stage: "full-cache-read",
+          cityCode: resolvedCityCode,
+          query: searchQuery || null,
+        })
+        const pagedItems = sanitizedItems.slice(safeOffset, safeOffset + safeLimit)
+        const hasMore = sanitizedItems.length > safeOffset + safeLimit
 
         return res.json({
           items: pagedItems,
@@ -1186,8 +1294,8 @@ export const searchHotels = async (req, res, next) => {
             countryCode: resolvedCountryCode,
             cityName: resolvedCity?.name ?? fullCacheEntry.meta?.cityName ?? null,
             countryName: resolvedCity?.country_name ?? fullCacheEntry.meta?.countryName ?? null,
-            total: filteredItems.length,
-            hotelIdsCount: fullCacheEntry.meta?.hotelIdsCount ?? filteredItems.length,
+            total: sanitizedItems.length,
+            hotelIdsCount: fullCacheEntry.meta?.hotelIdsCount ?? sanitizedItems.length,
             limit: safeLimit,
             offset: safeOffset,
             hasMore,
@@ -1305,6 +1413,12 @@ export const searchHotels = async (req, res, next) => {
     if (process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true") {
       const cached = await cache.get(cacheKey)
       if (cached) {
+        const cachedItems = sanitizeRenderableHotelItems(cached?.items, {
+          searchRequestId,
+          stage: "cache-read",
+          cityCode: resolvedCityCode,
+          query: searchQuery || null,
+        })
         console.log("[hotels.search] cache hit", {
           searchRequestId,
           cityCode: resolvedCityCode,
@@ -1316,9 +1430,11 @@ export const searchHotels = async (req, res, next) => {
         })
         return res.json({
           ...cached,
+          items: cachedItems,
           meta: {
             ...cached.meta,
             cached: true,
+            total: cachedItems.length,
           },
         })
       }
@@ -1417,7 +1533,14 @@ export const searchHotels = async (req, res, next) => {
               }
             }
 
-            const rankedBackfillItems = rankAvailabilityItems(dedupedItems)
+            const rankedBackfillItems = rankAvailabilityItems(
+              sanitizeRenderableHotelItems(dedupedItems, {
+                searchRequestId,
+                stage: "hotelids-fill-prerank",
+                cityCode: resolvedCityCode,
+                query: searchQuery || null,
+              }),
+            )
             items = rankedBackfillItems.slice(safeOffset, safeOffset + safeLimit)
             responseHasMore = rankedBackfillItems.length > targetCount || !exhaustedHotelIds
           } else {
@@ -1445,7 +1568,14 @@ export const searchHotels = async (req, res, next) => {
                 seenHotelCodes.add(hotelCode)
                 dedupedCityItems.push(item)
               }
-              const rankedCityItems = rankAvailabilityItems(dedupedCityItems)
+              const rankedCityItems = rankAvailabilityItems(
+                sanitizeRenderableHotelItems(dedupedCityItems, {
+                  searchRequestId,
+                  stage: "city-unpaged-prerank",
+                  cityCode: resolvedCityCode,
+                  query: searchQuery || null,
+                }),
+              )
               items = rankedCityItems.slice(safeOffset, safeOffset + safeLimit)
               responseHasMore = rankedCityItems.length > safeOffset + safeLimit
             } else {
@@ -1518,6 +1648,12 @@ export const searchHotels = async (req, res, next) => {
     if (useLite && Array.isArray(items) && !isStaticResult) {
       items = reduceToLite(items)
     }
+    items = sanitizeRenderableHotelItems(Array.isArray(items) ? items : [], {
+      searchRequestId,
+      stage: useLite ? "final-lite" : "final",
+      cityCode: resolvedCityCode,
+      query: searchQuery || null,
+    })
     const durationMs = Date.now() - startTime
     const searchDurationMs = Date.now() - searchStart
     const hasMore = effectiveFetchAll ? false : responseHasMore || hotelIds.length === safeLimit
@@ -1628,6 +1764,12 @@ export const searchHotels = async (req, res, next) => {
           })
 
           fullItems = reduceToLite(Array.isArray(fullItems) ? fullItems : [])
+          fullItems = sanitizeRenderableHotelItems(fullItems, {
+            searchRequestId,
+            stage: "full-cache-warm",
+            cityCode: resolvedCityCode,
+            query: searchQuery || null,
+          })
           const fullPayload = {
             items: fullItems,
             meta: {

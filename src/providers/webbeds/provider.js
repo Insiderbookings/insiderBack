@@ -23,6 +23,11 @@ const MAX_HOTEL_IDS_PER_REQUEST = 50
 const DEFAULT_HOTEL_ID_CONCURRENCY = 4
 const verboseLogs = process.env.WEBBEDS_VERBOSE_LOGS === "true"
 
+// Cache de deduplicación para getbookingdetails
+// Evita que múltiples llamadas seguidas al mismo bookingId lleguen a WebBeds
+const GBD_CACHE_TTL_MS = Number(process.env.GBD_CACHE_TTL_MS || 60_000)
+const _gbdCache = new Map() // bookingId → { data, expiresAt }
+
 const buildWebbedsErrorPayload = (error, extraPayload = {}) => {
   const mapped = mapWebbedsError(error?.code, error?.details)
   return {
@@ -1316,11 +1321,18 @@ export class WebbedsProvider extends HotelProvider {
 
       const payload = buildGetBookingDetailsPayload({ bookingId })
 
+      const cached = _gbdCache.get(bookingId)
+      if (cached && cached.expiresAt > Date.now()) {
+        console.log("[webbeds] getbookingdetails: cache hit", { bookingId })
+        return res.json(cached.data)
+      }
+
       const { result } = await this.client.send("getbookingdetails", payload, {
         requestId: this.getRequestId(req),
       })
 
       const mapped = mapGetBookingDetailsResponse(result)
+      _gbdCache.set(bookingId, { data: mapped, expiresAt: Date.now() + GBD_CACHE_TTL_MS })
       return res.json(mapped)
     } catch (error) {
       if (error.name === "WebbedsError") {

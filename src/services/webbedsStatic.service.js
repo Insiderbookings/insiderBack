@@ -734,6 +734,7 @@ const executeHotelSync = async ({
   mode = "full",
   syncLog,
   metadata,
+  hotelLimit,
 }) => {
   if (!cityCode) throw new Error("cityCode is required to sync hotels")
   if (dryRun) {
@@ -748,6 +749,8 @@ const executeHotelSync = async ({
     console.log("[webbeds][static] syncing hotels", { cityCode, mode })
     const { result } = await client.send("searchhotels", payload)
     const hotels = ensureArray(result?.hotels?.hotel)
+    const shouldCapHotels = Number.isFinite(hotelLimit) && hotelLimit > 0
+    const hotelsToPersist = shouldCapHotels ? hotels.slice(0, hotelLimit) : hotels
 
     if (!hotels.length) {
       console.warn("[webbeds][static] searchhotels returned empty list", { cityCode, mode })
@@ -763,7 +766,16 @@ const executeHotelSync = async ({
       return { inserted: 0, mode }
     }
 
-    processed = await persistHotels(hotels, cityCode)
+    if (shouldCapHotels && hotels.length > hotelsToPersist.length) {
+      console.log("[webbeds][static] applying hotel limit", {
+        cityCode,
+        mode,
+        fetched: hotels.length,
+        hotelLimit: hotelsToPersist.length,
+      })
+    }
+
+    processed = await persistHotels(hotelsToPersist, cityCode)
 
     await recordSyncLog({
       cityCode,
@@ -980,10 +992,10 @@ export const syncWebbedsCities = async ({ countryCode, dryRun = false } = {}) =>
   }
 }
 
-export const syncWebbedsHotels = async ({ cityCode, dryRun = false } = {}) => {
+export const syncWebbedsHotels = async ({ cityCode, dryRun = false, hotelLimit } = {}) => {
   if (!cityCode) throw new Error("cityCode is required to sync hotels")
   const payload = buildStaticHotelsPayload({ cityCode })
-  return executeHotelSync({ cityCode, payload, dryRun, mode: "full" })
+  return executeHotelSync({ cityCode, payload, dryRun, mode: "full", hotelLimit })
 }
 
 export const syncWebbedsHotelsIncremental = async ({
@@ -992,6 +1004,7 @@ export const syncWebbedsHotelsIncremental = async ({
   dryRun = false,
   since,
   excludeHotelIds = [],
+  hotelLimit,
 } = {}) => {
   if (!cityCode) throw new Error("cityCode is required to sync hotels")
   if (!["new", "updated"].includes(mode)) {
@@ -1000,6 +1013,9 @@ export const syncWebbedsHotelsIncremental = async ({
 
   const syncLog = await ensureCitySyncLog(cityCode)
   const metadata = { mode }
+  if (Number.isFinite(hotelLimit) && hotelLimit > 0) {
+    metadata.hotelLimit = hotelLimit
+  }
   let filterConditions = []
   let lastUpdatedRange = null
 
@@ -1029,7 +1045,7 @@ export const syncWebbedsHotelsIncremental = async ({
 
     if (!existingIds.length) {
       console.warn("[webbeds][static] no existing hotels found, falling back to full sync", { cityCode })
-      return syncWebbedsHotels({ cityCode, dryRun })
+      return syncWebbedsHotels({ cityCode, dryRun, hotelLimit })
     }
 
     if (existingIds.length > MAX_NOTIN_VALUES) {
@@ -1063,6 +1079,7 @@ export const syncWebbedsHotelsIncremental = async ({
     mode,
     syncLog,
     metadata,
+    hotelLimit,
   })
 }
 

@@ -1,5 +1,30 @@
 import { Router } from "express";
 import { body } from "express-validator";
+import rateLimit from "express-rate-limit";
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.AUTH_LOGIN_RATE_LIMIT_MAX || 20),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many attempts, please try again later" },
+});
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: Number(process.env.AUTH_REGISTER_RATE_LIMIT_MAX || 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many accounts created from this IP, please try again later" },
+});
+
+const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: Number(process.env.AUTH_RESET_RATE_LIMIT_MAX || 5),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many reset attempts, please try again later" },
+});
 
 import {
   registerStaff,
@@ -22,7 +47,7 @@ import {
 } from "../controllers/auth.controller.js";
 
 import { autoSignupOrLogin } from "../controllers/auth.auto.controller.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, authorizeRoles } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -42,6 +67,7 @@ router.post("/staff/login", loginStaff);
 // User auth (local)
 router.post(
   "/user/register",
+  registerLimiter,
   [
     body("email").isEmail(),
     body("password").isLength({ min: 6 }),
@@ -61,15 +87,25 @@ router.post(
   ],
   registerUser,
 );
-router.post("/user/login", loginUser);
+router.post("/user/login", loginLimiter, loginUser);
 router.post(
   "/user/forgot-password",
+  passwordResetLimiter,
   [body("email").isEmail()],
   requestPasswordReset,
 );
 
 // Social login
-router.post("/google/exchange", [body("code").notEmpty()], googleExchange);
+router.post(
+  "/google/exchange",
+  [
+    body("code").notEmpty(),
+    body("redirectUri").optional().isString(),
+    body("codeVerifier").optional().isString(),
+    body("clientId").optional().isString(),
+  ],
+  googleExchange,
+);
 router.post("/apple/exchange", [body("identityToken").notEmpty()], appleExchange);
 
 // Auto signup for outside bookings
@@ -93,7 +129,7 @@ router.post(
 );
 
 // Session refresh + logout
-router.post("/refresh", refreshSession);
+router.post("/refresh", loginLimiter, refreshSession);
 router.post("/logout", logoutSession);
 router.post("/logout-all", authenticate, logoutAllSessions);
 
@@ -108,6 +144,8 @@ router.get("/verify-email/:token", verifyEmail);
 // Staff helpers
 router.post(
   "/hire",
+  authenticate,
+  authorizeRoles(100),
   [
     body("firstName").notEmpty(),
     body("lastName").notEmpty(),
@@ -117,6 +155,6 @@ router.post(
   ],
   hireStaff,
 );
-router.get("/by-hotel/:hotelId", listByHotel);
+router.get("/by-hotel/:hotelId", authenticate, authorizeRoles(100), listByHotel);
 
 export default router;

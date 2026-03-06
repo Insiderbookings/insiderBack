@@ -18,6 +18,8 @@ import {
   recordInfluencerEvent,
   upgradeSignupBonusOnBooking,
 } from "../services/referralRewards.service.js";
+import { buildHostOnboardingState } from "../utils/hostOnboarding.js";
+import { ensureInfluencerOnboardingMetadata } from "../utils/influencerOnboarding.js";
 
 dotenv.config()
 
@@ -107,6 +109,8 @@ const ensureBookingNights = async (booking) => {
 };
 const getStayIdFromMeta = (meta = {}) =>
   Number(meta.stayId || meta.stay_id || meta.bookingId || meta.booking_id) || 0;
+const asPlainObject = (value) =>
+  value && typeof value === "object" && !Array.isArray(value) ? value : {};
 
 export const dispatchBookingConfirmation = async (booking) => {
   if (!booking) return;
@@ -123,7 +127,18 @@ export const dispatchBookingConfirmation = async (booking) => {
     hostUserId = booking.homeStay?.host_id || home?.host_id || booking.meta?.home?.hostId || null;
   } else {
     // For Hotels, use the Support/Bot User
-    hostUserId = process.env.HOTEL_SUPPORT_USER_ID ? Number(process.env.HOTEL_SUPPORT_USER_ID) : null;
+    const supportUserId = process.env.HOTEL_SUPPORT_USER_ID ? Number(process.env.HOTEL_SUPPORT_USER_ID) : null;
+    if (Number.isFinite(supportUserId) && supportUserId > 0) {
+      const supportUser = await models.User.findByPk(supportUserId, { attributes: ["id"] });
+      if (supportUser) {
+        hostUserId = supportUserId;
+      } else {
+        console.warn("[payments] dispatchBookingConfirmation skipped: HOTEL_SUPPORT_USER_ID not found", {
+          supportUserId,
+          bookingId: booking.id ?? null,
+        });
+      }
+    }
   }
 
   const guestUserId = booking.user_id || null;
@@ -695,35 +710,67 @@ export const handleWebhook = async (req, res) => {
       return;
     }
 
+    // Verify the PI in DB matches the one from the webhook (prevents metadata spoofing)
+    if (paymentId && bookingRecord.payment_intent_id && bookingRecord.payment_intent_id !== paymentId) {
+      console.warn("[payments] markBookingAsPaid:pi-mismatch", {
+        bookingId,
+        storedPI: bookingRecord.payment_intent_id,
+        receivedPI: paymentId,
+      });
+      return;
+    }
+
     if (amountMinor != null && currency) {
-      const expectedCurrency = String(bookingRecord.currency || "USD").toUpperCase();
-      const receivedCurrency = String(currency).toUpperCase();
-      if (expectedCurrency !== receivedCurrency) {
-        console.warn("[payments] markBookingAsPaid:currency-mismatch", {
-          bookingId,
-          expectedCurrency,
-          receivedCurrency,
-        });
-        return;
-      }
-      const expectedMinor = toMinorUnits(bookingRecord.gross_price, expectedCurrency);
-      const receivedMinor = Number(amountMinor);
-      const tolerance = Number(process.env.PAYMENT_AMOUNT_TOLERANCE_MINOR || 1);
-      if (!Number.isFinite(expectedMinor) || expectedMinor <= 0) {
-        console.warn("[payments] markBookingAsPaid:invalid-expected-amount", {
-          bookingId,
-          expectedMinor,
-        });
-        return;
-      }
-      if (!Number.isFinite(receivedMinor) || Math.abs(expectedMinor - receivedMinor) > tolerance) {
-        console.warn("[payments] markBookingAsPaid:amount-mismatch", {
-          bookingId,
-          expectedMinor,
-          receivedMinor,
-          tolerance,
-        });
-        return;
+      if (bookingRecord.charge_amount_minor != null && bookingRecord.charge_currency != null) {
+        const storedCurrency = String(bookingRecord.charge_currency).toUpperCase();
+        const receivedCurrency = String(currency).toUpperCase();
+        if (storedCurrency !== receivedCurrency) {
+          console.warn("[payments] markBookingAsPaid:currency-mismatch", {
+            bookingId,
+            storedCurrency,
+            receivedCurrency,
+          });
+          return;
+        }
+        if (Number(amountMinor) !== bookingRecord.charge_amount_minor) {
+          console.warn("[payments] markBookingAsPaid:amount-mismatch", {
+            bookingId,
+            expected: bookingRecord.charge_amount_minor,
+            received: amountMinor,
+          });
+          return;
+        }
+      } else {
+        // fallback for old bookings without charge_amount_minor
+        const expectedCurrency = String(bookingRecord.currency || "USD").toUpperCase();
+        const receivedCurrency = String(currency).toUpperCase();
+        if (expectedCurrency !== receivedCurrency) {
+          console.warn("[payments] markBookingAsPaid:currency-mismatch", {
+            bookingId,
+            expectedCurrency,
+            receivedCurrency,
+          });
+          return;
+        }
+        const expectedMinor = toMinorUnits(bookingRecord.gross_price, expectedCurrency);
+        const receivedMinor = Number(amountMinor);
+        const tolerance = Number(process.env.PAYMENT_AMOUNT_TOLERANCE_MINOR || 1);
+        if (!Number.isFinite(expectedMinor) || expectedMinor <= 0) {
+          console.warn("[payments] markBookingAsPaid:invalid-expected-amount", {
+            bookingId,
+            expectedMinor,
+          });
+          return;
+        }
+        if (!Number.isFinite(receivedMinor) || Math.abs(expectedMinor - receivedMinor) > tolerance) {
+          console.warn("[payments] markBookingAsPaid:amount-mismatch", {
+            bookingId,
+            expectedMinor,
+            receivedMinor,
+            tolerance,
+          });
+          return;
+        }
       }
     }
 
@@ -885,6 +932,299 @@ export const handleWebhook = async (req, res) => {
   };
 
   /* ─── Procesar eventos ─── */
+  const resolveHostIdentityKycStatus = (eventType, currentStatus) => {
+    const normalizedEventType = String(eventType || "").toLowerCase();
+    const current = String(currentStatus || "PENDING").toUpperCase();
+    if (normalizedEventType.endsWith(".verified")) return "APPROVED";
+    if (
+      normalizedEventType.endsWith(".requires_input") ||
+      normalizedEventType.endsWith(".canceled")
+    ) {
+      return "REJECTED";
+    }
+    if (normalizedEventType.endsWith(".processing")) return "PENDING";
+    return ["PENDING", "APPROVED", "REJECTED"].includes(current) ? current : "PENDING";
+  };
+
+  const syncHostIdentityFromStripeSession = async ({ session, eventType }) => {
+    const sessionId = String(session?.id || "").trim();
+    if (!sessionId) return;
+
+    const status = String(session?.status || "").toLowerCase();
+    const normalizedEventType = String(eventType || "").toLowerCase();
+    const rawMeta = asPlainObject(session?.metadata);
+    const hostId = Number(rawMeta.hostId || rawMeta.host_id || rawMeta.userId || rawMeta.user_id || 0);
+
+    let hostProfile = null;
+    if (hostId > 0) {
+      hostProfile = await models.HostProfile.findOne({ where: { user_id: hostId } });
+    }
+    if (!hostProfile) {
+      try {
+        hostProfile = await models.HostProfile.findOne({
+          where: sequelize.where(
+            sequelize.json("metadata.identityVerification.sessionId"),
+            sessionId
+          ),
+        });
+      } catch (err) {
+        console.warn("[payments] host identity lookup by session failed", {
+          sessionId,
+          error: err?.message || err,
+        });
+      }
+    }
+
+    if (!hostProfile) {
+      console.warn("[payments] host identity session without matching profile", {
+        sessionId,
+        hostId: hostId || null,
+        status,
+      });
+      return;
+    }
+
+    const metadata = asPlainObject(hostProfile.metadata);
+    const identityMeta = asPlainObject(metadata.identityVerification);
+    const currentSessionId = String(identityMeta.sessionId || "").trim();
+    if (currentSessionId && currentSessionId !== sessionId) {
+      console.log("[payments] host identity event ignored (stale session)", {
+        hostId: hostProfile.user_id,
+        currentSessionId,
+        eventSessionId: sessionId,
+        eventType,
+      });
+      return;
+    }
+
+    const existingHostOnboarding = asPlainObject(metadata.hostOnboarding || metadata.host_onboarding);
+    const previousIdentityVerified = Boolean(
+      metadata.identityVerified ??
+        metadata.identity_verified ??
+        existingHostOnboarding.identityVerified ??
+        existingHostOnboarding.verifyIdentity ??
+        String(hostProfile.kyc_status || "").toUpperCase() === "APPROVED"
+    );
+    const marksVerified = normalizedEventType.endsWith(".verified");
+    const marksRejected =
+      normalizedEventType.endsWith(".requires_input") ||
+      normalizedEventType.endsWith(".canceled");
+    const nextIdentityVerified = marksVerified
+      ? true
+      : marksRejected
+      ? false
+      : previousIdentityVerified;
+    const nextKycStatus = resolveHostIdentityKycStatus(
+      normalizedEventType,
+      hostProfile.kyc_status
+    );
+    const nextMetadata = {
+      ...metadata,
+      kyc_status: nextKycStatus,
+      identityVerified: nextIdentityVerified,
+      identity_verification_status: status || null,
+      identityVerification: {
+        ...identityMeta,
+        sessionId,
+        status: status || identityMeta.status || "requires_input",
+        lastEventType: eventType || null,
+        lastUpdatedAt: new Date().toISOString(),
+        lastVerificationReportId:
+          session?.last_verification_report || identityMeta.lastVerificationReportId || null,
+      },
+      hostOnboarding: {
+        ...existingHostOnboarding,
+        verifyIdentity: marksVerified
+          ? true
+          : marksRejected
+          ? false
+          : Boolean(
+              existingHostOnboarding.verifyIdentity ||
+                existingHostOnboarding.identityVerified ||
+                previousIdentityVerified
+            ),
+        identityVerified: nextIdentityVerified,
+      },
+    };
+
+    const normalizedOnboarding = buildHostOnboardingState(nextMetadata);
+    nextMetadata.hostOnboarding = {
+      verifyIdentity: normalizedOnboarding.steps.verifyIdentity,
+      confirmRealPerson: normalizedOnboarding.steps.confirmRealPerson,
+      confirmPhone: normalizedOnboarding.steps.confirmPhone,
+    };
+
+    await hostProfile.update({
+      kyc_status: nextKycStatus,
+      metadata: nextMetadata,
+    });
+
+    console.log("[payments] host identity webhook synced", {
+      hostId: hostProfile.user_id,
+      sessionId,
+      eventType,
+      status,
+      kycStatus: nextKycStatus,
+      verifyIdentity: nextMetadata.hostOnboarding.verifyIdentity,
+    });
+  };
+
+  const syncInfluencerIdentityFromStripeSession = async ({ session, eventType }) => {
+    const sessionId = String(session?.id || "").trim();
+    if (!sessionId) return;
+
+    const status = String(session?.status || "").toLowerCase();
+    const normalizedEventType = String(eventType || "").toLowerCase();
+    const rawMeta = asPlainObject(session?.metadata);
+    const influencerId = Number(
+      rawMeta.influencerId ||
+        rawMeta.influencer_id ||
+        rawMeta.userId ||
+        rawMeta.user_id ||
+        0
+    );
+
+    let guestProfile = null;
+    if (influencerId > 0) {
+      guestProfile = await models.GuestProfile.findOne({ where: { user_id: influencerId } });
+    }
+    if (!guestProfile) {
+      try {
+        guestProfile = await models.GuestProfile.findOne({
+          where: sequelize.where(
+            sequelize.json("metadata.influencerIdentityVerification.sessionId"),
+            sessionId
+          ),
+        });
+      } catch (err) {
+        console.warn("[payments] influencer identity lookup by session failed", {
+          sessionId,
+          error: err?.message || err,
+        });
+      }
+    }
+
+    if (!guestProfile) {
+      console.warn("[payments] influencer identity session without matching profile", {
+        sessionId,
+        influencerId: influencerId || null,
+        status,
+      });
+      return;
+    }
+
+    const metadata = asPlainObject(guestProfile.metadata);
+    const identityMeta = asPlainObject(
+      metadata.influencerIdentityVerification || metadata.influencer_identity_verification
+    );
+    const currentSessionId = String(identityMeta.sessionId || "").trim();
+    if (currentSessionId && currentSessionId !== sessionId) {
+      console.log("[payments] influencer identity event ignored (stale session)", {
+        influencerId: guestProfile.user_id,
+        currentSessionId,
+        eventSessionId: sessionId,
+        eventType,
+      });
+      return;
+    }
+
+    const existingOnboarding = asPlainObject(
+      metadata.influencerOnboarding || metadata.influencer_onboarding
+    );
+    const previousIdentityVerified = Boolean(
+      guestProfile.identity_verified ??
+        metadata.identityVerified ??
+        metadata.identity_verified ??
+        existingOnboarding.verifyIdentity ??
+        existingOnboarding.identityVerified
+    );
+    const marksVerified = normalizedEventType.endsWith(".verified");
+    const marksRejected =
+      normalizedEventType.endsWith(".requires_input") ||
+      normalizedEventType.endsWith(".canceled");
+    const nextIdentityVerified = marksVerified
+      ? true
+      : marksRejected
+      ? false
+      : previousIdentityVerified;
+    const nextMetadata = ensureInfluencerOnboardingMetadata({
+      ...metadata,
+      identityVerified: nextIdentityVerified,
+      identity_verified: nextIdentityVerified,
+      identity_verification_status: status || null,
+      influencerIdentityVerification: {
+        ...identityMeta,
+        sessionId,
+        status: status || identityMeta.status || "requires_input",
+        lastEventType: eventType || null,
+        lastUpdatedAt: new Date().toISOString(),
+        lastVerificationReportId:
+          session?.last_verification_report || identityMeta.lastVerificationReportId || null,
+      },
+    });
+
+    await guestProfile.update({
+      identity_verified: nextIdentityVerified,
+      metadata: nextMetadata,
+    });
+
+    console.log("[payments] influencer identity webhook synced", {
+      influencerId: guestProfile.user_id,
+      sessionId,
+      eventType,
+      status,
+      verifyIdentity: nextMetadata?.influencerOnboarding?.verifyIdentity ?? false,
+    });
+  };
+
+  if (event.type.startsWith("identity.verification_session.")) {
+    const verificationSession = event.data.object;
+    const verificationMetadata = asPlainObject(verificationSession?.metadata);
+    const verificationFlow = String(verificationMetadata.flow || "").toLowerCase();
+    console.log("[payments] webhook identity.verification_session", {
+      eventType: event.type,
+      sessionId: verificationSession?.id || null,
+      status: verificationSession?.status || null,
+      flow: verificationFlow || null,
+    });
+    if (verificationFlow === "host_verify_identity") {
+      try {
+        await syncHostIdentityFromStripeSession({
+          session: verificationSession,
+          eventType: event.type,
+        });
+      } catch (err) {
+        console.error("[payments] host identity webhook sync error:", err?.message || err);
+      }
+    } else if (verificationFlow === "influencer_verify_identity") {
+      try {
+        await syncInfluencerIdentityFromStripeSession({
+          session: verificationSession,
+          eventType: event.type,
+        });
+      } catch (err) {
+        console.error("[payments] influencer identity webhook sync error:", err?.message || err);
+      }
+    } else {
+      try {
+        await syncHostIdentityFromStripeSession({
+          session: verificationSession,
+          eventType: event.type,
+        });
+      } catch (err) {
+        console.error("[payments] host identity webhook sync error:", err?.message || err);
+      }
+      try {
+        await syncInfluencerIdentityFromStripeSession({
+          session: verificationSession,
+          eventType: event.type,
+        });
+      } catch (err) {
+        console.error("[payments] influencer identity webhook sync error:", err?.message || err);
+      }
+    }
+  }
+
   if (event.type === "checkout.session.completed") {
     const s = event.data.object
     const bookingId = getStayIdFromMeta(s.metadata)

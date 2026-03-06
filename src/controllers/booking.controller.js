@@ -33,6 +33,12 @@ import {
 } from "../services/referralRewards.service.js"
 import { emitAdminActivity } from "../websocket/emitter.js"
 import { finalizeBookingAfterPayment } from "./payment.controller.js"
+import {
+  buildHomePricingSnapshot,
+  computeHomePricingBreakdown,
+  resolveHomePricingConfig,
+  roundCurrency,
+} from "../utils/homePricing.js"
 /* ──────────────── Helper – count nights ───────────── */
 const diffDays = (from, to) =>
     Math.ceil((new Date(to) - new Date(from)) / 86_400_000)
@@ -70,6 +76,178 @@ const enumerateStayDates = (from, to) => {
   return dates
 }
 
+const ensureArray = (value) => {
+  if (value == null) return []
+  return Array.isArray(value) ? value.filter((item) => item != null) : [value]
+}
+
+const pickFirst = (...values) => {
+  for (const value of values) {
+    if (value == null) continue
+    if (typeof value === "string" && !value.trim()) continue
+    return value
+  }
+  return null
+}
+
+const isPlainObject = (value) =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value)
+
+const sanitizeSnapshotValue = (value) => {
+  if (value === undefined) return null
+  if (value == null) return null
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeSnapshotValue(item))
+      .filter((item) => item !== undefined)
+  }
+  if (isPlainObject(value)) {
+    const next = {}
+    Object.entries(value).forEach(([key, entry]) => {
+      const sanitized = sanitizeSnapshotValue(entry)
+      if (sanitized !== undefined) next[key] = sanitized
+    })
+    return next
+  }
+  if (typeof value === "number" && Number.isNaN(value)) return null
+  return value
+}
+
+const sanitizeConfirmationSnapshot = (snapshot) => sanitizeSnapshotValue(snapshot)
+
+const mergeSnapshotValues = (baseValue, overrideValue) => {
+  if (overrideValue == null) return baseValue
+  if (Array.isArray(overrideValue)) {
+    return overrideValue.length ? overrideValue : baseValue
+  }
+  if (isPlainObject(baseValue) && isPlainObject(overrideValue)) {
+    const merged = { ...baseValue }
+    Object.entries(overrideValue).forEach(([key, value]) => {
+      merged[key] = mergeSnapshotValues(baseValue?.[key], value)
+    })
+    return merged
+  }
+  if (typeof overrideValue === "string" && !overrideValue.trim()) {
+    return baseValue
+  }
+  return overrideValue
+}
+
+const normalizeCancellationRules = (rules) => {
+  const entries = Array.isArray(rules)
+    ? rules
+    : Array.isArray(rules?.rule)
+      ? rules.rule
+      : rules?.rule
+        ? [rules.rule]
+        : rules
+          ? [rules]
+          : []
+  return entries.filter(Boolean).map((rule) =>
+    sanitizeSnapshotValue({
+      ...rule,
+      fromDate: pickFirst(rule?.fromDate, rule?.from, null),
+      fromDateDetails: pickFirst(rule?.fromDateDetails, null),
+      charge: pickFirst(rule?.charge, rule?.cancelCharge, null),
+      cancelCharge: pickFirst(rule?.cancelCharge, null),
+      cancelRestricted: pickFirst(rule?.cancelRestricted, null),
+      amendRestricted: pickFirst(rule?.amendRestricted, null),
+      noShowPolicy: pickFirst(rule?.noShowPolicy, null),
+    }),
+  )
+}
+
+const resolveCountryNameByCode = async (code) => {
+  const numericCode = Number(code)
+  if (!Number.isFinite(numericCode)) return null
+  const country = await models.WebbedsCountry.findByPk(numericCode, {
+    attributes: ["name"],
+  })
+  return country?.name ?? null
+}
+
+const resolvePaymentMethodLabel = (provider, fallbackLabel = null) => {
+  if (fallbackLabel) return fallbackLabel
+  const normalized = String(provider || "").trim().toLowerCase()
+  if (!normalized) return null
+  if (normalized.includes("stripe") || normalized.includes("card")) return "Card"
+  return normalized.toUpperCase()
+}
+
+const resolveFlowForBooking = async ({ bookingCode, bookingRef } = {}) => {
+  const explicitFlowIds = [
+    bookingRef?.pricing_snapshot?.flowId,
+    bookingRef?.pricing_snapshot?.flow_id,
+    bookingRef?.meta?.flowId,
+    bookingRef?.meta?.flow_id,
+  ]
+    .map((value) => (value == null ? null : String(value).trim()))
+    .filter(Boolean)
+
+  for (const flowId of [...new Set(explicitFlowIds)]) {
+    const flow = await models.BookingFlow.findByPk(flowId)
+    if (flow) return flow
+  }
+
+  const bookingCodeCandidates = [
+    bookingCode,
+    bookingRef?.external_ref,
+    bookingRef?.booking_ref,
+  ]
+    .map((value) => (value == null ? null : String(value).trim()))
+    .filter(Boolean)
+
+  if (!bookingCodeCandidates.length) return null
+
+  const where = {
+    [Op.or]: [
+      { final_booking_code: { [Op.in]: bookingCodeCandidates } },
+      { itinerary_booking_code: { [Op.in]: bookingCodeCandidates } },
+      { booking_reference_number: { [Op.in]: bookingCodeCandidates } },
+    ],
+  }
+  if (Number.isFinite(Number(bookingRef?.user_id))) {
+    where.user_id = Number(bookingRef.user_id)
+  }
+
+  return models.BookingFlow.findOne({
+    where,
+    order: [["updatedAt", "DESC"], ["createdAt", "DESC"]],
+  })
+}
+
+let webbedsClientSingleton = null
+const getWebbedsClient = () => {
+  if (!webbedsClientSingleton) {
+    webbedsClientSingleton = createWebbedsClient(getWebbedsConfig())
+  }
+  return webbedsClientSingleton
+}
+
+const fetchWebbedsBookingDetails = async ({ bookingCode, requestId } = {}) => {
+  const code = bookingCode == null ? null : String(bookingCode).trim()
+  if (!code) return null
+
+  const client = getWebbedsClient()
+  const bookingTypes = ["1", "2"]
+  for (const bookingType of bookingTypes) {
+    try {
+      const payload = buildGetBookingDetailsPayload({
+        bookingCode: code,
+        bookingType,
+      })
+      const { result } = await client.send("getbookingdetails", payload, {
+        requestId: `${requestId || "confirm"}-booking-${bookingType}`,
+        productOverride: null,
+      })
+      return mapGetBookingDetailsResponse(result)
+    } catch (error) {
+      // Keep snapshot generation resilient: try other booking type and fallback to flow/local snapshots.
+    }
+  }
+  return null
+}
+
 const CANCELLATION_POLICY_CODES = {
   FLEXIBLE: "FLEXIBLE",
   MODERATE: "MODERATE",
@@ -99,533 +277,6 @@ const normalizeCancellationPolicy = (value) => {
     return String(value).toUpperCase()
   }
   return null
-}
-
-const roundCurrency = (value) => {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return 0
-  return Math.round((numeric + Number.EPSILON) * 100) / 100
-}
-
-const trimText = (value, max = 500) => {
-  if (value == null) return null
-  const text = String(value).trim()
-  if (!text) return null
-  return text.length > max ? text.slice(0, max) : text
-}
-
-const stripHtml = (value) => {
-  if (value == null) return null
-  const text = String(value)
-  if (!text.includes("<")) return text
-  return text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
-}
-
-const normalizeVoucherIdentifier = (value) => {
-  const cleaned = trimText(stripHtml(value), 2000)
-  if (!cleaned) return null
-  const bookingRefMatch = cleaned.match(
-    /booking\s*reference(?:\s*no)?[:\s]*([A-Z0-9-]+)/i,
-  )
-  if (bookingRefMatch?.[1]) return bookingRefMatch[1]
-  const itineraryMatch = cleaned.match(
-    /itinerary\s*number[:\s]*([A-Z0-9-]+)/i,
-  )
-  if (itineraryMatch?.[1]) return itineraryMatch[1]
-  return cleaned
-}
-
-const COUNTRY_CACHE_TTL_MS = 10 * 60 * 1000
-let countryCache = new Map()
-let countryCacheLoadedAt = 0
-
-const resolveCountryNameByCode = async (code) => {
-  const normalized = code != null ? String(code).trim() : ""
-  if (!normalized || !/^\d+$/.test(normalized)) return null
-  const now = Date.now()
-  if (now - countryCacheLoadedAt > COUNTRY_CACHE_TTL_MS) {
-    countryCache = new Map()
-    countryCacheLoadedAt = now
-  }
-  if (countryCache.has(normalized)) return countryCache.get(normalized)
-  const row = await models.WebbedsCountry.findByPk(Number(normalized))
-  const name = row?.name ?? null
-  countryCache.set(normalized, name)
-  return name
-}
-
-const sanitizeStringArray = (values, limit = 20, max = 120) => {
-  if (!Array.isArray(values)) return []
-  return values
-    .map((value) => trimText(value, max))
-    .filter(Boolean)
-    .slice(0, limit)
-}
-
-const isGenericPromotionLabel = (value) => {
-  if (!value) return false
-  const text = String(value).trim().toLowerCase()
-  if (!text) return false
-  if (/[0-9]/.test(text) || text.includes("%")) return false
-  return text === "promotional rate" || text === "promotion" || text === "promotional"
-}
-
-const resolveSpecialLabels = (rate) => {
-  const directSpecials = Array.isArray(rate?.specials) ? rate.specials : []
-  const fromDirect = directSpecials
-    .map((entry) => {
-      if (!entry) return null
-      if (typeof entry === "string") return entry
-      return (
-        entry?.label ??
-        entry?.specialName ??
-        entry?.name ??
-        entry?.description ??
-        entry?.notes ??
-        entry?.type ??
-        null
-      )
-    })
-    .filter(Boolean)
-    .filter((label) => !isGenericPromotionLabel(label))
-  if (fromDirect.length) return fromDirect
-
-  if (!Array.isArray(rate?.appliedSpecials)) return []
-  return rate.appliedSpecials
-    .map((entry) => {
-      if (!entry) return null
-      if (typeof entry === "string") return entry
-      return (
-        entry?.label ??
-        entry?.specialName ??
-        entry?.name ??
-        entry?.description ??
-        entry?.notes ??
-        entry?.type ??
-        null
-      )
-    })
-    .filter(Boolean)
-    .filter((label) => !isGenericPromotionLabel(label))
-}
-
-const sanitizeConfirmationSnapshot = (raw = {}) => {
-  const bookingCodes = raw.bookingCodes || {}
-  const hotel = raw.hotel || {}
-  const room = raw.room || {}
-  const rate = raw.rate || {}
-  const policies = raw.policies || {}
-  const traveler = raw.traveler || {}
-  const stay = raw.stay || {}
-  const totals = raw.totals || {}
-  const payment = raw.payment || {}
-
-  const cancellationRules = Array.isArray(policies.cancellationRules)
-    ? policies.cancellationRules.slice(0, 10).map((rule) => ({
-        from: trimText(rule?.from, 120),
-        to: trimText(rule?.to, 120),
-        charge: trimText(rule?.charge, 120),
-        cancelRestricted: rule?.cancelRestricted ?? rule?.cancel_restricted ?? null,
-        amendRestricted: rule?.amendRestricted ?? rule?.amend_restricted ?? null,
-      }))
-    : []
-
-  const propertyFees = Array.isArray(policies.propertyFees)
-    ? policies.propertyFees.slice(0, 15).map((fee) => ({
-        name: trimText(fee?.name, 120),
-        description: trimText(fee?.description, 200),
-        amount: fee?.amount ?? fee?.formatted ?? null,
-        currency: trimText(fee?.currency, 10),
-        includedInPrice: fee?.includedInPrice ?? fee?.includedinprice ?? null,
-      }))
-    : []
-
-  return {
-    bookingCodes: {
-      voucherId: trimText(normalizeVoucherIdentifier(bookingCodes?.voucherId), 120),
-      bookingReference: trimText(bookingCodes?.bookingReference, 120),
-      itineraryNumber: trimText(bookingCodes?.itineraryNumber, 120),
-      externalRef: trimText(bookingCodes?.externalRef, 120),
-    },
-    hotel: {
-      id: trimText(hotel?.id, 80),
-      name: trimText(hotel?.name, 200),
-      address: trimText(hotel?.address, 300),
-      phone: trimText(hotel?.phone, 80),
-      city: trimText(hotel?.city, 120),
-      country: trimText(hotel?.country, 120),
-    },
-    room: {
-      name: trimText(room?.name, 200),
-      roomTypeCode: trimText(room?.roomTypeCode, 80),
-    },
-    rate: {
-      rateBasis: trimText(rate?.rateBasis, 200),
-      mealPlan: Array.isArray(rate?.mealPlan)
-        ? sanitizeStringArray(rate.mealPlan, 8, 120)
-        : trimText(rate?.mealPlan, 200),
-      specials: sanitizeStringArray(resolveSpecialLabels(rate), 10, 160),
-      tariffNotes: trimText(rate?.tariffNotes, 4000),
-      refundable: rate?.refundable ?? null,
-      nonRefundable: rate?.nonRefundable ?? null,
-      cancelRestricted: rate?.cancelRestricted ?? null,
-      amendRestricted: rate?.amendRestricted ?? null,
-      paymentMode: trimText(rate?.paymentMode, 120),
-    },
-    policies: {
-      cancellationRules,
-      taxes: policies?.taxes ?? null,
-      fees: policies?.fees ?? null,
-      propertyFees,
-    },
-    traveler: {
-      leadGuestName: trimText(traveler?.leadGuestName, 200),
-      email: trimText(traveler?.email, 200),
-      phone: trimText(traveler?.phone, 80),
-      nationality: trimText(traveler?.nationality, 120),
-      residence: trimText(traveler?.residence, 120),
-      salutation: trimText(traveler?.salutation, 80),
-    },
-    stay: {
-      checkIn: trimText(stay?.checkIn, 40),
-      checkOut: trimText(stay?.checkOut, 40),
-      nights: stay?.nights ?? null,
-      guests: {
-        adults: stay?.guests?.adults ?? null,
-        children: stay?.guests?.children ?? null,
-        childrenAges: Array.isArray(stay?.guests?.childrenAges)
-          ? stay.guests.childrenAges.slice(0, 6)
-          : null,
-      },
-    },
-    totals: {
-      total: totals?.total ?? null,
-      currency: trimText(totals?.currency, 10),
-    },
-    payment: {
-      method: trimText(payment?.method, 80),
-      label: trimText(payment?.label, 120),
-    },
-  }
-}
-
-const ensureArray = (value) => {
-  if (!value) return []
-  return Array.isArray(value) ? value : [value]
-}
-
-const isPlainObject = (value) =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value)
-
-const mergeSnapshotValues = (primary, fallback) => {
-  if (!isPlainObject(primary) && !isPlainObject(fallback)) {
-    if (Array.isArray(primary) || Array.isArray(fallback)) {
-      const primaryArr = Array.isArray(primary) ? primary : []
-      const fallbackArr = Array.isArray(fallback) ? fallback : []
-      return primaryArr.length ? primaryArr : fallbackArr
-    }
-    if (primary === null || primary === undefined) return fallback
-    if (typeof primary === "string" && !primary.trim()) return fallback
-    return primary
-  }
-
-  const primaryObj = isPlainObject(primary) ? primary : {}
-  const fallbackObj = isPlainObject(fallback) ? fallback : {}
-  const keys = new Set([...Object.keys(fallbackObj), ...Object.keys(primaryObj)])
-  const merged = {}
-  keys.forEach((key) => {
-    merged[key] = mergeSnapshotValues(primaryObj[key], fallbackObj[key])
-  })
-  return merged
-}
-
-const pickFirst = (...values) => {
-  for (const value of values) {
-    if (value == null) continue
-    if (typeof value === "string" && !value.trim()) continue
-    return value
-  }
-  return null
-}
-
-const normalizeRuleBoolean = (value) => {
-  if (value === true || value === false) return value
-  if (value == null) return null
-  const normalized = String(value).trim().toLowerCase()
-  if (["true", "1", "yes", "y"].includes(normalized)) return true
-  if (["false", "0", "no", "n"].includes(normalized)) return false
-  return null
-}
-
-const normalizeCancellationRules = (rules) => {
-  const entries = ensureArray(rules?.rule ?? rules)
-  return entries
-    .map((rule) => ({
-      from:
-        rule?.from ??
-        rule?.fromDate ??
-        rule?.from_date ??
-        rule?.fromDateDetails ??
-        rule?.fromDetails ??
-        null,
-      to:
-        rule?.to ??
-        rule?.toDate ??
-        rule?.to_date ??
-        rule?.toDateDetails ??
-        rule?.toDetails ??
-        null,
-      charge:
-        rule?.charge ??
-        rule?.amount ??
-        rule?.cancelCharge ??
-        rule?.amendCharge ??
-        rule?.price ??
-        rule?.formatted ??
-        null,
-      cancelRestricted: normalizeRuleBoolean(
-        rule?.cancelRestricted ?? rule?.cancel_restricted
-      ),
-      amendRestricted: normalizeRuleBoolean(
-        rule?.amendRestricted ?? rule?.amend_restricted
-      ),
-    }))
-    .filter(
-      (rule) =>
-        rule.from ||
-        rule.to ||
-        rule.charge ||
-        rule.cancelRestricted === true ||
-        rule.amendRestricted === true
-    )
-}
-
-const resolveFlowForBooking = async ({ bookingCode, bookingRef }) => {
-  const flowId =
-    bookingRef?.flow?.id ??
-    bookingRef?.flowId ??
-    bookingRef?.flow_id ??
-    bookingRef?.pricing_snapshot?.flowId ??
-    bookingRef?.pricing_snapshot?.flow_id ??
-    null
-  if (flowId) {
-    const direct = await models.BookingFlow.findByPk(flowId)
-    if (direct) return direct
-  }
-  if (!bookingCode) return null
-  return models.BookingFlow.findOne({
-    where: {
-      [Op.or]: [
-        { itinerary_booking_code: String(bookingCode) },
-        { final_booking_code: String(bookingCode) },
-        { booking_reference_number: String(bookingCode) },
-      ],
-    },
-    order: [["created_at", "DESC"]],
-  })
-}
-
-const fetchWebbedsBookingDetails = async ({ bookingCode, requestId }) => {
-  if (!bookingCode) return null
-  try {
-    const client = createWebbedsClient(getWebbedsConfig())
-    const payload = buildGetBookingDetailsPayload({ bookingId: bookingCode })
-    const { result } = await client.send("getbookingdetails", payload, {
-      requestId,
-    })
-    return mapGetBookingDetailsResponse(result)
-  } catch (error) {
-    console.warn("[booking] getbookingdetails failed", {
-      bookingCode,
-      error: error?.message || error,
-    })
-    return null
-  }
-}
-
-const WEBBEDS_STATUS_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000
-
-const isPartnerHotelBooking = (booking) =>
-  String(booking?.source || "").toUpperCase() === "PARTNER" &&
-  HOTEL_INVENTORY_TYPES.has(String(booking?.inventory_type || "").toUpperCase())
-
-const normalizeBookingCodeValue = (value) => {
-  if (value == null) return null
-  const normalized = String(value).trim()
-  return normalized || null
-}
-
-const resolveCanonicalWebbedsCode = async (booking) => {
-  const statusNow = String(booking?.status || "").toUpperCase()
-  if (statusNow !== "CONFIRMED") return null
-
-  const bookingCode = normalizeBookingCodeValue(booking?.external_ref)
-  const bookingRef = booking?.toJSON ? booking.toJSON() : booking
-  const flow = await resolveFlowForBooking({ bookingCode, bookingRef })
-
-  const finalCode = normalizeBookingCodeValue(flow?.final_booking_code)
-  if (finalCode) return finalCode
-
-  const itineraryCode = normalizeBookingCodeValue(flow?.itinerary_booking_code)
-  if (bookingCode && itineraryCode && bookingCode === itineraryCode) {
-    // Avoid querying getbookingdetails with the saved-booking intermediate code.
-    return null
-  }
-
-  return bookingCode
-}
-
-const syncPartnerBookingStatusFromSupplier = async ({ booking, requestId }) => {
-  if (!booking || !isPartnerHotelBooking(booking)) return booking
-
-  const statusNow = String(booking.status || "").toUpperCase()
-  if (statusNow !== "CONFIRMED") return booking
-
-  const meta = booking.meta && typeof booking.meta === "object" ? booking.meta : {}
-  const supplierState = meta.supplierState && typeof meta.supplierState === "object"
-    ? meta.supplierState
-    : {}
-  const checkedAt = supplierState.checkedAt ? Date.parse(supplierState.checkedAt) : NaN
-  if (Number.isFinite(checkedAt) && Date.now() - checkedAt < WEBBEDS_STATUS_SYNC_MIN_INTERVAL_MS) {
-    return booking
-  }
-
-  const canonicalCode = await resolveCanonicalWebbedsCode(booking)
-  if (!canonicalCode) return booking
-
-  const supplier = await fetchWebbedsBookingDetails({
-    bookingCode: canonicalCode,
-    requestId: requestId || `status-sync-${booking.id}`,
-  })
-
-  const supplierStatusCode = String(supplier?.product?.status?.code || "").trim()
-  const supplierBookingReference = String(supplier?.product?.bookingReference || "")
-    .trim()
-    .toUpperCase()
-  const isCancelledInSupplier =
-    supplierStatusCode === "1667" || supplierBookingReference.startsWith("CXL-")
-
-  const nextMeta = {
-    ...meta,
-    supplierState: {
-      ...supplierState,
-      checkedAt: new Date().toISOString(),
-      statusCode: supplierStatusCode || null,
-      bookingReference: supplier?.product?.bookingReference ?? null,
-      canonicalCode,
-    },
-  }
-
-  const updates = { meta: nextMeta }
-  if (isCancelledInSupplier) {
-    updates.status = "CANCELLED"
-    if (!booking.cancelled_at) updates.cancelled_at = new Date()
-  }
-
-  if (Object.keys(updates).length > 0) {
-    await booking.update(updates)
-  }
-  return booking
-}
-
-const resolvePaymentMethodLabel = (provider, existingLabel) => {
-  if (existingLabel) return existingLabel
-  const normalized = provider ? String(provider).toUpperCase() : ""
-  if (normalized === "STRIPE") return "Credit or debit card"
-  if (normalized === "PAYPAL") return "PayPal"
-  if (normalized === "CARD_ON_FILE") return "Card on file"
-  return normalized || null
-}
-
-const resolveHomePricingConfig = ({ pricing = {}, capacity = null }) => {
-  const basePrice = Number.parseFloat(pricing.base_price ?? 0) * 1.1
-  if (!Number.isFinite(basePrice) || basePrice <= 0) {
-    return { error: "Listing does not have a valid base price" }
-  }
-
-  const weekendPrice =
-    pricing.weekend_price != null ? Number.parseFloat(pricing.weekend_price) * 1.1 : null
-  const hasWeekendPrice = Number.isFinite(weekendPrice) && weekendPrice > 0
-  const securityDeposit =
-    pricing.security_deposit != null ? Number.parseFloat(pricing.security_deposit) : 0
-  const extraGuestFee =
-    pricing.extra_guest_fee != null ? Number.parseFloat(pricing.extra_guest_fee) : 0
-  const extraGuestThreshold =
-    pricing.extra_guest_threshold != null
-      ? Number(pricing.extra_guest_threshold)
-      : capacity
-  const taxRate =
-    (pricing.tax_rate != null && Number(pricing.tax_rate) > 0) ? Number.parseFloat(pricing.tax_rate) : 8
-  const currencyCode = String(
-    pricing.currency ?? process.env.DEFAULT_CURRENCY ?? "USD"
-  )
-    .trim()
-    .toUpperCase()
-
-  return {
-    basePrice,
-    weekendPrice,
-    hasWeekendPrice,
-    securityDeposit,
-    extraGuestFee,
-    extraGuestThreshold,
-    taxRate,
-    currencyCode,
-  }
-}
-
-const computeHomePricingBreakdown = ({
-  checkInDate,
-  checkOutDate,
-  nights,
-  totalGuests,
-  basePrice,
-  weekendPrice,
-  hasWeekendPrice,
-  extraGuestFee,
-  extraGuestThreshold,
-  taxRate,
-}) => {
-  let baseSubtotal = 0
-  const nightlyBreakdown = []
-  let cursor = new Date(checkInDate)
-  const endDate = new Date(checkOutDate)
-  while (cursor < endDate) {
-    const day = cursor.getUTCDay()
-    const isWeekend = day === 5 || day === 6
-    const useWeekendRate = isWeekend && hasWeekendPrice
-    const nightlyRate = useWeekendRate ? weekendPrice : basePrice
-    const roundedRate = roundCurrency(nightlyRate)
-    nightlyBreakdown.push({
-      date: cursor.toISOString().slice(0, 10),
-      rate: roundedRate,
-      weekend: isWeekend,
-      reason: useWeekendRate ? "weekend" : "standard",
-    })
-    baseSubtotal += roundedRate
-    cursor.setUTCDate(cursor.getUTCDate() + 1)
-  }
-
-  baseSubtotal = roundCurrency(baseSubtotal)
-
-  let extraGuestSubtotal = 0
-  if (extraGuestFee > 0 && extraGuestThreshold != null && totalGuests > extraGuestThreshold) {
-    const extraGuests = totalGuests - extraGuestThreshold
-    extraGuestSubtotal = roundCurrency(extraGuests * extraGuestFee * nights)
-  }
-
-  const subtotalBeforeTax = roundCurrency(baseSubtotal + extraGuestSubtotal)
-  const taxAmount = taxRate > 0 ? roundCurrency((subtotalBeforeTax * taxRate) / 100) : 0
-  const totalBeforeDiscount = roundCurrency(subtotalBeforeTax + taxAmount)
-
-  return {
-    nightlyBreakdown,
-    baseSubtotal,
-    extraGuestSubtotal,
-    subtotalBeforeTax,
-    taxAmount,
-    totalBeforeDiscount,
-  }
 }
 
 const buildHomeCancellationQuote = ({
@@ -1694,6 +1345,10 @@ export const quoteHomeBooking = async (req, res) => {
       extraGuestThreshold,
       taxRate,
       currencyCode,
+      hostBasePrice,
+      hostWeekendPrice,
+      hostExtraGuestFee,
+      markupRate,
     } = pricingConfig
 
     const pricingBreakdown = computeHomePricingBreakdown({
@@ -1707,16 +1362,23 @@ export const quoteHomeBooking = async (req, res) => {
       extraGuestFee,
       extraGuestThreshold,
       taxRate,
+      hostBasePrice,
+      hostWeekendPrice,
+      hostExtraGuestFee,
+      markupRate,
     })
 
     const {
       nightlyBreakdown,
-      baseSubtotal,
-      extraGuestSubtotal,
-      subtotalBeforeTax,
-      taxAmount,
+      guestBaseSubtotal,
+      guestExtraGuestSubtotal,
+      guestSubtotalBeforeDiscount,
+      hostSubtotal,
+      platformMarkupAmount,
       totalBeforeDiscount,
     } = pricingBreakdown
+    const subtotalBeforeTax = guestSubtotalBeforeDiscount
+    const taxAmount = 0
 
     let referralCouponPlan = null
     let referralDiscountAmount = 0
@@ -1774,18 +1436,18 @@ export const quoteHomeBooking = async (req, res) => {
         amount,
       }
     })
-    if (extraGuestSubtotal > 0) {
+    if (guestExtraGuestSubtotal > 0) {
       items.push({
         key: "extraGuests",
         label: "Extra guests",
-        amount: roundCurrency(extraGuestSubtotal),
+        amount: roundCurrency(guestExtraGuestSubtotal),
       })
     }
-    if (taxAmount > 0) {
+    if (platformMarkupAmount > 0) {
       items.push({
-        key: "tax",
-        label: `Taxes (${taxRate.toFixed(2)}%)`,
-        amount: taxAmount,
+        key: "platformMarkup",
+        label: "BookingGPT markup",
+        amount: platformMarkupAmount,
       })
     }
     if (referralCouponPlan?.apply && referralDiscountAmount > 0) {
@@ -1829,6 +1491,8 @@ export const quoteHomeBooking = async (req, res) => {
         totalBeforeDiscount,
         discountAmount: roundCurrency(referralDiscountAmount + referralFirstBookingDiscount),
         total,
+        hostPayout: roundCurrency(hostSubtotal),
+        platformMarkupAmount,
         referralCoupon,
         referralFirstBooking: referralFirstBookingPlan?.apply
           ? {
@@ -1838,16 +1502,12 @@ export const quoteHomeBooking = async (req, res) => {
             applied: true,
           }
           : null,
-        pricingSnapshot: {
-          nightlyBreakdown,
-          baseSubtotal: roundCurrency(baseSubtotal),
-          extraGuestSubtotal: roundCurrency(extraGuestSubtotal),
-          cleaningFee: null,
-          taxRate,
-          taxAmount,
+        pricingSnapshot: buildHomePricingSnapshot({
+          pricingBreakdown,
           securityDeposit,
-          subtotalBeforeTax: roundCurrency(subtotalBeforeTax),
-          totalBeforeDiscount,
+          currencyCode,
+          referralCoupon,
+          referralCouponAmount: referralDiscountAmount,
           referralFirstBooking: referralFirstBookingPlan?.apply
             ? {
               pct: referralFirstBookingPlan.pct,
@@ -1856,11 +1516,9 @@ export const quoteHomeBooking = async (req, res) => {
               applied: true,
             }
             : null,
-          referralCoupon,
-          referralDiscountAmount: roundCurrency(referralDiscountAmount),
-          total,
-          currency: currencyCode,
-        },
+          referralFirstBookingAmount: referralFirstBookingDiscount,
+          guestTotal: total,
+        }),
       },
     })
   } catch (err) {
@@ -1977,6 +1635,10 @@ export const createHomeBooking = async (req, res) => {
       extraGuestThreshold,
       taxRate,
       currencyCode,
+      hostBasePrice,
+      hostWeekendPrice,
+      hostExtraGuestFee,
+      markupRate,
     } = pricingConfig
 
     const pricingBreakdown = computeHomePricingBreakdown({
@@ -1990,16 +1652,23 @@ export const createHomeBooking = async (req, res) => {
       extraGuestFee,
       extraGuestThreshold,
       taxRate,
+      hostBasePrice,
+      hostWeekendPrice,
+      hostExtraGuestFee,
+      markupRate,
     })
 
     const {
       nightlyBreakdown,
-      baseSubtotal,
-      extraGuestSubtotal,
-      subtotalBeforeTax,
-      taxAmount,
+      guestBaseSubtotal,
+      guestExtraGuestSubtotal,
+      guestSubtotalBeforeDiscount,
+      hostSubtotal,
+      platformMarkupAmount,
       totalBeforeDiscount,
     } = pricingBreakdown
+    const subtotalBeforeTax = guestSubtotalBeforeDiscount
+    const taxAmount = 0
 
     const stayDates = enumerateStayDates(normalizedCheckIn, normalizedCheckOut)
     let referralCouponPlan = null
@@ -2059,6 +1728,7 @@ export const createHomeBooking = async (req, res) => {
           influencerId: referral.influencerId,
           referralCode: referral.code || null,
           totalBeforeDiscount,
+          hostSubtotal,
           currency: currencyCode,
         })
 
@@ -2095,6 +1765,31 @@ export const createHomeBooking = async (req, res) => {
       const grossTotal = roundCurrency(
         Math.max(0, totalBeforeDiscount - referralDiscountAmount - referralFirstBookingDiscount)
       )
+      const pricingSnapshot = buildHomePricingSnapshot({
+        pricingBreakdown,
+        securityDeposit,
+        currencyCode,
+        referralCoupon: referralCouponPlan?.apply
+          ? {
+            amount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
+            currency: referralCouponPlan.currency,
+            walletId: referralCouponPlan.wallet?.id ?? null,
+            status: "pending",
+            applied: referralCouponApplied,
+          }
+          : null,
+        referralCouponAmount: referralDiscountAmount,
+        referralFirstBooking: referralFirstBookingPlan?.apply
+          ? {
+            pct: referralFirstBookingPlan.pct,
+            amount: Number.parseFloat(referralFirstBookingDiscount.toFixed(2)),
+            currency: referralFirstBookingPlan.currency,
+            applied: true,
+          }
+          : null,
+        referralFirstBookingAmount: referralFirstBookingDiscount,
+        guestTotal: grossTotal,
+      })
 
         const created = await models.Booking.create(
           {
@@ -2112,7 +1807,7 @@ export const createHomeBooking = async (req, res) => {
           guest_email: guestEmailFinal,
           guest_phone: guestPhoneFinal,
           gross_price: grossTotal,
-          net_cost: null,
+          net_cost: roundCurrency(hostSubtotal),
           currency: currencyCode,
           payment_provider: "NONE",
           payment_status: "UNPAID",
@@ -2120,37 +1815,7 @@ export const createHomeBooking = async (req, res) => {
           outside: false,
           active: true,
           booked_at: new Date(),
-          pricing_snapshot: {
-            nightlyBreakdown,
-            baseSubtotal: roundCurrency(baseSubtotal),
-            extraGuestSubtotal: roundCurrency(extraGuestSubtotal),
-            cleaningFee: null,
-            taxRate,
-            taxAmount,
-            securityDeposit,
-            subtotalBeforeTax: roundCurrency(subtotalBeforeTax),
-            totalBeforeDiscount: roundCurrency(totalBeforeDiscount),
-            referralFirstBooking: referralFirstBookingPlan?.apply
-              ? {
-                pct: referralFirstBookingPlan.pct,
-                amount: Number.parseFloat(referralFirstBookingDiscount.toFixed(2)),
-                currency: referralFirstBookingPlan.currency,
-                applied: true,
-              }
-              : null,
-            referralCoupon: referralCouponPlan?.apply
-              ? {
-                amount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
-                currency: referralCouponPlan.currency,
-                walletId: referralCouponPlan.wallet?.id ?? null,
-                status: "pending",
-                applied: referralCouponApplied,
-              }
-              : null,
-            referralDiscountAmount: roundCurrency(referralDiscountAmount),
-            total: grossTotal,
-            currency: currencyCode,
-          },
+          pricing_snapshot: pricingSnapshot,
           guest_snapshot: {
             name: guestNameFinal,
             email: guestEmailFinal,
@@ -2244,9 +1909,9 @@ export const createHomeBooking = async (req, res) => {
             ? { cancellation_policy: cancellationPolicy }
             : null,
           fees_snapshot: {
-            extraGuestFee: extraGuestFee || null,
+            extraGuestFee: hostExtraGuestFee || null,
             extraGuestThreshold,
-            weekendPrice: weekendPrice != null ? Number.parseFloat(weekendPrice.toFixed(2)) : null,
+            weekendPrice: hostWeekendPrice != null ? Number.parseFloat(hostWeekendPrice.toFixed(2)) : null,
           },
         },
         { transaction: tx }
@@ -2343,9 +2008,11 @@ export const createHomeBooking = async (req, res) => {
       const pricingSnapshot =
         fresh.pricing_snapshot && typeof fresh.pricing_snapshot === "object" ? fresh.pricing_snapshot : {}
       const nightsCount = Number(fresh.nights ?? nights) || null
-      const baseSubtotalValue = Number(pricingSnapshot.baseSubtotal ?? 0)
+      const baseSubtotalValue = Number(
+        pricingSnapshot.hostBaseSubtotal ?? pricingSnapshot.baseSubtotal ?? 0
+      )
       const ratePerNight = nightsCount ? Number((baseSubtotalValue / nightsCount).toFixed(2)) : null
-      const taxAmountValue = Number(pricingSnapshot.taxAmount ?? 0)
+      const taxAmountValue = 0
       const bookingCode = fresh.booking_ref || fresh.id
       await sendBookingEmail(
         {

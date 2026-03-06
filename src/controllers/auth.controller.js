@@ -15,6 +15,8 @@ import { getBaseEmailTemplate } from "../emailTemplates/base-template.js";
 import { ReferralError, linkReferralCodeForUser } from "../services/referralRewards.service.js";
 import { emitAdminActivity } from "../websocket/emitter.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
+import { buildHostOnboardingState } from "../utils/hostOnboarding.js";
+import { deriveRoleCodes } from "../utils/userCapabilities.js";
 
 dotenv.config();
 
@@ -73,8 +75,31 @@ const EMAIL_VERIFICATION_MAX_ATTEMPTS =
     : 5;
 const EMAIL_VERIFICATION_SECRET = process.env.EMAIL_VERIFICATION_SECRET || process.env.JWT_SECRET;
 
-const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
-const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+const DEFAULT_GOOGLE_ANDROID_CLIENT_ID =
+  "991272630331-46dbrise1ms2rvmctru26rlg36poanca.apps.googleusercontent.com";
+const DEFAULT_GOOGLE_IOS_CLIENT_ID =
+  "991272630331-ucd9j3tqkvgnnbqe38b3a7mlr3gckn8p.apps.googleusercontent.com";
+const toTrimmedString = (value) => {
+  const normalized = String(value || "").trim();
+  return normalized || null;
+};
+const GOOGLE_WEB_CLIENT_ID = toTrimmedString(process.env.GOOGLE_CLIENT_ID);
+const GOOGLE_WEB_CLIENT_SECRET = toTrimmedString(process.env.GOOGLE_CLIENT_SECRET);
+const GOOGLE_ANDROID_CLIENT_ID =
+  toTrimmedString(process.env.GOOGLE_ANDROID_CLIENT_ID) ||
+  DEFAULT_GOOGLE_ANDROID_CLIENT_ID;
+const GOOGLE_IOS_CLIENT_ID =
+  toTrimmedString(process.env.GOOGLE_IOS_CLIENT_ID) || DEFAULT_GOOGLE_IOS_CLIENT_ID;
+const GOOGLE_EXPO_CLIENT_ID = toTrimmedString(process.env.GOOGLE_EXPO_CLIENT_ID);
+const GOOGLE_ALLOWED_CLIENT_IDS = Array.from(
+  new Set([
+    GOOGLE_WEB_CLIENT_ID,
+    GOOGLE_ANDROID_CLIENT_ID,
+    GOOGLE_IOS_CLIENT_ID,
+    GOOGLE_EXPO_CLIENT_ID,
+  ].filter(Boolean)),
+);
+const googleClient = new OAuth2Client(GOOGLE_WEB_CLIENT_ID || undefined);
 const APPLE_ISSUER = "https://appleid.apple.com";
 const APPLE_CLIENT_ID = process.env.APPLE_CLIENT_ID || process.env.APPLE_BUNDLE_ID;
 const appleJwks = createRemoteJWKSet(new URL("https://appleid.apple.com/auth/keys"));
@@ -176,6 +201,7 @@ const presentUser = (user) => {
     email: plain.email,
     phone: plain.phone,
     role: plain.role ?? 0,
+    roleCodes: deriveRoleCodes(plain),
     avatar_url: plain.avatar_url ?? null,
     is_active: plain.is_active ?? true,
     emailVerified: plain.email_verified ?? false,
@@ -246,10 +272,11 @@ export const loadSafeUser = async (id) => {
   return presentUser(user);
 };
 
-const ensureGuestProfile = async (userId) => {
+const ensureGuestProfile = async (userId, transaction = null) => {
   if (!userId || !models.GuestProfile) return null;
   const [profile] = await models.GuestProfile.findOrCreate({
     where: { user_id: userId },
+    ...(transaction ? { transaction } : {}),
   });
   return profile;
 };
@@ -260,6 +287,9 @@ const normalizeDeviceId = (value) => {
   if (!trimmed) return null;
   return trimmed.slice(0, 120);
 };
+
+const asPlainObject = (value) =>
+  value && typeof value === "object" && !Array.isArray(value) ? value : {};
 
 const normalizeVerificationCode = (value) => String(value || "").trim();
 
@@ -349,16 +379,20 @@ const clearRefreshCookie = (res) => {
   res.append("Set-Cookie", parts.join("; "));
 };
 
-const buildUserAccessPayload = (user, referral = {}) => ({
-  id: user.id,
-  type: "user",
-  role: user.role,
-  countryCode: user.country_code ?? null,
-  countryOfResidenceCode: user.residence_country_code ?? null,
-  referredByInfluencerId: referral.influencerId ?? user.referred_by_influencer_id ?? null,
-  referredByCode: referral.code ?? user.referred_by_code ?? null,
-  referredAt: referral.at ?? user.referred_at ?? null,
-});
+const buildUserAccessPayload = (user, referral = {}) => {
+  const plain = typeof user?.get === "function" ? user.get({ plain: true }) : user;
+  return {
+    id: plain.id,
+    type: "user",
+    role: plain.role,
+    roleCodes: deriveRoleCodes(plain),
+    countryCode: plain.country_code ?? null,
+    countryOfResidenceCode: plain.residence_country_code ?? null,
+    referredByInfluencerId: referral.influencerId ?? plain.referred_by_influencer_id ?? null,
+    referredByCode: referral.code ?? plain.referred_by_code ?? null,
+    referredAt: referral.at ?? plain.referred_at ?? null,
+  };
+};
 
 export const signUserAccessToken = (payload) =>
   jwt.sign(payload, ACCESS_SECRET, { expiresIn: ACCESS_TOKEN_TTL });
@@ -611,38 +645,63 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ error: "Name is required" });
     }
 
-    const user = await models.User.create({
-      name: resolvedName.fullName,
-      first_name: resolvedName.firstName,
-      last_name: resolvedName.lastName,
-      email,
-      password_hash: hash,
-      country_code: countryCode ? String(countryCode).trim() : null,
-      residence_country_code: countryOfResidenceCode ? String(countryOfResidenceCode).trim() : null,
-      last_login_at: new Date(),
-    });
-
-    let referral = { influencerId: null, code: null, at: null };
     const normalizedReferral = referralCode ? String(referralCode).trim().toUpperCase() : "";
-    if (normalizedReferral) {
-      try {
-        await linkReferralCodeForUser({ userId: user.id, referralCode: normalizedReferral });
-        await user.reload();
-        referral = {
-          influencerId: user.referred_by_influencer_id ?? null,
-          code: user.referred_by_code ?? normalizedReferral,
-          at: user.referred_at ?? new Date(),
-        };
-      } catch (err) {
-        if (err instanceof ReferralError) {
-          return res.status(err.status).json({ error: err.message });
+    let referral = { influencerId: null, code: null, at: null };
+    let userId = null;
+
+    try {
+      await sequelize.transaction(async (transaction) => {
+        const user = await models.User.create(
+          {
+            name: resolvedName.fullName,
+            first_name: resolvedName.firstName,
+            last_name: resolvedName.lastName,
+            email,
+            password_hash: hash,
+            country_code: countryCode ? String(countryCode).trim() : null,
+            residence_country_code: countryOfResidenceCode
+              ? String(countryOfResidenceCode).trim()
+              : null,
+            last_login_at: new Date(),
+          },
+          { transaction }
+        );
+
+        userId = Number(user.id) || null;
+
+        if (normalizedReferral) {
+          await linkReferralCodeForUser({
+            userId: user.id,
+            referralCode: normalizedReferral,
+            transaction,
+          });
+          await user.reload({ transaction });
+          referral = {
+            influencerId: user.referred_by_influencer_id ?? null,
+            code: user.referred_by_code ?? normalizedReferral,
+            at: user.referred_at ?? new Date(),
+          };
         }
-        throw err;
+
+        await ensureGuestProfile(user.id, transaction);
+        await user.update({ last_login_at: new Date() }, { transaction });
+      });
+    } catch (err) {
+      if (err instanceof ReferralError) {
+        return res.status(err.status).json({ error: err.message });
       }
+      throw err;
     }
-    // Emit a token + user to satisfy FE expectations; still send verify email above
-    await ensureGuestProfile(user.id)
-    await user.update({ last_login_at: new Date() })
+
+    if (!userId) {
+      return res.status(500).json({ error: "Unable to create account" });
+    }
+
+    const user = await models.User.findByPk(userId);
+    if (!user) {
+      return res.status(500).json({ error: "Unable to create account" });
+    }
+
     const { accessToken, refreshToken } = await issueUserSession({
       user,
       req,
@@ -679,7 +738,9 @@ export const registerUser = async (req, res) => {
    USER: LOGIN (local)
    ──────────────────────────────────────────────────────────────── */
 export const loginUser = async (req, res) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: "Email is required" });
   try {
     /* 1 ▸ Buscar usuario por email */
     const user = await models.User.findOne({ where: { email } });
@@ -779,7 +840,7 @@ export const validateToken = async (req, res) => {
       name = user?.name || null;
     }
 
-    return res.json({ valid: true, payload: decoded, name, action });
+    return res.json({ valid: true, payload: { type: decoded.type, action: decoded.action, exp: decoded.exp }, name, action });
   } catch (err) {
     console.log(err);
     return res.status(400).json({
@@ -965,12 +1026,34 @@ export const listByHotel = async (req, res, next) => {
    GOOGLE SIGN-IN: Exchange code → tokens → user
    (GIS popup + Authorization Code con PKCE)
    Ruta: POST /auth/google/exchange
-   Body: { code }
+   Body: { code, redirectUri?, codeVerifier?, clientId? }
    ──────────────────────────────────────────────────────────────── */
 export const googleExchange = async (req, res) => {
   try {
-    const { code, redirectUri: clientRedirectUri } = req.body;
+    const {
+      code,
+      redirectUri: clientRedirectUri,
+      codeVerifier: clientCodeVerifier,
+      clientId: requestedClientIdRaw,
+    } = req.body || {};
     if (!code) return res.status(400).json({ error: "Missing code" });
+
+    const requestedClientId = toTrimmedString(requestedClientIdRaw);
+    const clientId = requestedClientId || GOOGLE_WEB_CLIENT_ID;
+    if (!clientId) {
+      return res.status(500).json({ error: "Google OAuth is not configured" });
+    }
+    if (requestedClientId && !GOOGLE_ALLOWED_CLIENT_IDS.includes(requestedClientId)) {
+      return res.status(400).json({ error: "Google OAuth client is not allowed" });
+    }
+    const clientSecret =
+      clientId === GOOGLE_WEB_CLIENT_ID ? GOOGLE_WEB_CLIENT_SECRET : null;
+    const codeVerifier = toTrimmedString(clientCodeVerifier);
+    if (!clientSecret && !codeVerifier) {
+      return res.status(400).json({
+        error: "Missing PKCE code verifier for Google OAuth client",
+      });
+    }
     // Allow mobile / Expo to send their own redirect_uri; keep postmessage as default (web popup)
     const redirectUri = typeof clientRedirectUri === "string" && clientRedirectUri.length
       ? clientRedirectUri
@@ -982,10 +1065,11 @@ export const googleExchange = async (req, res) => {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         code,
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
+        client_id: clientId,
+        ...(clientSecret ? { client_secret: clientSecret } : {}),
         redirect_uri: redirectUri, // 'postmessage' para web popup; la app puede pasar su URI
         grant_type: "authorization_code",
+        ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
       }),
     });
 
@@ -1000,9 +1084,12 @@ export const googleExchange = async (req, res) => {
     if (!id_token) return res.status(400).json({ error: "No id_token from Google" });
 
     // 2) Verificar id_token (firma + audiencia)
+    const allowedAudiences = GOOGLE_ALLOWED_CLIENT_IDS.length
+      ? GOOGLE_ALLOWED_CLIENT_IDS
+      : [clientId];
     const ticket = await googleClient.verifyIdToken({
       idToken: id_token,
-      audience: GOOGLE_CLIENT_ID,
+      audience: allowedAudiences,
     });
     const payload = ticket.getPayload();
 
@@ -1360,12 +1447,59 @@ export const confirmEmailVerificationCode = async (req, res) => {
       return res.status(400).json({ error: "Invalid verification code." });
     }
 
-    await user.update({
-      email_verified: true,
-      email_verification_code_hash: null,
-      email_verification_expires_at: null,
-      email_verification_attempts: 0,
-      email_verification_sent_at: null,
+    await sequelize.transaction(async (transaction) => {
+      await user.update(
+        {
+          email_verified: true,
+          email_verification_code_hash: null,
+          email_verification_expires_at: null,
+          email_verification_attempts: 0,
+          email_verification_sent_at: null,
+        },
+        { transaction }
+      );
+
+      const hostProfile = await models.HostProfile.findOne({
+        where: { user_id: user.id },
+        attributes: ["id", "metadata", "kyc_status"],
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+
+      if (!hostProfile) return;
+
+      const metadata = asPlainObject(hostProfile.metadata);
+      const existingHostOnboarding = asPlainObject(
+        metadata.hostOnboarding || metadata.host_onboarding
+      );
+
+      const nextMetadata = {
+        ...metadata,
+        kyc_status: metadata.kyc_status || hostProfile.kyc_status || null,
+        emailVerified: true,
+        email_verified: true,
+        realPersonConfirmed: true,
+        real_person_confirmed: true,
+        hostOnboarding: {
+          ...existingHostOnboarding,
+          confirmRealPerson: true,
+          realPersonConfirmed: true,
+        },
+      };
+
+      const normalizedOnboarding = buildHostOnboardingState(nextMetadata);
+      nextMetadata.hostOnboarding = {
+        verifyIdentity: normalizedOnboarding.steps.verifyIdentity,
+        confirmRealPerson: normalizedOnboarding.steps.confirmRealPerson,
+        confirmPhone: normalizedOnboarding.steps.confirmPhone,
+      };
+
+      await hostProfile.update(
+        {
+          metadata: nextMetadata,
+        },
+        { transaction }
+      );
     });
 
     return res.json({ message: "Email verified." });

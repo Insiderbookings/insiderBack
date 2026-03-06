@@ -24,6 +24,9 @@ const normalizeRole = (value) => Number(value || 0);
 const SUPPORT_AGENT_ROLES = new Set([1, 7, 8, 100]);
 const SUPPORT_MANAGER_ROLES = new Set([8, 100]);
 const SUPPORT_ASSIGNABLE_ROLES = new Set([1, 7, 8, 100]);
+const QUICK_REPLY_DEFAULT_CATEGORY = "GENERAL";
+const QUICK_REPLY_DEFAULT_LANGUAGE = "es";
+const QUICK_REPLY_MAX_LIMIT = 200;
 const isAdminUser = (user) => normalizeRole(user?.role) === 100;
 const isSupportAgent = (user) => SUPPORT_AGENT_ROLES.has(normalizeRole(user?.role));
 const isSupportManager = (user) => SUPPORT_MANAGER_ROLES.has(normalizeRole(user?.role));
@@ -191,6 +194,122 @@ const canExecuteFinancialAction = (user) => {
     if (!whitelist) return true;
     return whitelist.has(Number(user?.id));
 };
+const canManageQuickReplies = (user) => isSupportManager(user);
+const normalizeQuickReplyCategory = (value) => {
+    const text = String(value || QUICK_REPLY_DEFAULT_CATEGORY).trim().toUpperCase();
+    return text || QUICK_REPLY_DEFAULT_CATEGORY;
+};
+const normalizeQuickReplyLanguage = (value) => {
+    const text = String(value || QUICK_REPLY_DEFAULT_LANGUAGE).trim().toLowerCase();
+    return text || QUICK_REPLY_DEFAULT_LANGUAGE;
+};
+const normalizeStringList = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+        return value
+            .map((item) => String(item || "").trim())
+            .filter(Boolean);
+    }
+    return String(value)
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+};
+const extractTemplateVariables = (text) => {
+    const source = String(text || "");
+    const variables = source.match(/\{([a-zA-Z0-9_]+)\}/g) || [];
+    const normalized = variables.map((item) => item.replace(/[{}]/g, "").trim()).filter(Boolean);
+    return Array.from(new Set(normalized));
+};
+const normalizeQuickReplyPayload = (body = {}) => {
+    const title = String(body?.title || "").trim();
+    const content = String(body?.content || "").trim();
+    const category = normalizeQuickReplyCategory(body?.category);
+    const language = normalizeQuickReplyLanguage(body?.language);
+    const tags = normalizeStringList(body?.tags);
+    const variablesFromContent = extractTemplateVariables(content);
+    const explicitVariables = normalizeStringList(body?.variables);
+    const variables = Array.from(new Set([...variablesFromContent, ...explicitVariables]));
+    return {
+        title,
+        content,
+        category,
+        language,
+        tags,
+        variables,
+        is_active: body?.is_active == null ? true : Boolean(body.is_active),
+    };
+};
+const normalizeAssigneeIdList = (value) => {
+    if (value == null || value === "") return [];
+    const raw = Array.isArray(value) ? value : [value];
+    const parsed = raw.map((item) => Number(item));
+    if (parsed.some((item) => !Number.isFinite(item) || item <= 0)) return null;
+    return Array.from(new Set(parsed.map((item) => Math.trunc(item))));
+};
+const loadAssignableUsersByIds = async (ids = []) => {
+    const safeIds = Array.isArray(ids) ? ids : [];
+    if (!safeIds.length) return [];
+    const users = await models.User.findAll({
+        where: { id: { [Op.in]: safeIds } },
+        attributes: ["id", "role", "name", "email"],
+    });
+    if (users.length !== safeIds.length) return null;
+    const usersById = new Map(users.map((user) => [Number(user.id), user]));
+    const ordered = safeIds.map((id) => usersById.get(Number(id))).filter(Boolean);
+    if (ordered.length !== safeIds.length) return null;
+    const invalidUser = ordered.find((user) => !isAssignableSupportRole(user.role));
+    if (invalidUser) return false;
+    return ordered;
+};
+const syncTicketAssignees = async ({ ticketId, assigneeIds = [], actorId = null, transaction = null }) => {
+    if (!models.SupportTicketAssignee) return;
+    await models.SupportTicketAssignee.destroy({
+        where: { ticket_id: ticketId },
+        transaction,
+    });
+    if (!assigneeIds.length) return;
+    await models.SupportTicketAssignee.bulkCreate(
+        assigneeIds.map((userId) => ({
+            ticket_id: ticketId,
+            user_id: userId,
+            assigned_by: actorId || null,
+            assigned_at: new Date(),
+        })),
+        { transaction }
+    );
+};
+const normalizeTicketAssigneesPayload = (ticketLike) => {
+    const payload = ticketLike;
+    const primaryId = Number(payload?.assigned_to || 0);
+    const seen = new Set();
+    const merged = [];
+    const candidates = [
+        ...(Array.isArray(payload?.assignees) ? payload.assignees : []),
+        payload?.assignee || null,
+    ].filter(Boolean);
+    candidates.forEach((candidate) => {
+        const id = Number(candidate?.id || 0);
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        merged.push(candidate);
+    });
+    merged.sort((a, b) => {
+        const aId = Number(a?.id || 0);
+        const bId = Number(b?.id || 0);
+        if (aId === primaryId && bId !== primaryId) return -1;
+        if (bId === primaryId && aId !== primaryId) return 1;
+        const aName = String(a?.name || "").toLowerCase();
+        const bName = String(b?.name || "").toLowerCase();
+        return aName.localeCompare(bName);
+    });
+    payload.assignees = merged;
+    payload.assigned_to_ids = merged.map((item) => Number(item?.id || 0)).filter((id) => id > 0);
+    if (!payload.assigned_to && payload.assigned_to_ids.length) {
+        payload.assigned_to = payload.assigned_to_ids[0];
+    }
+    return payload;
+};
 const createAuditMessage = async ({
     ticketId,
     actor,
@@ -225,6 +344,10 @@ const createAuditMessage = async ({
 const isHomeInventory = (booking) =>
     String(booking?.inventory_type || "").toUpperCase() === "HOME" ||
     String(booking?.source || "").toUpperCase() === "HOME";
+const isInternalSupportMessage = (message) => {
+    const metadata = message?.metadata && typeof message.metadata === "object" ? message.metadata : {};
+    return Boolean(metadata.internal) || String(metadata.type || "").toUpperCase() === "INTERNAL_NOTE";
+};
 const buildSlaSummary = ({ ticket, messages = [], now = new Date() }) => {
     const firstResponseMinutes = Number(process.env.SUPPORT_SLA_FIRST_RESPONSE_MINUTES || 30);
     const resolutionMinutes = Number(process.env.SUPPORT_SLA_RESOLUTION_MINUTES || 1440);
@@ -432,10 +555,22 @@ export const getTicketDetails = async (req, res, next) => {
         const ticket = await models.SupportTicket.findByPk(id, {
             include: [
                 { model: models.User, as: 'user', attributes: ['id', 'name', 'email', 'avatar_url', 'role'] },
-                { model: models.User, as: 'assignee', attributes: ['id', 'name'] },
-                { model: models.SupportMessage, as: 'messages', include: [{ model: models.User, as: 'sender', attributes: ['id', 'name', 'role'] }] }
+                { model: models.User, as: 'assignee', attributes: ['id', 'name', 'email', 'role'] },
+                {
+                    model: models.User,
+                    as: 'assignees',
+                    attributes: ['id', 'name', 'email', 'role'],
+                    through: { attributes: [] },
+                    required: false,
+                },
+                {
+                    model: models.SupportMessage,
+                    as: 'messages',
+                    separate: true,
+                    order: [['created_at', 'ASC']],
+                    include: [{ model: models.User, as: 'sender', attributes: ['id', 'name', 'role'] }],
+                }
             ],
-            order: [[{ model: models.SupportMessage, as: 'messages' }, 'created_at', 'ASC']]
         });
 
         if (!ticket) return res.status(404).json({ error: "Ticket not found" });
@@ -445,12 +580,18 @@ export const getTicketDetails = async (req, res, next) => {
             return res.status(403).json({ error: "Forbidden" });
         }
 
-        const payload = ticket.toJSON();
+        const isStaffViewer = isSupportAgent(req.user);
+        const payload = normalizeTicketAssigneesPayload(ticket.toJSON());
+        if (!isStaffViewer) {
+            payload.messages = Array.isArray(payload.messages)
+                ? payload.messages.filter((message) => !isInternalSupportMessage(message))
+                : [];
+        }
         payload.sla = buildSlaSummary({ ticket: payload, messages: payload.messages });
         payload.permissions = {
             canExecuteFinancialActions: canExecuteFinancialAction(req.user),
             canAssign: isSupportManager(req.user),
-            canWriteInternalNotes: isAdminUser(req.user),
+            canWriteInternalNotes: isStaffViewer,
         };
 
         return res.json(payload);
@@ -464,16 +605,21 @@ export const replyTicket = async (req, res, next) => {
         const { id } = req.params;
         const { content, internal = false, metadata = null } = req.body || {};
         const userId = req.user.id;
-        const isAdmin = isAdminUser(req.user);
         const isAgent = isSupportAgent(req.user);
         const SUPPORT_BOT_ID = getSupportBotId();
         const isInternal = Boolean(internal);
+        const rawQuickReplyId =
+            metadata && typeof metadata === "object"
+                ? metadata.quickReplyId ?? metadata.templateId ?? null
+                : null;
+        const quickReplyId = Number(rawQuickReplyId);
+        const hasQuickReplyId = Number.isFinite(quickReplyId) && quickReplyId > 0;
 
         if (!String(content || "").trim()) {
             return res.status(400).json({ error: "Content is required" });
         }
-        if (isInternal && !isAdmin) {
-            return res.status(403).json({ error: "Only admins can post internal notes" });
+        if (isInternal && !isAgent) {
+            return res.status(403).json({ error: "Only support agents can post internal notes" });
         }
 
         const ticket = await models.SupportTicket.findByPk(id);
@@ -482,6 +628,7 @@ export const replyTicket = async (req, res, next) => {
         if (ticket.user_id !== userId && !isAgent) {
             return res.status(403).json({ error: "Forbidden" });
         }
+        const previousStatus = String(ticket.status || "").toUpperCase();
 
         // 1. Create SupportMessage (Admin View)
         const message = await models.SupportMessage.create({
@@ -495,6 +642,17 @@ export const replyTicket = async (req, res, next) => {
                 type: isInternal ? "INTERNAL_NOTE" : undefined,
             }
         });
+
+        if (hasQuickReplyId) {
+            const quickReply = await models.SupportQuickReply.findByPk(quickReplyId);
+            if (quickReply) {
+                await quickReply.increment("usage_count", { by: 1 });
+                await quickReply.update({
+                    last_used_at: new Date(),
+                    updated_by: Number(userId) || quickReply.updated_by || null,
+                });
+            }
+        }
 
         // 2. Sync to ChatThread (User App View) if thread exists
         if (ticket.chat_thread_id && !isInternal) {
@@ -519,12 +677,22 @@ export const replyTicket = async (req, res, next) => {
         if (isAgent && ticket.status === 'OPEN') ticket.status = 'IN_PROGRESS';
 
         await ticket.save();
+        const currentStatus = String(ticket.status || "").toUpperCase();
 
         // Real-time notifications
         if (isAgent) {
             // Notify User only for external replies
             if (!isInternal) {
                 emitToUser(ticket.user_id, "support:new_message", { ticketId: id, message });
+            }
+            if (previousStatus !== currentStatus) {
+                emitToUser(ticket.user_id, "support:status_change", {
+                    ticketId: ticket.id,
+                    chatThreadId: ticket.chat_thread_id,
+                    status: ticket.status,
+                    internal: isInternal,
+                    source: "support_reply",
+                });
             }
             emitSupportEvent("support:new_message", { ticketId: id, message, user: req.user.name });
         } else {
@@ -543,64 +711,149 @@ export const updateTicketStatus = async (req, res, next) => {
         if (!isSupportAgent(req.user)) return res.status(403).json({ error: "Support access required" });
 
         const { id } = req.params;
-        const { status, priority, assigned_to } = req.body;
+        const { status, priority, assigned_to, assigned_to_ids } = req.body;
+        const hasAssignedToPayload = Object.prototype.hasOwnProperty.call(req.body || {}, "assigned_to");
+        const hasAssigneeListPayload = Object.prototype.hasOwnProperty.call(req.body || {}, "assigned_to_ids");
+        const hasAssignmentPayload = hasAssignedToPayload || hasAssigneeListPayload;
 
         const ticket = await models.SupportTicket.findByPk(id);
         if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+        if (hasAssignmentPayload && !isSupportManager(req.user)) {
+            return res.status(403).json({ error: "Only support manager can assign tickets" });
+        }
+
+        const existingAssigneeRows = models.SupportTicketAssignee
+            ? await models.SupportTicketAssignee.findAll({
+                where: { ticket_id: ticket.id },
+                attributes: ["user_id"],
+            })
+            : [];
+        const existingAssigneeIds = Array.from(
+            new Set(
+                existingAssigneeRows
+                    .map((row) => Number(row.user_id))
+                    .filter((value) => Number.isFinite(value) && value > 0)
+            )
+        );
+        const beforeAssigneeIds = Array.from(
+            new Set(
+                [
+                    ...existingAssigneeIds,
+                    Number(ticket.assigned_to || 0),
+                ].filter((value) => Number.isFinite(value) && value > 0)
+            )
+        );
 
         const before = {
             status: ticket.status,
             priority: ticket.priority,
             assigned_to: ticket.assigned_to,
+            assigned_to_ids: beforeAssigneeIds,
         };
 
-        if (status) ticket.status = status;
-        if (priority) ticket.priority = priority;
-        if (Object.prototype.hasOwnProperty.call(req.body, "assigned_to")) {
-            if (!isSupportManager(req.user)) {
-                return res.status(403).json({ error: "Only support manager can assign tickets" });
+        let nextAssigneeIds = [...beforeAssigneeIds];
+        let nextPrimaryAssigneeId = before.assigned_to ? Number(before.assigned_to) : null;
+        if (hasAssigneeListPayload) {
+            const normalizedIds = normalizeAssigneeIdList(assigned_to_ids);
+            if (normalizedIds == null) {
+                return res.status(400).json({ error: "Invalid assignee ids list" });
             }
+            const users = await loadAssignableUsersByIds(normalizedIds);
+            if (users === null) return res.status(404).json({ error: "One or more assignees not found" });
+            if (users === false) return res.status(400).json({ error: "All assignees must be support users" });
+
+            nextAssigneeIds = normalizedIds;
+            const requestedPrimary = Number(req.body?.primary_assignee_id ?? req.body?.assigned_to ?? 0);
+            if (!nextAssigneeIds.length) {
+                nextPrimaryAssigneeId = null;
+            } else if (Number.isFinite(requestedPrimary) && nextAssigneeIds.includes(requestedPrimary)) {
+                nextPrimaryAssigneeId = requestedPrimary;
+            } else {
+                nextPrimaryAssigneeId = nextAssigneeIds[0];
+            }
+        } else if (hasAssignedToPayload) {
             if (assigned_to == null || assigned_to === "") {
-                ticket.assigned_to = null;
+                nextAssigneeIds = [];
+                nextPrimaryAssigneeId = null;
             } else {
                 const assigneeId = Number(assigned_to);
                 if (!Number.isFinite(assigneeId) || assigneeId <= 0) {
                     return res.status(400).json({ error: "Invalid assignee id" });
                 }
-                const assignee = await models.User.findByPk(assigneeId, {
-                    attributes: ["id", "role", "name", "email"],
-                });
-                if (!assignee) return res.status(404).json({ error: "Assignee not found" });
-                const assigneeRole = normalizeRole(assignee.role);
-                if (!isAssignableSupportRole(assigneeRole)) {
-                    return res.status(400).json({ error: "Assignee must be a support user" });
-                }
-                ticket.assigned_to = assignee.id;
+                const users = await loadAssignableUsersByIds([assigneeId]);
+                if (users === null) return res.status(404).json({ error: "Assignee not found" });
+                if (users === false) return res.status(400).json({ error: "Assignee must be a support user" });
+                nextAssigneeIds = Array.from(new Set([assigneeId, ...beforeAssigneeIds]));
+                nextPrimaryAssigneeId = assigneeId;
             }
         }
 
-        await ticket.save();
+        await sequelize.transaction(async (transaction) => {
+            if (status) ticket.status = status;
+            if (priority) ticket.priority = priority;
+            if (hasAssignmentPayload) {
+                ticket.assigned_to = nextPrimaryAssigneeId;
+                await syncTicketAssignees({
+                    ticketId: ticket.id,
+                    assigneeIds: nextAssigneeIds,
+                    actorId: Number(req.user.id) || null,
+                    transaction,
+                });
+            }
+            await ticket.save({ transaction });
+        });
+
+        const refreshedTicket = await models.SupportTicket.findByPk(ticket.id, {
+            include: [
+                { model: models.User, as: "user", attributes: ["id", "name", "email", "avatar_url", "role"] },
+                { model: models.User, as: "assignee", attributes: ["id", "name", "email", "role"] },
+                {
+                    model: models.User,
+                    as: "assignees",
+                    attributes: ["id", "name", "email", "role"],
+                    through: { attributes: [] },
+                    required: false,
+                },
+            ],
+        });
+        const updatedPayload = normalizeTicketAssigneesPayload(
+            refreshedTicket ? refreshedTicket.toJSON() : ticket.toJSON()
+        );
+        const afterAssigneeIds = Array.from(
+            new Set(
+                (Array.isArray(updatedPayload.assigned_to_ids) ? updatedPayload.assigned_to_ids : [])
+                    .map((value) => Number(value))
+                    .filter((value) => Number.isFinite(value) && value > 0)
+            )
+        );
+        const normalizedBeforeIds = [...beforeAssigneeIds].sort((a, b) => a - b);
+        const normalizedAfterIds = [...afterAssigneeIds].sort((a, b) => a - b);
+        const assigneesChanged =
+            normalizedBeforeIds.length !== normalizedAfterIds.length ||
+            normalizedBeforeIds.some((idValue, index) => idValue !== normalizedAfterIds[index]);
 
         if (
-            before.status !== ticket.status ||
-            before.priority !== ticket.priority ||
-            Number(before.assigned_to || 0) !== Number(ticket.assigned_to || 0)
+            before.status !== updatedPayload.status ||
+            before.priority !== updatedPayload.priority ||
+            Number(before.assigned_to || 0) !== Number(updatedPayload.assigned_to || 0) ||
+            assigneesChanged
         ) {
             const auditMessage = await createAuditMessage({
-                ticketId: ticket.id,
+                ticketId: updatedPayload.id || ticket.id,
                 actor: req.user,
                 action: "TICKET_UPDATED",
                 reason: null,
                 before,
                 after: {
-                    status: ticket.status,
-                    priority: ticket.priority,
-                    assigned_to: ticket.assigned_to,
+                    status: updatedPayload.status,
+                    priority: updatedPayload.priority,
+                    assigned_to: updatedPayload.assigned_to,
+                    assigned_to_ids: normalizedAfterIds,
                 },
             });
             if (auditMessage) {
                 emitSupportEvent("support:new_message", {
-                    ticketId: ticket.id,
+                    ticketId: updatedPayload.id || ticket.id,
                     message: auditMessage,
                     user: req.user.name,
                 });
@@ -608,17 +861,23 @@ export const updateTicketStatus = async (req, res, next) => {
         }
 
         // Notify user of status change
-        emitToUser(ticket.user_id, "support:status_change", { ticketId: id, status, priority });
+        emitToUser(ticket.user_id, "support:status_change", {
+            ticketId: id,
+            status: updatedPayload.status,
+            priority: updatedPayload.priority,
+        });
         emitSupportEvent("support:ticket_updated", {
             ticketId: id,
             updates: {
-                status: ticket.status,
-                priority: ticket.priority,
-                assigned_to: ticket.assigned_to,
+                status: updatedPayload.status,
+                priority: updatedPayload.priority,
+                assigned_to: updatedPayload.assigned_to,
+                assignees: updatedPayload.assignees || [],
+                assigned_to_ids: updatedPayload.assigned_to_ids || [],
             },
         });
 
-        return res.json(ticket);
+        return res.json(updatedPayload);
     } catch (error) {
         next(error);
     }
@@ -706,18 +965,22 @@ export const getAllTickets = async (req, res, next) => {
         if (status) where.status = status;
         if (priority) where.priority = priority;
         if (userId) where.user_id = userId;
-        if (assignedTo === "me") where.assigned_to = req.user.id;
-        else if (String(assignedTo || "").toLowerCase() === "unassigned") where.assigned_to = null;
-        else if (assignedTo) where.assigned_to = Number(assignedTo);
 
         const tickets = await models.SupportTicket.findAll({
             where,
             include: [
                 { model: models.User, as: 'user', attributes: ['id', 'name', 'email'] },
                 { model: models.User, as: 'assignee', attributes: ['id', 'name', 'email', 'role'] },
+                {
+                    model: models.User,
+                    as: 'assignees',
+                    attributes: ['id', 'name', 'email', 'role'],
+                    through: { attributes: [] },
+                    required: false,
+                },
             ],
             order: [['last_message_at', 'DESC']],
-            limit: 50
+            limit: 200
         });
 
         const ticketIds = tickets.map((ticket) => ticket.id);
@@ -736,15 +999,211 @@ export const getAllTickets = async (req, res, next) => {
         }, {});
 
         const payload = tickets.map((ticket) => {
-            const json = ticket.toJSON();
+            const json = normalizeTicketAssigneesPayload(ticket.toJSON());
             json.sla = buildSlaSummary({
                 ticket: json,
                 messages: messagesByTicket[Number(ticket.id)] || [],
             });
             return json;
         });
+        let filtered = payload;
+        const assignedToFilter = String(assignedTo || "").toLowerCase();
+        if (assignedToFilter === "me") {
+            filtered = payload.filter((ticket) =>
+                Array.isArray(ticket.assigned_to_ids) &&
+                ticket.assigned_to_ids.includes(Number(req.user.id))
+            );
+        } else if (assignedToFilter === "unassigned") {
+            filtered = payload.filter((ticket) => !Array.isArray(ticket.assigned_to_ids) || !ticket.assigned_to_ids.length);
+        } else if (assignedTo) {
+            const targetId = Number(assignedTo);
+            filtered = Number.isFinite(targetId) && targetId > 0
+                ? payload.filter((ticket) =>
+                    Array.isArray(ticket.assigned_to_ids) && ticket.assigned_to_ids.includes(targetId)
+                )
+                : payload;
+        }
 
-        return res.json(payload);
+        return res.json(filtered.slice(0, 50));
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getSupportAssignees = async (req, res, next) => {
+    try {
+        if (!isSupportAgent(req.user)) return res.status(403).json({ error: "Support access required" });
+
+        const assignableRoles = Array.from(SUPPORT_ASSIGNABLE_ROLES.values());
+        const users = await models.User.findAll({
+            where: {
+                role: { [Op.in]: assignableRoles },
+                is_active: true,
+            },
+            attributes: ["id", "name", "email", "role"],
+            order: [["role", "DESC"], ["name", "ASC"]],
+        });
+
+        return res.json(users);
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getQuickReplies = async (req, res, next) => {
+    try {
+        if (!isSupportAgent(req.user)) return res.status(403).json({ error: "Support access required" });
+
+        const { q, category, language, active = "true", limit = "100" } = req.query || {};
+        const where = {};
+        const dialect = sequelize.getDialect();
+        const likeOperator = dialect.startsWith("postgres") ? Op.iLike : Op.like;
+
+        if (category) where.category = normalizeQuickReplyCategory(category);
+        if (language) where.language = normalizeQuickReplyLanguage(language);
+        if (String(active).toLowerCase() !== "all") {
+            where.is_active = String(active).toLowerCase() !== "false";
+        }
+        if (String(q || "").trim()) {
+            const term = `%${String(q).trim()}%`;
+            where[Op.or] = [
+                { title: { [likeOperator]: term } },
+                { content: { [likeOperator]: term } },
+            ];
+        }
+
+        const parsedLimit = Number(limit);
+        const safeLimit = Number.isFinite(parsedLimit)
+            ? Math.min(Math.max(Math.trunc(parsedLimit), 1), QUICK_REPLY_MAX_LIMIT)
+            : 100;
+
+        const replies = await models.SupportQuickReply.findAll({
+            where,
+            include: [
+                { model: models.User, as: "creator", attributes: ["id", "name"] },
+                { model: models.User, as: "updater", attributes: ["id", "name"] },
+            ],
+            order: [["usage_count", "DESC"], ["updated_at", "DESC"], ["id", "DESC"]],
+            limit: safeLimit,
+        });
+
+        return res.json(replies);
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const createQuickReply = async (req, res, next) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+        if (!canManageQuickReplies(req.user)) {
+            return res.status(403).json({ error: "Only support lead can manage quick replies" });
+        }
+
+        const payload = normalizeQuickReplyPayload(req.body);
+        if (!payload.title) return res.status(400).json({ error: "Title is required" });
+        if (!payload.content) return res.status(400).json({ error: "Content is required" });
+
+        const created = await models.SupportQuickReply.create({
+            ...payload,
+            created_by: Number(req.user.id) || null,
+            updated_by: Number(req.user.id) || null,
+        });
+        const hydrated = await models.SupportQuickReply.findByPk(created.id, {
+            include: [
+                { model: models.User, as: "creator", attributes: ["id", "name"] },
+                { model: models.User, as: "updater", attributes: ["id", "name"] },
+            ],
+        });
+
+        return res.status(201).json(hydrated || created);
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const updateQuickReply = async (req, res, next) => {
+    try {
+        if (!canManageQuickReplies(req.user)) {
+            return res.status(403).json({ error: "Only support lead can manage quick replies" });
+        }
+
+        const { id } = req.params;
+        const quickReply = await models.SupportQuickReply.findByPk(id);
+        if (!quickReply) return res.status(404).json({ error: "Quick reply not found" });
+
+        const merged = {
+            title: req.body?.title ?? quickReply.title,
+            content: req.body?.content ?? quickReply.content,
+            category: req.body?.category ?? quickReply.category,
+            language: req.body?.language ?? quickReply.language,
+            tags: req.body?.tags ?? quickReply.tags,
+            variables: req.body?.variables ?? quickReply.variables,
+            is_active: Object.prototype.hasOwnProperty.call(req.body || {}, "is_active")
+                ? req.body.is_active
+                : quickReply.is_active,
+        };
+        const payload = normalizeQuickReplyPayload(merged);
+        if (!payload.title) return res.status(400).json({ error: "Title is required" });
+        if (!payload.content) return res.status(400).json({ error: "Content is required" });
+
+        await quickReply.update({
+            ...payload,
+            updated_by: Number(req.user.id) || null,
+        });
+        const hydrated = await models.SupportQuickReply.findByPk(quickReply.id, {
+            include: [
+                { model: models.User, as: "creator", attributes: ["id", "name"] },
+                { model: models.User, as: "updater", attributes: ["id", "name"] },
+            ],
+        });
+
+        return res.json(hydrated || quickReply);
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const removeQuickReply = async (req, res, next) => {
+    try {
+        if (!canManageQuickReplies(req.user)) {
+            return res.status(403).json({ error: "Only support lead can manage quick replies" });
+        }
+
+        const { id } = req.params;
+        const quickReply = await models.SupportQuickReply.findByPk(id);
+        if (!quickReply) return res.status(404).json({ error: "Quick reply not found" });
+
+        await quickReply.update({
+            is_active: false,
+            updated_by: Number(req.user.id) || null,
+        });
+
+        return res.json({ success: true, id: Number(id), is_active: false });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const markQuickReplyUsed = async (req, res, next) => {
+    try {
+        if (!isSupportAgent(req.user)) return res.status(403).json({ error: "Support access required" });
+
+        const { id } = req.params;
+        const quickReply = await models.SupportQuickReply.findByPk(id);
+        if (!quickReply || !quickReply.is_active) {
+            return res.status(404).json({ error: "Quick reply not found" });
+        }
+
+        await quickReply.increment("usage_count", { by: 1 });
+        await quickReply.update({
+            last_used_at: new Date(),
+            updated_by: Number(req.user.id) || quickReply.updated_by || null,
+        });
+
+        return res.json({ success: true, id: Number(id) });
     } catch (error) {
         next(error);
     }

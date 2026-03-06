@@ -25,6 +25,7 @@ import OutsideMetaModel from "./OutsideMeta.js";
 import PayoutAccountModel from "./PayoutAccount.js";
 import PayoutBatchModel from "./PayoutBatch.js";
 import PayoutItemModel from "./PayoutItem.js";
+import PayoutReleaseModel from "./PayoutRelease.js";
 import InfluencerEventCommissionModel from "./InfluencerEventCommission.js";
 import InfluencerGoalModel from "./InfluencerGoal.js";
 import InfluencerGoalProgressModel from "./InfluencerGoalProgress.js";
@@ -109,16 +110,23 @@ import ChatParticipantModel from "./ChatParticipant.js";
 import ChatMessageModel from "./ChatMessage.js";
 import ChatAutoPromptModel from "./ChatAutoPrompt.js";
 import ReviewModel from "./Review.js";
+import ReviewReminderLogModel from "./ReviewReminderLog.js";
 import AiChatSessionModel from "./AiChatSession.js";
 import AiChatMessageModel from "./AiChatMessage.js";
 import SupportTicketModel from "./SupportTicket.js";
+import SupportTicketAssigneeModel from "./SupportTicketAssignee.js";
 import SupportMessageModel from "./SupportMessage.js";
+import SupportQuickReplyModel from "./SupportQuickReply.js";
 import AnalyticsEventModel from "./AnalyticsEvent.js";
 import StayIntelligenceModel from "./StayIntelligence.js";
 import PushTokenModel from "./PushToken.js";
 import RefreshTokenModel from "./RefreshToken.js";
 import ErrorLogModel from "./ErrorLog.js";
 import ErrorConfigModel from "./ErrorConfig.js";
+import ScheduledJobModel from "./ScheduledJob.js";
+import ScheduledJobRunModel from "./ScheduledJobRun.js";
+import FxRateModel from "./FxRate.js";
+import FxRateChangeLogModel from "./FxRateChangeLog.js";
 
 /* ---------- Construir objetos ---------- */
 const Stay = StayModel(sequelize);
@@ -154,6 +162,7 @@ const models = {
   PayoutAccount: PayoutAccountModel(sequelize),
   PayoutBatch: PayoutBatchModel(sequelize),
   PayoutItem: PayoutItemModel(sequelize),
+  PayoutRelease: PayoutReleaseModel(sequelize),
 
   AddOn: AddOnModel(sequelize),
   AddOnOption: AddOnOptionModel(sequelize),
@@ -234,9 +243,12 @@ const models = {
   Contract: ContractFactory(sequelize),
   UserContract: UserContractFactory(sequelize),
   Review: ReviewModel(sequelize),
+  ReviewReminderLog: ReviewReminderLogModel(sequelize),
 
   SupportTicket: SupportTicketModel(sequelize),
+  SupportTicketAssignee: SupportTicketAssigneeModel(sequelize),
   SupportMessage: SupportMessageModel(sequelize),
+  SupportQuickReply: SupportQuickReplyModel(sequelize),
   AnalyticsEvent: AnalyticsEventModel(sequelize),
   StayIntelligence: StayIntelligenceModel(sequelize),
   PushToken: PushTokenModel(sequelize),
@@ -245,6 +257,10 @@ const models = {
   ItineraryItem: ItineraryItemModel(sequelize),
   ErrorLog: ErrorLogModel(sequelize),
   ErrorConfig: ErrorConfigModel(sequelize),
+  ScheduledJob: ScheduledJobModel(sequelize),
+  ScheduledJobRun: ScheduledJobRunModel(sequelize),
+  FxRate: FxRateModel(sequelize),
+  FxRateChangeLog: FxRateChangeLogModel(sequelize),
 };
 
 /* ---------- Ejecutar asociaciones ---------- */

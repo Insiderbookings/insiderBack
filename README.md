@@ -43,6 +43,7 @@ WEBBEDS_COMPRESS_REQUESTS=true
 node src/scripts/webbedsSync.js --catalog=amenities
 node src/scripts/webbedsSync.js --catalog=currencies,roomAmenities,chains,classifications,rateBasis
 node src/scripts/webbedsSync.js --mode=full --city=<CITY_CODE>
+node src/scripts/webbedsSync.js --mode=full --city=<CITY_CODE> --hotelLimit=10
 ```
 
 ## Docs y base de API

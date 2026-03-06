@@ -21,6 +21,16 @@ import { adminUpdateUserStatus, adminGetUserListings, adminSendUserAction } from
 import { adminUpdateListingStatus } from "../controllers/adminListing.controller.js"
 import { adminListStays, adminGetStayDetail } from "../controllers/adminStay.controller.js"
 import { getKPIDashboard } from "../controllers/adminKPI.controller.js"
+import { adminListJobs, adminUpdateJob, adminRunJob, adminListJobRuns } from "../controllers/adminJob.controller.js"
+import { adminListFxRateChanges, adminListFxRates, adminUpdateFxRate } from "../controllers/adminFxRate.controller.js"
+import {
+  adminApprovePayoutRelease,
+  adminCreatePayoutRelease,
+  adminGetPayoutRelease,
+  adminListPayoutReleases,
+  adminPreviewPayoutBatch,
+  adminRunPayoutRelease,
+} from "../controllers/adminPayoutRelease.controller.js"
 
 const router = Router()
 
@@ -54,12 +64,12 @@ router.post("/vcc/cards", authenticate, authorizeRoles(100), adminCreateCards)
 router.post("/vcc/cards/:id/approve", authenticate, authorizeRoles(100), adminApprove)
 router.post("/vcc/cards/:id/reject", authenticate, authorizeRoles(100), (req, res, next) => { req.query.action = 'reject'; next() }, adminApprove)
 router.post("/vcc/cards/:id/mark-paid", authenticate, authorizeRoles(100), adminMarkPaid)
-router.post("/provider-1/countries/sync", syncWebbedsCountriesController)
-router.post("/provider-1/cities/sync", syncWebbedsCitiesController)
-router.post("/provider-1/hotels/sync", syncWebbedsHotelsController)
-router.post("/webbeds/countries/sync", syncWebbedsCountriesController)
-router.post("/webbeds/cities/sync", syncWebbedsCitiesController)
-router.post("/webbeds/hotels/sync", syncWebbedsHotelsController)
+router.post("/provider-1/countries/sync", authenticate, authorizeRoles(100), syncWebbedsCountriesController)
+router.post("/provider-1/cities/sync", authenticate, authorizeRoles(100), syncWebbedsCitiesController)
+router.post("/provider-1/hotels/sync", authenticate, authorizeRoles(100), syncWebbedsHotelsController)
+router.post("/webbeds/countries/sync", authenticate, authorizeRoles(100), syncWebbedsCountriesController)
+router.post("/webbeds/cities/sync", authenticate, authorizeRoles(100), syncWebbedsCitiesController)
+router.post("/webbeds/hotels/sync", authenticate, authorizeRoles(100), syncWebbedsHotelsController)
 
 // Stays / Bookings admin
 router.get("/stays", authenticate, authorizeRoles(100), adminListStays)
@@ -96,9 +106,26 @@ router.get("/currencies", authenticate, authorizeRoles(100), adminListCurrencies
 router.post("/currencies/seed", authenticate, authorizeRoles(100), adminSeedCurrencies)
 router.put("/currencies/:code", authenticate, authorizeRoles(100), adminUpdateCurrency)
 
+// FX rates admin
+router.get("/fx-rates", authenticate, authorizeRoles(100), adminListFxRates)
+router.get("/fx-rates/changes", authenticate, authorizeRoles(100), adminListFxRateChanges)
+router.put("/fx-rates/:id", authenticate, authorizeRoles(100), adminUpdateFxRate)
+
 // Payouts mock (trigger manual, admin only)
 router.post("/payouts/mock", authenticate, authorizeRoles(100), runMockPayouts)
 router.post("/payouts/batch", authenticate, authorizeRoles(100), runPayoutBatch)
+router.post("/payouts/batch/preview", authenticate, authorizeRoles(100), adminPreviewPayoutBatch)
+router.get("/payouts/releases", authenticate, authorizeRoles(100), adminListPayoutReleases)
+router.post("/payouts/releases", authenticate, authorizeRoles(100), adminCreatePayoutRelease)
+router.get("/payouts/releases/:id", authenticate, authorizeRoles(100), adminGetPayoutRelease)
+router.post("/payouts/releases/:id/approve", authenticate, authorizeRoles(100), adminApprovePayoutRelease)
+router.post("/payouts/releases/:id/run", authenticate, authorizeRoles(100), adminRunPayoutRelease)
+
+// Scheduled jobs admin
+router.get("/jobs", authenticate, authorizeRoles(100), adminListJobs)
+router.get("/jobs/:name/logs", authenticate, authorizeRoles(100), adminListJobRuns)
+router.patch("/jobs/:name", authenticate, authorizeRoles(100), adminUpdateJob)
+router.post("/jobs/:name/run", authenticate, authorizeRoles(100), adminRunJob)
 
 export default router
 

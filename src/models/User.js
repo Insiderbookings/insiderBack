@@ -235,6 +235,19 @@ export default (sequelize) => {
         onDelete: "SET NULL",
       });
     }
+    if (models.SupportTicketAssignee && models.SupportTicket) {
+      User.hasMany(models.SupportTicketAssignee, {
+        foreignKey: "user_id",
+        as: "supportTicketAssignments",
+        onDelete: "CASCADE",
+      });
+      User.belongsToMany(models.SupportTicket, {
+        through: models.SupportTicketAssignee,
+        foreignKey: "user_id",
+        otherKey: "ticket_id",
+        as: "assignedSupportTickets",
+      });
+    }
   };
 
   const ensureHostProfile = async (user, transaction) => {
