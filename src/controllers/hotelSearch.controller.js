@@ -300,18 +300,23 @@ const fetchCityByCode = async (code) =>
     raw: true,
   })
 
-const findCityCandidates = async ({ query, countryCode, countryName, limit = 25 }) => {
-  const trimmed = String(query || "").trim()
-  if (!trimmed) return []
+const shouldRelaxCountryNameFilter = ({ countryCode, countryName }) =>
+  !countryCode && Boolean(String(countryName || "").trim())
 
-  const where = buildCityWhereFilter({
-    countryCode,
-    countryName,
-    query: trimmed,
-  })
-
-  return models.WebbedsCity.findAll({
-    where,
+const queryCityCandidates = ({
+  query,
+  countryCode,
+  countryName,
+  limit,
+  requireCoordinates = false,
+}) =>
+  models.WebbedsCity.findAll({
+    where: buildCityWhereFilter({
+      countryCode,
+      countryName,
+      query,
+      requireCoordinates,
+    }),
     attributes: [
       "code",
       "name",
@@ -330,6 +335,35 @@ const findCityCandidates = async ({ query, countryCode, countryName, limit = 25 
     limit,
     raw: true,
   })
+
+const findCityCandidates = async ({ query, countryCode, countryName, limit = 25 }) => {
+  const trimmed = String(query || "").trim()
+  if (!trimmed) return []
+
+  const primaryCandidates = await queryCityCandidates({
+    query: trimmed,
+    countryCode,
+    countryName,
+    limit,
+  })
+  if (primaryCandidates.length || !shouldRelaxCountryNameFilter({ countryCode, countryName })) {
+    return primaryCandidates
+  }
+
+  const relaxedCandidates = await queryCityCandidates({
+    query: trimmed,
+    countryCode,
+    countryName: null,
+    limit,
+  })
+  if (relaxedCandidates.length && PLACE_CITY_MAP_DEBUG) {
+    console.warn("[hotels.search] city candidates relaxed countryName filter", {
+      query: trimmed,
+      countryName,
+      count: relaxedCandidates.length,
+    })
+  }
+  return relaxedCandidates
 }
 
 const findCoordinateCandidates = async ({
@@ -337,32 +371,35 @@ const findCoordinateCandidates = async ({
   countryName,
   query,
   limit = 120,
-}) =>
-  models.WebbedsCity.findAll({
-    where: buildCityWhereFilter({
-      countryCode,
-      countryName,
-      query,
-      requireCoordinates: true,
-    }),
-    attributes: [
-      "code",
-      "name",
-      "country_code",
-      "country_name",
-      "state_name",
-      "state_code",
-      "lat",
-      "lng",
-      [CITY_HOTEL_COUNT_LITERAL, "hotel_count"],
-    ],
-    order: [
-      [literal(`"hotel_count"`), "DESC"],
-      ["name", "ASC"],
-    ],
-    limit: Math.max(20, Math.min(300, Number(limit) || 120)),
-    raw: true,
+}) => {
+  const normalizedLimit = Math.max(20, Math.min(300, Number(limit) || 120))
+  const primaryCandidates = await queryCityCandidates({
+    query,
+    countryCode,
+    countryName,
+    limit: normalizedLimit,
+    requireCoordinates: true,
   })
+  if (primaryCandidates.length || !shouldRelaxCountryNameFilter({ countryCode, countryName })) {
+    return primaryCandidates
+  }
+
+  const relaxedCandidates = await queryCityCandidates({
+    query,
+    countryCode,
+    countryName: null,
+    limit: normalizedLimit,
+    requireCoordinates: true,
+  })
+  if (relaxedCandidates.length && PLACE_CITY_MAP_DEBUG) {
+    console.warn("[hotels.search] coordinate candidates relaxed countryName filter", {
+      query: String(query || "").trim() || null,
+      countryName,
+      count: relaxedCandidates.length,
+    })
+  }
+  return relaxedCandidates
+}
 
 const rankCityCandidate = ({ candidate, cityToken, stateHint, targetLat = null, targetLng = null }) => {
   const normalizedName = String(candidate?.name || "").trim().toUpperCase()
@@ -1043,6 +1080,26 @@ export const searchHotels = async (req, res, next) => {
       : countryCode
         ? String(countryCode).trim()
         : null
+
+    if (resolvedSearchMode === "city" && !resolvedCityCode) {
+      console.warn("[hotels.search] unresolved city in city mode", {
+        query: searchQuery || null,
+        placeId: String(placeId || "").trim() || null,
+        country: String(country || "").trim() || null,
+      })
+      return res.json({
+        items: [],
+        meta: {
+          cached: false,
+          fallback: "no-city",
+          cityCode: null,
+          countryCode: resolvedCountryCode,
+          query: searchQuery || null,
+          total: 0,
+        },
+      })
+    }
+
     const mustFetchAllHotelIds = Boolean(
       resolvedSearchMode === "hotelids" && resolvedCityCode && hasRatesParams,
     )

@@ -2,7 +2,7 @@
 import { DataTypes } from "sequelize";
 
 const AUTHOR_TYPES = ["GUEST", "HOST"];
-const TARGET_TYPES = ["HOME", "HOST", "GUEST"];
+const TARGET_TYPES = ["HOME", "HOST", "GUEST", "HOTEL"];
 const REVIEW_STATUSES = ["PENDING", "PUBLISHED", "HIDDEN"];
 
 export default (sequelize) => {
@@ -33,6 +33,8 @@ export default (sequelize) => {
       home_id: { type: DataTypes.INTEGER, allowNull: true },
       host_id: { type: DataTypes.INTEGER, allowNull: true },
       guest_id: { type: DataTypes.INTEGER, allowNull: true },
+      inventory_type: { type: DataTypes.STRING(32), allowNull: true },
+      inventory_id: { type: DataTypes.STRING(120), allowNull: true },
 
       author_id: {
         type: DataTypes.INTEGER,
@@ -77,6 +79,7 @@ export default (sequelize) => {
         { fields: ["home_id"] },
         { fields: ["host_id"] },
         { fields: ["guest_id"] },
+        { fields: ["inventory_type", "inventory_id"] },
         { fields: ["author_id"] },
         { fields: ["status"] },
       ],

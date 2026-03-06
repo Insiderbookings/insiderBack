@@ -10,6 +10,7 @@ import webbedsCitiesSyncJob from "./webbedsCitiesSync.job.js";
 import webbedsHotelsUpdatedSyncJob from "./webbedsHotelsUpdatedSync.job.js";
 import webbedsHotelsNewSyncJob from "./webbedsHotelsNewSync.job.js";
 import webbedsHotelsFullSyncJob from "./webbedsHotelsFullSync.job.js";
+import reviewReminderPushJob from "./reviewReminderPush.job.js";
 
 const registry = [
   demoLogJob,
@@ -24,6 +25,7 @@ const registry = [
   webbedsHotelsUpdatedSyncJob,
   webbedsHotelsNewSyncJob,
   webbedsHotelsFullSyncJob,
+  reviewReminderPushJob,
 ];
 
 export const JOB_DEFINITIONS = registry.map((job) => ({

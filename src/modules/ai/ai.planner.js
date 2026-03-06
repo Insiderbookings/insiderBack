@@ -5,6 +5,8 @@ export const INTENTS = {
   HELP: "HELP",
   SMALL_TALK: "SMALL_TALK",
   TRIP: "TRIP",
+  PLANNING: "PLANNING",
+  LOCATION: "LOCATION",
 };
 
 export const NEXT_ACTIONS = {
@@ -13,6 +15,8 @@ export const NEXT_ACTIONS = {
   ASK_FOR_GUESTS: "ASK_FOR_GUESTS",
   RUN_SEARCH: "RUN_SEARCH",
   RUN_TRIP: "RUN_TRIP",
+  RUN_PLANNING: "RUN_PLANNING",
+  RUN_LOCATION: "RUN_LOCATION",
   HELP: "HELP",
   SMALL_TALK: "SMALL_TALK",
 };
@@ -148,6 +152,10 @@ export const buildPlanOutcome = ({ state, plan }) => {
   let nextAction = NEXT_ACTIONS.SMALL_TALK;
   if (intent === INTENTS.HELP) {
     nextAction = NEXT_ACTIONS.HELP;
+  } else if (intent === INTENTS.PLANNING) {
+    nextAction = NEXT_ACTIONS.RUN_PLANNING;
+  } else if (intent === INTENTS.LOCATION) {
+    nextAction = NEXT_ACTIONS.RUN_LOCATION;
   } else if (intent === INTENTS.SEARCH) {
     if (missing.includes("DESTINATION")) {
       nextAction = NEXT_ACTIONS.ASK_FOR_DESTINATION;
@@ -183,6 +191,8 @@ export const updateStageFromAction = (state, nextAction) => {
     next.stage = STAGES.SHOW_RESULTS;
   } else if (nextAction === NEXT_ACTIONS.RUN_TRIP) {
     next.stage = STAGES.TRIP_ASSIST;
+  } else if (nextAction === NEXT_ACTIONS.RUN_PLANNING || nextAction === NEXT_ACTIONS.RUN_LOCATION) {
+    // Planning/Location: keep current stage; no search, just conversational reply
   }
   return next;
 };
