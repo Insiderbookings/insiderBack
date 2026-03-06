@@ -110,6 +110,7 @@ import ChatParticipantModel from "./ChatParticipant.js";
 import ChatMessageModel from "./ChatMessage.js";
 import ChatAutoPromptModel from "./ChatAutoPrompt.js";
 import ReviewModel from "./Review.js";
+import ReviewReminderLogModel from "./ReviewReminderLog.js";
 import AiChatSessionModel from "./AiChatSession.js";
 import AiChatMessageModel from "./AiChatMessage.js";
 import SupportTicketModel from "./SupportTicket.js";
@@ -242,6 +243,7 @@ const models = {
   Contract: ContractFactory(sequelize),
   UserContract: UserContractFactory(sequelize),
   Review: ReviewModel(sequelize),
+  ReviewReminderLog: ReviewReminderLogModel(sequelize),
 
   SupportTicket: SupportTicketModel(sequelize),
   SupportTicketAssignee: SupportTicketAssigneeModel(sequelize),

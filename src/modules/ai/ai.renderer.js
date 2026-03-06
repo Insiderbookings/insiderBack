@@ -201,6 +201,158 @@ const getTopInventoryPicks = (inventory, max = 5) => {
   return source.slice(0, max);
 };
 
+const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+const getItemRating = (item) =>
+  toNum(item?.reviewScore ?? item?.rating ?? item?.stars ?? item?.starRating ?? item?.classification?.code ?? item?.hotelDetails?.rating) ?? 0;
+const getItemPrice = (item) =>
+  toNum(item?.pricePerNight ?? item?.price ?? item?.nightlyRate) ?? 999999;
+const getItemCoords = (item) => {
+  const lat = toNum(
+    item?.latitude ?? item?.lat ?? item?.locationLat ?? item?.location?.lat ?? item?.geoPoint?.lat
+    ?? item?.full_address?.latitude ?? item?.hotelDetails?.latitude ?? item?.hotelDetails?.lat
+  );
+  const lng = toNum(
+    item?.longitude ?? item?.lng ?? item?.locationLng ?? item?.location?.lng ?? item?.geoPoint?.lng
+    ?? item?.full_address?.longitude ?? item?.hotelDetails?.longitude ?? item?.hotelDetails?.lng
+  );
+  return lat != null && lng != null ? { lat, lng } : null;
+};
+const distanceKm = (a, b) => {
+  if (!a?.lat || !a?.lng || !b?.lat || !b?.lng) return null;
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+};
+
+/** Catalog of recommendation reasons (≥10). Categories: rating, priceQuality, location, general. */
+const PICK_REASON_CATALOG = {
+  rating: [
+    { es: "Mayor valoración", en: "Top rated" },
+    { es: "Mejor puntuado", en: "Highest rated" },
+    { es: "Destacado por reseñas", en: "Rated by guests" },
+    { es: "Muy bien valorado", en: "Highly rated" },
+    { es: "Excelente puntuación", en: "Excellent rating" },
+  ],
+  priceQuality: [
+    { es: "Precio/calidad", en: "Price/quality" },
+    { es: "Mejor relación precio-calidad", en: "Best value" },
+    { es: "Buena relación calidad-precio", en: "Great value" },
+    { es: "Precio justo para lo que ofrece", en: "Fair price" },
+    { es: "Oferta destacada", en: "Standout deal" },
+  ],
+  location: [
+    { es: "Cerca del centro", en: "Near the center" },
+    { es: "Buena ubicación", en: "Great location" },
+    { es: "Bien ubicado", en: "Well located" },
+    { es: "Zona céntrica", en: "Central area" },
+    { es: "Ubicación privilegiada", en: "Prime location" },
+  ],
+  general: [
+    { es: "Recomendado", en: "Recommended" },
+    { es: "Recomendación BookingGPT", en: "BookingGPT pick" },
+    { es: "Opción destacada", en: "Featured option" },
+    { es: "Una de nuestras favoritas", en: "One of our favorites" },
+    { es: "Ideal para tu búsqueda", en: "Ideal for your search" },
+  ],
+};
+
+const pickReasonFromCatalog = (category, language, seed) => {
+  const list = PICK_REASON_CATALOG[category];
+  if (!list?.length) return language === "es" ? "Recomendado" : "Recommended";
+  const idx = Math.abs(seed) % list.length;
+  const row = list[idx];
+  return language === "es" ? row.es : row.en;
+};
+
+/** Picks 5 items: 2 by rating, 2 by price/quality, 1 extra (e.g. near center). Uses catalog to choose reason labels per call. */
+const getTopInventoryPicksByCategory = (inventory, plan, language, seed = 0) => {
+  const hotels = Array.isArray(inventory?.hotels) ? inventory.hotels : [];
+  const homes = Array.isArray(inventory?.homes) ? inventory.homes : [];
+  const source = hotels.length ? hotels : homes;
+  if (!source.length) return [];
+
+  const isSpanish = language === "es";
+  const destStr = [plan?.location?.city, plan?.location?.country].filter(Boolean).join(" ") || "default";
+  const seedNum = seed + (destStr.length * 31) + (destStr.charCodeAt(0) ?? 0);
+
+  const usedIds = new Set();
+  const take = (list, n, sortFn) => {
+    return list
+      .filter((x) => !usedIds.has(String(x.id || x.hotelCode || "")))
+      .sort(sortFn)
+      .slice(0, n)
+      .map((item) => {
+        usedIds.add(String(item.id || item.hotelCode || ""));
+        return item;
+      });
+  };
+
+  let center = null;
+  if (plan?.location?.lat != null && plan?.location?.lng != null) {
+    center = { lat: Number(plan.location.lat), lng: Number(plan.location.lng) };
+  } else {
+    const coordsList = source.map((item) => getItemCoords(item)).filter(Boolean);
+    if (coordsList.length >= 2) {
+      const sumLat = coordsList.reduce((a, c) => a + c.lat, 0);
+      const sumLng = coordsList.reduce((a, c) => a + c.lng, 0);
+      center = { lat: sumLat / coordsList.length, lng: sumLng / coordsList.length };
+    }
+  }
+
+  const byRating = [...source].sort((a, b) => getItemRating(b) - getItemRating(a));
+  const byPriceQuality = [...source].sort((a, b) => {
+    const rA = getItemRating(a) || 1;
+    const rB = getItemRating(b) || 1;
+    const pA = getItemPrice(a) || 1;
+    const pB = getItemPrice(b) || 1;
+    const scoreA = rA / Math.max(pA / 100, 0.01);
+    const scoreB = rB / Math.max(pB / 100, 0.01);
+    return scoreB - scoreA;
+  });
+
+  const out = [];
+
+  const topRated2 = take(byRating, 2, (a, b) => getItemRating(b) - getItemRating(a));
+  const reasonRating = pickReasonFromCatalog("rating", language, seedNum + 1);
+  topRated2.forEach((item) => out.push({ item, pickReason: reasonRating }));
+
+  const priceQuality2 = take(byPriceQuality, 2, (a, b) => {
+    const sA = (getItemRating(a) || 1) / Math.max(getItemPrice(a) / 100 || 0.01, 0.01);
+    const sB = (getItemRating(b) || 1) / Math.max(getItemPrice(b) / 100 || 0.01, 0.01);
+    return sB - sA;
+  });
+  const reasonPriceQuality = pickReasonFromCatalog("priceQuality", language, seedNum + 2);
+  priceQuality2.forEach((item) => out.push({ item, pickReason: reasonPriceQuality }));
+
+  const remaining = source.filter((x) => !usedIds.has(String(x.id || x.hotelCode || "")));
+  let extra = null;
+  if (remaining.length) {
+    const withCoords = remaining.map((item) => ({ item, coords: getItemCoords(item) })).filter((x) => x.coords);
+    if (center && withCoords.length) {
+      const withDist = withCoords
+        .map(({ item, coords }) => ({ item, d: distanceKm(coords, center) }))
+        .filter((x) => x.d != null)
+        .sort((a, b) => a.d - b.d);
+      if (withDist.length) {
+        extra = {
+          item: withDist[0].item,
+          pickReason: pickReasonFromCatalog("location", language, seedNum + 3),
+        };
+      }
+    }
+    if (!extra) {
+      const next = remaining.sort((a, b) => getItemRating(b) - getItemRating(a))[0];
+      usedIds.add(String(next.id || next.hotelCode || ""));
+      extra = { item: next, pickReason: pickReasonFromCatalog("general", language, seedNum + 4) };
+    }
+  }
+  if (extra) out.push(extra);
+
+  return out.slice(0, 5);
+};
+
 const decodeHtmlEntities = (str) => {
   if (!str) return null;
   return String(str)
@@ -222,12 +374,23 @@ const extractImageUrls = (item, max = 4) => {
     (Array.isArray(item?.images) && item.images) ||
     (Array.isArray(item?.hotelDetails?.images) && item.hotelDetails.images) ||
     [];
-  const urls = imgs
-    .map((img) => (typeof img === "string" ? img : img?.url ?? null))
-    .filter(Boolean)
-    .slice(0, max);
-  if (!urls.length && item?.coverImage) urls.push(item.coverImage);
-  if (!urls.length && item?.image) urls.push(item.image);
+  const seen = new Set();
+  const urls = [];
+  for (const img of imgs) {
+    const url = typeof img === "string" ? img : img?.url ?? null;
+    if (url && !seen.has(url)) {
+      seen.add(url);
+      urls.push(url);
+      if (urls.length >= max) break;
+    }
+  }
+  if (urls.length < max && item?.coverImage && !seen.has(item.coverImage)) {
+    urls.push(item.coverImage);
+    seen.add(item.coverImage);
+  }
+  if (urls.length < max && item?.image && !seen.has(item.image)) {
+    urls.push(item.image);
+  }
   return urls;
 };
 
@@ -282,7 +445,15 @@ const buildFilterContext = (plan, language) => {
   return parts.length ? parts : null;
 };
 
-const buildHotelPickSection = (item) => {
+const buildAppreciationLine = (pickReason, language) => {
+  if (!pickReason || !String(pickReason).trim()) return null;
+  const isSpanish = language === "es";
+  return isSpanish
+    ? `Lo destacamos por ${String(pickReason).trim()}.`
+    : `We highlight it for ${String(pickReason).trim()}.`;
+};
+
+const buildHotelPickSection = (item, pickReason = null, language = "es") => {
   if (!item) return null;
   const id = String(item.id || item.hotelCode || "");
   if (!id) return null;
@@ -305,6 +476,7 @@ const buildHotelPickSection = (item) => {
     item?.shortDescription || item?.description ||
     item?.hotelDetails?.shortDescription || item?.hotelDetails?.description || "";
   const description = clampText(decodeHtmlEntities(rawDescription) || (location ? `Located in ${location}.` : ""), 450);
+  const shortDescription = description ? clampText(description, 180) : null;
   const stars = normalizeStars(
     item?.stars ?? item?.rating ?? item?.classification?.code ??
     item?.reviewScore ?? item?.hotelDetails?.rating ?? item?.hotelPayload?.rating
@@ -313,23 +485,31 @@ const buildHotelPickSection = (item) => {
   const images = extractImageUrls(item, 4);
   const priceFrom = item?.pricePerNight ?? item?.price ?? null;
   const currency = item?.currency || "USD";
+  const amenityLabels = pickAmenityLabels(item, 6);
+  const characteristics = (amenityLabels && amenityLabels.length ? amenityLabels : amenities).slice(0, 5);
+  const appreciation = buildAppreciationLine(pickReason, language);
   return {
     type: "hotelPick",
     id,
     name: clampText(name, 80),
     description,
+    shortDescription: shortDescription || description,
     location,
     address,
     stars,
     amenities,
+    characteristics,
+    appreciation: appreciation || null,
     images,
     priceFrom: Number.isFinite(Number(priceFrom)) ? Number(priceFrom) : null,
     currency,
+    pickReason: pickReason && String(pickReason).trim() ? String(pickReason).trim() : null,
   };
 };
 
 const buildStructuredSearchReply = ({ inventory, plan, language, seed, userName }) => {
-  const picks = getTopInventoryPicks(inventory, 5);
+  const picksWithReasons = getTopInventoryPicksByCategory(inventory, plan, language, seed ?? 0);
+  const picks = picksWithReasons.length ? picksWithReasons : getTopInventoryPicks(inventory, 5).map((item) => ({ item, pickReason: null }));
   if (!picks.length) return null;
 
   const isSpanish = language === "es";
@@ -411,11 +591,11 @@ const buildStructuredSearchReply = ({ inventory, plan, language, seed, userName 
 
   const intro = pickVariant(introVariants) || introVariants[0];
   const outro = pickVariant(outroVariants) || outroVariants[0];
-  const sections = picks.map(buildHotelPickSection).filter(Boolean);
+  const sections = picks.map((p) => buildHotelPickSection(p.item, p.pickReason, language)).filter(Boolean);
   return { intro, outro, sections };
 };
 
-export const renderAssistantPayload = async ({ plan, messages, inventory, nextAction, trip, tripContext, userContext, weather, missing = [], visualContext }) => {
+export const renderAssistantPayload = async ({ plan, messages, inventory, nextAction, trip, tripContext, userContext, weather, missing = [], visualContext, assumedSearchDefaults = false }) => {
   const baseLanguage = normalizeLanguage(plan);
   const language = detectLanguageFromMessages(messages, baseLanguage);
   // Force the assistant to reply in the user's language (based on the latest user message),
@@ -503,6 +683,12 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
     });
     if (structuredReply) {
       replyText = structuredReply.intro;
+      if (assumedSearchDefaults) {
+        const assumptionLine = language === "es"
+          ? "Asumí fechas de mañana a pasado y 1 huésped; si querés cambiarlos decime. "
+          : "I assumed tomorrow–day after and 1 guest; say if you want to change them. ";
+        replyText = assumptionLine + replyText;
+      }
       followUps = [];
       searchSections = [
         ...structuredReply.sections,
@@ -521,18 +707,48 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
       replyText = (replyPayload?.reply || "").trim();
       followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
     }
+  } else if (nextAction === NEXT_ACTIONS.RUN_PLANNING || nextAction === NEXT_ACTIONS.RUN_LOCATION) {
+    const replyMode = nextAction === NEXT_ACTIONS.RUN_PLANNING ? "planning" : "location";
+    try {
+      const replyPayload = await generateAssistantReply({
+        plan,
+        messages,
+        inventory,
+        trip,
+        tripContext,
+        userContext,
+        weather,
+        replyMode,
+      });
+      replyText = (replyPayload?.reply || "").trim();
+      followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
+    } catch (planLocErr) {
+      console.warn("[ai.renderer] planning/location reply failed", planLocErr?.message || planLocErr);
+      replyText = language === "es"
+        ? "Puedo ayudarte a planificar tu viaje o contarte sobre un destino. Decime destino y fechas (o flexibilidad) y arranco."
+        : "I can help you plan your trip or tell you about a destination. Share your destination and dates (or flexibility) to get started.";
+      followUps = [];
+    }
   } else {
-    const replyPayload = await generateAssistantReply({
-      plan,
-      messages,
-      inventory,
-      trip,
-      tripContext,
-      userContext,
-      weather,
-    });
-    replyText = (replyPayload?.reply || "").trim();
-    followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
+    try {
+      const replyPayload = await generateAssistantReply({
+        plan,
+        messages,
+        inventory,
+        trip,
+        tripContext,
+        userContext,
+        weather,
+      });
+      replyText = (replyPayload?.reply || "").trim();
+      followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
+    } catch (genErr) {
+      console.warn("[ai.renderer] generateAssistantReply failed", genErr?.message || genErr);
+      replyText = language === "es"
+        ? "No pude procesar eso ahora. Probá de nuevo en un momento o reformulá el mensaje."
+        : "I couldn’t process that right now. Try again in a moment or rephrase your message.";
+      followUps = [];
+    }
   }
 
   if (!replyText) {
