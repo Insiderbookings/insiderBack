@@ -13,6 +13,7 @@ import {
   getAssistantSessionWithMessages,
   listAssistantSessionsForUser,
 } from "../services/aiAssistantHistory.service.js";
+import { isContentAllowed, CONTENT_NOT_ALLOWED_CODE } from "../services/aiContentModeration.service.js";
 
 const QUICK_START_PROMPTS = [
   "Show me hotels for 4 people in downtown Cordoba with parking for the third week of January.",
@@ -126,15 +127,129 @@ const sanitizeRecentChats = (value) => {
     .filter(Boolean);
 };
 
+const CONTEXT_STRING_MAX = {
+  now: 80,
+  localDate: 80,
+  localTime: 40,
+  localWeekday: 40,
+  timeZone: 60,
+  locale: 40,
+  userName: 60,
+  userRole: 20,
+  userLanguage: 20,
+  userCity: 80,
+  userCountry: 80,
+  locationCity: 80,
+  locationCountry: 80,
+  tripSummary: 500,
+  tripStayName: 120,
+  tripLocationText: 120,
+  confirmedWhere: 200,
+  confirmedWhen: 100,
+  confirmedWho: 100,
+  nationalityCode: 20,
+  residenceCode: 20,
+};
+
+const truncate = (val, maxLen) => {
+  if (val == null) return undefined;
+  const s = typeof val === "string" ? val.trim() : String(val).trim();
+  if (!s) return undefined;
+  return s.slice(0, maxLen);
+};
+
 const sanitizeContextPayload = (value) => {
   if (value == null) return null;
   if (typeof value !== "object" || Array.isArray(value)) {
     throw buildInvalidPayloadError("context must be an object.");
   }
-  const next = { ...value };
-  if (Object.prototype.hasOwnProperty.call(next, "recentChats")) {
-    next.recentChats = sanitizeRecentChats(next.recentChats);
+  const raw = value;
+  const next = {};
+
+  if (Object.prototype.hasOwnProperty.call(raw, "recentChats")) {
+    next.recentChats = sanitizeRecentChats(raw.recentChats);
   }
+  const setStr = (key, max) => {
+    const v = truncate(raw[key], max);
+    if (v !== undefined) next[key] = v;
+  };
+  if (raw.now != null) setStr("now", CONTEXT_STRING_MAX.now);
+  if (raw.localDate != null) setStr("localDate", CONTEXT_STRING_MAX.localDate);
+  if (raw.localTime != null) setStr("localTime", CONTEXT_STRING_MAX.localTime);
+  if (raw.localWeekday != null) setStr("localWeekday", CONTEXT_STRING_MAX.localWeekday);
+  if (raw.timeZone != null) setStr("timeZone", CONTEXT_STRING_MAX.timeZone);
+  if (raw.locale != null) setStr("locale", CONTEXT_STRING_MAX.locale);
+
+  if (raw.passengerNationality != null) {
+    const v = typeof raw.passengerNationality === "object" ? raw.passengerNationality?.code ?? raw.passengerNationality : raw.passengerNationality;
+    const s = truncate(String(v), CONTEXT_STRING_MAX.nationalityCode);
+    if (s !== undefined) next.passengerNationality = s;
+  }
+  if (raw.passengerCountryOfResidence != null) {
+    const v = typeof raw.passengerCountryOfResidence === "object" ? raw.passengerCountryOfResidence?.code ?? raw.passengerCountryOfResidence : raw.passengerCountryOfResidence;
+    const s = truncate(String(v), CONTEXT_STRING_MAX.residenceCode);
+    if (s !== undefined) next.passengerCountryOfResidence = s;
+  }
+  if (raw.nationality != null) {
+    const v = typeof raw.nationality === "object" ? raw.nationality?.code ?? raw.nationality : raw.nationality;
+    const s = truncate(String(v), CONTEXT_STRING_MAX.nationalityCode);
+    if (s !== undefined) next.nationality = s;
+  }
+  if (raw.residence != null) {
+    const v = typeof raw.residence === "object" ? raw.residence?.code ?? raw.residence : raw.residence;
+    const s = truncate(String(v), CONTEXT_STRING_MAX.residenceCode);
+    if (s !== undefined) next.residence = s;
+  }
+
+  if (raw.user != null && typeof raw.user === "object") {
+    const u = raw.user;
+    next.user = {};
+    if (u.name != null) next.user.name = truncate(u.name, CONTEXT_STRING_MAX.userName);
+    if (u.role != null) next.user.role = truncate(u.role, CONTEXT_STRING_MAX.userRole);
+    if (u.language != null) next.user.language = truncate(u.language, CONTEXT_STRING_MAX.userLanguage);
+    if (u.id != null) next.user.id = truncate(String(u.id), 24);
+    if (u.city != null) next.user.city = truncate(u.city, CONTEXT_STRING_MAX.userCity);
+    if (u.country != null) next.user.country = truncate(u.country, CONTEXT_STRING_MAX.userCountry);
+    if (Object.keys(next.user).length === 0) delete next.user;
+  }
+  if (raw.location != null && typeof raw.location === "object") {
+    const loc = raw.location;
+    next.location = {};
+    if (loc.city != null) next.location.city = truncate(loc.city, CONTEXT_STRING_MAX.locationCity);
+    if (loc.country != null) next.location.country = truncate(loc.country, CONTEXT_STRING_MAX.locationCountry);
+    if (Object.keys(next.location).length === 0) delete next.location;
+  }
+  if (raw.confirmedSearch != null && typeof raw.confirmedSearch === "object") {
+    const cs = raw.confirmedSearch;
+    next.confirmedSearch = {};
+    if (cs.where != null) next.confirmedSearch.where = truncate(cs.where, CONTEXT_STRING_MAX.confirmedWhere);
+    if (cs.when != null) next.confirmedSearch.when = truncate(cs.when, CONTEXT_STRING_MAX.confirmedWhen);
+    if (cs.who != null) next.confirmedSearch.who = truncate(cs.who, CONTEXT_STRING_MAX.confirmedWho);
+    if (Object.keys(next.confirmedSearch).length === 0) delete next.confirmedSearch;
+  }
+  if (raw.trip != null && typeof raw.trip === "object") {
+    const t = raw.trip;
+    next.trip = {};
+    if (t.summary != null) next.trip.summary = truncate(t.summary, CONTEXT_STRING_MAX.tripSummary);
+    if (t.stayName != null) next.trip.stayName = truncate(t.stayName, CONTEXT_STRING_MAX.tripStayName);
+    if (t.locationText != null) next.trip.locationText = truncate(t.locationText, CONTEXT_STRING_MAX.tripLocationText);
+    if (t.bookingId != null) next.trip.bookingId = truncate(String(t.bookingId), 24);
+    if (t.imageUrl != null) next.trip.imageUrl = truncate(String(t.imageUrl), 512);
+    if (t.location != null && typeof t.location === "object") next.trip.location = t.location;
+    if (t.dates != null && typeof t.dates === "object") next.trip.dates = t.dates;
+    if (t.guests != null && typeof t.guests === "object") next.trip.guests = t.guests;
+    if (Object.keys(next.trip).length === 0) delete next.trip;
+  }
+  if (raw.tripContext != null && typeof raw.tripContext === "object") {
+    const t = raw.tripContext;
+    next.tripContext = {};
+    if (t.summary != null) next.tripContext.summary = truncate(t.summary, CONTEXT_STRING_MAX.tripSummary);
+    if (t.stayName != null) next.tripContext.stayName = truncate(t.stayName, CONTEXT_STRING_MAX.tripStayName);
+    if (t.locationText != null) next.tripContext.locationText = truncate(t.locationText, CONTEXT_STRING_MAX.tripLocationText);
+    if (Object.keys(next.tripContext).length === 0) delete next.tripContext;
+  }
+  if (raw.weather != null && typeof raw.weather === "object") next.weather = raw.weather;
+
   let serialized = "";
   try {
     serialized = JSON.stringify(next) || "";
@@ -263,6 +378,16 @@ export const handleAiChat = async (req, res) => {
   let { conversationId, incomingMessage, limits, context, uiEvent } = requestPayload;
   if (!incomingMessage && !uiEvent) {
     return res.status(400).json({ error: "message is required", code: "AI_INVALID_PAYLOAD" });
+  }
+
+  if (incomingMessage) {
+    const moderation = isContentAllowed(incomingMessage);
+    if (!moderation.allowed) {
+      return res.status(400).json({
+        error: "Your message contains content that is not allowed. Please keep the conversation respectful.",
+        code: CONTENT_NOT_ALLOWED_CODE,
+      });
+    }
   }
 
   try {

@@ -14,7 +14,7 @@ const debugTripHub = (...args) => {
   console.log("[tripHub.debug]", ...args);
 };
 
-const summarizeReply = (value, previewLength = 140) => {
+const summarizeReply = (value, previewLength = 40) => {
   const text = typeof value === "string" ? value : "";
   const trimmed = text.trim();
   const invisibleMatches = text.match(/[\u200B-\u200D\uFEFF]/g);
@@ -22,7 +22,7 @@ const summarizeReply = (value, previewLength = 140) => {
     len: text.length,
     trimmedLen: trimmed.length,
     invisibleCount: invisibleMatches ? invisibleMatches.length : 0,
-    preview: text.slice(0, previewLength),
+    preview: trimmed.slice(0, previewLength),
   };
 };
 
