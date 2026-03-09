@@ -48,11 +48,91 @@ const DEFAULT_STATE = {
     lastSearchId: null,
     shownIds: [],
   },
+  lastSearchParams: null,
+  lastShownInventorySummary: null,
   locks: {
     bookingFlowLocked: false,
   },
   searchPlan: null,
   tripContext: null,
+};
+
+const MAX_LAST_SHOWN_ITEMS = 20;
+
+const normalizeLastSearchParams = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const loc = value.location && typeof value.location === "object" ? value.location : {};
+  const dates = value.dates && typeof value.dates === "object" ? value.dates : {};
+  const guests = value.guests && typeof value.guests === "object" ? value.guests : {};
+  return {
+    location: {
+      city: normalizeString(loc.city),
+      state: normalizeString(loc.state),
+      country: normalizeString(loc.country),
+      lat: normalizeNumber(loc.lat),
+      lng: normalizeNumber(loc.lng ?? loc.lon),
+    },
+    dates: {
+      checkIn: normalizeString(dates.checkIn),
+      checkOut: normalizeString(dates.checkOut),
+      flexible: typeof dates.flexible === "boolean" ? dates.flexible : true,
+    },
+    guests: {
+      adults: normalizeNumber(guests.adults ?? guests.total),
+      children: normalizeNumber(guests.children),
+    },
+    filters: {
+      amenities: normalizeArray(value.filters?.amenities),
+      sortBy: normalizeString(value.filters?.sortBy ?? value.sortBy),
+    },
+  };
+};
+
+const normalizeInventorySummaryItem = (item, type) => {
+  if (!item || typeof item !== "object") return null;
+  const id = item.id != null ? String(item.id) : null;
+  if (!id) return null;
+  const name = normalizeString(item.name ?? item.title ?? "");
+  const city = normalizeString(item.city ?? "");
+  const amenities = Array.isArray(item.amenities)
+    ? item.amenities.slice(0, 50).map((a) => (typeof a === "string" ? a : a?.name ?? String(a)))
+    : [];
+  const descriptions = Array.isArray(item.descriptions)
+    ? item.descriptions.slice(0, 8).map((entry) => (typeof entry === "string" ? entry : String(entry)))
+    : [];
+  const out = {
+    id,
+    name: name || id,
+    city,
+    displayOrder: normalizeNumber(item.displayOrder ?? item.rank ?? item.order),
+    pricePerNight: normalizeNumber(item.pricePerNight ?? item.price_per_night),
+    currency: normalizeString(item.currency) || "USD",
+    amenities,
+    descriptions,
+  };
+  if (type === "hotel") {
+    out.stars = normalizeString(item.stars ?? item.classification?.name ?? null) || null;
+  }
+  if (typeof item.shortReason === "string" && item.shortReason.trim()) {
+    out.shortReason = item.shortReason.trim();
+  }
+  return out;
+};
+
+const normalizeLastShownInventorySummary = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const at = normalizeString(value.at) || null;
+  const searchId = normalizeString(value.searchId ?? value.lastSearchId) || null;
+  const hotels = (Array.isArray(value.hotels) ? value.hotels : [])
+    .slice(0, MAX_LAST_SHOWN_ITEMS)
+    .map((h) => normalizeInventorySummaryItem(h, "hotel"))
+    .filter(Boolean);
+  const homes = (Array.isArray(value.homes) ? value.homes : [])
+    .slice(0, MAX_LAST_SHOWN_ITEMS)
+    .map((h) => normalizeInventorySummaryItem(h, "home"))
+    .filter(Boolean);
+  if (!hotels.length && !homes.length) return null;
+  return { at, searchId, hotels, homes };
 };
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -129,6 +209,9 @@ const normalizeState = (state) => {
   next.lastResultsContext = { ...base.lastResultsContext, ...(state.lastResultsContext || {}) };
   next.lastResultsContext.lastSearchId = normalizeString(next.lastResultsContext.lastSearchId);
   next.lastResultsContext.shownIds = normalizeArray(next.lastResultsContext.shownIds);
+
+  next.lastSearchParams = normalizeLastSearchParams(state.lastSearchParams) || null;
+  next.lastShownInventorySummary = normalizeLastShownInventorySummary(state.lastShownInventorySummary) || null;
 
   next.locks = { ...base.locks, ...(state.locks || {}) };
   next.locks.bookingFlowLocked = Boolean(next.locks.bookingFlowLocked);

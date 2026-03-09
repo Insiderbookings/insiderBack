@@ -3908,9 +3908,18 @@ components:
           format: email
     GoogleExchangeRequest:
       type: object
-      required: [code]
       properties:
         code:
+          type: string
+          description: Google authorization code for legacy/web PKCE exchange.
+        idToken:
+          type: string
+          description: Native Google Sign-In ID token verified directly by backend.
+        redirectUri:
+          type: string
+        codeVerifier:
+          type: string
+        clientId:
           type: string
     AppleExchangeRequest:
       type: object
