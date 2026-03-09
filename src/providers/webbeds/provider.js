@@ -1423,18 +1423,27 @@ export class WebbedsProvider extends HotelProvider {
       requestAttributes,
     })
 
+    const isFromAssistant = req && typeof req.id === "string" && req.id.startsWith("assistant-hotels")
+    const sourceTag = isFromAssistant ? "[webbeds][CHAT]" : "[webbeds][SEARCH]"
+
     if (verboseLogs) {
-      console.log("[webbeds] --- request build start ---")
-      console.log("[webbeds] payload:", JSON.stringify(payload, null, 2))
-      console.log("[webbeds] request attributes:", requestAttributes)
-      console.log("[webbeds] request XML:", requestXml)
-      console.log("[webbeds] --- request build end ---")
+      console.log(`${sourceTag} --- request build start ---`)
+      console.log(`${sourceTag} payload:`, JSON.stringify(payload, null, 2))
+      console.log(`${sourceTag} request attributes:`, requestAttributes)
+      console.log(`${sourceTag} request XML:`, requestXml)
+      console.log(`${sourceTag} --- request build end ---`)
     }
 
-    const { result } = await this.client.send("searchhotels", payload, {
+    const { result, responseXml } = await this.client.send("searchhotels", payload, {
       requestId: this.getRequestId(req),
       requestAttributes,
     })
+
+    if (verboseLogs && responseXml) {
+      console.log(`${sourceTag} --- response XML start ---`)
+      console.log(`${sourceTag} response XML:`, responseXml)
+      console.log(`${sourceTag} --- response XML end ---`)
+    }
 
     return mapSearchHotelsResponse(result)
   }

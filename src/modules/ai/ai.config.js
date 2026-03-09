@@ -26,7 +26,7 @@ export const AI_FLAGS = {
 };
 
 export const AI_LIMITS = {
-  maxResults: Math.max(1, Math.min(20, parseNumber(process.env.AI_MAX_RESULTS, 5))),
+  maxResults: Math.max(1, Math.min(50, parseNumber(process.env.AI_MAX_RESULTS, 20))),
   maxMessages: Math.max(10, Math.min(200, parseNumber(process.env.AI_MAX_MESSAGES, 60))),
   maxToolsPerTurn: Math.max(1, Math.min(5, parseNumber(process.env.AI_MAX_TOOLS_PER_TURN, 3))),
 };

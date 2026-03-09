@@ -4,9 +4,16 @@ const ensureArray = (value) => {
 };
 
 const extractTextList = (node, entryKey) => {
+  if (!node) return [];
+  if (Array.isArray(node)) {
+    return node
+      .map((entry) => (typeof entry === "string" ? entry : entry?.["#text"] ?? entry?.text ?? entry?.name ?? null))
+      .filter(Boolean);
+  }
   const languages = ensureArray(node?.language ?? node);
   const collected = [];
   languages.forEach((languageNode) => {
+    if (!languageNode || typeof languageNode !== "object") return;
     const entries = ensureArray(languageNode?.[entryKey]);
     entries.forEach((entry) => {
       if (!entry) return;
@@ -53,9 +60,22 @@ const extractImages = (imagesPayload, limit = null) => {
   return normalized.slice(0, safeLimit);
 };
 
+const AMENITY_ENTRY_KEYS = {
+  amenitieItem: ["amenitieItem", "amenityItem"],
+  leisureItem: ["leisureItem"],
+  businessItem: ["businessItem"],
+};
+
 const extractAmenities = (node, categoryName) => {
-  const list = extractTextList(node, categoryName === "amenitieItem" ? "amenitieItem" : (categoryName === "leisureItem" ? "leisureItem" : "businessItem"));
-  return list.map(name => ({ name, category: categoryName === "amenitieItem" ? "General" : (categoryName === "leisureItem" ? "Leisure" : "Business") }));
+  const keyGroup = categoryName === "amenitieItem" ? "amenitieItem" : (categoryName === "leisureItem" ? "leisureItem" : "businessItem");
+  const keys = AMENITY_ENTRY_KEYS[keyGroup] || [keyGroup];
+  let list = [];
+  for (const key of keys) {
+    list = extractTextList(node, key);
+    if (list.length) break;
+  }
+  const categoryLabel = categoryName === "amenitieItem" ? "General" : (categoryName === "leisureItem" ? "Leisure" : "Business");
+  return list.map(name => ({ name, category: categoryLabel }));
 };
 
 const extractShortDescription = (descriptions) => {
@@ -100,12 +120,12 @@ export const formatStaticHotel = (hotel, options = {}) => {
   if (!hotel) return null;
   const plain = hotel.get ? hotel.get({ plain: true }) : hotel;
   const compact = Boolean(options?.compact);
-  const coverImage = pickCoverImage(plain.images);
   const shortDescription = extractShortDescription(plain.descriptions);
   const imageLimitRaw = options?.imageLimit;
   const imageLimitValue = imageLimitRaw == null ? null : Number(imageLimitRaw);
   const imageLimit = Number.isFinite(imageLimitValue) ? imageLimitValue : null;
   const allImages = extractImages(plain.images, imageLimit);
+  const coverImage = pickCoverImage(plain.images) || (allImages[0]?.url ? allImages[0].url : null);
 
   const amenitiesGeneral = extractAmenities(plain.amenities, "amenitieItem");
   const amenitiesLeisure = extractAmenities(plain.leisure, "leisureItem");

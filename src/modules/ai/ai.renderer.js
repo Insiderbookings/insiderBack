@@ -7,8 +7,32 @@ const DEFAULT_TONE = "neutral";
 const normalizeLanguage = (plan) => {
   const lang = typeof plan?.language === "string" ? plan.language.toLowerCase() : "";
   if (lang.startsWith("es")) return "es";
+  if (lang.startsWith("pt")) return "pt";
   if (lang.startsWith("en")) return "en";
   return AI_DEFAULTS.language || "es";
+};
+
+const copyForLanguage = (language, values = {}) =>
+  values?.[language] || values?.en || values?.es || "";
+
+const localeForLanguage = (language) => {
+  if (language === "es") return "es-ES";
+  if (language === "pt") return "pt-BR";
+  return "en-US";
+};
+
+const normalizeDisplayCurrencyCode = (value) => {
+  const raw = String(value || "USD").trim().toUpperCase();
+  if (!raw) return "USD";
+  if (/^\d+$/.test(raw)) {
+    if (raw === "520" || raw === "840") return "USD";
+    if (raw === "978") return "EUR";
+    if (raw === "826") return "GBP";
+    if (raw === "124") return "CAD";
+    if (raw === "036" || raw === "36") return "AUD";
+    return "USD";
+  }
+  return raw.slice(0, 3) || "USD";
 };
 
 /**
@@ -32,7 +56,10 @@ const detectLanguageFromMessages = (messages, fallback) => {
   const spanishHints = [
     " hola ", " gracias", " por favor", " necesito", " buscar", " alojamiento",
     " casa ", " hotel ", " habitaciones", " quiero", " viajar", " reservar",
-    " dónde", " cuándo", " cuantos", " personas", " fechas",
+    " donde", " dónde", " cuando", " cuándo", " cuantos", " personas", " fechas",
+    " puedes ", " mostrarme", " mostrame", " disponibilidad", " precio ",
+    " precios ", " cuales ", " cuáles ", " de esos ", " esos ", " tienen ",
+    " pileta", " piscina", " viajeros", " huespedes", " huéspedes",
   ];
   const hasSpanishChars = /[áéíóúñü¿¡]/.test(raw);
   if (hasSpanishChars || spanishHints.some((hint) => normalized.includes(hint))) return "es";
@@ -126,33 +153,35 @@ const buildChips = (followUps = []) =>
     label,
   }));
 
-const mapStayCard = (item, type) => {
+const mapStayCard = (item, type, { isLiveMode = false } = {}) => {
   if (!item) return null;
   const id = String(item.id || item.hotelCode || item.homeId || "");
   if (!id) return null;
   const title = item.title || item.name || "Stay";
   const locationText = item.locationText || item.city || item.country || null;
+  const numericPrice = toNum(item?.pricePerNight ?? item?.price ?? null);
   return {
     type: "stay",
     id,
     title,
     subtitle: locationText,
-    priceFrom: item.pricePerNight ?? item.price ?? null,
-    currency: item.currency || "USD",
+    priceFrom: isLiveMode && numericPrice != null && numericPrice > 0 ? numericPrice : null,
+    currency: normalizeDisplayCurrencyCode(item.currency || "USD"),
     image: item.coverImage || item.image || null,
     meta: {
       kind: type,
       inventoryType: item.inventoryType || type,
+      livePricing: isLiveMode,
     },
   };
 };
 
-const buildCards = (inventory) => {
+const buildCards = (inventory, { isLiveMode = false } = {}) => {
   const homes = Array.isArray(inventory?.homes) ? inventory.homes : [];
   const hotels = Array.isArray(inventory?.hotels) ? inventory.hotels : [];
   return [
-    ...homes.map((item) => mapStayCard(item, "HOME")),
-    ...hotels.map((item) => mapStayCard(item, "HOTEL")),
+    ...homes.map((item) => mapStayCard(item, "HOME", { isLiveMode })),
+    ...hotels.map((item) => mapStayCard(item, "HOTEL", { isLiveMode })),
   ].filter(Boolean);
 };
 
@@ -206,6 +235,19 @@ const getItemRating = (item) =>
   toNum(item?.reviewScore ?? item?.rating ?? item?.stars ?? item?.starRating ?? item?.classification?.code ?? item?.hotelDetails?.rating) ?? 0;
 const getItemPrice = (item) =>
   toNum(item?.pricePerNight ?? item?.price ?? item?.nightlyRate) ?? 999999;
+const hasUsablePrice = (item) => {
+  const price = toNum(item?.pricePerNight ?? item?.price ?? item?.nightlyRate);
+  return price != null && price > 0;
+};
+const hasLiveSearchContext = (plan) => {
+  const hasDates = Boolean(plan?.dates?.checkIn && plan?.dates?.checkOut);
+  const adults = Number(plan?.guests?.adults);
+  const total = Number(plan?.guests?.total);
+  return hasDates && (
+    (Number.isFinite(adults) && adults > 0) ||
+    (Number.isFinite(total) && total > 0)
+  );
+};
 const getItemCoords = (item) => {
   const lat = toNum(
     item?.latitude ?? item?.lat ?? item?.locationLat ?? item?.location?.lat ?? item?.geoPoint?.lat
@@ -270,7 +312,12 @@ const pickReasonFromCatalog = (category, language, seed) => {
 const getTopInventoryPicksByCategory = (inventory, plan, language, seed = 0) => {
   const hotels = Array.isArray(inventory?.hotels) ? inventory.hotels : [];
   const homes = Array.isArray(inventory?.homes) ? inventory.homes : [];
-  const source = hotels.length ? hotels : homes;
+  const baseSource = hotels.length ? hotels : homes;
+  const pricedSource = baseSource.filter((item) => hasUsablePrice(item));
+  const source =
+    hasLiveSearchContext(plan) && pricedSource.length
+      ? pricedSource
+      : baseSource;
   if (!source.length) return [];
 
   const isSpanish = language === "es";
@@ -447,13 +494,305 @@ const buildFilterContext = (plan, language) => {
 
 const buildAppreciationLine = (pickReason, language) => {
   if (!pickReason || !String(pickReason).trim()) return null;
-  const isSpanish = language === "es";
-  return isSpanish
-    ? `Lo destacamos por ${String(pickReason).trim()}.`
-    : `We highlight it for ${String(pickReason).trim()}.`;
+  return copyForLanguage(language, {
+    es: `Lo destacamos por ${String(pickReason).trim()}.`,
+    en: `We highlight it for ${String(pickReason).trim()}.`,
+    pt: `Destacamos este hotel por ${String(pickReason).trim()}.`,
+  });
 };
 
-const buildHotelPickSection = (item, pickReason = null, language = "es") => {
+const buildAdvisorTakeSection = ({
+  eyebrow = null,
+  title,
+  body = null,
+  tone = "neutral",
+  tags = [],
+}) => ({
+  type: "advisorTake",
+  eyebrow,
+  title,
+  body,
+  tone,
+  tags: Array.isArray(tags) ? tags.filter(Boolean).slice(0, 4) : [],
+});
+
+const formatCompactPriceLabel = (value, currency = "USD", language = "es") => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const normalizedCurrency = normalizeDisplayCurrencyCode(currency);
+  try {
+    return new Intl.NumberFormat(localeForLanguage(language), {
+      style: "currency",
+      currency: normalizedCurrency,
+      maximumFractionDigits: numeric >= 100 ? 0 : 2,
+    }).format(numeric);
+  } catch (_) {
+    const rounded = numeric >= 100 ? Math.round(numeric) : numeric.toFixed(2);
+    return `${normalizedCurrency} ${rounded}`;
+  }
+};
+
+const buildSearchShortlistSection = ({
+  language = "es",
+  picks = [],
+  isLiveMode = false,
+  destination = "",
+}) => {
+  const shortlistItems = picks
+    .slice(0, Math.min(3, picks.length))
+    .map(({ item, pickReason }, index) => {
+      const id = String(item?.id || item?.hotelCode || `shortlist-${index + 1}`);
+      const name =
+        item?.title || item?.name || item?.hotelName ||
+        item?.hotelDetails?.hotelName || item?.hotelDetails?.name || "Hotel";
+      const city = item?.city || item?.cityName || null;
+      const stars = normalizeStars(
+        item?.stars ??
+        item?.rating ??
+        item?.classification?.code ??
+        item?.hotelDetails?.rating
+      );
+      const value = isLiveMode && hasUsablePrice(item)
+        ? formatCompactPriceLabel(item?.pricePerNight ?? item?.price ?? null, item?.currency || "USD", language)
+        : (stars ? `${stars}★` : null);
+      const subtitle =
+        pickReason && String(pickReason).trim()
+          ? buildAppreciationLine(pickReason, language)
+          : city
+            ? toTitleCase(city)
+            : null;
+      const tags = [
+        city ? toTitleCase(city) : null,
+        ...pickAmenityLabels(item, 2),
+      ].filter(Boolean).slice(0, 3);
+
+      return {
+        id,
+        rank: index + 1,
+        inventoryType: String(item?.inventoryType || "HOTEL").toUpperCase(),
+        title: clampText(name, 64),
+        subtitle,
+        value,
+        priceFrom: isLiveMode && hasUsablePrice(item) ? Number(item?.pricePerNight ?? item?.price ?? null) : null,
+        currency: normalizeDisplayCurrencyCode(item?.currency || "USD"),
+        city: city ? toTitleCase(city) : null,
+        locationText: city ? toTitleCase(city) : null,
+        tags,
+      };
+    })
+    .filter(Boolean);
+
+  if (!shortlistItems.length) return null;
+  const destinationLabel = destination || copyForLanguage(language, {
+    es: "este destino",
+    en: "this destination",
+    pt: "este destino",
+  });
+  return {
+    type: "shortlist",
+    eyebrow: copyForLanguage(language, {
+      es: "Vista rápida",
+      en: "Quick view",
+      pt: "Visão rápida",
+    }),
+    title: copyForLanguage(language, {
+      es: `Mirada rápida de estas opciones${destination ? ` en ${destinationLabel}` : ""}`,
+      en: `Quick look at these options${destination ? ` in ${destinationLabel}` : ""}`,
+      pt: `Visão rápida destas opções${destination ? ` em ${destinationLabel}` : ""}`,
+    }),
+    body: copyForLanguage(language, isLiveMode
+      ? {
+          es: "Ya tengo disponibilidad para tus fechas, así que acá ves una lectura corta con precio por noche.",
+          en: "I already have live availability for your dates, so this is a quick view with nightly pricing.",
+          pt: "Já tenho disponibilidade para as suas datas, então aqui você vê um resumo curto com preço por noite.",
+        }
+      : {
+          es: "Te resumo el perfil de cada opción para que ubiques rápido cuáles te cierran más.",
+          en: "Here is a quick summary so you can spot which options fit best.",
+          pt: "Aqui vai um resumo do perfil de cada opção para você identificar rápido quais fazem mais sentido.",
+        }),
+    items: shortlistItems,
+  };
+};
+
+const buildNextStepSection = ({
+  language = "es",
+  isLiveMode = false,
+  destination = "",
+  filterContext = null,
+  assumedDefaultGuests = false,
+}) => {
+  const destinationLabel = destination || copyForLanguage(language, {
+    es: "el set",
+    en: "the set",
+    pt: "a seleção",
+  });
+  const filterLabel = Array.isArray(filterContext) && filterContext.length
+    ? filterContext.slice(0, 2).join(language === "es" ? " y " : language === "pt" ? " e " : " and ")
+    : null;
+
+  if (isLiveMode) {
+    return {
+      type: "nextStep",
+      eyebrow: copyForLanguage(language, { es: "Siguiente paso", en: "Next step", pt: "Próximo passo" }),
+      title: copyForLanguage(language, {
+        es: "Abrí el hotel que más te guste y compará tranquilo",
+        en: "Open the hotel you like most and compare calmly",
+        pt: "Abra o hotel que mais gostar e compare com calma",
+      }),
+      body: copyForLanguage(language, {
+        es: `Estas opciones ya tienen disponibilidad real${filterLabel ? ` con foco en ${filterLabel}` : ""}.${assumedDefaultGuests ? " Tomé 1 adulto por defecto para mostrarte precio real; si cambia, lo ajustamos." : ""} El mejor siguiente paso es comparar ubicación, política y extras.`,
+        en: `These options already have live availability${filterLabel ? ` with focus on ${filterLabel}` : ""}.${assumedDefaultGuests ? " I used 1 adult by default to show live pricing; if that changes, we can adjust it." : ""} The best next step is to compare location, policy, and perks.`,
+        pt: `Estas opções já têm disponibilidade real${filterLabel ? ` com foco em ${filterLabel}` : ""}.${assumedDefaultGuests ? " Considerei 1 adulto por padrão para mostrar o preço real; se isso mudar, ajustamos." : ""} O melhor próximo passo é comparar localização, política e extras.`,
+      }),
+      steps: [
+        {
+          id: "open-main",
+          title: copyForLanguage(language, {
+            es: "Abrí la que más te guste",
+            en: "Open your favorite one",
+            pt: "Abra a sua favorita",
+          }),
+          subtitle: copyForLanguage(language, {
+            es: "Ahí vas a ver fotos, ubicación, política y tarifa con más detalle.",
+            en: "There you can review photos, location, policy, and rate details.",
+            pt: "Lá você pode revisar fotos, localização, política e tarifa com mais detalhe.",
+          }),
+        },
+        {
+          id: "compare-compact",
+          title: copyForLanguage(language, {
+            es: "Compará ubicación y beneficios",
+            en: "Compare location and perks",
+            pt: "Compare localização e benefícios",
+          }),
+          subtitle: copyForLanguage(language, {
+            es: "Fijate cuál te cierra mejor por extras, cancelación y precio por noche.",
+            en: "Check which one fits best by perks, cancellation, and nightly price.",
+            pt: "Veja qual combina melhor com você por extras, cancelamento e preço por noite.",
+          }),
+        },
+      ],
+    };
+  }
+
+  return {
+    type: "nextStep",
+    eyebrow: copyForLanguage(language, {
+      es: "Para verlo con precio real",
+      en: "To see real pricing",
+      pt: "Para ver o preço real",
+    }),
+    title: copyForLanguage(language, {
+      es: "Confirmame fechas y viajeros",
+      en: "Confirm your dates and guests",
+      pt: "Confirme datas e viajantes",
+    }),
+    body: copyForLanguage(language, {
+      es: `Con eso te puedo decir qué opciones siguen disponibles en ${destinationLabel}${filterLabel ? ` y con foco en ${filterLabel}` : ""}.`,
+      en: `With that, I can tell you which options are still available in ${destinationLabel}${filterLabel ? ` with focus on ${filterLabel}` : ""}.`,
+      pt: `Com isso eu consigo te dizer quais opções ainda seguem disponíveis em ${destinationLabel}${filterLabel ? ` com foco em ${filterLabel}` : ""}.`,
+    }),
+    steps: [
+      {
+        id: "dates",
+        title: copyForLanguage(language, {
+          es: "Elegí las fechas",
+          en: "Choose your dates",
+          pt: "Escolha as datas",
+        }),
+        subtitle: copyForLanguage(language, {
+          es: "Ahí aparece el precio por noche y la disponibilidad real.",
+          en: "That unlocks nightly pricing and real availability.",
+          pt: "Aí aparecem o preço por noite e a disponibilidade real.",
+        }),
+      },
+      {
+        id: "guests",
+        title: copyForLanguage(language, {
+          es: "Confirmame quiénes viajan",
+          en: "Confirm who is traveling",
+          pt: "Confirme quem vai viajar",
+        }),
+        subtitle: copyForLanguage(language, {
+          es: "Así te muestro opciones que de verdad encajan con tu viaje.",
+          en: "That helps me show options that truly fit your trip.",
+          pt: "Assim eu te mostro opções que realmente combinam com a sua viagem.",
+        }),
+      },
+    ],
+  };
+};
+
+const buildSearchAdvisorSection = ({
+  language = "es",
+  isLiveMode = false,
+  filterContext = null,
+  destination = "",
+  userAskedCheap = false,
+  userAskedPool = false,
+}) => {
+  const filterLabel = Array.isArray(filterContext) ? filterContext.slice(0, 2).join(language === "es" ? " y " : language === "pt" ? " e " : " and ") : "";
+  const destinationLabel = destination || copyForLanguage(language, {
+    es: "este destino",
+    en: "this destination",
+    pt: "este destino",
+  });
+
+  if (isLiveMode) {
+    return buildAdvisorTakeSection({
+      eyebrow: copyForLanguage(language, {
+        es: "Ya tengo disponibilidad",
+        en: "Live availability",
+        pt: "Já tenho disponibilidade",
+      }),
+      title: copyForLanguage(language, {
+        es: "Estas opciones ya tienen precio real",
+        en: "These options already have live pricing",
+        pt: "Estas opções já têm preço real",
+      }),
+      body: copyForLanguage(language, {
+        es: `Ya tengo disponibilidad real para tus fechas${filterLabel ? ` con foco en ${filterLabel}` : ""}. Si querés, abrimos el que más te guste y comparamos bien ubicación, cancelación y extras.`,
+        en: `I already have live availability for your dates${filterLabel ? ` with focus on ${filterLabel}` : ""}. If you want, we can open your favorite and compare location, cancellation, and perks.`,
+        pt: `Já tenho disponibilidade real para as suas datas${filterLabel ? ` com foco em ${filterLabel}` : ""}. Se quiser, abrimos o que você mais gostar e comparamos localização, cancelamento e extras.`,
+      }),
+      tone: "positive",
+      tags: [filterLabel || null, destinationLabel],
+    });
+  }
+
+  if (userAskedCheap || userAskedPool || filterLabel) {
+    return buildAdvisorTakeSection({
+      eyebrow: language === "es" ? "Resumen" : "Summary",
+      title:
+        language === "es"
+          ? `Opciones bien orientadas para ${destinationLabel}`
+          : `Well-targeted options for ${destinationLabel}`,
+      body:
+        language === "es"
+          ? `Estas opciones van en la dirección de lo que pediste${filterLabel ? `, con foco en ${filterLabel}` : ""}. Cuando me confirmes fechas y viajeros te digo cuáles siguen disponibles y cuánto salen.`
+          : `These options are aligned with what you asked for${filterLabel ? `, with focus on ${filterLabel}` : ""}. Once you confirm dates and guests, I can tell you which ones are still available and how much they cost.`,
+      tone: "neutral",
+      tags: [filterLabel || null],
+    });
+  }
+
+  return buildAdvisorTakeSection({
+    eyebrow: language === "es" ? "Resumen" : "Summary",
+    title:
+      language === "es"
+        ? `Buena base para comparar en ${destinationLabel}`
+        : `A good base set for ${destinationLabel}`,
+    body:
+      language === "es"
+        ? "Te dejo una selección ordenada para que ubiques rápido cuál tiene mejor perfil para tu viaje."
+        : "Here is an ordered set so you can quickly see which option fits your trip best.",
+    tone: "neutral",
+    tags: [destinationLabel],
+  });
+};
+
+const buildHotelPickSection = (item, pickReason = null, language = "es", options = {}) => {
   if (!item) return null;
   const id = String(item.id || item.hotelCode || "");
   if (!id) return null;
@@ -475,7 +814,17 @@ const buildHotelPickSection = (item, pickReason = null, language = "es") => {
   const rawDescription =
     item?.shortDescription || item?.description ||
     item?.hotelDetails?.shortDescription || item?.hotelDetails?.description || "";
-  const description = clampText(decodeHtmlEntities(rawDescription) || (location ? `Located in ${location}.` : ""), 450);
+  const description = clampText(
+    decodeHtmlEntities(rawDescription) ||
+      (location
+        ? copyForLanguage(language, {
+            es: `Ubicado en ${location}.`,
+            en: `Located in ${location}.`,
+            pt: `Localizado em ${location}.`,
+          })
+        : ""),
+    450
+  );
   const shortDescription = description ? clampText(description, 180) : null;
   const stars = normalizeStars(
     item?.stars ?? item?.rating ?? item?.classification?.code ??
@@ -484,13 +833,14 @@ const buildHotelPickSection = (item, pickReason = null, language = "es") => {
   const amenities = pickAmenityLabels(item, 3);
   const images = extractImageUrls(item, 4);
   const priceFrom = item?.pricePerNight ?? item?.price ?? null;
-  const currency = item?.currency || "USD";
+  const currency = normalizeDisplayCurrencyCode(item?.currency || "USD");
   const amenityLabels = pickAmenityLabels(item, 6);
   const characteristics = (amenityLabels && amenityLabels.length ? amenityLabels : amenities).slice(0, 5);
   const appreciation = buildAppreciationLine(pickReason, language);
   return {
     type: "hotelPick",
     id,
+    layoutVariant: options.layoutVariant || "hero",
     name: clampText(name, 80),
     description,
     shortDescription: shortDescription || description,
@@ -501,13 +851,13 @@ const buildHotelPickSection = (item, pickReason = null, language = "es") => {
     characteristics,
     appreciation: appreciation || null,
     images,
-    priceFrom: Number.isFinite(Number(priceFrom)) ? Number(priceFrom) : null,
+    priceFrom: options.isLiveMode && Number.isFinite(Number(priceFrom)) && Number(priceFrom) > 0 ? Number(priceFrom) : null,
     currency,
     pickReason: pickReason && String(pickReason).trim() ? String(pickReason).trim() : null,
   };
 };
 
-const buildStructuredSearchReply = ({ inventory, plan, language, seed, userName }) => {
+const buildStructuredSearchReply = ({ inventory, plan, language, seed, userName, resultCount = 0, latestUserMessage = "" }) => {
   const picksWithReasons = getTopInventoryPicksByCategory(inventory, plan, language, seed ?? 0);
   const picks = picksWithReasons.length ? picksWithReasons : getTopInventoryPicks(inventory, 5).map((item) => ({ item, pickReason: null }));
   if (!picks.length) return null;
@@ -517,89 +867,145 @@ const buildStructuredSearchReply = ({ inventory, plan, language, seed, userName 
     plan?.location?.city || plan?.location?.address || plan?.location?.country || "";
   const name = userName ? String(userName).split(" ")[0] : null;
   const filterContext = buildFilterContext(plan, language);
-  const hasDates = Boolean(plan?.dates?.checkIn && plan?.dates?.checkOut);
+  const isLiveMode = hasLiveSearchContext(plan);
+  const assumedDefaultGuests = Boolean(plan?.assumptions?.defaultGuestsApplied);
+  const total = resultCount || (inventory?.hotels?.length || 0) + (inventory?.homes?.length || 0);
+  const userAskedPool = /\b(pileta|piscina|pool|swimming)\b/i.test(latestUserMessage || "");
+  const userAskedCheap = /\b(barato|económico|cheap|budget|low cost)\b/i.test(latestUserMessage || "");
 
-  const dest = destination ? ` para ${destination}` : "";
-  const destEn = destination ? ` for ${destination}` : "";
+  const dest = destination ? ` en ${destination}` : "";
+  const destEn = destination ? ` in ${destination}` : "";
   const filterJoined = filterContext
-    ? (isSpanish
-        ? ` con ${filterContext.join(" y ")}`
-        : ` with ${filterContext.join(" and ")}`)
+    ? (isSpanish ? ` ${filterContext.join(" y ")}` : ` ${filterContext.join(" and ")}`)
     : "";
 
   let introVariants;
-  if (filterContext?.length) {
+  if (isLiveMode) {
+    const countPhrase = isSpanish
+      ? (total <= 3 ? `Encontré ${total} opción${total === 1 ? "" : "es"} disponible${total === 1 ? "" : "s"}` : `Tengo ${total} opciones disponibles`)
+      : (total <= 3 ? `I found ${total} available option${total === 1 ? "" : "s"}` : `I found ${total} available options`);
     introVariants = isSpanish
       ? [
-          `${name ? `${name}, a` : "A"}cá van los resultados${destination ? ` en ${destination}` : ""}${filterJoined}.`,
-          `Encontré estas opciones${destination ? ` en ${destination}` : ""}${filterJoined}${name ? `, ${name}` : ""}.`,
-          `${name ? `${name}, m` : "M"}irá lo que tenemos${destination ? ` en ${destination}` : ""}${filterJoined}.`,
+          `${countPhrase}${dest}.`,
+          `${name ? `${name}, ` : ""}${countPhrase.toLowerCase()}${dest} para tus fechas.`,
+          `Estas son las opciones que veo disponibles${dest}.`,
         ]
       : [
-          `${name ? `${name}, here` : "Here"} are the results${destination ? ` in ${destination}` : ""}${filterJoined}.`,
-          `Found options${destination ? ` in ${destination}` : ""}${filterJoined}${name ? ` for you, ${name}` : ""}.`,
-          `${name ? `${name}, take` : "Take"} a look at what we have${destEn}${filterJoined}.`,
+          `${countPhrase}${destEn}.`,
+          `${name ? `${name}, ` : ""}${countPhrase.toLowerCase()}${destEn} for your dates.`,
+          `These are the options I see available${destEn}.`,
+        ];
+  } else if (total > 0 && (userAskedPool || userAskedCheap || filterContext?.length)) {
+    const countPhrase = isSpanish
+      ? (total <= 3 ? `Encontré ${total} opción${total === 1 ? "" : "es"}` : `Hay ${total} opciones`)
+      : (total <= 3 ? `Found ${total} option${total === 1 ? "" : "s"}` : `There are ${total} options`);
+    introVariants = isSpanish
+      ? [
+          `${countPhrase}${dest}${filterJoined}. ${name ? `${name}, m` : "M"}irá las que más te cierran.`,
+          `${name ? `${name}, ` : ""}${countPhrase.toLowerCase()}${dest}${filterJoined}. Si querés, abrimos la que más te guste.`,
+          `Acá van ${total} opciones${dest}${filterJoined}.`,
+        ]
+      : [
+          `${countPhrase}${destEn}${filterJoined}. ${name ? `${name}, take` : "Take"} a look.`,
+          `${name ? `${name}, ` : ""}${countPhrase.toLowerCase()}${destEn}${filterJoined}. Tap one for details.`,
+          `Here are ${total} options${destEn}${filterJoined}.`,
+        ];
+  } else if (filterContext?.length) {
+    introVariants = isSpanish
+      ? [
+          `${name ? `${name}, a` : "A"}cá van los resultados${dest}${filterJoined}.`,
+          `Encontré opciones${dest}${filterJoined}${name ? `, ${name}` : ""}.`,
+          `${total ? `Son ${total} opciones` : "Opciones"}${dest}${filterJoined}.`,
+        ]
+      : [
+          `${name ? `${name}, here` : "Here"} are the results${destEn}${filterJoined}.`,
+          `Found options${destEn}${filterJoined}${name ? ` for you, ${name}` : ""}.`,
+          `${total ? `${total} options` : "Options"}${destEn}${filterJoined}.`,
         ];
   } else {
     introVariants = isSpanish
       ? [
-          `${name ? `¡Buena elección, ${name}! Te` : "Te"} dejo las mejores opciones que tenemos${dest}.`,
-          `${name ? `${name}, a` : "A"}cá van mis picks${destination ? ` en ${destination}` : ""}. Agregá fechas y guests para ver precios reales.`,
-          `${name ? `${name}, e` : "E"}stas son nuestras recomendaciones${dest}. Sumá fechas o guests para ver disponibilidad real.`,
-          `Encontré opciones interesantes${destination ? ` en ${destination}` : ""}${name ? `, ${name}` : ""}. Chequeá las cards y completá los detalles para afinar.`,
-          `${name ? `${name}, m` : "M"}irá lo que tenemos${destination ? ` en ${destination}` : ""}. Con fechas y guests te muestro disponibilidad y precios.`,
+          `${name ? `¡Dale, ${name}! Te` : "Te"} dejo opciones${dest}.`,
+          `${name ? `${name}, ` : ""}Estas son opciones${dest}. Sumá fechas y viajeros para ver precios reales.`,
+          total ? `Encontré ${total} opciones${dest}.` : `Opciones${dest}.`,
         ]
       : [
-          `${name ? `Nice, ${name}! Here` : "Here"} are the best options we have${destEn}. Add more details to refine.`,
-          `${name ? `${name}, here` : "Here"} are my top picks${destination ? ` in ${destination}` : ""}. Add dates and guests to see live prices.`,
-          `${name ? `Good call, ${name}! These` : "These"} are some solid options${destEn}. Refine with dates or guest count anytime.`,
-          `Found some great spots${destination ? ` in ${destination}` : ""}${name ? ` for you, ${name}` : ""}. Check them out and fill in your dates to see real availability.`,
-          `${name ? `${name}, take` : "Take"} a look at what we have${destEn}. Dates and guests will unlock live pricing.`,
+          `${name ? `Sure, ${name}. Here` : "Here"} are options${destEn}.`,
+          `${name ? `${name}, ` : ""}Options${destEn}. Add dates and guests for live prices.`,
+          total ? `Found ${total} options${destEn}.` : `Options${destEn}.`,
         ];
   }
 
-  let outroVariants;
-  if (hasDates) {
-    outroVariants = isSpanish
-      ? [
-          "Tocá cualquier card para ver los detalles y reservar.",
-          "¿Te gusta alguno? Tocá la card para continuar.",
-          "Seleccioná el que más te guste para ver disponibilidad y confirmar.",
-        ]
-      : [
-          "Tap any card to see details and book.",
-          "Like any of these? Tap to continue.",
-          "Select the one you like to check availability and confirm.",
-        ];
-  } else {
-    outroVariants = isSpanish
-      ? [
-          "Agregá las fechas y guests para ver disponibilidad y precios reales.",
-          "Completá fechas y guests para afinar los resultados con precios en vivo.",
-          "Con fechas y cantidad de viajeros te muestro disponibilidad y costos exactos.",
-          "Estos son tus puntos de partida. Sumá los datos de viaje para ver qué hay disponible.",
-          "¿Te gusta alguno? Ingresá fechas y guests para confirmar disponibilidad.",
-        ]
-      : [
-          "Add dates and guests to see availability and live pricing.",
-          "Fill in your travel dates and guest count to get real prices.",
-          "These are your starting options — dates and guests will refine everything.",
-          "Like any of these? Add your dates to check availability.",
-          "Drop in your dates and guest count to see what's actually available.",
-        ];
-  }
-
-  const intro = pickVariant(introVariants) || introVariants[0];
-  const outro = pickVariant(outroVariants) || outroVariants[0];
-  const sections = picks.map((p) => buildHotelPickSection(p.item, p.pickReason, language)).filter(Boolean);
-  return { intro, outro, sections };
+  const intro = pickVariant(introVariants, seed) || introVariants[0];
+  const introWithAssumption =
+    assumedDefaultGuests && isLiveMode
+      ? language === "es"
+        ? `${intro} Tomé 1 adulto por defecto para mostrarte precio real; si viajás con más personas, lo ajustamos.`
+        : `${intro} I used 1 adult by default to show live pricing; if more people are traveling, we can adjust it.`
+      : intro;
+  const sections = [
+    buildSearchAdvisorSection({
+      language,
+      isLiveMode,
+      filterContext,
+      destination,
+      userAskedCheap,
+      userAskedPool,
+    }),
+    buildSearchShortlistSection({
+      language,
+      picks,
+      isLiveMode,
+      destination,
+    }),
+    ...picks
+      .map((p, index) =>
+        buildHotelPickSection(p.item, p.pickReason, language, {
+          layoutVariant: index === 0 ? "hero" : "compact",
+          isLiveMode,
+        })
+      )
+      .filter(Boolean),
+    buildNextStepSection({
+      language,
+      isLiveMode,
+      destination,
+      filterContext,
+      assumedDefaultGuests,
+    }),
+  ].filter(Boolean);
+  return { intro: introWithAssumption, outro: null, sections };
 };
 
-export const renderAssistantPayload = async ({ plan, messages, inventory, nextAction, trip, tripContext, userContext, weather, missing = [], visualContext, assumedSearchDefaults = false }) => {
+export const renderAssistantPayload = async ({
+  plan,
+  messages,
+  inventory,
+  nextAction,
+  trip,
+  tripContext,
+  userContext,
+  weather,
+  missing = [],
+  visualContext,
+  tripSearchContext = null,
+  lastShownResultsContext = null,
+  inventoryForReply = null,
+  stayDetailsFromDb = null,
+  preparedReply = null,
+}) => {
   const baseLanguage = normalizeLanguage(plan);
-  const language = detectLanguageFromMessages(messages, baseLanguage);
-  // Force the assistant to reply in the user's language (based on the latest user message),
-  // even if the extracted plan.language is wrong/missing.
+  const language = baseLanguage;
+  const hasInventoryThisTurn = (inventory?.hotels?.length || inventory?.homes?.length) > 0;
+  const effectiveInventoryForReply = !hasInventoryThisTurn && inventoryForReply
+    ? { hotels: inventoryForReply.hotels || [], homes: inventoryForReply.homes || [], matchTypes: {}, foundExact: false }
+    : inventory;
+  const normalizedPreparedReply =
+    typeof preparedReply === "string"
+      ? { text: preparedReply, sections: [] }
+      : preparedReply && typeof preparedReply === "object"
+        ? preparedReply
+        : null;
   if (plan && typeof plan === "object") {
     plan.language = language;
   }
@@ -674,35 +1080,36 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
     followUps = [];
   } else if (nextAction === NEXT_ACTIONS.RUN_SEARCH) {
     const userName = userContext?.userName || userContext?.name || null;
+    const latestUserMessage = [...(messages || [])].reverse().find((m) => m?.role === "user")?.content ?? "";
+    const resultCount = (inventory?.hotels?.length || 0) + (inventory?.homes?.length || 0);
     const structuredReply = buildStructuredSearchReply({
       inventory,
       plan,
       language,
       seed,
       userName,
+      resultCount,
+      latestUserMessage,
     });
     if (structuredReply) {
       replyText = structuredReply.intro;
-      if (assumedSearchDefaults) {
-        const assumptionLine = language === "es"
-          ? "Asumí fechas de mañana a pasado y 1 huésped; si querés cambiarlos decime. "
-          : "I assumed tomorrow–day after and 1 guest; say if you want to change them. ";
-        replyText = assumptionLine + replyText;
-      }
       followUps = [];
       searchSections = [
         ...structuredReply.sections,
-        { type: "outro", text: structuredReply.outro },
+        ...(structuredReply.outro ? [{ type: "outro", text: structuredReply.outro }] : []),
       ];
     } else {
       const replyPayload = await generateAssistantReply({
         plan,
         messages,
-        inventory,
+        inventory: effectiveInventoryForReply,
         trip,
         tripContext,
         userContext,
         weather,
+        tripSearchContext,
+        lastShownResultsContext,
+        stayDetailsFromDb,
       });
       replyText = (replyPayload?.reply || "").trim();
       followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
@@ -713,12 +1120,15 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
       const replyPayload = await generateAssistantReply({
         plan,
         messages,
-        inventory,
+        inventory: effectiveInventoryForReply,
         trip,
         tripContext,
         userContext,
         weather,
         replyMode,
+        tripSearchContext,
+        lastShownResultsContext,
+        stayDetailsFromDb,
       });
       replyText = (replyPayload?.reply || "").trim();
       followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
@@ -729,17 +1139,58 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
         : "I can help you plan your trip or tell you about a destination. Share your destination and dates (or flexibility) to get started.";
       followUps = [];
     }
+  } else if (nextAction === NEXT_ACTIONS.ANSWER_WITH_LAST_RESULTS) {
+    if (normalizedPreparedReply?.text) {
+      replyText = normalizedPreparedReply.text;
+      searchSections = Array.isArray(normalizedPreparedReply.sections)
+        ? normalizedPreparedReply.sections
+        : [];
+      followUps = [];
+    } else {
+      try {
+        const replyPayload = await generateAssistantReply({
+          plan,
+          messages,
+          inventory: effectiveInventoryForReply,
+          trip,
+          tripContext,
+          userContext,
+          weather,
+          tripSearchContext,
+          lastShownResultsContext,
+          stayDetailsFromDb,
+        });
+        replyText = (replyPayload?.reply || "").trim();
+        followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
+      } catch (err) {
+        console.warn("[ai.renderer] ANSWER_WITH_LAST_RESULTS reply failed", err?.message || err);
+        replyText = language === "es"
+          ? "No pude revisar esos resultados ahora. Probá de nuevo."
+          : "I couldn't check those results right now. Try again.";
+        followUps = [];
+      }
+    }
   } else {
-    try {
-      const replyPayload = await generateAssistantReply({
-        plan,
-        messages,
-        inventory,
-        trip,
-        tripContext,
-        userContext,
-        weather,
-      });
+    if (normalizedPreparedReply?.text) {
+      replyText = normalizedPreparedReply.text;
+      searchSections = Array.isArray(normalizedPreparedReply.sections)
+        ? normalizedPreparedReply.sections
+        : [];
+      followUps = [];
+    } else {
+      try {
+        const replyPayload = await generateAssistantReply({
+          plan,
+          messages,
+          inventory: effectiveInventoryForReply,
+          trip,
+          tripContext,
+          userContext,
+          weather,
+          tripSearchContext,
+          lastShownResultsContext,
+          stayDetailsFromDb,
+        });
       replyText = (replyPayload?.reply || "").trim();
       followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
     } catch (genErr) {
@@ -748,6 +1199,7 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
         ? "No pude procesar eso ahora. Probá de nuevo en un momento o reformulá el mensaje."
         : "I couldn’t process that right now. Try again in a moment or rephrase your message.";
       followUps = [];
+      }
     }
   }
 
@@ -777,7 +1229,7 @@ export const renderAssistantPayload = async ({ plan, messages, inventory, nextAc
 
   const ui = {
     chips: buildChips(followUps),
-    cards: buildCards(inventory),
+    cards: buildCards(inventory, { isLiveMode: hasLiveSearchContext(plan) }),
     inputs: combinedInputs,
     sections: searchSections,
     visualContext: visualContext || null

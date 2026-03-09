@@ -1032,14 +1032,20 @@ export const googleExchange = async (req, res) => {
   try {
     const {
       code,
+      idToken: directIdToken,
       redirectUri: clientRedirectUri,
       codeVerifier: clientCodeVerifier,
       clientId: requestedClientIdRaw,
     } = req.body || {};
-    if (!code) return res.status(400).json({ error: "Missing code" });
+    const authCode = toTrimmedString(code);
+    const idTokenFromClient = toTrimmedString(directIdToken);
+    if (!authCode && !idTokenFromClient) {
+      return res.status(400).json({ error: "Missing code or idToken" });
+    }
 
     const requestedClientId = toTrimmedString(requestedClientIdRaw);
-    const clientId = requestedClientId || GOOGLE_WEB_CLIENT_ID;
+    const defaultClientId = GOOGLE_WEB_CLIENT_ID || GOOGLE_ALLOWED_CLIENT_IDS[0] || null;
+    const clientId = requestedClientId || defaultClientId;
     if (!clientId) {
       return res.status(500).json({ error: "Google OAuth is not configured" });
     }
@@ -1049,49 +1055,74 @@ export const googleExchange = async (req, res) => {
     const clientSecret =
       clientId === GOOGLE_WEB_CLIENT_ID ? GOOGLE_WEB_CLIENT_SECRET : null;
     const codeVerifier = toTrimmedString(clientCodeVerifier);
-    if (!clientSecret && !codeVerifier) {
+    if (authCode && !clientSecret && !codeVerifier) {
       return res.status(400).json({
         error: "Missing PKCE code verifier for Google OAuth client",
       });
     }
-    // Allow mobile / Expo to send their own redirect_uri; keep postmessage as default (web popup)
-    const redirectUri = typeof clientRedirectUri === "string" && clientRedirectUri.length
-      ? clientRedirectUri
-      : "postmessage";
-
-    // 1) Intercambio code → tokens (incluye id_token)
-    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        code,
-        client_id: clientId,
-        ...(clientSecret ? { client_secret: clientSecret } : {}),
-        redirect_uri: redirectUri, // 'postmessage' para web popup; la app puede pasar su URI
-        grant_type: "authorization_code",
-        ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
-      }),
-    });
-
-    const tokens = await tokenRes.json();
-    if (!tokenRes.ok) {
-      return res
-        .status(400)
-        .json({ error: "Token exchange failed", detail: tokens });
-    }
-
-    const { id_token } = tokens;
-    if (!id_token) return res.status(400).json({ error: "No id_token from Google" });
-
-    // 2) Verificar id_token (firma + audiencia)
     const allowedAudiences = GOOGLE_ALLOWED_CLIENT_IDS.length
       ? GOOGLE_ALLOWED_CLIENT_IDS
       : [clientId];
-    const ticket = await googleClient.verifyIdToken({
-      idToken: id_token,
-      audience: allowedAudiences,
-    });
-    const payload = ticket.getPayload();
+    let payload = null;
+
+    if (idTokenFromClient) {
+      try {
+        const ticket = await googleClient.verifyIdToken({
+          idToken: idTokenFromClient,
+          audience: allowedAudiences,
+        });
+        payload = ticket.getPayload();
+      } catch (verifyErr) {
+        return res.status(401).json({
+          error: "Invalid Google identity token",
+          detail: verifyErr?.message || "Unable to verify Google identity token",
+        });
+      }
+    } else {
+      // Allow web popup/mobile legacy clients to send their own redirect_uri.
+      const redirectUri =
+        typeof clientRedirectUri === "string" && clientRedirectUri.length
+          ? clientRedirectUri
+          : "postmessage";
+
+      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code: authCode,
+          client_id: clientId,
+          ...(clientSecret ? { client_secret: clientSecret } : {}),
+          redirect_uri: redirectUri,
+          grant_type: "authorization_code",
+          ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
+        }),
+      });
+
+      const tokens = await tokenRes.json();
+      if (!tokenRes.ok) {
+        return res
+          .status(400)
+          .json({ error: "Token exchange failed", detail: tokens });
+      }
+
+      const exchangedIdToken = toTrimmedString(tokens?.id_token);
+      if (!exchangedIdToken) {
+        return res.status(400).json({ error: "No id_token from Google" });
+      }
+
+      try {
+        const ticket = await googleClient.verifyIdToken({
+          idToken: exchangedIdToken,
+          audience: allowedAudiences,
+        });
+        payload = ticket.getPayload();
+      } catch (verifyErr) {
+        return res.status(401).json({
+          error: "Invalid Google identity token",
+          detail: verifyErr?.message || "Unable to verify Google identity token",
+        });
+      }
+    }
 
     const sub = payload.sub; // id único Google
     const email = payload.email;

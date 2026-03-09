@@ -384,6 +384,8 @@ export const createTicket = async (req, res, next) => {
         const { subject, category, priority, message, bookingId, metadata } = req.body;
         const userId = req.user.id; // From auth middleware
         const SUPPORT_BOT_ID = getSupportBotId();
+        const trimmedMessage = typeof message === "string" ? message.trim() : "";
+        const hasInitialMessage = Boolean(trimmedMessage);
 
         if (bookingId) {
             const booking = await models.Booking.findByPk(bookingId, { attributes: ["id", "user_id"] });
@@ -437,7 +439,10 @@ export const createTicket = async (req, res, next) => {
                     category: category || "GENERAL",
                 };
                 await chatThread.update(
-                    { meta: nextMeta, last_message_at: now },
+                    {
+                        meta: nextMeta,
+                        ...(hasInitialMessage ? { last_message_at: now } : {}),
+                    },
                     { transaction }
                 );
             }
@@ -476,47 +481,50 @@ export const createTicket = async (req, res, next) => {
                     subject: finalSubject,
                     category: category || ticket.category || "GENERAL",
                     priority: priority || ticket.priority || "MEDIUM",
-                    last_message_at: now,
+                    ...(hasInitialMessage ? { last_message_at: now } : {}),
                 };
-                if (ticket.status === "RESOLVED") {
+                if (hasInitialMessage && ticket.status === "RESOLVED") {
                     updates.status = "IN_PROGRESS";
                 }
                 await ticket.update(updates, { transaction });
             }
 
-            const initialMsg = await models.SupportMessage.create({
-                ticket_id: ticket.id,
-                sender_type: "USER",
-                sender_id: userId,
-                content: message,
-                metadata: {
-                    ...(metadata || {}),
-                    bookingId: bookingId || null,
-                }
-            }, { transaction });
+            let initialMsg = null;
+            if (hasInitialMessage) {
+                initialMsg = await models.SupportMessage.create({
+                    ticket_id: ticket.id,
+                    sender_type: "USER",
+                    sender_id: userId,
+                    content: trimmedMessage,
+                    metadata: {
+                        ...(metadata || {}),
+                        bookingId: bookingId || null,
+                    }
+                }, { transaction });
 
-            await models.ChatMessage.create({
-                chat_id: chatThread.id,
-                sender_id: userId,
-                sender_role: 'GUEST',
-                type: 'TEXT',
-                body: message,
-                metadata: {
-                    ...(metadata || {}),
-                    bookingId: bookingId || null,
-                    source: "support",
-                },
-                delivered_at: now
-            }, { transaction });
+                await models.ChatMessage.create({
+                    chat_id: chatThread.id,
+                    sender_id: userId,
+                    sender_role: 'GUEST',
+                    type: 'TEXT',
+                    body: trimmedMessage,
+                    metadata: {
+                        ...(metadata || {}),
+                        bookingId: bookingId || null,
+                        source: "support",
+                    },
+                    delivered_at: now
+                }, { transaction });
 
-            await models.ChatThread.update(
-                { last_message_at: now },
-                { where: { id: chatThread.id }, transaction }
-            );
-            await models.SupportTicket.update(
-                { last_message_at: now },
-                { where: { id: ticket.id }, transaction }
-            );
+                await models.ChatThread.update(
+                    { last_message_at: now },
+                    { where: { id: chatThread.id }, transaction }
+                );
+                await models.SupportTicket.update(
+                    { last_message_at: now },
+                    { where: { id: ticket.id }, transaction }
+                );
+            }
 
             return { chatThread, ticket, initialMsg, ticketCreated };
         });
@@ -524,7 +532,9 @@ export const createTicket = async (req, res, next) => {
         if (result.ticketCreated) {
             emitSupportEvent("support:new_ticket", { ticketId: result.ticket.id, subject: finalSubject, user: req.user.name });
         }
-        emitSupportEvent("support:new_message", { ticketId: result.ticket.id, message: result.initialMsg, user: req.user.name });
+        if (result.initialMsg) {
+            emitSupportEvent("support:new_message", { ticketId: result.ticket.id, message: result.initialMsg, user: req.user.name });
+        }
 
         return res.status(201).json({
             ticket: result.ticket,
