@@ -10,6 +10,21 @@ const ensureArray = (value) => {
   return Array.isArray(value) ? value : [value]
 }
 
+const toPositiveIntOrNull = (value) => {
+  if (value === undefined || value === null || value === "") return null
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return null
+  const normalized = Math.trunc(parsed)
+  return normalized > 0 ? normalized : null
+}
+
+function* chunkArray(items = [], size = 200) {
+  const resolvedSize = Math.max(1, Math.trunc(size || 1))
+  for (let i = 0; i < items.length; i += resolvedSize) {
+    yield items.slice(i, i + resolvedSize)
+  }
+}
+
 const STATIC_LOOKAHEAD_DAYS = Number(process.env.WEBBEDS_STATIC_LOOKAHEAD_DAYS || 120)
 const normalizeBoolean = (value) => {
   if (typeof value === "boolean") return value
@@ -868,6 +883,10 @@ export const syncWebbedsCountries = async ({ dryRun = false } = {}) => {
 }
 
 export const syncWebbedsCities = async ({ countryCode, dryRun = false } = {}) => {
+  if (countryCode == null || String(countryCode).trim() === "") {
+    throw new Error("countryCode is required to sync cities. For a full sync, run the 'webbeds-cities-sync' job.")
+  }
+
   const payload = {
     return: {
       filters: {
@@ -918,75 +937,93 @@ export const syncWebbedsCities = async ({ countryCode, dryRun = false } = {}) =>
     countryUpserts.set(resolvedCountryCode, resolvedCountryName)
   })
 
-  const tx = await sequelize.transaction()
   try {
     if (countryUpserts.size) {
-      const operations = Array.from(countryUpserts.entries()).map(
-        ([code, name]) =>
-          models.WebbedsCountry.upsert(
-            {
-              code,
-              name,
-            },
-            { transaction: tx },
-          ),
-      )
-      await Promise.all(operations)
-      countryUpserts.forEach((name, code) => {
-        countryNameCache.set(code, name)
-      })
+      const countryTx = await sequelize.transaction()
+      try {
+        const operations = Array.from(countryUpserts.entries()).map(([code, name]) =>
+          models.WebbedsCountry.upsert({ code, name }, { transaction: countryTx }),
+        )
+        await Promise.all(operations)
+        await countryTx.commit()
+        countryUpserts.forEach((name, code) => {
+          countryNameCache.set(code, name)
+        })
+      } catch (error) {
+        await countryTx.rollback()
+        throw error
+      }
     }
 
-    const operations = cities.map((city) => {
-      const code = Number(city.code) || null
-      if (!code) return null
-      const resolvedCountryCode =
-        toNumberOrNull(city.countryCode) ?? fallbackCountryCode
-      if (!resolvedCountryCode) {
-        console.warn("[webbeds][static] city missing country code", {
-          cityCode: code,
-          cityName: city.name,
-        })
-        return null
-      }
-      const resolvedCountryName =
-        city.countryName ??
-        countryNameCache?.get(resolvedCountryCode) ??
-        null
-      if (!resolvedCountryName) {
-        console.warn("[webbeds][static] city missing country name", {
-          cityCode: code,
-          cityName: city.name,
-          resolvedCountryCode,
-        })
-        return null
-      }
-      return models.WebbedsCity.upsert(
-        {
-          code,
-          name: city.name ?? null,
-          country_code: resolvedCountryCode,
-          country_name: resolvedCountryName,
-          state_name: city.stateName ?? null,
-          state_code: city.stateCode ?? null,
-          region_name: city.regionName ?? null,
-          region_code: city.regionCode ?? null,
-          metadata: city,
-        },
-        { transaction: tx },
-      )
-    })
+    const batchSize =
+      toPositiveIntOrNull(process.env.WEBBEDS_CITY_UPSERT_BATCH_SIZE) ?? 250
+    let inserted = 0
 
-    await Promise.all(operations.filter(Boolean))
-    await tx.commit()
+    for (const batch of chunkArray(cities, batchSize)) {
+      const batchTx = await sequelize.transaction()
+      try {
+        const records = []
+        batch.forEach((city) => {
+          const code = Number(city.code) || null
+          if (!code) return
+          const resolvedCountryCode =
+            toNumberOrNull(city.countryCode) ?? fallbackCountryCode
+          if (!resolvedCountryCode) {
+            console.warn("[webbeds][static] city missing country code", {
+              cityCode: code,
+              cityName: city.name,
+            })
+            return
+          }
+          const resolvedCountryName =
+            city.countryName ?? countryNameCache?.get(resolvedCountryCode) ?? null
+          if (!resolvedCountryName) {
+            console.warn("[webbeds][static] city missing country name", {
+              cityCode: code,
+              cityName: city.name,
+              resolvedCountryCode,
+            })
+            return
+          }
+
+          records.push({
+            code,
+            name: city.name ?? null,
+            country_code: resolvedCountryCode,
+            country_name: resolvedCountryName,
+            state_name: city.stateName ?? null,
+            state_code: city.stateCode ?? null,
+            region_name: city.regionName ?? null,
+            region_code: city.regionCode ?? null,
+            metadata: city,
+          })
+        })
+
+        if (!records.length) {
+          await batchTx.commit()
+          continue
+        }
+
+        await Promise.all(
+          records.map((record) =>
+            models.WebbedsCity.upsert(record, { transaction: batchTx }),
+          ),
+        )
+        inserted += records.length
+        await batchTx.commit()
+      } catch (error) {
+        await batchTx.rollback()
+        throw error
+      }
+    }
 
     console.info("[webbeds][static] cities synchronized", {
-      count: operations.filter(Boolean).length,
+      count: inserted,
       countryCode,
+      batchSize,
     })
-    return { inserted: operations.filter(Boolean).length }
+    return { inserted }
   } catch (error) {
-    await tx.rollback()
     console.error("[webbeds][static] cities sync failed", { countryCode, error })
     throw error
   }
