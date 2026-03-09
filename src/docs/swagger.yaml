@@ -3591,7 +3591,6 @@ paths:
     post:
       tags: [Admin]
       summary: Sync Webbeds countries
-      security: []
       responses:
         "200":
           $ref: "#/components/responses/Ok"
@@ -3599,7 +3598,6 @@ paths:
     post:
       tags: [Admin]
       summary: Sync Webbeds cities
-      security: []
       responses:
         "200":
           $ref: "#/components/responses/Ok"
@@ -3607,7 +3605,6 @@ paths:
     post:
       tags: [Admin]
       summary: Sync Webbeds hotels
-      security: []
       responses:
         "200":
           $ref: "#/components/responses/Ok"
