@@ -7,6 +7,7 @@ export const INTENTS = {
   TRIP: "TRIP",
   PLANNING: "PLANNING",
   LOCATION: "LOCATION",
+  QUESTION_ABOUT_LAST_RESULTS: "QUESTION_ABOUT_LAST_RESULTS",
 };
 
 export const NEXT_ACTIONS = {
@@ -17,6 +18,7 @@ export const NEXT_ACTIONS = {
   RUN_TRIP: "RUN_TRIP",
   RUN_PLANNING: "RUN_PLANNING",
   RUN_LOCATION: "RUN_LOCATION",
+  ANSWER_WITH_LAST_RESULTS: "ANSWER_WITH_LAST_RESULTS",
   HELP: "HELP",
   SMALL_TALK: "SMALL_TALK",
 };
@@ -152,6 +154,8 @@ export const buildPlanOutcome = ({ state, plan }) => {
   let nextAction = NEXT_ACTIONS.SMALL_TALK;
   if (intent === INTENTS.HELP) {
     nextAction = NEXT_ACTIONS.HELP;
+  } else if (intent === INTENTS.QUESTION_ABOUT_LAST_RESULTS) {
+    nextAction = NEXT_ACTIONS.ANSWER_WITH_LAST_RESULTS;
   } else if (intent === INTENTS.PLANNING) {
     nextAction = NEXT_ACTIONS.RUN_PLANNING;
   } else if (intent === INTENTS.LOCATION) {
@@ -193,6 +197,8 @@ export const updateStageFromAction = (state, nextAction) => {
     next.stage = STAGES.TRIP_ASSIST;
   } else if (nextAction === NEXT_ACTIONS.RUN_PLANNING || nextAction === NEXT_ACTIONS.RUN_LOCATION) {
     // Planning/Location: keep current stage; no search, just conversational reply
+  } else if (nextAction === NEXT_ACTIONS.ANSWER_WITH_LAST_RESULTS) {
+    // Keep current stage (e.g. SHOW_RESULTS); answer from last shown inventory, no new search
   }
   return next;
 };

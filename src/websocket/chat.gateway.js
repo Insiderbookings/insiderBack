@@ -90,7 +90,6 @@ export default function registerChatGateway(io, socket) {
       const message = await postMessage({
         chatId,
         senderId: userId,
-        senderRole: socket.data.user?.role === 6 ? "HOST" : "GUEST",
         body,
         type,
         metadata,

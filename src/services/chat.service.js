@@ -557,7 +557,27 @@ const mirrorSupportMessage = async ({
   });
   if (!ticket) return;
 
-  const senderType = senderRole === "HOST" ? "ADMIN" : "USER";
+  let senderType = null;
+  if (
+    senderId != null &&
+    thread?.guest_user_id != null &&
+    Number(senderId) === Number(thread.guest_user_id)
+  ) {
+    senderType = "USER";
+  } else if (
+    senderId != null &&
+    thread?.host_user_id != null &&
+    Number(senderId) === Number(thread.host_user_id)
+  ) {
+    senderType = "ADMIN";
+  } else if (senderRole === "GUEST") {
+    senderType = "USER";
+  } else if (senderRole === "HOST") {
+    senderType = "ADMIN";
+  }
+
+  if (!senderType) return;
+
   const supportMessage = await SupportMessage.create({
     ticket_id: ticket.id,
     sender_type: senderType,
@@ -604,7 +624,7 @@ export const postMessage = async ({
         userId: senderId,
         transaction,
       });
-      role = role ?? participant.role;
+      role = participant?.role ?? role;
     }
 
     if (!role) {

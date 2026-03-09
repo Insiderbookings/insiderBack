@@ -145,6 +145,7 @@ const CONTEXT_STRING_MAX = {
   tripStayName: 120,
   tripLocationText: 120,
   confirmedWhere: 200,
+  confirmedPlaceId: 200,
   confirmedWhen: 100,
   confirmedWho: 100,
   nationalityCode: 20,
@@ -223,6 +224,15 @@ const sanitizeContextPayload = (value) => {
     const cs = raw.confirmedSearch;
     next.confirmedSearch = {};
     if (cs.where != null) next.confirmedSearch.where = truncate(cs.where, CONTEXT_STRING_MAX.confirmedWhere);
+    if (cs.placeId != null) next.confirmedSearch.placeId = truncate(cs.placeId, CONTEXT_STRING_MAX.confirmedPlaceId);
+    if (cs.lat != null) {
+      const lat = Number(cs.lat);
+      if (Number.isFinite(lat)) next.confirmedSearch.lat = lat;
+    }
+    if (cs.lng != null) {
+      const lng = Number(cs.lng);
+      if (Number.isFinite(lng)) next.confirmedSearch.lng = lng;
+    }
     if (cs.when != null) next.confirmedSearch.when = truncate(cs.when, CONTEXT_STRING_MAX.confirmedWhen);
     if (cs.who != null) next.confirmedSearch.who = truncate(cs.who, CONTEXT_STRING_MAX.confirmedWho);
     if (Object.keys(next.confirmedSearch).length === 0) delete next.confirmedSearch;
@@ -361,6 +371,54 @@ const buildSearchContext = (result) => {
   };
 };
 
+/**
+ * Build flat items array from inventory for block-based response (sections + items).
+ * Each item has id, inventoryType (HOTEL|HOME), and fields needed for cards.
+ */
+const buildItemsFromInventory = (inventory) => {
+  if (!inventory || typeof inventory !== "object") return [];
+  const items = [];
+  (inventory.hotels || []).forEach((h) => {
+    items.push({
+      id: h.id != null ? String(h.id) : null,
+      inventoryType: "HOTEL",
+      name: h.name ?? h.title ?? "",
+      city: h.city ?? "",
+      stars: h.classification?.name ?? h.stars ?? null,
+      pricePerNight: h.pricePerNight ?? h.price_per_night ?? null,
+      currency: h.currency ?? "USD",
+      coverImage: h.coverImage ?? h.image ?? null,
+      image: h.coverImage ?? h.image ?? null,
+      images: Array.isArray(h.images) ? h.images : null,
+      hotelDetails: {
+        hotelName: h.name ?? h.title ?? "",
+        city: h.city ?? "",
+        country: h.country ?? "",
+        rating: h.rating ?? h.stars ?? null,
+        coverImage: h.coverImage ?? h.image ?? null,
+        images: Array.isArray(h.images) ? h.images : null,
+      },
+      amenities: Array.isArray(h.amenities) ? h.amenities.map((a) => (typeof a === "string" ? a : a?.name ?? String(a))) : [],
+      ...(h.shortDescription && { description: h.shortDescription }),
+    });
+  });
+  (inventory.homes || []).forEach((h) => {
+    items.push({
+      id: h.id != null ? String(h.id) : null,
+      inventoryType: "HOME",
+      title: h.title ?? h.name ?? "",
+      name: h.title ?? h.name ?? "",
+      city: h.city ?? "",
+      pricePerNight: h.pricePerNight ?? h.price_per_night ?? null,
+      currency: h.currency ?? "USD",
+      coverImage: h.coverImage ?? h.image ?? null,
+      image: h.coverImage ?? h.image ?? null,
+      amenities: Array.isArray(h.amenities) ? h.amenities.map((a) => (typeof a === "string" ? a : a?.name ?? String(a))) : [],
+    });
+  });
+  return items.filter((i) => i.id);
+};
+
 export const handleAiChat = async (req, res) => {
   const userId = getAuthenticatedUserId(req);
   if (!userId) {
@@ -475,21 +533,25 @@ export const handleAiChat = async (req, res) => {
         homes: Array.isArray(result.inventory?.homes) ? result.inventory.homes.length : 0,
         hotels: Array.isArray(result.inventory?.hotels) ? result.inventory.hotels.length : 0,
       };
+      const sections = Array.isArray(result.ui?.sections) ? result.ui.sections : [];
+      const quick_replies = Array.isArray(result.followUps) ? result.followUps : [];
+      const items = buildItemsFromInventory(result.inventory);
       return res.json({
         ok: true,
         conversationId,
         sessionId: conversationId,
-        reply: replyText,
+        message: replyText,
         assistant: result.assistant || { text: replyText, tone: "neutral", disclaimers: [] },
         ui: result.ui,
         state: result.state,
         plan: result.plan,
-        inventory: result.inventory,
         carousels: Array.isArray(result.carousels) ? result.carousels : [],
         trip: result.trip,
         counts,
         searchContext: searchContext || undefined,
-        followUps: result.followUps,
+        sections,
+        quick_replies,
+        items,
         intent: result.intent,
         nextAction: result.nextAction,
         assistantReady: isAssistantEnabled(),

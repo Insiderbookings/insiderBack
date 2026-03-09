@@ -99,7 +99,13 @@ router.post(
 router.post(
   "/google/exchange",
   [
-    body("code").notEmpty(),
+    body().custom((_, { req }) => {
+      if (String(req.body?.code || "").trim()) return true;
+      if (String(req.body?.idToken || "").trim()) return true;
+      throw new Error("code or idToken is required");
+    }),
+    body("code").optional().isString(),
+    body("idToken").optional().isString(),
     body("redirectUri").optional().isString(),
     body("codeVerifier").optional().isString(),
     body("clientId").optional().isString(),

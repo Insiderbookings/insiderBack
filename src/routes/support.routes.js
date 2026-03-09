@@ -36,7 +36,7 @@ router.post(
     authenticate,
     [
         check('subject', 'Subject is required').not().isEmpty(),
-        check('message', 'Message is required').not().isEmpty()
+        check('message').optional({ nullable: true }).isString()
     ],
     createTicket
 );

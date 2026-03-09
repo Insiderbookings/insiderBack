@@ -6,6 +6,7 @@ import models from "../models/index.js"
 import cache from "../services/cache.js"
 import { WebbedsProvider } from "../providers/webbeds/provider.js"
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
+import { resolveWebbedsCityMatch as sharedResolveWebbedsCityMatch } from "../services/webbedsCityResolver.service.js"
 
 const provider = new WebbedsProvider()
 const DEFAULT_LIMIT = 50
@@ -597,65 +598,16 @@ const resolveCityFromPlace = async ({
   return best
 }
 
-const resolveCityMatch = async ({ query, cityCode, countryCode, countryName, placeId, lat, lng }) => {
-  const { cityToken, stateHint } = normalizeCityQueryInput(query)
-  const placeResolvedCity = await resolveCityFromPlace({
-    placeId,
+const resolveCityMatch = async ({ query, cityCode, countryCode, countryName, placeId, lat, lng }) =>
+  sharedResolveWebbedsCityMatch({
     query,
+    cityCode,
     countryCode,
     countryName,
-    stateHint,
-    cityToken,
+    placeId,
     lat,
     lng,
   })
-  if (placeResolvedCity) return placeResolvedCity
-
-  if (cityCode) {
-    const selectedCity = await fetchCityByCode(cityCode)
-    if (!selectedCity) return null
-
-    // Keep explicit city selection unless it has no inventory and we have enough query context to recover.
-    if (extractCityHotelCount(selectedCity) > 0 || !cityToken) {
-      return selectedCity
-    }
-
-    const fallbackCandidates = await findCityCandidates({
-      query: cityToken,
-      countryCode: countryCode ?? selectedCity.country_code,
-      countryName: countryName ?? selectedCity.country_name,
-      limit: 30,
-    })
-    const bestFallback = pickBestCityCandidate({
-      candidates: fallbackCandidates.filter((item) => String(item.code) !== String(selectedCity.code)),
-      cityToken,
-      stateHint,
-      targetLat: parseCoordinateValue(lat),
-      targetLng: parseCoordinateValue(lng),
-    })
-
-    if (bestFallback) {
-      return bestFallback
-    }
-    return selectedCity
-  }
-
-  if (!cityToken) return null
-
-  const candidates = await findCityCandidates({
-    query: cityToken,
-    countryCode,
-    countryName,
-    limit: 30,
-  })
-  return pickBestCityCandidate({
-    candidates,
-    cityToken,
-    stateHint,
-    targetLat: parseCoordinateValue(lat),
-    targetLng: parseCoordinateValue(lng),
-  })
-}
 
 const resolveSafeLimit = (limit) =>
   Math.min(50, Math.max(1, Number(limit) || DEFAULT_LIMIT))
