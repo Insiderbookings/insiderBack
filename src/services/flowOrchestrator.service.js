@@ -300,6 +300,58 @@ const summarizeRuntimePreauthContextForDebug = ({
   })(),
 });
 
+const resolveRequestIpForPreauth = (req) => {
+  const forwarded = req?.headers?.["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded
+      .split(",")
+      .map((value) => String(value || "").trim())
+      .find(Boolean) || null;
+  }
+  if (Array.isArray(forwarded)) {
+    return forwarded
+      .flatMap((value) => String(value || "").split(","))
+      .map((value) => value.trim())
+      .find(Boolean) || null;
+  }
+  return (
+    req?.headers?.["x-real-ip"] ||
+    req?.ip ||
+    req?.socket?.remoteAddress ||
+    req?.connection?.remoteAddress ||
+    null
+  );
+};
+
+const resolveClientDevicePayloadForPreauth = (body = {}) => {
+  const candidates = [
+    body?.devicePayload,
+    body?.payment?.devicePayload,
+    body?.paymentContext?.devicePayload,
+  ];
+  for (const candidate of candidates) {
+    const normalized = String(candidate || "").trim();
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
+const resolveClientIpOverrideForPreauth = (body = {}) => {
+  const candidates = [
+    body?.endUserIPAddress,
+    body?.endUserIPv4Address,
+    body?.payment?.endUserIPAddress,
+    body?.payment?.endUserIPv4Address,
+    body?.paymentContext?.endUserIPAddress,
+    body?.paymentContext?.endUserIPv4Address,
+  ];
+  for (const candidate of candidates) {
+    const normalized = String(candidate || "").trim();
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
 const logFlowRateDebug = (event, payload = {}) => {
   if (!FLOW_RATE_DEBUG_LOGS) return;
   try {
@@ -1911,6 +1963,30 @@ export class FlowOrchestratorService {
       avsEmail: process.env.WEBBEDS_AVS_EMAIL || process.env.WEBBEDS_CC_EMAIL || "unknown@example.com",
       avsPhone: process.env.WEBBEDS_AVS_PHONE || "+10000000000",
     };
+    const clientDevicePayload = resolveClientDevicePayloadForPreauth(body);
+    const requestIpAddress = resolveRequestIpForPreauth(req);
+    const clientIpOverride = resolveClientIpOverrideForPreauth(body);
+    const resolvedEndUserIPAddress =
+      clientIpOverride ||
+      requestIpAddress ||
+      String(process.env.WEBBEDS_DEFAULT_IP || "").trim() ||
+      "127.0.0.1";
+    const resolvedDevicePayload =
+      clientDevicePayload ||
+      String(process.env.WEBBEDS_DEVICE_PAYLOAD || "").trim() ||
+      "static-device";
+    const devicePayloadSource = clientDevicePayload
+      ? "request"
+      : process.env.WEBBEDS_DEVICE_PAYLOAD
+        ? "env"
+        : "fallback";
+    const endUserIPAddressSource = clientIpOverride
+      ? "request.override"
+      : requestIpAddress
+        ? "request"
+        : process.env.WEBBEDS_DEFAULT_IP
+          ? "env"
+          : "fallback";
 
     const payload = buildBookItineraryPayload({
       bookingCode: flow.itinerary_booking_code,
@@ -1926,8 +2002,8 @@ export class FlowOrchestratorService {
         creditCardType: process.env.WEBBEDS_CC_TYPE || 100,
         avsDetails,
         authorisationId: paymentIntentId,
-        devicePayload: process.env.WEBBEDS_DEVICE_PAYLOAD || "static-device",
-        endUserIPAddress: process.env.WEBBEDS_DEFAULT_IP || "127.0.0.1",
+        devicePayload: resolvedDevicePayload,
+        endUserIPAddress: resolvedEndUserIPAddress,
       },
       services,
     });
@@ -1935,10 +2011,10 @@ export class FlowOrchestratorService {
       token,
       paymentMethod,
       devicePayload: payload?.bookingDetails?.creditCardPaymentDetails?.devicePayload ?? null,
-      devicePayloadSource: process.env.WEBBEDS_DEVICE_PAYLOAD ? "env" : "fallback",
+      devicePayloadSource,
       endUserIPAddress:
         payload?.bookingDetails?.creditCardPaymentDetails?.endUserIPv4Address ?? null,
-      endUserIPAddressSource: process.env.WEBBEDS_DEFAULT_IP ? "env" : "fallback",
+      endUserIPAddressSource,
       req,
       avsDetails,
     });
