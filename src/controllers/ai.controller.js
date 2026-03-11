@@ -3,6 +3,7 @@ import {
   AI_CHAT_REQUEST_LIMITS,
 } from "../modules/ai/ai.config.js";
 import { runAiTurn } from "../modules/ai/ai.service.js";
+import { circuitBreaker } from "../modules/ai/ai.telemetry.js";
 import { saveAssistantState } from "../modules/ai/ai.stateStore.js";
 import { isAssistantEnabled } from "../services/aiAssistant.service.js";
 import {
@@ -21,7 +22,8 @@ const QUICK_START_PROMPTS = [
   "Need a pet-friendly hotel near Bariloche for 6 guests.",
 ];
 
-const activeSessionTurns = new Set();
+const SESSION_TURN_TTL_MS = 90_000; // 90s hard cap — any AI turn exceeding this is considered stale
+const activeSessionTurns = new Map(); // sessionId → acquiredAt (ms timestamp)
 
 const buildAiError = (message, code, status = 400) => {
   const error = new Error(message);
@@ -317,8 +319,14 @@ const normalizeAiRequest = (body) => {
 
 const tryAcquireSessionTurn = (sessionId) => {
   if (!sessionId) return true;
-  if (activeSessionTurns.has(sessionId)) return false;
-  activeSessionTurns.add(sessionId);
+  const existing = activeSessionTurns.get(sessionId);
+  if (existing) {
+    if (Date.now() - existing < SESSION_TURN_TTL_MS) return false;
+    // Stale lock expired — release and allow new turn
+    console.warn("[ai] releasing stale session lock", { sessionId, ageMs: Date.now() - existing });
+    activeSessionTurns.delete(sessionId);
+  }
+  activeSessionTurns.set(sessionId, Date.now());
   return true;
 };
 
@@ -434,12 +442,21 @@ export const handleAiChat = async (req, res) => {
   }
 
   let { conversationId, incomingMessage, limits, context, uiEvent } = requestPayload;
+
+  // Validate that context.user.id (if provided) matches the authenticated user
+  if (context?.user?.id != null) {
+    const ctxId = String(context.user.id).trim();
+    if (ctxId && ctxId !== String(userId)) {
+      return res.status(403).json({ error: "Forbidden: context user mismatch.", code: "AI_CONTEXT_USER_MISMATCH" });
+    }
+  }
+
   if (!incomingMessage && !uiEvent) {
     return res.status(400).json({ error: "message is required", code: "AI_INVALID_PAYLOAD" });
   }
 
   if (incomingMessage) {
-    const moderation = isContentAllowed(incomingMessage);
+    const moderation = await isContentAllowed(incomingMessage);
     if (!moderation.allowed) {
       return res.status(400).json({
         error: "Your message contains content that is not allowed. Please keep the conversation respectful.",
@@ -494,6 +511,13 @@ export const handleAiChat = async (req, res) => {
       content: msg.content,
     }));
 
+    const turnController = new AbortController();
+    const onClientClose = () => {
+      console.warn("[ai] client disconnected mid-turn, aborting", { sessionId: conversationId, userId });
+      turnController.abort();
+    };
+    res.on("close", onClientClose);
+
     try {
       const result = await runAiTurn({
         sessionId: conversationId,
@@ -502,6 +526,7 @@ export const handleAiChat = async (req, res) => {
         limits,
         uiEvent,
         context,
+        signal: turnController.signal,
       });
 
       try {
@@ -536,6 +561,7 @@ export const handleAiChat = async (req, res) => {
       const sections = Array.isArray(result.ui?.sections) ? result.ui.sections : [];
       const quick_replies = Array.isArray(result.followUps) ? result.followUps : [];
       const items = buildItemsFromInventory(result.inventory);
+      res.removeListener("close", onClientClose);
       return res.json({
         ok: true,
         conversationId,
@@ -559,7 +585,18 @@ export const handleAiChat = async (req, res) => {
       });
     } catch (err) {
       if (trySendKnownAiError(res, err)) return;
-      console.error("[ai] chat failed", err);
+      const isAborted = err?.name === "AbortError" || err?.code === "ERR_CANCELED";
+      if (isAborted) {
+        // Client disconnected — don't send response (headers may already be sent)
+        console.info("[ai] turn aborted (client disconnected)", { sessionId: conversationId, userId });
+        return;
+      }
+      // Track failure in circuit breaker (skip circuit-open errors — those are already tracked)
+      if (err?.code !== "AI_CIRCUIT_OPEN") {
+        circuitBreaker.onFailure({ sessionId: conversationId, userId, error: err?.message });
+      }
+      console.error("[ai] chat failed", { sessionId: conversationId, userId, error: err?.message, code: err?.code });
+      if (trySendKnownAiError(res, err)) return;
       return res.status(500).json({ error: "Unable to process assistant query right now" });
     }
   } finally {
@@ -638,4 +675,20 @@ export const deleteAiChat = async (req, res) => {
     console.error("[ai] failed to delete session", err);
     return res.status(500).json({ error: "Unable to delete chat session" });
   }
+};
+
+/**
+ * Health check — returns circuit breaker state and assistant readiness.
+ * Useful for monitoring dashboards and uptime checks.
+ */
+export const getAiHealth = async (req, res) => {
+  const cb = circuitBreaker.status();
+  const ready = isAssistantEnabled() && cb.state !== "OPEN";
+  return res.status(ready ? 200 : 503).json({
+    ok: ready,
+    assistant: isAssistantEnabled(),
+    circuitBreaker: cb,
+    activeTurns: activeSessionTurns.size,
+    ts: new Date().toISOString(),
+  });
 };

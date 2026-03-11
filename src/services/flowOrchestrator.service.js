@@ -179,6 +179,127 @@ const summarizeWebbedsErrorForDebug = (error) => ({
   metadata: error?.metadata ?? null,
 });
 
+const fingerprintDebugValue = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  return createHmac("sha256", "flows-debug")
+    .update(text)
+    .digest("hex")
+    .slice(0, 12);
+};
+
+const maskIpForDebug = (ip) => {
+  const text = String(ip || "").trim();
+  if (!text) return null;
+  if (text.includes(":")) {
+    const chunks = text.split(":").filter(Boolean);
+    if (!chunks.length) return "::";
+    return `${chunks.slice(0, 2).join(":")}:****`;
+  }
+  const parts = text.split(".");
+  if (parts.length !== 4) return text;
+  return `${parts[0]}.${parts[1]}.x.x`;
+};
+
+const classifyIpForDebug = (ip) => {
+  const text = String(ip || "").trim();
+  if (!text) return "missing";
+  if (text === "::1" || text.startsWith("127.")) return "loopback";
+  if (text.startsWith("10.")) return "private";
+  if (text.startsWith("192.168.")) return "private";
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(text)) return "private";
+  return text.includes(":") ? "ipv6" : "public";
+};
+
+const resolveEmailDomainForDebug = (email) => {
+  const text = String(email || "").trim();
+  if (!text.includes("@")) return null;
+  return text.split("@").pop()?.toLowerCase() || null;
+};
+
+const summarizeDevicePayloadForDebug = (value, { source = null } = {}) => {
+  const text = String(value || "").trim();
+  return {
+    source,
+    present: Boolean(text),
+    length: text ? text.length : 0,
+    fingerprint: fingerprintDebugValue(text),
+    staticFallback: text === "static-device",
+  };
+};
+
+const summarizeIpForDebug = (value, { source = null } = {}) => ({
+  source,
+  present: Boolean(String(value || "").trim()),
+  kind: classifyIpForDebug(value),
+  masked: maskIpForDebug(value),
+  fingerprint: fingerprintDebugValue(value),
+});
+
+const summarizeAvsForDebug = (avsDetails = {}) => ({
+  country: avsDetails?.avsCountry ?? null,
+  cityPresent: Boolean(String(avsDetails?.avsCity || "").trim()),
+  zipPresent: Boolean(String(avsDetails?.avsZip || "").trim()),
+  emailDomain: resolveEmailDomainForDebug(avsDetails?.avsEmail),
+  phoneLast4: String(avsDetails?.avsPhone || "").replace(/\D/g, "").slice(-4) || null,
+});
+
+const summarizeThreeDSDataForDebug = (threeDSData = null) => {
+  if (!threeDSData || typeof threeDSData !== "object") {
+    return {
+      present: false,
+      initiate3DS: null,
+      status: null,
+      hasToken: false,
+      tokenFingerprint: null,
+      orderCode: null,
+      authorizationId: null,
+    };
+  }
+  return {
+    present: true,
+    initiate3DS: threeDSData?.initiate3DS ?? null,
+    status: threeDSData?.status ?? null,
+    hasToken: Boolean(String(threeDSData?.token || "").trim()),
+    tokenFingerprint: fingerprintDebugValue(threeDSData?.token),
+    orderCode: threeDSData?.orderCode ?? null,
+    authorizationId: threeDSData?.authorizationId ?? null,
+  };
+};
+
+const summarizeRuntimePreauthContextForDebug = ({
+  token,
+  paymentMethod,
+  devicePayload,
+  devicePayloadSource,
+  endUserIPAddress,
+  endUserIPAddressSource,
+  req,
+  avsDetails,
+}) => ({
+  paymentMethod: paymentMethod ?? null,
+  tokenFingerprint: fingerprintDebugValue(token),
+  devicePayload: summarizeDevicePayloadForDebug(devicePayload, { source: devicePayloadSource }),
+  endUserIPAddress: summarizeIpForDebug(endUserIPAddress, { source: endUserIPAddressSource }),
+  requestIPAddress: summarizeIpForDebug(
+    req?.headers?.["x-forwarded-for"] ||
+      req?.headers?.["x-real-ip"] ||
+      req?.ip ||
+      req?.socket?.remoteAddress ||
+      null,
+    { source: "request" },
+  ),
+  avs: summarizeAvsForDebug(avsDetails),
+  tokenizerHost: (() => {
+    try {
+      const raw = String(process.env.WEBBEDS_TOKENIZER_URL || "").trim();
+      return raw ? new URL(raw).host : null;
+    } catch {
+      return "invalid-url";
+    }
+  })(),
+});
+
 const logFlowRateDebug = (event, payload = {}) => {
   if (!FLOW_RATE_DEBUG_LOGS) return;
   try {
@@ -1810,6 +1931,17 @@ export class FlowOrchestratorService {
       },
       services,
     });
+    const preauthRuntimeContext = summarizeRuntimePreauthContextForDebug({
+      token,
+      paymentMethod,
+      devicePayload: payload?.bookingDetails?.creditCardPaymentDetails?.devicePayload ?? null,
+      devicePayloadSource: process.env.WEBBEDS_DEVICE_PAYLOAD ? "env" : "fallback",
+      endUserIPAddress:
+        payload?.bookingDetails?.creditCardPaymentDetails?.endUserIPv4Address ?? null,
+      endUserIPAddressSource: process.env.WEBBEDS_DEFAULT_IP ? "env" : "fallback",
+      req,
+      avsDetails,
+    });
     logFlowRateDebug("preauth.request", {
       traceId: debugTraceId ?? null,
       requestId: getRequestId(req) ?? null,
@@ -1819,6 +1951,7 @@ export class FlowOrchestratorService {
       selectedOffer: summarizeOfferForDebug(flow.selected_offer),
       allocationCurrent: flow.allocation_current ?? null,
       pricing: summarizeFlowPricingForDebug(flow),
+      runtime: preauthRuntimeContext,
     });
 
     let result;
@@ -1846,6 +1979,7 @@ export class FlowOrchestratorService {
         error: summarizeWebbedsErrorForDebug(error),
         selectedOffer: summarizeOfferForDebug(flow.selected_offer),
         pricing: summarizeFlowPricingForDebug(flow),
+        runtime: preauthRuntimeContext,
       });
       await logStep({
         flowId,
@@ -1890,6 +2024,10 @@ export class FlowOrchestratorService {
       selectedOffer: summarizeOfferForDebug(flow.selected_offer),
       allocationCurrent: flow.allocation_current ?? null,
       pricing: summarizeFlowPricingForDebug(flow),
+      returnedCode: mapped?.returnedCode ?? null,
+      successful: mapped?.successful ?? null,
+      threeDSData: summarizeThreeDSDataForDebug(mapped?.threeDSData),
+      runtime: preauthRuntimeContext,
     });
 
     await logStep({

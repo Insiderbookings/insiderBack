@@ -470,7 +470,7 @@ const buildPlannerPrompt = ({ now, confirmedSearch, hasLastResults = false } = {
         confirmedBlock +
         lastResultsBlock +
         "INTENT DETECTION RULES:\n" +
-        "- SEARCH: User wants to find or book accommodation (hotels, homes). Key verbs: 'search', 'need', 'want', 'show me', 'buscar', 'reservar'. Use when the goal is to see options with availability/prices.\n" +
+        "- SEARCH: User wants to find or book accommodation (hotels, homes). Key verbs: 'search', 'need', 'want', 'show me', 'buscar', 'reservar'. Use when the goal is to see options with availability/prices. ALSO use SEARCH when the user asks for 'real availability', 'disponibilidad real', 'precios reales', 'live prices', or 'check availability' — these are requests to search with real data, NOT capability questions.\n" +
         "- PLANNING: User asks to plan or organize a trip (itinerary, day-by-day, strategy). Phrases: 'planificar (mi) viaje', 'organizar el viaje', 'armar itinerario', 'plan my trip', 'help me plan', 'quiero planear'. Goal = get a plan (days, activities, constraints), not just list hotels.\n" +
         "- LOCATION: User asks for information about a destination (what to see, where to stay, how to get around). Phrases: 'contame de [lugar]', 'qué hay en [lugar]', 'info sobre [lugar]', 'tell me about [place]', 'what to do in', 'dónde alojarse en'. Goal = destination guide, not search results.\n" +
         "- SMALL_TALK: Greetings, farewells, thanks, personal questions, casual conversation without search/planning/location intent.\n" +
@@ -493,7 +493,8 @@ const buildPlannerPrompt = ({ now, confirmedSearch, hasLastResults = false } = {
         "- If today is Dec 2025 and user says 'Jan 18', assume 2026-01-18.\n\n" +
 
         "LANGUAGE AND IDIOMS DETECTION:\n" +
-        "Detect and recognize regional idioms:\n" +
+        "Detect the language of the user's latest message and set it in the 'language' field: use 'es' for Spanish/Castellano (including all regional variants), 'en' for English, 'pt' for Portuguese, 'ar' for Arabic. This is CRITICAL — if the user writes in Spanish, language MUST be 'es'. Never default to 'en' if the message is clearly in another language.\n" +
+        "Also detect and recognize regional idioms:\n" +
         "- Argentinians: che, boludo, copado, finde, buenisimo, genial, dale, barbaro\n" +
         "- Mexicans: wey, chido, padre, que onda\n" +
         "- Chileans: po, cachai, bacan\n" +
@@ -511,7 +512,10 @@ const buildPlannerPrompt = ({ now, confirmedSearch, hasLastResults = false } = {
         "User: 'Quiero planificar un viaje a Roma' -> intent: PLANNING\n" +
         "User: 'Tell me about Miami' -> intent: LOCATION\n" +
         "User: 'Qué hay para hacer en Barcelona?' -> intent: LOCATION\n" +
-        "User: 'Contame de Dubai' -> intent: LOCATION\n\n" +
+        "User: 'Contame de Dubai' -> intent: LOCATION\n" +
+        "User: 'Puedes mostrarme disponibilidad real?' -> intent: SEARCH (user wants live availability, not asking about capability)\n" +
+        "User: 'Can you show me real availability?' -> intent: SEARCH\n" +
+        "User: 'Quiero ver precios reales' -> intent: SEARCH\n\n" +
 
         "FILTERING & SORTING RULES:\n" +
         "- Fill location city/state/country and lat/lng when provided.\n" +
@@ -567,7 +571,7 @@ const buildPlannerPrompt = ({ now, confirmedSearch, hasLastResults = false } = {
         "budget": {"currency": string|null, "max": number|null, "min": number|null},
         "sortBy": "POPULARITY" | "PRICE_ASC" | "PRICE_DESC" | "RELEVANCE",
         "limit": number|null,
-        "language": "en",
+        "language": "es" | "en" | "pt" | "ar",
         "notes": string[]
       }`,
     },
@@ -1393,6 +1397,7 @@ export const generateAssistantReply = async ({
         `${contextInstruction}\n` +
         `- ${noRepeatInstruction}\n` +
         "- Vary your tone: sometimes more direct ('You can search by destination and dates'), sometimes warmer ('I can help you find a place — just tell me where and when'). Avoid robotic or repeated phrasing.\n" +
+        "- CRITICAL: You CAN check real availability and live prices. NEVER say 'I can't check real-time availability' or 'I don't have access to availability'. Instead, tell the user you can show live availability and real prices — they just need to provide destination, dates and number of guests. Frame it positively: 'Yes! I can check real availability — just tell me where, when, and how many guests.'\n" +
         "- Explain what you can do: search for homes and hotels, filter by amenities, dates, budget. Mention that to see prices and availability they need to enter destination, dates and guests.\n" +
         "- If the user asks about their booking, CONFIRM you see it using the context below.\n" +
         "- followUps: Suggestions on how to start searching. Vary wording (e.g. 'Search for a stay', 'Pick dates and guests', 'Tell me your destination').\n" +

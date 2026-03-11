@@ -7,7 +7,7 @@ import { enforcePolicy } from "./ai.policy.js";
 import { renderAssistantPayload } from "./ai.renderer.js";
 import { loadAssistantState } from "./ai.stateStore.js";
 import { geocodePlace, getNearbyPlaces, getWeatherSummary, searchStays, searchDestinationImages, getStayDetails } from "./tools/index.js";
-import { logAiEvent } from "./ai.telemetry.js";
+import { logAiEvent, circuitBreaker } from "./ai.telemetry.js";
 
 const DEBUG_TRIP_HUB = process.env.TRIP_HUB_DEBUG === "true";
 const debugTripHub = (...args) => {
@@ -930,6 +930,15 @@ export const runAiTurn = async ({
 } = {}) => {
   const startedAt = Date.now();
   const timings = {};
+
+  // Circuit breaker — reject fast if OpenAI is experiencing issues
+  if (circuitBreaker.isOpen()) {
+    const cbErr = new Error("AI service is temporarily unavailable. Please try again in a moment.");
+    cbErr.code = "AI_CIRCUIT_OPEN";
+    cbErr.status = 503;
+    throw cbErr;
+  }
+
   if (!AI_FLAGS.chatEnabled) {
     return {
       inventory: buildEmptyInventory(),
@@ -1244,6 +1253,9 @@ export const runAiTurn = async ({
   });
   timings.renderMs = Date.now() - renderStart;
   timings.totalMs = Date.now() - startedAt;
+
+  // Mark circuit breaker as healthy after a successful OpenAI turn
+  circuitBreaker.onSuccess();
 
   logAiEvent("turn", {
     sessionId,

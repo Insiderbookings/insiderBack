@@ -8,6 +8,7 @@ import { Op } from "sequelize";
 import dotenv from "dotenv"
 import models, { sequelize } from "../models/index.js";
 import { sendBookingEmail } from "../emailTemplates/booking-email.js";
+import { sendHomeHostBookingEmail } from "../emailTemplates/home-host-booking-email.js";
 import { sendMail } from "../helpers/mailer.js";
 import { resolveVaultBranding } from "../helpers/vaultBranding.js";
 import { emitAdminActivity } from "../websocket/emitter.js";
@@ -369,6 +370,90 @@ export const finalizeBookingAfterPayment = async ({ bookingId }) => {
     await dispatchBookingConfirmation(booking);
   } catch (err) {
     console.warn("[payments] booking confirmation notify failed:", err?.message || err);
+  }
+
+  if (booking.inventory_type === "HOME") {
+    try {
+      const home = booking.homeStay?.home || null;
+      const homeAddress = home?.address
+        ? [home.address.address_line1, home.address.city, home.address.state, home.address.country]
+            .filter(Boolean)
+            .join(", ") || null
+        : null;
+      const pricingSnapshot =
+        booking.pricing_snapshot && typeof booking.pricing_snapshot === "object"
+          ? booking.pricing_snapshot
+          : {};
+      const nightsCount = Number(booking.nights) || null;
+      const baseSubtotalValue = Number(
+        pricingSnapshot.hostBaseSubtotal ?? pricingSnapshot.baseSubtotal ?? 0
+      );
+      const ratePerNight = nightsCount ? Number((baseSubtotalValue / nightsCount).toFixed(2)) : null;
+      const bookingCode = booking.booking_ref || booking.id;
+
+      await sendBookingEmail(
+        {
+          id: booking.id,
+          bookingCode,
+          guestName: booking.guest_name,
+          guests: { adults: booking.adults, children: booking.children },
+          roomsCount: 1,
+          checkIn: booking.check_in,
+          checkOut: booking.check_out,
+          hotel: {
+            name: home?.title || "Home",
+            address: homeAddress,
+            city: home?.address?.city || null,
+            country: home?.address?.country || null,
+          },
+          currency: booking.currency || "USD",
+          totals: {
+            total: Number(booking.gross_price ?? 0),
+            nights: nightsCount || undefined,
+            ratePerNight: ratePerNight || undefined,
+          },
+        },
+        booking.guest_email,
+        {
+          attachCertificate: false,
+          branding: {
+            footerIntroText: "We look forward to hosting you. Your booking details are below.",
+          },
+        }
+      );
+
+      const hostUserId = booking.homeStay?.host_id || home?.host_id || null;
+      if (hostUserId) {
+        const hostUser = await models.User.findByPk(hostUserId, {
+          attributes: ["id", "name", "email"],
+        });
+        if (hostUser?.email) {
+          await sendHomeHostBookingEmail({
+            toEmail: hostUser.email,
+            hostName: hostUser.name,
+            bookingCode,
+            homeName: home?.title || "Home",
+            homeAddress,
+            checkIn: booking.check_in,
+            checkOut: booking.check_out,
+            nights: nightsCount,
+            guests: {
+              adults: booking.adults,
+              children: booking.children,
+              infants: booking.guest_snapshot?.infants ?? 0,
+            },
+            total: Number(booking.gross_price ?? 0),
+            currency: booking.currency || "USD",
+            guestName: booking.guest_name,
+            guestEmail: booking.guest_email,
+            guestPhone: booking.guest_phone,
+            securityDeposit: pricingSnapshot.securityDeposit ?? null,
+          });
+        }
+      }
+    } catch (mailErr) {
+      console.warn("[payments] home booking email dispatch failed:", mailErr?.message || mailErr);
+    }
   }
 
   try {

@@ -56,6 +56,8 @@ const NAMESPACE_ATOMIC = "http://us.dotwconnect.com/xsd/atomicCondition"
 const NAMESPACE_COMPLEX = "http://us.dotwconnect.com/xsd/complexCondition"
 const MAX_NOTIN_VALUES = Number(process.env.WEBBEDS_NOTIN_MAX || 20000)
 const amenityCatalogCache = new Set()
+const STATIC_HOTELS_RESULTS_PER_PAGE = Number(process.env.WEBBEDS_STATIC_HOTELS_RESULTS_PER_PAGE || 50)
+const STATIC_HOTELS_MAX_PAGES = Number(process.env.WEBBEDS_STATIC_HOTELS_MAX_PAGES || 5000)
 
 const formatTimestampForFilters = (value) => {
   if (!value) return null
@@ -759,38 +761,103 @@ const executeHotelSync = async ({
   const client = getClient()
   const payloadHash = hashPayload(payload)
   const filtersSummary = summarizeFilters(payload?.return?.filters)
+  const resolvedResultsPerPage = Number.isFinite(STATIC_HOTELS_RESULTS_PER_PAGE) && STATIC_HOTELS_RESULTS_PER_PAGE > 0
+    ? Math.trunc(STATIC_HOTELS_RESULTS_PER_PAGE)
+    : 50
+  const resolvedMaxPages = Number.isFinite(STATIC_HOTELS_MAX_PAGES) && STATIC_HOTELS_MAX_PAGES > 0
+    ? Math.trunc(STATIC_HOTELS_MAX_PAGES)
+    : 5000
+
   let processed = 0
   try {
-    console.log("[webbeds][static] syncing hotels", { cityCode, mode })
-    const { result } = await client.send("searchhotels", payload)
-    const hotels = ensureArray(result?.hotels?.hotel)
+    console.log("[webbeds][static] syncing hotels", {
+      cityCode,
+      mode,
+      resultsPerPage: resolvedResultsPerPage,
+    })
+
     const shouldCapHotels = Number.isFinite(hotelLimit) && hotelLimit > 0
-    const hotelsToPersist = shouldCapHotels ? hotels.slice(0, hotelLimit) : hotels
+    let remainingLimit = shouldCapHotels ? Math.trunc(hotelLimit) : null
 
-    if (!hotels.length) {
-      console.warn("[webbeds][static] searchhotels returned empty list", { cityCode, mode })
-      await recordSyncLog({
+    let page = 1
+    while (page <= resolvedMaxPages) {
+      console.log("[webbeds][static] hotels page start", {
         cityCode,
         mode,
-        resultCount: 0,
-        payloadHash,
-        filtersSummary,
-        metadata,
-        syncLog,
+        page,
+        resultsPerPage: resolvedResultsPerPage,
+        remainingLimit: remainingLimit ?? null,
       })
-      return { inserted: 0, mode }
-    }
 
-    if (shouldCapHotels && hotels.length > hotelsToPersist.length) {
-      console.log("[webbeds][static] applying hotel limit", {
+      const pagedPayload = {
+        ...payload,
+        return: {
+          ...(payload?.return ?? {}),
+          resultsPerPage: String(resolvedResultsPerPage),
+          page: String(page),
+        },
+      }
+
+      const { result } = await client.send("searchhotels", pagedPayload)
+      const hotels = ensureArray(result?.hotels?.hotel)
+      if (!hotels.length) {
+        if (page === 1) {
+          console.warn("[webbeds][static] searchhotels returned empty list", { cityCode, mode })
+        }
+        break
+      }
+
+      console.log("[webbeds][static] hotels page fetched", {
         cityCode,
         mode,
+        page,
         fetched: hotels.length,
-        hotelLimit: hotelsToPersist.length,
       })
+
+      let hotelsToPersist = hotels
+      if (remainingLimit != null) {
+        if (remainingLimit <= 0) break
+        hotelsToPersist = hotels.slice(0, remainingLimit)
+      }
+
+      const inserted = await persistHotels(hotelsToPersist, cityCode)
+      processed += inserted
+
+      console.log("[webbeds][static] hotels page persisted", {
+        cityCode,
+        mode,
+        page,
+        inserted,
+        totalInserted: processed,
+      })
+
+      if (remainingLimit != null) {
+        remainingLimit -= hotelsToPersist.length
+        if (remainingLimit <= 0) {
+          console.log("[webbeds][static] applying hotel limit", {
+            cityCode,
+            mode,
+            hotelLimit: hotelLimit,
+          })
+          break
+        }
+      }
+
+      if (hotels.length < resolvedResultsPerPage) {
+        break
+      }
+
+      page += 1
     }
 
-    processed = await persistHotels(hotelsToPersist, cityCode)
+    if (page > resolvedMaxPages) {
+      console.warn("[webbeds][static] paging reached max pages limit", {
+        cityCode,
+        mode,
+        maxPages: resolvedMaxPages,
+        resultsPerPage: resolvedResultsPerPage,
+      })
+    }
 
     await recordSyncLog({
       cityCode,
