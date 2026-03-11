@@ -20,6 +20,15 @@ const getSupportBotId = () => {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 };
 
+const resolveSupportBotUser = async () => {
+    const supportBotId = getSupportBotId();
+    const supportBotUser = await models.User.findByPk(supportBotId, { attributes: ["id"] });
+    return {
+        supportBotId,
+        supportBotUser,
+    };
+};
+
 const normalizeRole = (value) => Number(value || 0);
 const SUPPORT_AGENT_ROLES = new Set([1, 7, 8, 100]);
 const SUPPORT_MANAGER_ROLES = new Set([8, 100]);
@@ -383,9 +392,21 @@ export const createTicket = async (req, res, next) => {
 
         const { subject, category, priority, message, bookingId, metadata } = req.body;
         const userId = req.user.id; // From auth middleware
-        const SUPPORT_BOT_ID = getSupportBotId();
+        const { supportBotId: SUPPORT_BOT_ID, supportBotUser } = await resolveSupportBotUser();
         const trimmedMessage = typeof message === "string" ? message.trim() : "";
         const hasInitialMessage = Boolean(trimmedMessage);
+
+        if (!supportBotUser) {
+            console.error("[support] createTicket aborted: HOTEL_SUPPORT_USER_ID not found", {
+                supportBotId: SUPPORT_BOT_ID,
+                userId,
+                bookingId: bookingId || null,
+            });
+            return res.status(503).json({
+                error: "Support is temporarily unavailable",
+                code: "SUPPORT_BOT_NOT_FOUND",
+            });
+        }
 
         if (bookingId) {
             const booking = await models.Booking.findByPk(bookingId, { attributes: ["id", "user_id"] });
@@ -616,7 +637,7 @@ export const replyTicket = async (req, res, next) => {
         const { content, internal = false, metadata = null } = req.body || {};
         const userId = req.user.id;
         const isAgent = isSupportAgent(req.user);
-        const SUPPORT_BOT_ID = getSupportBotId();
+        const { supportBotId: SUPPORT_BOT_ID, supportBotUser } = await resolveSupportBotUser();
         const isInternal = Boolean(internal);
         const rawQuickReplyId =
             metadata && typeof metadata === "object"
@@ -666,6 +687,13 @@ export const replyTicket = async (req, res, next) => {
 
         // 2. Sync to ChatThread (User App View) if thread exists
         if (ticket.chat_thread_id && !isInternal) {
+            if (isAgent && !supportBotUser) {
+                console.error("[support] replyTicket chat sync skipped: HOTEL_SUPPORT_USER_ID not found", {
+                    supportBotId: SUPPORT_BOT_ID,
+                    ticketId: ticket.id,
+                    userId,
+                });
+            } else {
             await postMessage({
                 chatId: ticket.chat_thread_id,
                 senderId: isAgent ? SUPPORT_BOT_ID : userId, // Agents post as Support Bot/System
@@ -677,6 +705,7 @@ export const replyTicket = async (req, res, next) => {
                     ...(isAgent ? { senderName: "BookingGPT Support Team" } : {}),
                 },
             });
+            }
         }
 
         // Update ticket timestamp

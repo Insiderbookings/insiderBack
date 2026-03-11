@@ -81,6 +81,8 @@ const RETRYABLE_NETWORK_CODES = new Set([
   "ECONNREFUSED",
   "EHOSTUNREACH",
   "ENETUNREACH",
+  // gzip decode errors can happen when upstream truncates/corrupts the response body.
+  "Z_DATA_ERROR",
 ])
 
 const collectErrorCodes = (error) => {
@@ -213,6 +215,7 @@ export const createWebbedsClient = ({
   retryMaxDelayMs = 2500,
   ipFamily,
   preferCompressedRequests = false,
+  acceptCompressedResponses = process.env.WEBBEDS_ACCEPT_GZIP !== "false",
   logger = defaultLogger,
   axiosInstance = axios,
 } = {}) => {
@@ -336,7 +339,7 @@ export const createWebbedsClient = ({
         headers: {
           "Content-Type": "text/xml",
           Accept: "text/xml",
-          "Accept-Encoding": "gzip",
+          "Accept-Encoding": acceptCompressedResponses ? "gzip" : "identity",
           ...(useCompression ? { "Content-Encoding": "gzip" } : {}),
           Connection: "close",
           "Content-Length": String(requestBody.length),
@@ -346,7 +349,9 @@ export const createWebbedsClient = ({
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
         proxy: false,
-        decompress: true,
+        // Decompress manually to avoid Axios zlib errors from truncated gzip bodies crashing the request.
+        // (Also allows a controlled fallback when headers/body mismatch.)
+        decompress: false,
         validateStatus: () => true,
         ...(ipFamily === 4 || ipFamily === 6 ? { family: ipFamily } : {}),
       }
@@ -389,10 +394,28 @@ export const createWebbedsClient = ({
           contentEncoding: encoding,
           compressedBytes: responseBuffer.length,
         })
-        responseBuffer = await gunzip(responseBuffer)
-        logger.info(`[webbeds] ${attemptLabel} response decompressed`, {
-          decompressedBytes: responseBuffer.length,
-        })
+        try {
+          responseBuffer = await gunzip(responseBuffer)
+          logger.info(`[webbeds] ${attemptLabel} response decompressed`, {
+            decompressedBytes: responseBuffer.length,
+          })
+        } catch (error) {
+          const isGzipMagic = responseBuffer.length >= 2 && responseBuffer[0] === 0x1f && responseBuffer[1] === 0x8b
+          // If it looks like gzip but can't be decoded, treat it as a transport failure so retries can kick in.
+          // If it does NOT look like gzip, proceed with raw parsing (some upstreams mislabel Content-Encoding).
+          logger.warn(`[webbeds] ${attemptLabel} gzip decode failed`, {
+            code: error?.code,
+            message: error?.message,
+            bytes: responseBuffer.length,
+            isGzipMagic,
+          })
+          if (isGzipMagic) {
+            throw Object.assign(error instanceof Error ? error : new Error("gzip decode failed"), {
+              code: "Z_DATA_ERROR",
+              cause: error,
+            })
+          }
+        }
       }
 
       const responseXml = responseBuffer.toString("utf8")
