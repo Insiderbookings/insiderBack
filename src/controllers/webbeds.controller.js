@@ -97,6 +97,11 @@ const isPrivilegedUser = (user) => {
   return role === 1 || role === 100
 }
 
+const resolveHotelBookingPricingRole = (user) => {
+  const role = Number(user?.role)
+  return role === 100 ? 100 : 0
+}
+
 const resolveReferralContext = async (tokenUser) => {
   const userId = Number(tokenUser?.id) || null
   const tokenInfluencerId = Number(tokenUser?.referredByInfluencerId) || null
@@ -547,7 +552,7 @@ export const createPaymentIntent = async (req, res, next) => {
     }
     const requestUserRoleRaw = Number(req.user?.role)
     const requestUserRole = Number.isFinite(requestUserRoleRaw) ? requestUserRoleRaw : 0
-    const publicPricingRole = 0
+    const publicPricingRole = resolveHotelBookingPricingRole(req.user)
     const markupRateRaw = Number(getMarkup(publicPricingRole, pricedAmount))
     const markupRate = Number.isFinite(markupRateRaw) && markupRateRaw > 0 ? markupRateRaw : 0
     const providerAmountUsd = roundCurrency(pricedAmount)
