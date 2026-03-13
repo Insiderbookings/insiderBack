@@ -258,6 +258,52 @@ const parseCsvList = (value) => {
   )
 }
 
+const WEBBEDS_PAYMENT_CONTEXT_MODE = String(
+  process.env.WEBBEDS_PAYMENT_CONTEXT_MODE || "guest",
+)
+  .trim()
+  .toLowerCase()
+const MERCHANT_CONTEXT_CACHE_KEY = "webbeds:merchant-payment-context"
+const MERCHANT_CONTEXT_TTL_SECONDS = Math.max(
+  300,
+  Number(process.env.WEBBEDS_MERCHANT_DEVICE_PAYLOAD_TTL_SECONDS || 3600),
+)
+
+const fingerprintPayload = (value) => {
+  const normalized = String(value || "").trim()
+  if (!normalized) return null
+  return createHash("sha256").update(normalized).digest("hex").slice(0, 12)
+}
+
+const summarizeMerchantContext = (entry = null) => {
+  if (!entry || typeof entry !== "object") {
+    return {
+      mode: WEBBEDS_PAYMENT_CONTEXT_MODE,
+      present: false,
+      source: null,
+      payloadLength: 0,
+      payloadFingerprint: null,
+      updatedAt: null,
+      expiresAt: null,
+      updatedByUserId: null,
+      sdkUrl: null,
+    }
+  }
+
+  const payload = String(entry.devicePayload || "").trim()
+  return {
+    mode: WEBBEDS_PAYMENT_CONTEXT_MODE,
+    present: Boolean(payload),
+    source: entry.source || "merchant-cache",
+    payloadLength: payload.length,
+    payloadFingerprint: fingerprintPayload(payload),
+    updatedAt: entry.updatedAt || null,
+    expiresAt: entry.expiresAt || null,
+    updatedByUserId: entry.updatedByUserId || null,
+    sdkUrl: entry.sdkUrl || null,
+  }
+}
+
 const parseCoordinate = (value) => {
   if (value == null || value === "") return null
   const num = Number(value)
@@ -1367,6 +1413,64 @@ export const cancelPaymentIntent = async (req, res, next) => {
     })
   } catch (error) {
     console.error("[webbeds] cancelPaymentIntent error", error)
+    next(error)
+  }
+}
+
+export const getMerchantPaymentContext = async (req, res, next) => {
+  try {
+    const cached = await cache.get(MERCHANT_CONTEXT_CACHE_KEY)
+    return res.json({
+      context: summarizeMerchantContext(cached),
+      configuredMode: WEBBEDS_PAYMENT_CONTEXT_MODE,
+      ttlSeconds: MERCHANT_CONTEXT_TTL_SECONDS,
+      merchantPublicIp: String(process.env.WEBBEDS_MERCHANT_PUBLIC_IP || "").trim() || null,
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const setMerchantPaymentContext = async (req, res, next) => {
+  try {
+    const devicePayload = String(req.body?.devicePayload || "").trim()
+    const sdkUrl = String(req.body?.sdkUrl || "").trim() || null
+    const source = String(req.body?.source || "merchant-sdk").trim() || "merchant-sdk"
+
+    if (!devicePayload) {
+      return res.status(400).json({ error: "devicePayload is required" })
+    }
+
+    const now = new Date()
+    const expiresAt = new Date(now.getTime() + MERCHANT_CONTEXT_TTL_SECONDS * 1000)
+    const cacheEntry = {
+      devicePayload,
+      source,
+      sdkUrl,
+      updatedAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      updatedByUserId: Number(req.user?.id) || null,
+    }
+
+    await cache.set(MERCHANT_CONTEXT_CACHE_KEY, cacheEntry, MERCHANT_CONTEXT_TTL_SECONDS)
+
+    return res.status(201).json({
+      ok: true,
+      context: summarizeMerchantContext(cacheEntry),
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const clearMerchantPaymentContext = async (req, res, next) => {
+  try {
+    await cache.del(MERCHANT_CONTEXT_CACHE_KEY)
+    return res.json({
+      ok: true,
+      context: summarizeMerchantContext(null),
+    })
+  } catch (error) {
     next(error)
   }
 }
