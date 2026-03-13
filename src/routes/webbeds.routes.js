@@ -19,8 +19,11 @@ import {
   createPaymentIntent,
   capturePaymentIntent,
   cancelPaymentIntent,
+  getMerchantPaymentContext,
+  setMerchantPaymentContext,
+  clearMerchantPaymentContext,
 } from "../controllers/webbeds.controller.js"
-import { authenticate } from "../middleware/auth.js"
+import { authenticate, authorizeRoles } from "../middleware/auth.js"
 
 const router = Router()
 const PROVIDER_RATE_WINDOW_MS = 15 * 60 * 1000
@@ -46,6 +49,9 @@ router.get("/rooms", providerReadLimiter, authenticate, getRooms)
 router.post("/create-payment-intent", providerWriteLimiter, authenticate, createPaymentIntent)
 router.post("/capture-payment-intent", providerWriteLimiter, authenticate, capturePaymentIntent)
 router.post("/cancel-payment-intent", providerWriteLimiter, authenticate, cancelPaymentIntent)
+router.get("/payment-context/merchant", authenticate, authorizeRoles(100), getMerchantPaymentContext)
+router.post("/payment-context/merchant", authenticate, authorizeRoles(100), setMerchantPaymentContext)
+router.delete("/payment-context/merchant", authenticate, authorizeRoles(100), clearMerchantPaymentContext)
 router.get("/booking", providerReadLimiter, authenticate, getBookingDetails)
 router.get("/static/hotels", listStaticHotels)
 router.get("/explore", listExploreHotels)
