@@ -312,20 +312,25 @@ const summarizeRuntimePreauthContextForDebug = ({
   })(),
 });
 
-const resolveRequestIp = (req) => {
+const resolveRequestIpForPreauth = (req) => {
   const forwarded = req?.headers?.["x-forwarded-for"];
-  if (Array.isArray(forwarded)) {
-    const first = String(forwarded[0] || "").split(",")[0]?.trim();
-    if (first) return first;
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded
+      .split(",")
+      .map((value) => String(value || "").trim())
+      .find(Boolean) || null;
   }
-  if (typeof forwarded === "string") {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
+  if (Array.isArray(forwarded)) {
+    return forwarded
+      .flatMap((value) => String(value || "").split(","))
+      .map((value) => value.trim())
+      .find(Boolean) || null;
   }
   return (
     req?.headers?.["x-real-ip"] ||
     req?.ip ||
     req?.socket?.remoteAddress ||
+    req?.connection?.remoteAddress ||
     null
   );
 };
@@ -335,6 +340,35 @@ const normalizeMerchantPayload = (payload) => {
   return text || null;
 };
 
+const resolveClientDevicePayloadForPreauth = (body = {}) => {
+  const candidates = [
+    body?.devicePayload,
+    body?.payment?.devicePayload,
+    body?.paymentContext?.devicePayload,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeMerchantPayload(candidate);
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
+const resolveClientIpOverrideForPreauth = (body = {}) => {
+  const candidates = [
+    body?.endUserIPAddress,
+    body?.endUserIPv4Address,
+    body?.payment?.endUserIPAddress,
+    body?.payment?.endUserIPv4Address,
+    body?.paymentContext?.endUserIPAddress,
+    body?.paymentContext?.endUserIPv4Address,
+  ];
+  for (const candidate of candidates) {
+    const normalized = String(candidate || "").trim();
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
 const getMerchantPaymentContext = async () => {
   const cached = await cache.get(MERCHANT_CONTEXT_CACHE_KEY);
   if (!cached || typeof cached !== "object") return null;
@@ -342,8 +376,9 @@ const getMerchantPaymentContext = async () => {
 };
 
 const resolvePreauthPaymentRuntime = async ({ body, req }) => {
-  const requestPayload = normalizeMerchantPayload(body?.devicePayload);
-  const requestIp = resolveRequestIp(req);
+  const requestPayload = resolveClientDevicePayloadForPreauth(body);
+  const requestIp = resolveRequestIpForPreauth(req);
+  const clientIpOverride = resolveClientIpOverrideForPreauth(body);
 
   if (WEBBEDS_PAYMENT_CONTEXT_MODE === "merchant") {
     const merchantContext = await getMerchantPaymentContext();
@@ -391,12 +426,14 @@ const resolvePreauthPaymentRuntime = async ({ body, req }) => {
       : envPayload
         ? "env"
         : "fallback",
-    endUserIPAddress: requestIp || envIp || "127.0.0.1",
-    endUserIPAddressSource: requestIp
-      ? "request"
-      : envIp
-        ? "env"
-        : "fallback",
+    endUserIPAddress: clientIpOverride || requestIp || envIp || "127.0.0.1",
+    endUserIPAddressSource: clientIpOverride
+      ? "request.override"
+      : requestIp
+        ? "request"
+        : envIp
+          ? "env"
+          : "fallback",
   };
 };
 
@@ -2011,7 +2048,6 @@ export class FlowOrchestratorService {
       avsEmail: process.env.WEBBEDS_AVS_EMAIL || process.env.WEBBEDS_CC_EMAIL || "unknown@example.com",
       avsPhone: process.env.WEBBEDS_AVS_PHONE || "+10000000000",
     };
-
     const paymentRuntime = await resolvePreauthPaymentRuntime({ body, req });
 
     const payload = buildBookItineraryPayload({
