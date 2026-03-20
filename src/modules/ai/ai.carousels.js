@@ -310,24 +310,16 @@ export const buildInventoryCarousels = async ({
   const location = needsLocation ? await resolveSearchLocation({ plan, state }) : null;
 
   const anchors = {};
-  if (location && requested.has("nightlife")) {
-    const nightlifePlaces = await getNearbyPlaces({
-      location,
-      radiusKm: plan?.location?.radiusKm ?? 4,
-      type: "night_club",
-      limit: 4,
-    });
-    anchors.nightlife = buildAnchorFromPlaces(nightlifePlaces);
-  }
-  if (location && requested.has("shopping")) {
-    const shoppingPlaces = await getNearbyPlaces({
-      location,
-      radiusKm: plan?.location?.radiusKm ?? 4,
-      type: "shopping_mall",
-      limit: 4,
-    });
-    anchors.shopping = buildAnchorFromPlaces(shoppingPlaces);
-  }
+  const [nightlifePlaces, shoppingPlaces] = await Promise.all([
+    (location && requested.has("nightlife"))
+      ? getNearbyPlaces({ location, radiusKm: plan?.location?.radiusKm ?? 4, type: "night_club", limit: 4 })
+      : Promise.resolve([]),
+    (location && requested.has("shopping"))
+      ? getNearbyPlaces({ location, radiusKm: plan?.location?.radiusKm ?? 4, type: "shopping_mall", limit: 4 })
+      : Promise.resolve([]),
+  ]);
+  if (nightlifePlaces.length) anchors.nightlife = buildAnchorFromPlaces(nightlifePlaces);
+  if (shoppingPlaces.length) anchors.shopping = buildAnchorFromPlaces(shoppingPlaces);
 
   const usedIds = new Set();
   const carousels = [];

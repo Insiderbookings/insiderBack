@@ -1,4 +1,4 @@
-import { generateAssistantReply } from "../../services/aiAssistant.service.js";
+import { generateAssistantReply, generateAssistantReplyStream } from "../../services/aiAssistant.service.js";
 import { NEXT_ACTIONS } from "./ai.planner.js";
 import { AI_DEFAULTS } from "./ai.config.js";
 
@@ -308,7 +308,7 @@ const pickReasonFromCatalog = (category, language, seed) => {
   return language === "es" ? row.es : row.en;
 };
 
-/** Picks 5 items: 2 by rating, 2 by price/quality, 1 extra (e.g. near center). Uses catalog to choose reason labels per call. */
+/** Picks 5 items using a sortBy-aware strategy. Uses catalog to choose reason labels per call. */
 const getTopInventoryPicksByCategory = (inventory, plan, language, seed = 0) => {
   const hotels = Array.isArray(inventory?.hotels) ? inventory.hotels : [];
   const homes = Array.isArray(inventory?.homes) ? inventory.homes : [];
@@ -320,7 +320,7 @@ const getTopInventoryPicksByCategory = (inventory, plan, language, seed = 0) => 
       : baseSource;
   if (!source.length) return [];
 
-  const isSpanish = language === "es";
+  const sortBy = plan?.sortBy || null;
   const destStr = [plan?.location?.city, plan?.location?.country].filter(Boolean).join(" ") || "default";
   const seedNum = seed + (destStr.length * 31) + (destStr.charCodeAt(0) ?? 0);
 
@@ -348,31 +348,65 @@ const getTopInventoryPicksByCategory = (inventory, plan, language, seed = 0) => 
     }
   }
 
-  const byRating = [...source].sort((a, b) => getItemRating(b) - getItemRating(a));
-  const byPriceQuality = [...source].sort((a, b) => {
-    const rA = getItemRating(a) || 1;
-    const rB = getItemRating(b) || 1;
-    const pA = getItemPrice(a) || 1;
-    const pB = getItemPrice(b) || 1;
-    const scoreA = rA / Math.max(pA / 100, 0.01);
-    const scoreB = rB / Math.max(pB / 100, 0.01);
-    return scoreB - scoreA;
-  });
-
   const out = [];
 
-  const topRated2 = take(byRating, 2, (a, b) => getItemRating(b) - getItemRating(a));
-  const reasonRating = pickReasonFromCatalog("rating", language, seedNum + 1);
-  topRated2.forEach((item) => out.push({ item, pickReason: reasonRating }));
+  if (sortBy === "PRICE_ASC") {
+    // User explicitly asked for cheapest — lead with 3 by price asc, then 1 price-quality, 1 extra
+    const byPriceAsc = [...source].sort((a, b) => (getItemPrice(a) || Infinity) - (getItemPrice(b) || Infinity));
+    const cheapest3 = take(byPriceAsc, 3, (a, b) => (getItemPrice(a) || Infinity) - (getItemPrice(b) || Infinity));
+    const reasonBudget = pickReasonFromCatalog("priceQuality", language, seedNum + 1);
+    cheapest3.forEach((item) => out.push({ item, pickReason: reasonBudget }));
 
-  const priceQuality2 = take(byPriceQuality, 2, (a, b) => {
-    const sA = (getItemRating(a) || 1) / Math.max(getItemPrice(a) / 100 || 0.01, 0.01);
-    const sB = (getItemRating(b) || 1) / Math.max(getItemPrice(b) / 100 || 0.01, 0.01);
-    return sB - sA;
-  });
-  const reasonPriceQuality = pickReasonFromCatalog("priceQuality", language, seedNum + 2);
-  priceQuality2.forEach((item) => out.push({ item, pickReason: reasonPriceQuality }));
+    const byPriceQuality = [...source].sort((a, b) => {
+      const sA = (getItemRating(a) || 1) / Math.max((getItemPrice(a) || 1) / 100, 0.01);
+      const sB = (getItemRating(b) || 1) / Math.max((getItemPrice(b) || 1) / 100, 0.01);
+      return sB - sA;
+    });
+    const pq1 = take(byPriceQuality, 1, (a, b) => {
+      const sA = (getItemRating(a) || 1) / Math.max((getItemPrice(a) || 1) / 100, 0.01);
+      const sB = (getItemRating(b) || 1) / Math.max((getItemPrice(b) || 1) / 100, 0.01);
+      return sB - sA;
+    });
+    pq1.forEach((item) => out.push({ item, pickReason: pickReasonFromCatalog("priceQuality", language, seedNum + 2) }));
 
+  } else if (sortBy === "PRICE_DESC") {
+    // User wants premium — lead with 3 highest-priced, then 1 by rating, 1 extra
+    const byPriceDesc = [...source].sort((a, b) => (getItemPrice(b) || 0) - (getItemPrice(a) || 0));
+    const premium3 = take(byPriceDesc, 3, (a, b) => (getItemPrice(b) || 0) - (getItemPrice(a) || 0));
+    const reasonPremium = pickReasonFromCatalog("rating", language, seedNum + 1);
+    premium3.forEach((item) => out.push({ item, pickReason: reasonPremium }));
+
+    const byRating = [...source].sort((a, b) => getItemRating(b) - getItemRating(a));
+    const rated1 = take(byRating, 1, (a, b) => getItemRating(b) - getItemRating(a));
+    rated1.forEach((item) => out.push({ item, pickReason: pickReasonFromCatalog("rating", language, seedNum + 2) }));
+
+  } else {
+    // Default: 2 by rating + 2 by price-quality + 1 extra
+    const byRating = [...source].sort((a, b) => getItemRating(b) - getItemRating(a));
+    const byPriceQuality = [...source].sort((a, b) => {
+      const rA = getItemRating(a) || 1;
+      const rB = getItemRating(b) || 1;
+      const pA = getItemPrice(a) || 1;
+      const pB = getItemPrice(b) || 1;
+      const scoreA = rA / Math.max(pA / 100, 0.01);
+      const scoreB = rB / Math.max(pB / 100, 0.01);
+      return scoreB - scoreA;
+    });
+
+    const topRated2 = take(byRating, 2, (a, b) => getItemRating(b) - getItemRating(a));
+    const reasonRating = pickReasonFromCatalog("rating", language, seedNum + 1);
+    topRated2.forEach((item) => out.push({ item, pickReason: reasonRating }));
+
+    const priceQuality2 = take(byPriceQuality, 2, (a, b) => {
+      const sA = (getItemRating(a) || 1) / Math.max(getItemPrice(a) / 100 || 0.01, 0.01);
+      const sB = (getItemRating(b) || 1) / Math.max(getItemPrice(b) / 100 || 0.01, 0.01);
+      return sB - sA;
+    });
+    const reasonPriceQuality = pickReasonFromCatalog("priceQuality", language, seedNum + 2);
+    priceQuality2.forEach((item) => out.push({ item, pickReason: reasonPriceQuality }));
+  }
+
+  // Extra pick: closest to center (or fallback by rating) — applies to all branches
   const remaining = source.filter((x) => !usedIds.has(String(x.id || x.hotelCode || "")));
   let extra = null;
   if (remaining.length) {
@@ -468,6 +502,9 @@ const buildFilterContext = (plan, language) => {
   const lang = language === "es" ? "es" : "en";
   const filters = plan?.hotelFilters || {};
   const parts = [];
+  const areaPreference = Array.isArray(plan?.preferences?.areaPreference)
+    ? plan.preferences.areaPreference.map((value) => String(value || "").toUpperCase())
+    : [];
 
   const minRating = Number(filters.minRating);
   if (Number.isFinite(minRating) && minRating >= 1 && minRating <= 5) {
@@ -484,12 +521,34 @@ const buildFilterContext = (plan, language) => {
     labels.forEach((l) => parts.push(l));
   }
 
+  const sortBy = String(plan?.sortBy || "").trim().toUpperCase();
+  if (sortBy === "PRICE_ASC") {
+    parts.push(lang === "es" ? "mejor precio" : "best price");
+  } else if (sortBy === "PRICE_DESC") {
+    parts.push(lang === "es" ? "gama alta" : "higher-end");
+  } else if (sortBy === "POPULARITY") {
+    parts.push(lang === "es" ? "más recomendados" : "most recommended");
+  }
+
+  if (areaPreference.includes("CITY_CENTER")) {
+    parts.push(lang === "es" ? "zona céntrica" : "central area");
+  }
+  if (areaPreference.includes("LUXURY")) {
+    parts.push(lang === "es" ? "perfil premium" : "premium profile");
+  }
+  if (areaPreference.includes("FAMILY_FRIENDLY")) {
+    parts.push(lang === "es" ? "family-friendly" : "family-friendly");
+  }
+  if (areaPreference.includes("BEACH_COAST")) {
+    parts.push(lang === "es" ? "cerca de playa" : "near the beach");
+  }
+
   const poi = plan?.location?.resolvedPoi?.name;
   if (poi) {
     parts.push(lang === "es" ? `cerca de ${poi}` : `near ${poi}`);
   }
 
-  return parts.length ? parts : null;
+  return parts.length ? Array.from(new Set(parts)) : null;
 };
 
 const buildAppreciationLine = (pickReason, language) => {
@@ -977,6 +1036,81 @@ const buildStructuredSearchReply = ({ inventory, plan, language, seed, userName,
   return { intro: introWithAssumption, outro: null, sections };
 };
 
+const buildNoResultsSearchReply = ({
+  plan,
+  language = "es",
+  missing = [],
+}) => {
+  const destination =
+    plan?.location?.city || plan?.location?.address || plan?.location?.country || "";
+  const destinationLabel = destination || copyForLanguage(language, {
+    es: "ese destino",
+    en: "that destination",
+    pt: "esse destino",
+  });
+  const isLiveMode = hasLiveSearchContext(plan);
+  const needsDates = missing.includes("DATES");
+  const needsGuests = missing.includes("GUESTS");
+  const canUnlockLive = !isLiveMode && (needsDates || needsGuests);
+
+  const intro = isLiveMode
+    ? copyForLanguage(language, {
+        es: `No veo disponibilidad real en ${destinationLabel} para esa búsqueda.`,
+        en: `I do not see live availability in ${destinationLabel} for that search.`,
+        pt: `Não vejo disponibilidade real em ${destinationLabel} para essa busca.`,
+      })
+    : copyForLanguage(language, {
+        es: `No encontré hoteles para mostrarte ahora en ${destinationLabel}.`,
+        en: `I could not find hotels to show you right now in ${destinationLabel}.`,
+        pt: `Não encontrei hotéis para te mostrar agora em ${destinationLabel}.`,
+      });
+
+  const sections = [
+    buildAdvisorTakeSection({
+      eyebrow: copyForLanguage(language, {
+        es: "Búsqueda rápida",
+        en: "Quick search",
+        pt: "Busca rápida",
+      }),
+      title: isLiveMode
+        ? copyForLanguage(language, {
+            es: "No apareció disponibilidad con esas fechas",
+            en: "No availability showed up for those dates",
+            pt: "Não apareceu disponibilidade para essas datas",
+          })
+        : copyForLanguage(language, {
+            es: "No apareció inventario para ese destino",
+            en: "No inventory showed up for that destination",
+            pt: "Não apareceu inventário para esse destino",
+          }),
+      body: canUnlockLive
+        ? copyForLanguage(language, {
+            es: "Si me confirmás fechas y viajeros, hago una pasada más precisa con disponibilidad real.",
+            en: "If you confirm dates and guests, I can run a more precise pass with live availability.",
+            pt: "Se você confirmar datas e viajantes, eu faço uma busca mais precisa com disponibilidade real.",
+          })
+        : copyForLanguage(language, {
+            es: "Podemos probar otra zona, ajustar fechas o afinar un poco más la búsqueda.",
+            en: "We can try another area, adjust dates, or narrow the search a bit more.",
+            pt: "Podemos tentar outra área, ajustar datas ou refinar um pouco mais a busca.",
+          }),
+      tone: "neutral",
+      tags: [destination || null],
+    }),
+    canUnlockLive
+      ? buildNextStepSection({
+          language,
+          isLiveMode: false,
+          destination,
+          filterContext: null,
+          assumedDefaultGuests: false,
+        })
+      : null,
+  ].filter(Boolean);
+
+  return { intro, sections };
+};
+
 export const renderAssistantPayload = async ({
   plan,
   messages,
@@ -993,6 +1127,7 @@ export const renderAssistantPayload = async ({
   inventoryForReply = null,
   stayDetailsFromDb = null,
   preparedReply = null,
+  onTextChunk = null,
 }) => {
   const baseLanguage = normalizeLanguage(plan);
   const language = baseLanguage;
@@ -1012,6 +1147,7 @@ export const renderAssistantPayload = async ({
   let replyText = "";
   let followUps = [];
   let searchSections = [];
+  let wasStreamed = false;
 
   const missingDest = missing.includes("DESTINATION");
   const missingDates = missing.includes("DATES");
@@ -1099,45 +1235,51 @@ export const renderAssistantPayload = async ({
         ...(structuredReply.outro ? [{ type: "outro", text: structuredReply.outro }] : []),
       ];
     } else {
-      const replyPayload = await generateAssistantReply({
+      const noResultsReply = buildNoResultsSearchReply({
         plan,
-        messages,
-        inventory: effectiveInventoryForReply,
-        trip,
-        tripContext,
-        userContext,
-        weather,
-        tripSearchContext,
-        lastShownResultsContext,
-        stayDetailsFromDb,
+        language,
+        missing,
       });
-      replyText = (replyPayload?.reply || "").trim();
-      followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
+      replyText = noResultsReply.intro;
+      followUps = [];
+      searchSections = noResultsReply.sections;
     }
   } else if (nextAction === NEXT_ACTIONS.RUN_PLANNING || nextAction === NEXT_ACTIONS.RUN_LOCATION) {
-    const replyMode = nextAction === NEXT_ACTIONS.RUN_PLANNING ? "planning" : "location";
-    try {
-      const replyPayload = await generateAssistantReply({
-        plan,
-        messages,
-        inventory: effectiveInventoryForReply,
-        trip,
-        tripContext,
-        userContext,
-        weather,
-        replyMode,
-        tripSearchContext,
-        lastShownResultsContext,
-        stayDetailsFromDb,
-      });
-      replyText = (replyPayload?.reply || "").trim();
-      followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
-    } catch (planLocErr) {
-      console.warn("[ai.renderer] planning/location reply failed", planLocErr?.message || planLocErr);
-      replyText = language === "es"
-        ? "Puedo ayudarte a planificar tu viaje o contarte sobre un destino. Decime destino y fechas (o flexibilidad) y arranco."
-        : "I can help you plan your trip or tell you about a destination. Share your destination and dates (or flexibility) to get started.";
-      followUps = [];
+    if (normalizedPreparedReply?.text) {
+      // Function calling: text already streamed by runFunctionCallingTurn
+      replyText = normalizedPreparedReply.text;
+      followUps = Array.isArray(normalizedPreparedReply.followUps) ? normalizedPreparedReply.followUps : [];
+    } else {
+      const replyMode = nextAction === NEXT_ACTIONS.RUN_PLANNING ? "planning" : "location";
+      try {
+        if (onTextChunk) {
+          wasStreamed = true;
+          const sp = await generateAssistantReplyStream({ plan, messages, inventory: effectiveInventoryForReply, trip, tripContext, userContext, weather, onChunk: onTextChunk });
+          followUps = Array.isArray(sp?.followUps) ? sp.followUps : [];
+        } else {
+          const replyPayload = await generateAssistantReply({
+            plan,
+            messages,
+            inventory: effectiveInventoryForReply,
+            trip,
+            tripContext,
+            userContext,
+            weather,
+            replyMode,
+            tripSearchContext,
+            lastShownResultsContext,
+            stayDetailsFromDb,
+          });
+          replyText = (replyPayload?.reply || "").trim();
+          followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
+        }
+      } catch (planLocErr) {
+        console.warn("[ai.renderer] planning/location reply failed", planLocErr?.message || planLocErr);
+        replyText = language === "es"
+          ? "Puedo ayudarte a planificar tu viaje o contarte sobre un destino. Decime destino y fechas (o flexibilidad) y arranco."
+          : "I can help you plan your trip or tell you about a destination. Share your destination and dates (or flexibility) to get started.";
+        followUps = [];
+      }
     }
   } else if (nextAction === NEXT_ACTIONS.ANSWER_WITH_LAST_RESULTS) {
     if (normalizedPreparedReply?.text) {
@@ -1148,20 +1290,26 @@ export const renderAssistantPayload = async ({
       followUps = [];
     } else {
       try {
-        const replyPayload = await generateAssistantReply({
-          plan,
-          messages,
-          inventory: effectiveInventoryForReply,
-          trip,
-          tripContext,
-          userContext,
-          weather,
-          tripSearchContext,
-          lastShownResultsContext,
-          stayDetailsFromDb,
-        });
-        replyText = (replyPayload?.reply || "").trim();
-        followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
+        if (onTextChunk) {
+          wasStreamed = true;
+          const sp = await generateAssistantReplyStream({ plan, messages, inventory: effectiveInventoryForReply, trip, tripContext, userContext, weather, onChunk: onTextChunk });
+          followUps = Array.isArray(sp?.followUps) ? sp.followUps : [];
+        } else {
+          const replyPayload = await generateAssistantReply({
+            plan,
+            messages,
+            inventory: effectiveInventoryForReply,
+            trip,
+            tripContext,
+            userContext,
+            weather,
+            tripSearchContext,
+            lastShownResultsContext,
+            stayDetailsFromDb,
+          });
+          replyText = (replyPayload?.reply || "").trim();
+          followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
+        }
       } catch (err) {
         console.warn("[ai.renderer] ANSWER_WITH_LAST_RESULTS reply failed", err?.message || err);
         replyText = language === "es"
@@ -1179,20 +1327,26 @@ export const renderAssistantPayload = async ({
       followUps = [];
     } else {
       try {
-        const replyPayload = await generateAssistantReply({
-          plan,
-          messages,
-          inventory: effectiveInventoryForReply,
-          trip,
-          tripContext,
-          userContext,
-          weather,
-          tripSearchContext,
-          lastShownResultsContext,
-          stayDetailsFromDb,
-        });
-      replyText = (replyPayload?.reply || "").trim();
-      followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
+        if (onTextChunk) {
+          wasStreamed = true;
+          const sp = await generateAssistantReplyStream({ plan, messages, inventory: effectiveInventoryForReply, trip, tripContext, userContext, weather, onChunk: onTextChunk });
+          followUps = Array.isArray(sp?.followUps) ? sp.followUps : [];
+        } else {
+          const replyPayload = await generateAssistantReply({
+            plan,
+            messages,
+            inventory: effectiveInventoryForReply,
+            trip,
+            tripContext,
+            userContext,
+            weather,
+            tripSearchContext,
+            lastShownResultsContext,
+            stayDetailsFromDb,
+          });
+          replyText = (replyPayload?.reply || "").trim();
+          followUps = Array.isArray(replyPayload?.followUps) ? replyPayload.followUps : [];
+        }
     } catch (genErr) {
       console.warn("[ai.renderer] generateAssistantReply failed", genErr?.message || genErr);
       replyText = language === "es"
@@ -1203,7 +1357,7 @@ export const renderAssistantPayload = async ({
     }
   }
 
-  if (!replyText) {
+  if (!replyText && !wasStreamed) {
     const fallbackEs = [
       "Listo. Contame qué necesitás y lo resolvemos.",
       "Dale, decime en qué te ayudo.",
@@ -1216,6 +1370,11 @@ export const renderAssistantPayload = async ({
     ];
     const fallbacks = language === "es" ? fallbackEs : fallbackEn;
     replyText = pickVariant(fallbacks, seed);
+  }
+
+  // Emit static reply text via SSE if streaming path wasn't used (e.g. ASK_FOR_*, RUN_SEARCH intro)
+  if (onTextChunk && replyText && !wasStreamed) {
+    onTextChunk(replyText);
   }
 
   let combinedInputs = [];

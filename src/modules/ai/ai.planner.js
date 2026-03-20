@@ -126,6 +126,13 @@ export const applyPlanToState = (state, plan) => {
   const listingTypes = Array.isArray(mergedPlan.listingTypes) ? mergedPlan.listingTypes : [];
   if (listingTypes.length) baseState.preferences.listingTypes = listingTypes;
   if (mergedPlan.sortBy) baseState.preferences.sortBy = mergedPlan.sortBy;
+  const areaPreference = Array.isArray(mergedPlan.preferences?.areaPreference)
+    ? mergedPlan.preferences.areaPreference
+    : [];
+  if (areaPreference.length) baseState.preferences.areaPreference = areaPreference.slice();
+  if (typeof mergedPlan.preferences?.nearbyInterest === "string" && mergedPlan.preferences.nearbyInterest.trim()) {
+    baseState.preferences.nearbyInterest = mergedPlan.preferences.nearbyInterest.trim();
+  }
 
   const homeFilters = mergedPlan.homeFilters || {};
   const hotelFilters = mergedPlan.hotelFilters || {};

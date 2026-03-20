@@ -46,6 +46,40 @@ node src/scripts/webbedsSync.js --mode=full --city=<CITY_CODE>
 node src/scripts/webbedsSync.js --mode=full --city=<CITY_CODE> --hotelLimit=10
 ```
 
+## Export hoteles (Excel via CSV)
+Este script exporta `name`, `city`, `phone`, `address` desde la DB a un CSV que se abre directo con Excel.
+
+Ejemplos:
+```
+# Webbeds (tabla grande): exporta 5000 por default
+npm run hotels:export:csv -- --source=webbeds --city="Miami" --output ./exports/webbeds_miami.csv
+
+# Hotel (tabla chica)
+npm run hotels:export:csv -- --source=hotel --output ./exports/hotel_table.csv
+
+# Varias ciudades en 1 archivo (lista de cityCode)
+npm run hotels:export:csv -- --source=webbeds --cityCode 17074,17404 --limit 0 --output ./exports/miami_sf.csv
+
+# Re-ejecutar y acumular en el mismo archivo (append)
+npm run hotels:export:csv -- --source=webbeds --cityCode 17074 --limit 0 --output ./exports/us.csv
+npm run hotels:export:csv -- --source=webbeds --cityCode 17404 --limit 0 --output ./exports/us.csv --append
+
+# Sin límite (ojo: Excel tiene ~1.048.576 filas por hoja)
+npm run hotels:export:csv -- --source=webbeds --limit 0 --output ./exports/webbeds_all.csv
+```
+
+## Export hoteles (XLSX formateado)
+Genera un `.xlsx` con secciones por ciudad, headers por sección y columna `City` resaltada.
+```
+npm run hotels:export:xlsx -- --source=webbeds --cityCode 17074,17404 --limit 0 --output ./exports/miami_sf.xlsx --normalizePhones
+```
+
+## Report: ciudades USA con hoteles cargados
+Lista las ciudades (y `cityCode`) de USA que **ya tienen hoteles** en `webbeds_hotel`, ordenadas por cantidad.
+```
+npm run hotels:report:us-cities -- --limit 200 --minHotels 1
+```
+
 ## Docs y base de API
 - Base: `/api`
 - Swagger UI: `/api/docs` (ver `insiderBack/src/docs/swagger.yaml`)

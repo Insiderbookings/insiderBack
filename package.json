@@ -8,6 +8,9 @@
     "dev": "nodemon src/app.js",
     "test": "node --test tests/providers/webbeds/searchHotels.test.js tests/providers/webbeds/provider.test.js",
     "payments:reconcile-once": "node src/scripts/reconcilePendingPayments.js",
+    "hotels:export:csv": "node src/scripts/exportHotelsToCsv.js",
+    "hotels:export:xlsx": "node src/scripts/exportHotelsToXlsx.js",
+    "hotels:report:us-cities": "node src/scripts/reportUsCitiesWithHotels.js",
     "webbeds:cities:sync-by-country": "node src/scripts/syncWebbedsCitiesByCountry.js",
     "webbeds:cities:backfill-coords": "node src/scripts/backfillWebbedsCityCoordinates.js"
   },
@@ -24,6 +27,7 @@
     "express": "^5.1.0",
     "express-rate-limit": "^7.4.0",
     "express-validator": "^7.2.1",
+    "exceljs": "^4.4.0",
     "fast-xml-parser": "^5.0.6",
     "geoip-lite": "^1.4.7",
     "glob": "^11.0.2",

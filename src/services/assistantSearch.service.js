@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import dayjs from "dayjs";
 import { Op } from "sequelize";
 import models, { sequelize } from "../models/index.js";
 import { WebbedsProvider } from "../providers/webbeds/provider.js";
 import { buildSearchHotelsPayload } from "../providers/webbeds/searchHotels.js";
+import cache from "./cache.js";
 import { mapHomeToCard } from "../utils/homeMapper.js";
 import { formatStaticHotel } from "../utils/webbedsMapper.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
@@ -15,10 +17,110 @@ const ASSISTANT_SEARCH_MAX_LIMIT = Math.max(
 );
 const DEBUG_ASSISTANT_SEARCH =
   String(process.env.AI_DEBUG_LOGS || "").trim().toLowerCase() === "true";
+const LIVE_HOTEL_SEARCH_CACHE_TTL_SECONDS = Math.max(
+  0,
+  Number(process.env.AI_LIVE_SEARCH_CACHE_TTL_SECONDS || 300)
+);
 
 const debugSearchLog = (...args) => {
   if (!DEBUG_ASSISTANT_SEARCH) return;
   console.log(...args);
+};
+
+const emitSearchTrace = (traceSink, code, data = {}) => {
+  if (typeof traceSink !== "function" || !code) return;
+  try {
+    traceSink(code, data);
+  } catch (_) {}
+};
+
+const hashCachePayload = (value) =>
+  createHash("sha1").update(JSON.stringify(value)).digest("hex");
+
+const serializeCoordinateFilterForCache = (filter) => {
+  if (!filter) return null;
+  const latBounds = Array.isArray(filter.latitude?.[Op.between])
+    ? filter.latitude[Op.between].map((value) => toNumberOrNull(value))
+    : null;
+  const lngBounds = Array.isArray(filter.longitude?.[Op.between])
+    ? filter.longitude[Op.between].map((value) => toNumberOrNull(value))
+    : null;
+  return {
+    latBounds,
+    lngBounds,
+  };
+};
+
+const serializeProximityAnchorForCache = (proximityAnchor) => {
+  if (!proximityAnchor || typeof proximityAnchor !== "object") return null;
+  if (proximityAnchor.type === "CITY_CENTER") {
+    return {
+      type: "CITY_CENTER",
+      anchor: {
+        lat: toNumberOrNull(proximityAnchor.anchor?.lat),
+        lng: toNumberOrNull(proximityAnchor.anchor?.lng),
+      },
+    };
+  }
+  if (proximityAnchor.type === "NEARBY_INTEREST") {
+    return {
+      type: "NEARBY_INTEREST",
+      places: (Array.isArray(proximityAnchor.places) ? proximityAnchor.places : [])
+        .slice(0, 8)
+        .map((place) => ({
+          id: String(place?.id || place?.placeId || place?.name || "").trim() || null,
+          lat: toNumberOrNull(place?.location?.lat),
+          lng: toNumberOrNull(place?.location?.lng),
+        })),
+    };
+  }
+  return { type: String(proximityAnchor.type || "").trim().toUpperCase() || null };
+};
+
+const buildLiveHotelSearchCacheKey = ({
+  plan,
+  limit,
+  hotelFilters,
+  coordinateFilter,
+  proximityAnchor,
+  resolvedLocationCodes,
+  candidateHotelIds,
+}) => {
+  if (!LIVE_HOTEL_SEARCH_CACHE_TTL_SECONDS) return null;
+  const payload = {
+    version: 1,
+    locationCodes: {
+      cityCode: String(resolvedLocationCodes?.cityCode || "").trim() || null,
+      countryCode: String(resolvedLocationCodes?.countryCode || "").trim() || null,
+    },
+    dates: {
+      checkIn: plan?.dates?.checkIn || null,
+      checkOut: plan?.dates?.checkOut || null,
+    },
+    occupancies: parseHotelOccupanciesForCache(plan).map((occ) => ({
+      adults: toNumberOrNull(occ?.adults),
+      children: (Array.isArray(occ?.children) ? occ.children : []).map((age) => toNumberOrNull(age)),
+    })),
+    nationality: String(plan?.passengerNationality ?? plan?.nationality ?? "").trim() || null,
+    residence: String(plan?.passengerCountryOfResidence ?? plan?.residence ?? "").trim() || null,
+    limit: clampLimit(limit),
+    sortBy: String(plan?.sortBy || "PRICE_ASC").trim().toUpperCase(),
+    budgetMax: resolveBudgetMax(plan),
+    hotelFilters: {
+      amenityCodes: normalizeKeyList(hotelFilters?.amenityCodes),
+      amenityItemIds: normalizeIdList(hotelFilters?.amenityItemIds),
+      preferredOnly: normalizeBooleanFlag(hotelFilters?.preferredOnly),
+      minRating: toNumberOrNull(hotelFilters?.minRating),
+    },
+    coordinateFilter: serializeCoordinateFilterForCache(coordinateFilter),
+    proximityAnchor: serializeProximityAnchorForCache(proximityAnchor),
+    candidateHotelIdsCount: Array.isArray(candidateHotelIds) ? candidateHotelIds.length : 0,
+    candidateHotelIdsHash:
+      Array.isArray(candidateHotelIds) && candidateHotelIds.length
+        ? hashCachePayload(candidateHotelIds.map((id) => String(id)))
+        : null,
+  };
+  return `ai:live-hotels:${hashCachePayload(payload)}`;
 };
 
 const clampLimit = (value, fallback = 6) => {
@@ -849,6 +951,7 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
   // If the plan has a specific limit, use it, otherwise use the default or requested limit
   const planLimit = typeof plan.limit === "number" && plan.limit > 0 ? plan.limit : null;
   const limit = clampLimit(planLimit || options.limit);
+  const traceSink = typeof options.traceSink === "function" ? options.traceSink : null;
   const guests = resolveGuestTotal(plan);
   const prefFilters = deriveFiltersFromPreferences(plan);
   const homeFiltersRaw = plan?.homeFilters || {};
@@ -980,6 +1083,10 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
   }
 
   if (hasLocation) {
+    emitSearchTrace(traceSink, "NO_RESULTS_AFTER_FILTERS", {
+      label: "No matches found for this destination",
+      debugLabel: "Location constraint present but both live and static paths returned 0 results",
+    });
     debugSearchLog("[assistant] no fallback homes; location constraint present");
     return { items: [], matchType: "NONE" };
   }
@@ -1057,6 +1164,15 @@ const buildHotelOccupancies = (plan = {}) => {
   const safeAdults = Math.max(1, Math.floor(adults));
   const safeChildren = Math.max(0, Math.floor(children));
   return `${safeAdults}|${safeChildren}`;
+};
+
+const parseHotelOccupanciesForCache = (plan = {}) => {
+  const adults =
+    toNumberOrNull(plan?.guests?.adults) ??
+    toNumberOrNull(plan?.guests?.total) ??
+    2;
+  const children = toNumberOrNull(plan?.guests?.children) ?? 0;
+  return [{ adults: Math.max(1, Math.floor(adults)), children: Math.max(0, Math.floor(children)) }];
 };
 
 const buildAssistantLocationQuery = (location = {}) => {
@@ -1374,6 +1490,7 @@ const runStaticHotelQuery = async (where, options) => {
     plan,
     proximityAnchor,
     orderOverride,
+    traceSink = null,
   } = options;
   const order = orderOverride && orderOverride.length
     ? orderOverride
@@ -1386,6 +1503,11 @@ const runStaticHotelQuery = async (where, options) => {
     limit: fetchLimit,
   });
   let cards = hotels.map(formatStaticHotel).filter(Boolean);
+  emitSearchTrace(traceSink, "CATALOG_DB_FETCHED", {
+    label: `Catalog returned ${cards.length} option${cards.length === 1 ? "" : "s"}`,
+    debugLabel: `Static DB fetched ${hotels.length} row(s), ${cards.length} mapped card(s)`,
+    total: cards.length,
+  });
   cards = await applyHotelFilters(cards, normalizedHotelFilters);
   if (coordinateFilter && hasLocationFilter) {
     const nearby = cards.filter(
@@ -1649,7 +1771,6 @@ const buildLiveHotelAdvancedConditions = async ({ hotelFilters = {} } = {}) => {
       }
     }
   }
-
   return conditions;
 };
 
@@ -1672,23 +1793,26 @@ const buildLiveCandidateHotelIds = async ({
   limit,
 }) => {
   const locationCodes = resolvedLocationCodes || {};
+  const requestedCityName =
+    typeof plan?.location?.city === "string" && plan.location.city.trim()
+      ? plan.location.city.trim()
+      : "";
   const resolvedCityName =
     typeof locationCodes?.resolvedCity?.name === "string" && locationCodes.resolvedCity.name.trim()
       ? locationCodes.resolvedCity.name.trim()
-      : typeof plan?.location?.city === "string" && plan.location.city.trim()
-        ? plan.location.city.trim()
-        : "";
+      : requestedCityName;
+  const cityNameFilterSource = requestedCityName || resolvedCityName;
 
   const where = {};
-  if (locationCodes?.cityCode && resolvedCityName) {
-    const cityNameFilter = buildStringFilter(resolvedCityName);
+  if (locationCodes?.cityCode && cityNameFilterSource) {
+    const cityNameFilter = buildStringFilter(cityNameFilterSource);
     where[Op.or] = cityNameFilter
       ? [{ city_code: String(locationCodes.cityCode) }, { city_name: cityNameFilter }]
       : [{ city_code: String(locationCodes.cityCode) }];
   } else if (locationCodes?.cityCode) {
     where.city_code = String(locationCodes.cityCode);
-  } else if (resolvedCityName) {
-    const cityNameFilter = buildStringFilter(resolvedCityName);
+  } else if (cityNameFilterSource) {
+    const cityNameFilter = buildStringFilter(cityNameFilterSource);
     if (cityNameFilter) where.city_name = cityNameFilter;
   }
 
@@ -1743,6 +1867,7 @@ const tryRunLiveHotelSearch = async ({
   coordinateFilter,
   proximityAnchor = null,
   resolvedLocationCodes = null,
+  traceSink = null,
 }) => {
   if (!plan?.dates?.checkIn || !plan?.dates?.checkOut) return [];
   if (!hasExplicitHotelGuests(plan)) return [];
@@ -1751,9 +1876,11 @@ const tryRunLiveHotelSearch = async ({
   const locationCodes = resolvedLocationCodes || await resolveWebbedsLocationCodes(plan?.location || {});
   if (!locationCodes.cityCode && !locationCodes.countryCode) return [];
   try {
-    const passengerNationality = plan?.passengerNationality ?? plan?.nationality ?? null;
+    const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102";
+    const passengerNationality =
+      plan?.passengerNationality ?? plan?.nationality ?? defaultCountryCode;
     const passengerCountryOfResidence =
-      plan?.passengerCountryOfResidence ?? plan?.residence ?? null;
+      plan?.passengerCountryOfResidence ?? plan?.residence ?? defaultCountryCode;
     const advancedConditions = await buildLiveHotelAdvancedConditions({ hotelFilters });
     const credentials = provider.getCredentials();
     const candidateHotelIds = await buildLiveCandidateHotelIds({
@@ -1762,6 +1889,42 @@ const tryRunLiveHotelSearch = async ({
       resolvedLocationCodes: locationCodes,
       limit,
     });
+    const liveCacheKey = buildLiveHotelSearchCacheKey({
+      plan,
+      limit,
+      hotelFilters,
+      coordinateFilter,
+      proximityAnchor,
+      resolvedLocationCodes: locationCodes,
+      candidateHotelIds,
+    });
+    if (liveCacheKey) {
+      const cached = await cache.get(liveCacheKey);
+      if (cached && Array.isArray(cached.items)) {
+        emitSearchTrace(traceSink, "LIVE_CACHE_HIT", {
+          label: "Reusing recent live availability",
+          debugLabel: `Live cache HIT for ${locationCodes.cityCode || locationCodes.countryCode || "unknown-location"}`,
+        });
+        console.log("[assistant][live-cache] HIT", {
+          cityCode: locationCodes.cityCode || null,
+          countryCode: locationCodes.countryCode || null,
+          checkIn: plan.dates.checkIn,
+          checkOut: plan.dates.checkOut,
+          count: cached.items.length,
+        });
+        return cached.items;
+      }
+      emitSearchTrace(traceSink, "LIVE_CACHE_MISS", {
+        label: "Fetching fresh live availability",
+        debugLabel: `Live cache MISS for ${locationCodes.cityCode || locationCodes.countryCode || "unknown-location"}`,
+      });
+      console.log("[assistant][live-cache] MISS", {
+        cityCode: locationCodes.cityCode || null,
+        countryCode: locationCodes.countryCode || null,
+        checkIn: plan.dates.checkIn,
+        checkOut: plan.dates.checkOut,
+      });
+    }
 
     let options = [];
     if (candidateHotelIds.length) {
@@ -1811,7 +1974,7 @@ const tryRunLiveHotelSearch = async ({
         credentials,
       });
     }
-    return await mapLiveHotelOptions({
+    const mappedResults = await mapLiveHotelOptions({
       options,
       plan,
       limit,
@@ -1819,7 +1982,37 @@ const tryRunLiveHotelSearch = async ({
       coordinateFilter,
       proximityAnchor,
     });
+    if (mappedResults.length) {
+      emitSearchTrace(traceSink, "LIVE_RESULTS_READY", {
+        label: `Live availability returned ${mappedResults.length} option${mappedResults.length === 1 ? "" : "s"}`,
+        debugLabel: `Live provider returned ${mappedResults.length} mapped result(s)`,
+        total: mappedResults.length,
+      });
+    }
+    if (liveCacheKey) {
+      await cache.set(
+        liveCacheKey,
+        {
+          items: mappedResults,
+          cachedAt: new Date().toISOString(),
+        },
+        LIVE_HOTEL_SEARCH_CACHE_TTL_SECONDS
+      );
+      console.log("[assistant][live-cache] STORE", {
+        cityCode: locationCodes.cityCode || null,
+        countryCode: locationCodes.countryCode || null,
+        checkIn: plan.dates.checkIn,
+        checkOut: plan.dates.checkOut,
+        count: mappedResults.length,
+        ttl: LIVE_HOTEL_SEARCH_CACHE_TTL_SECONDS,
+      });
+    }
+    return mappedResults;
   } catch (error) {
+    emitSearchTrace(traceSink, "LIVE_PROVIDER_FAILED", {
+      label: "Live availability failed, using catalog fallback",
+      debugLabel: `Live provider failed: ${error?.message || error}`,
+    });
     console.warn("[assistant] live hotel search failed", error?.message || error);
     return [];
   }
@@ -1829,6 +2022,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   const limit = clampLimit(planLimit || options.limit);
   const excludeIds = Array.isArray(options.excludeIds) ? options.excludeIds : [];
   const skipLive = options.skipLive === true;
+  const traceSink = typeof options.traceSink === "function" ? options.traceSink : null;
 
   const prefFilters = deriveFiltersFromPreferences(plan);
   const hotelFiltersRaw = plan?.hotelFilters || {};
@@ -1887,13 +2081,25 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   // Resolve proximity anchor once — used by both live and static hotel paths.
   const proximityAnchor = await resolveProximityAnchor(plan);
   const resolvedLocationCodes = await resolveWebbedsLocationCodes(plan?.location || {});
+  if (resolvedLocationCodes?.resolvedCity?.name) {
+    emitSearchTrace(traceSink, "CITY_RESOLVER_MATCHED", {
+      label: `Matched destination: ${resolvedLocationCodes.resolvedCity.name}`,
+      debugLabel:
+        `City resolver matched ${resolvedLocationCodes.resolvedCity.name} ` +
+        `(code:${resolvedLocationCodes.resolvedCity.code || "n/a"}, country:${resolvedLocationCodes.resolvedCity.country_name || resolvedLocationCodes.resolvedCity.country_code || "n/a"})`,
+      destination: resolvedLocationCodes.resolvedCity.name,
+    });
+  }
+  const requestedCityName =
+    typeof plan?.location?.city === "string" && plan.location.city.trim()
+      ? plan.location.city.trim()
+      : "";
   const resolvedCityName =
     typeof resolvedLocationCodes?.resolvedCity?.name === "string" &&
     resolvedLocationCodes.resolvedCity.name.trim()
       ? resolvedLocationCodes.resolvedCity.name.trim()
-      : typeof plan?.location?.city === "string" && plan.location.city.trim()
-        ? plan.location.city.trim()
-        : "";
+      : requestedCityName;
+  const cityNameFilterSource = requestedCityName || resolvedCityName;
 
   if (!skipLive) {
     const liveResults = await tryRunLiveHotelSearch({
@@ -1903,6 +2109,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
       coordinateFilter,
       proximityAnchor,
       resolvedLocationCodes,
+      traceSink,
     });
 
     if (liveResults.length) {
@@ -1912,12 +2119,23 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
 
       if (filteredLive.length) {
         if (!shouldSupplementLiveResults({ liveResults: filteredLive, hotelFilters: normalizedHotelFilters, limit })) {
+          emitSearchTrace(traceSink, "LIVE_RESULTS_SELECTED", {
+            label: "Using live availability results",
+            debugLabel: `Using ${filteredLive.length} live result(s) without static supplement`,
+            total: filteredLive.length,
+          });
           return { items: filteredLive, matchType: "EXACT" };
         }
+
+        emitSearchTrace(traceSink, "SUPPLEMENTING_WITH_CATALOG", {
+          label: "Adding catalog options to improve coverage",
+          debugLabel: `Supplementing ${filteredLive.length} live result(s) with static catalog`,
+        });
 
         const staticSupplement = await searchHotelsForPlan(plan, {
           ...options,
           skipLive: true,
+          traceSink: null,
           excludeIds: [
             ...excludeIds,
             ...filteredLive.map((item) => String(item.id || item.hotelCode || "")).filter(Boolean),
@@ -1929,6 +2147,11 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
           staticSupplement?.matchType === "EXACT" ? staticSupplement.items || [] : [];
         const mergedItems = [...filteredLive, ...supplementItems].slice(0, limit);
         if (mergedItems.length) {
+          emitSearchTrace(traceSink, "LIVE_RESULTS_SELECTED", {
+            label: "Using live results with catalog backup",
+            debugLabel: `Merged live ${filteredLive.length} + static ${supplementItems.length} = ${mergedItems.length}`,
+            total: mergedItems.length,
+          });
           console.log(
             `[search:hotels] live supplement → live:${filteredLive.length} static:${supplementItems.length} merged:${mergedItems.length}`
           );
@@ -1939,9 +2162,18 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
           };
         }
 
+        emitSearchTrace(traceSink, "LIVE_RESULTS_SELECTED", {
+          label: "Using live availability results",
+          debugLabel: `Static supplement returned 0 items; keeping ${filteredLive.length} live result(s)`,
+          total: filteredLive.length,
+        });
         return { items: filteredLive, matchType: "EXACT" };
       }
     }
+    emitSearchTrace(traceSink, "FALLBACK_TO_CATALOG", {
+      label: "No live matches yet, switching to catalog search",
+      debugLabel: "Live search returned 0 usable results; falling back to static DB",
+    });
   }
 
   const where = {};
@@ -2015,8 +2247,8 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   // Apply city filter: OR(city_code IN [...], city_name LIKE '%...%') so hotels matched by
   // coded city AND hotels with only city_name are both included. This is critical for providers
   // like WebBeds where many hotels have city_name but no city_code (or a different code).
-  if (cityCodes.length > 0 && resolvedCityName) {
-    const nameFilter = buildStringFilter(resolvedCityName);
+  if (cityCodes.length > 0 && cityNameFilterSource) {
+    const nameFilter = buildStringFilter(cityNameFilterSource);
     if (nameFilter) {
       where[Op.or] = [
         { city_code: { [Op.in]: cityCodes } },
@@ -2027,17 +2259,17 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     }
   } else if (cityCodes.length > 0) {
     where.city_code = { [Op.in]: cityCodes };
-  } else if (resolvedCityName) {
+  } else if (cityNameFilterSource) {
     // Guard: if a landmark is set and the city lookup returned 0 codes, the city field might
     // actually be the landmark name (e.g. AI put "Burj Khalifa" in city instead of landmark).
     // Adding city_name LIKE '%Burj Khalifa%' would return 0 hotels. Skip this filter so the
     // coordinate filter (if resolved) or country filter can handle it instead.
     const hasLandmark = typeof plan?.location?.landmark === "string" && plan.location.landmark.trim().length > 0;
     if (!hasLandmark) {
-      const filter = buildStringFilter(resolvedCityName);
+      const filter = buildStringFilter(cityNameFilterSource);
       if (filter) where.city_name = filter;
     } else {
-      console.log(`[search:hotels] Skipping city_name fallback (landmark set, city "${resolvedCityName}" not found in WebbedsCity)`);
+      console.log(`[search:hotels] Skipping city_name fallback (landmark set, city "${cityNameFilterSource}" not found in WebbedsCity)`);
     }
   }
 
@@ -2183,6 +2415,10 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
       // Otherwise try no-star so "Dubai 5★" can show all Dubai hotels when 4+5★ still returns few.
       const relaxedEnough = relaxedCardsFromStars.length >= MIN_STAR_FALLBACK_THRESHOLD || relaxedCardsFromStars.length > cards.length;
       if (relaxedEnough) {
+        emitSearchTrace(traceSink, "RELAXING_FILTERS", {
+          label: "Relaxing star filters to avoid empty results",
+          debugLabel: `Relaxed star filter from ${minStar}+ to ${minStar - 1}+ and got ${relaxedCardsFromStars.length} item(s)`,
+        });
         console.log(`[search:hotels] Star filter relaxed: ${minStar}★ returned ${cards.length}, using ${minStar - 1}+★ → ${relaxedCardsFromStars.length} items`);
         await enrichCardsWithAmenitiesFromTable(relaxedCardsFromStars);
         return { items: relaxedCardsFromStars, matchType: "EXACT", starFilterRelaxed: true };
@@ -2203,6 +2439,10 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
         orderOverride: starFallbackOrder,
       });
       if (allCards.length > cards.length) {
+        emitSearchTrace(traceSink, "RELAXING_FILTERS", {
+          label: "Removing strict star filters to find more options",
+          debugLabel: `Dropped star filter ${minStar}+ and found ${allCards.length} item(s)`,
+        });
         console.log(`[search:hotels] Star filter dropped: ${minStar}★ returned ${cards.length}, using all stars in location → ${allCards.length} items`);
         await enrichCardsWithAmenitiesFromTable(allCards);
         return { items: allCards, matchType: "EXACT", starFilterRelaxed: true };
@@ -2238,6 +2478,10 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     }))
     .slice(0, limit);
   if (relaxedCards.length) {
+    emitSearchTrace(traceSink, "RELAXING_FILTERS", {
+      label: "Relaxing some filters to avoid an empty result",
+      debugLabel: `Strict filters returned 0; relaxed fallback produced ${relaxedCards.length} item(s)`,
+    });
     console.log(`[search:hotels] RESULT: SIMILAR (relaxed) — ${relaxedCards.length} items`);
     await enrichCardsWithAmenitiesFromTable(relaxedCards);
     return { items: relaxedCards, matchType: "SIMILAR" };
@@ -2312,6 +2556,13 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     .slice(0, limit);
 
   const finalMatchType = fallbackCards.length ? "SIMILAR" : "NONE";
+  emitSearchTrace(traceSink, "GLOBAL_FALLBACK_RESULTS", {
+    label: fallbackCards.length
+      ? "Using broader fallback recommendations"
+      : "No fallback recommendations available",
+    debugLabel: `Global fallback returned ${fallbackCards.length} item(s)`,
+    total: fallbackCards.length,
+  });
   console.log(`[search:hotels] RESULT: ${finalMatchType} (global fallback) — ${fallbackCards.length} items`);
   await enrichCardsWithAmenitiesFromTable(fallbackCards);
   return { items: fallbackCards, matchType: finalMatchType };

@@ -1573,3 +1573,195 @@ export const generateAssistantReply = async ({
     }
   }
 };
+
+const getStreamingFollowUps = (intent, lang) => {
+  if (intent === "SEARCH") {
+    return lang === "es"
+      ? ["Ver más opciones", "Cambiar fechas", "Buscar otra ciudad"]
+      : ["See more options", "Change dates", "Search another city"];
+  }
+  if (intent === "TRIP") {
+    return lang === "es"
+      ? ["Ver restaurantes cercanos", "Armar itinerario", "Lugares interesantes"]
+      : ["Nearby restaurants", "Build itinerary", "Interesting places"];
+  }
+  return lang === "es"
+    ? ["Buscar alojamiento", "¿Qué puedes hacer?", "Ver opciones"]
+    : ["Search accommodation", "What can you do?", "See options"];
+};
+
+export const generateAssistantReplyStream = async ({
+  plan,
+  messages = [],
+  inventory = {},
+  trip = null,
+  tripContext = null,
+  userContext = null,
+  weather = null,
+  onChunk,
+} = {}) => {
+  const client = ensureClient();
+  const normalized = sanitizeMessages(messages);
+  const latestUserMessage = [...normalized].reverse().find((msg) => msg.role === "user")?.content ?? "";
+  const intent = plan?.intent || "SMALL_TALK";
+  const modismos = Array.isArray(plan?.notes) ? plan.notes.join(", ") : "";
+  const planLanguage = typeof plan?.language === "string" ? plan.language : null;
+  const targetLanguage = detectLanguageFromText(latestUserMessage, planLanguage || "en");
+  const contextBlock = buildUserContextBlock(userContext, targetLanguage);
+  const languageGuard = "DETECT the language of the user's last message. ALWAYS reply in that same language. Do not mix languages.";
+  const todayLine = buildTodayLine(userContext?.now || userContext?.localDate);
+  const todayBlock = todayLine ? `${todayLine}\n` : "";
+  const followUps = getStreamingFollowUps(intent, targetLanguage);
+
+  let finalContextBlock = contextBlock;
+  if (tripContext?.summary) {
+    const tripInfo = targetLanguage === "es"
+      ? `CONTEXTO DEL VIAJE ACTIVO: ${tripContext.summary}`
+      : `ACTIVE TRIP CONTEXT: ${tripContext.summary}`;
+    finalContextBlock = finalContextBlock ? `${finalContextBlock}\n${tripInfo}` : tripInfo;
+  }
+  if (plan && typeof plan === "object") {
+    plan.language = targetLanguage;
+  }
+
+  if (isDateQuestion(latestUserMessage)) {
+    const context = normalizeUserContext(userContext);
+    const dateParts = [];
+    if (context?.localWeekday) dateParts.push(context.localWeekday);
+    if (context?.localDate) dateParts.push(context.localDate);
+    if (context?.localTime) dateParts.push(context.localTime);
+    if (dateParts.length) {
+      const reply = targetLanguage === "es"
+        ? `Hoy es ${dateParts.join(", ")}.`
+        : `Today is ${dateParts.join(", ")}.`;
+      if (onChunk) onChunk(reply);
+      return { followUps };
+    }
+  }
+  if (isWeatherQuestion(latestUserMessage) && weather?.current) {
+    const temp = weather.current.temperatureC;
+    const feels = weather.current.apparentC;
+    const wind = weather.current.windKph;
+    const description = describeWeatherCode(weather.current.weatherCode, targetLanguage);
+    const parts = [];
+    if (Number.isFinite(temp)) parts.push(targetLanguage === "es" ? `temperatura ${temp}C` : `temperature ${temp}C`);
+    if (Number.isFinite(feels)) parts.push(targetLanguage === "es" ? `sensacion ${feels}C` : `feels like ${feels}C`);
+    if (Number.isFinite(wind)) parts.push(targetLanguage === "es" ? `viento ${wind} km/h` : `wind ${wind} km/h`);
+    const summary = parts.length ? parts.join(", ") : "";
+    const reply = targetLanguage === "es"
+      ? `El clima actual es ${description}${summary ? `, ${summary}` : ""}.`
+      : `Current weather is ${description}${summary ? `, ${summary}` : ""}.`;
+    if (onChunk) onChunk(reply);
+    return { followUps };
+  }
+
+  const matchTypes = inventory?.matchTypes ?? {};
+  const matchTypeValues = Object.values(matchTypes);
+  const hasExactMatches = matchTypeValues.includes("EXACT");
+  const hasSimilarMatches = matchTypeValues.includes("SIMILAR");
+  const isSimilarOnly = hasSimilarMatches && !hasExactMatches;
+  const contextInstruction = tripContext?.summary
+    ? "IMPORTANT: You HAVE access to the user's active booking/trip in the 'USER CONTEXT' section below."
+    : "";
+
+  const langLine = languageInstruction(targetLanguage);
+  let systemPrompt = "";
+
+  if (intent === "TRIP") {
+    systemPrompt =
+      "You are a travel planner helping a guest who already booked a stay.\n" +
+      `${langLine}\n${languageGuard}\n${todayBlock}` +
+      "Reply in plain text. Do not format as JSON.\n" +
+      "Vary your wording. Keep the reply concise and highlight top options.\n" +
+      (modismos ? `The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
+  } else if (intent === "SEARCH") {
+    systemPrompt =
+      "You are a friendly and professional travel assistant. The user is looking for accommodation.\n" +
+      `${langLine}\n${languageGuard}\n${todayBlock}` +
+      "Reply in plain text. Do not format as JSON.\n" +
+      `${contextInstruction}\n` +
+      "Use an enthusiastic, friendly tone. Vary your openers. Keep it concise.\n" +
+      (isSimilarOnly ? "Note: these are approximate matches, not exact.\n" : "") +
+      "After presenting the highlights, invite them to refine or ask more.\n" +
+      (modismos ? `The user uses idioms: ${modismos}. Respond in the same register.\n` : "");
+  } else if (intent === "HELP") {
+    systemPrompt =
+      "You are a friendly travel assistant. The user needs help or information.\n" +
+      `${langLine}\n${languageGuard}\n${todayBlock}` +
+      "Reply in plain text. Do not format as JSON.\n" +
+      `${contextInstruction}\n` +
+      (modismos ? `The user uses idioms: ${modismos}.\n` : "");
+  } else {
+    systemPrompt =
+      "You are a friendly and conversational travel assistant.\n" +
+      `${langLine}\n${languageGuard}\n${todayBlock}` +
+      "Reply in plain text. Do not format as JSON.\n" +
+      `${contextInstruction}\n` +
+      (modismos ? `The user uses idioms: ${modismos}.\n` : "");
+  }
+
+  if (finalContextBlock) {
+    systemPrompt += `\nUSER CONTEXT:\n${finalContextBlock}\n`;
+  }
+
+  const inventorySummary = {
+    location: plan?.location ?? null,
+    guests: plan?.guests ?? null,
+    dates: plan?.dates ?? null,
+    matchTypes,
+    foundExact: Boolean(inventory?.foundExact),
+    hotels: (inventory.hotels || []).slice(0, 5).map((hotel) => ({
+      id: hotel.id,
+      name: hotel.name,
+      city: hotel.city,
+      stars: hotel.classification?.name || "Not Rated",
+      description: hotel.shortDescription,
+      amenities: (hotel.amenities || []).slice(0, 5).map((a) => a.name).join(", "),
+    })),
+    homes: (inventory.homes || []).slice(0, 5).map((home) => ({
+      id: home.id,
+      title: home.title,
+      city: home.city,
+      pricePerNight: home.pricePerNight,
+      currency: home.currency,
+    })),
+  };
+
+  const userContent = intent === "SEARCH"
+    ? JSON.stringify({ latestUserMessage, plan, inventory: inventorySummary })
+    : intent === "TRIP"
+      ? JSON.stringify({ latestUserMessage, tripContext, trip })
+      : JSON.stringify({ latestUserMessage, conversationHistory: normalized.slice(-4) });
+
+  if (!client) {
+    const fallback = pickLanguageText(targetLanguage, "Here are the best options for you.", "Estas son las mejores opciones.");
+    if (onChunk) onChunk(fallback);
+    return { followUps };
+  }
+
+  try {
+    const stream = await client.chat.completions.create({
+      model: DEFAULT_MODEL,
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+    });
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || "";
+      if (content && onChunk) onChunk(content);
+    }
+  } catch (err) {
+    console.error("[aiAssistant] stream reply failed", err?.message || err);
+    const fallback = pickLanguageText(
+      targetLanguage,
+      "Here are the available options.",
+      "Aquí están las opciones disponibles."
+    );
+    if (onChunk) onChunk(fallback);
+  }
+
+  return { followUps };
+};

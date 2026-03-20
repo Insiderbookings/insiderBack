@@ -1,13 +1,40 @@
-import { extractSearchPlan, generateTripAddons } from "../../services/aiAssistant.service.js";
+﻿import OpenAI from "openai";
+import { generateTripAddons } from "../../services/aiAssistant.service.js";
 import { AI_FLAGS, AI_LIMITS } from "./ai.config.js";
 import { buildInventoryCarousels } from "./ai.carousels.js";
-import { buildPreparedReplyFromLastResults } from "./ai.lastResultsFacts.js";
-import { applyPlanToState, buildPlanOutcome, INTENTS, NEXT_ACTIONS, updateStageFromAction } from "./ai.planner.js";
-import { enforcePolicy } from "./ai.policy.js";
+import { applyPlanToState, INTENTS, NEXT_ACTIONS, updateStageFromAction } from "./ai.planner.js";
 import { renderAssistantPayload } from "./ai.renderer.js";
-import { loadAssistantState } from "./ai.stateStore.js";
+import { AI_TOOLS, buildPlanFromToolArgs, TOOL_TO_NEXT_ACTION, TOOL_TO_INTENT } from "./ai.tools.js";
+import { buildSystemPrompt, buildCall2SystemPrompt } from "./ai.systemPrompt.js";
+import { loadAssistantState, saveAssistantState, getDefaultState } from "./ai.stateStore.js";
 import { geocodePlace, getNearbyPlaces, getWeatherSummary, searchStays, searchDestinationImages, getStayDetails } from "./tools/index.js";
 import { logAiEvent, circuitBreaker } from "./ai.telemetry.js";
+
+const _fcApiKey = process.env.OPENAI_API_KEY;
+let _fcClient = null;
+const ensureFCClient = () => {
+  if (!_fcApiKey) return null;
+  if (!_fcClient) _fcClient = new OpenAI({ apiKey: _fcApiKey });
+  return _fcClient;
+};
+
+const detectLanguageFC = (messages, userContext) => {
+  // Priority 1: explicit language preference from the app
+  const userLang = userContext?.user?.language || userContext?.locale?.split("-")[0];
+  if (userLang === "en" || userLang === "english") return "en";
+  if (userLang === "es" || userLang === "spanish") return "es";
+  if (userLang === "pt" || userLang === "portuguese") return "pt";
+
+  // Priority 2: detect from latest user message
+  const latest =
+    Array.isArray(messages) &&
+    [...messages].reverse().find((m) => m?.role === "user" && m?.content)?.content;
+  const raw = String(latest || "").trim();
+  if (/\p{Script=Arabic}/u.test(raw)) return "ar";
+  if (/[áéíóúñü¿¡]/.test(raw) || /\b(hola|gracias|buscar|hotel|quiero|pileta|mostrame|cuantos|fechas|necesito|alojamiento)\b/i.test(raw)) return "es";
+  if (/\b(hello|hi|please|thanks|looking|hotel|need|want|book|travel)\b/i.test(raw)) return "en";
+  return "es";
+};
 
 const DEBUG_TRIP_HUB = process.env.TRIP_HUB_DEBUG === "true";
 const debugTripHub = (...args) => {
@@ -60,6 +87,9 @@ const buildLastSearchParams = (plan) => {
     },
     filters: {
       amenities: Array.isArray(plan.preferences?.amenities) ? plan.preferences.amenities : [],
+      hotelAmenityCodes: Array.isArray(plan.hotelFilters?.amenityCodes) ? plan.hotelFilters.amenityCodes : [],
+      minRating: plan.hotelFilters?.minRating ?? null,
+      areaPreference: Array.isArray(plan.preferences?.areaPreference) ? plan.preferences.areaPreference : [],
       sortBy: plan.sortBy ?? plan.preferences?.sortBy ?? null,
     },
   };
@@ -156,8 +186,8 @@ const AI_AMENITIES_DEBUG = process.env.AI_AMENITIES_DEBUG === "true" || process.
 /** Map user phrases to regex patterns (more specific first, e.g. "indoor pool" before "pool"). */
 const AMENITY_MATCH_PATTERNS = [
   { keys: ["indoor pool", "pileta indoor", "piscina interior", "pileta interior", "piscina cubierta"], pattern: /indoor pool|piscina interior|pileta interior|piscina cubierta|pileta cubierta|heated indoor|indoor swimming/i },
-  { keys: ["pool", "piscina", "pileta", "swimming", "natación"], pattern: /pool|piscina|pileta|swimming|natación/i },
-  { keys: ["gym", "gimnasio", "fitness"], pattern: /gym|gimnasio|fitness|fitness center|musculación/i },
+  { keys: ["pool", "piscina", "pileta", "swimming", "nataciÃ³n"], pattern: /pool|piscina|pileta|swimming|nataciÃ³n/i },
+  { keys: ["gym", "gimnasio", "fitness"], pattern: /gym|gimnasio|fitness|fitness center|musculaciÃ³n/i },
   { keys: ["wifi", "wi-fi", "internet"], pattern: /wifi|wi-fi|wireless|internet|free wifi/i },
   { keys: ["spa"], pattern: /spa|wellness|masaje|massage/i },
   { keys: ["parking", "estacionamiento", "garage"], pattern: /parking|estacionamiento|garage|car park|free parking/i },
@@ -175,7 +205,7 @@ const getRequestedFeatureRegex = (message) => {
   if (!message || typeof message !== "string") return null;
   const text = message.trim().toLowerCase();
   const askPatterns = [
-    /(?:cuáles?|cuales?|qué|que)\s+(?:de\s+)?(?:esos?|estos?)?\s*(?:hoteles?|hotelws?)?\s+(?:tienen|tiene|tengan)\s+(.+?)(?:\?|$)/i,
+    /(?:cuÃ¡les?|cuales?|quÃ©|que)\s+(?:de\s+)?(?:esos?|estos?)?\s*(?:hoteles?|hotelws?)?\s+(?:tienen|tiene|tengan)\s+(.+?)(?:\?|$)/i,
     /(?:which|what)\s+(?:of\s+)?(?:those|these)?\s*(?:hotels?)?\s+(?:have|has|had)\s+(.+?)(?:\?|$)/i,
     /(?:alguno|alguna|do\s+any|any\s+of\s+them)\s+(?:tienen|tiene|have|has)\s+(.+?)(?:\?|$)/i,
     /(?:tienen|tiene|have|has)\s+(.+?)\s+(?:pileta|piscina|pool|gym|wifi|spa|parking|breakfast|restaurant|bar|playa|shuttle|mascota)/i,
@@ -215,7 +245,9 @@ const buildLastShownResultsContextText = (summary, latestUserMessage = "") => {
         console.log("[ai][amenities-debug]", { name: h.name, amenitiesCount: Array.isArray(h.amenities) ? h.amenities.length : 0, matches: matches ? "yes" : "no" });
       }
       const tag = tagLabel != null ? ` [${tagLabel}: ${matches ? "yes" : "no"}]` : "";
-      lines.push(`- ${h.name}, ${h.city}, ${h.stars || ""}, price ${h.pricePerNight ?? "?"} ${h.currency}, amenities: ${am}${tag}`);
+      const reason = h.shortReason ? ` | highlight: ${h.shortReason}` : "";
+      const desc = Array.isArray(h.descriptions) && h.descriptions[0] ? ` | desc: ${h.descriptions[0]}` : "";
+      lines.push(`- ${h.name}, ${h.city}, ${h.stars || ""}, price ${h.pricePerNight ?? "?"} ${h.currency}, amenities: ${am}${tag}${reason}${desc}`);
     });
   }
   if (summary.homes?.length) {
@@ -224,7 +256,9 @@ const buildLastShownResultsContextText = (summary, latestUserMessage = "") => {
       const am = Array.isArray(h.amenities) ? h.amenities.join(", ") : "";
       const matches = tagLabel && featureRegex ? featureRegex.test(am) : null;
       const tag = tagLabel != null ? ` [${tagLabel}: ${matches ? "yes" : "no"}]` : "";
-      lines.push(`- ${h.name || h.title}, ${h.city}, price ${h.pricePerNight ?? "?"} ${h.currency}, amenities: ${am}${tag}`);
+      const reason = h.shortReason ? ` | highlight: ${h.shortReason}` : "";
+      const desc = Array.isArray(h.descriptions) && h.descriptions[0] ? ` | desc: ${h.descriptions[0]}` : "";
+      lines.push(`- ${h.name || h.title}, ${h.city}, price ${h.pricePerNight ?? "?"} ${h.currency}, amenities: ${am}${tag}${reason}${desc}`);
     });
   }
   return lines.join("\n");
@@ -239,10 +273,10 @@ const resolveRequestedStayFromMessage = (message, lastShownSummary) => {
   if (hotels.length === 0 && homes.length === 0) return null;
 
   const askMore =
-    /\b(more about|tell me more|más (sobre|información|info)|detalles?|details?|info about|información de|qué tal|what about)\b/i.test(text) ||
+    /\b(more about|tell me more|mÃ¡s (sobre|informaciÃ³n|info)|detalles?|details?|info about|informaciÃ³n de|quÃ© tal|what about)\b/i.test(text) ||
     /\b(does (the )?(first|second|third|that one)|(el |la )?(primero|segundo|tercero)|tiene (el |la )?(primero)|that hotel|ese hotel)\b/i.test(text) ||
-    /\b(how about|and the first|y el primero|cuéntame (del|de la)|dime (del|de la))\b/i.test(text) ||
-    /\b(sabes (algo )?de|do you have (info|details)|tienes (info|datos)|info del|información del|data on)\b/i.test(text);
+    /\b(how about|and the first|y el primero|cuÃ©ntame (del|de la)|dime (del|de la))\b/i.test(text) ||
+    /\b(sabes (algo )?de|do you have (info|details)|tienes (info|datos)|info del|informaciÃ³n del|data on)\b/i.test(text);
 
   for (const h of hotels) {
     const name = (h?.name || "").trim().toLowerCase();
@@ -316,148 +350,6 @@ const normalizeMessages = (messages = []) =>
     : [];
 
 const YYYY_MM_DD = /^\d{4}-\d{2}-\d{2}$/;
-
-const MONTH_NAME_TO_INDEX = {
-  january: 0,
-  jan: 0,
-  enero: 0,
-  february: 1,
-  feb: 1,
-  febrero: 1,
-  march: 2,
-  mar: 2,
-  marzo: 2,
-  april: 3,
-  apr: 3,
-  abril: 3,
-  may: 4,
-  mayo: 4,
-  june: 5,
-  jun: 5,
-  junio: 5,
-  july: 6,
-  jul: 6,
-  julio: 6,
-  august: 7,
-  aug: 7,
-  agosto: 7,
-  september: 8,
-  sep: 8,
-  sept: 8,
-  septiembre: 8,
-  october: 9,
-  oct: 9,
-  octubre: 9,
-  november: 10,
-  nov: 10,
-  noviembre: 10,
-  december: 11,
-  dec: 11,
-  diciembre: 11,
-};
-
-const toIsoDate = (date) => {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
-  return date.toISOString().slice(0, 10);
-};
-
-const inferYearForMonthDay = ({ monthIndex, day, now }) => {
-  const baseDate = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
-  let year = baseDate.getFullYear();
-  const candidate = new Date(Date.UTC(year, monthIndex, day));
-  const candidateMonth = candidate.getUTCMonth();
-  const candidateDay = candidate.getUTCDate();
-  if (candidateMonth !== monthIndex || candidateDay !== day) return null;
-  const todayUtc = Date.UTC(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
-  const candidateUtc = Date.UTC(year, monthIndex, day);
-  if (candidateUtc < todayUtc) {
-    year += 1;
-  }
-  const resolved = new Date(Date.UTC(year, monthIndex, day));
-  if (resolved.getUTCMonth() !== monthIndex || resolved.getUTCDate() !== day) return null;
-  return year;
-};
-
-const buildIsoFromMonthDay = ({ monthIndex, day, now }) => {
-  const year = inferYearForMonthDay({ monthIndex, day, now });
-  if (year == null) return null;
-  return toIsoDate(new Date(Date.UTC(year, monthIndex, day)));
-};
-
-const inferDatesFromMessage = (text, now) => {
-  const raw = String(text || "").trim();
-  if (!raw) return null;
-  if (/\d{4}-\d{2}-\d{2}/.test(raw)) return null;
-
-  const normalized = raw
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-
-  const monthPattern = Object.keys(MONTH_NAME_TO_INDEX)
-    .sort((left, right) => right.length - left.length)
-    .join("|");
-
-  const sameMonthRange =
-    normalized.match(new RegExp(`\\b(?:del\\s+)?(\\d{1,2})\\s*(?:al|a|-|to)\\s*(\\d{1,2})\\s+de\\s+(${monthPattern})\\b`, "i")) ||
-    normalized.match(new RegExp(`\\bfrom\\s+(\\d{1,2})\\s*(?:to|-|through)\\s*(\\d{1,2})\\s+(${monthPattern})\\b`, "i"));
-  if (sameMonthRange) {
-    const startDay = Number(sameMonthRange[1]);
-    const endDay = Number(sameMonthRange[2]);
-    const monthIndex = MONTH_NAME_TO_INDEX[String(sameMonthRange[3] || "").toLowerCase()];
-    if (Number.isFinite(startDay) && Number.isFinite(endDay) && Number.isInteger(monthIndex)) {
-      const checkIn = buildIsoFromMonthDay({ monthIndex, day: startDay, now });
-      const checkOut = buildIsoFromMonthDay({ monthIndex, day: endDay, now });
-      if (checkIn && checkOut && checkOut >= checkIn) {
-        return { checkIn, checkOut };
-      }
-    }
-  }
-
-  const explicitRange =
-    normalized.match(new RegExp(`\\b(?:del\\s+)?(\\d{1,2})\\s+de\\s+(${monthPattern})\\s*(?:al|a|to|-)\\s*(\\d{1,2})\\s+de\\s+(${monthPattern})\\b`, "i")) ||
-    normalized.match(new RegExp(`\\bfrom\\s+(\\d{1,2})\\s+(${monthPattern})\\s*(?:to|-)\\s*(\\d{1,2})\\s+(${monthPattern})\\b`, "i"));
-  if (explicitRange) {
-    const startDay = Number(explicitRange[1]);
-    const startMonth = MONTH_NAME_TO_INDEX[String(explicitRange[2] || "").toLowerCase()];
-    const endDay = Number(explicitRange[3]);
-    const endMonth = MONTH_NAME_TO_INDEX[String(explicitRange[4] || "").toLowerCase()];
-    if (
-      Number.isFinite(startDay) &&
-      Number.isFinite(endDay) &&
-      Number.isInteger(startMonth) &&
-      Number.isInteger(endMonth)
-    ) {
-      const checkIn = buildIsoFromMonthDay({ monthIndex: startMonth, day: startDay, now });
-      const checkOut = buildIsoFromMonthDay({ monthIndex: endMonth, day: endDay, now });
-      if (checkIn && checkOut && checkOut >= checkIn) {
-        return { checkIn, checkOut };
-      }
-    }
-  }
-
-  return null;
-};
-
-const applySearchTextHeuristics = (plan, latestUserMessage, now) => {
-  if (!plan || typeof plan !== "object") return plan;
-  const nextPlan = { ...plan };
-  if (!nextPlan.dates || typeof nextPlan.dates !== "object") nextPlan.dates = {};
-  const hasDatesAlready = Boolean(nextPlan.dates.checkIn && nextPlan.dates.checkOut);
-  if (!hasDatesAlready) {
-    const inferredDates = inferDatesFromMessage(latestUserMessage, now);
-    if (inferredDates?.checkIn && inferredDates?.checkOut) {
-      nextPlan.dates = {
-        ...nextPlan.dates,
-        checkIn: inferredDates.checkIn,
-        checkOut: inferredDates.checkOut,
-        flexible: false,
-      };
-    }
-  }
-  return nextPlan;
-};
-
 const injectConfirmedSearchIntoPlan = (plan, confirmedSearch) => {
   if (!plan || !confirmedSearch || typeof confirmedSearch !== "object") return;
   if (confirmedSearch.where && String(confirmedSearch.where).trim()) {
@@ -502,12 +394,12 @@ const injectConfirmedSearchIntoPlan = (plan, confirmedSearch) => {
   }
   if (confirmedSearch.who && String(confirmedSearch.who).trim()) {
     const whoStr = String(confirmedSearch.who).trim();
-    const adultsMatch = whoStr.match(/(\d+)\s*adults?/i);
-    const childrenMatch = whoStr.match(/(\d+)\s*children?/i);
-    const adults = adultsMatch ? Math.max(1, parseInt(adultsMatch[1], 10)) : 1;
+    const adultsMatch = whoStr.match(/(\d+)\s*(?:adults?|adultos?)/i);
+    const childrenMatch = whoStr.match(/(\d+)\s*(?:children?|ni[ñn]os?)/i);
+    const adults = adultsMatch ? Math.max(1, parseInt(adultsMatch[1], 10)) : null;
     const children = childrenMatch ? Math.max(0, parseInt(childrenMatch[1], 10)) : 0;
     if (!plan.guests || typeof plan.guests !== "object") plan.guests = {};
-    plan.guests.adults = adults;
+    if (adults !== null) plan.guests.adults = adults;
     plan.guests.children = children;
   }
 };
@@ -525,17 +417,7 @@ const applyPlanDefaults = (plan, state) => {
   if (!nextPlan.assumptions || typeof nextPlan.assumptions !== "object") {
     nextPlan.assumptions = {};
   }
-  const shouldDefaultGuests =
-    hasSearchDestination(state, nextPlan) &&
-    hasSearchDates(nextPlan) &&
-    !hasSearchGuests(nextPlan);
-  if (shouldDefaultGuests) {
-    if (!nextPlan.guests || typeof nextPlan.guests !== "object") nextPlan.guests = {};
-    nextPlan.guests.adults = 1;
-    nextPlan.guests.children = 0;
-    nextPlan.guests.total = 1;
-    nextPlan.assumptions.defaultGuestsApplied = true;
-  } else if (nextPlan.assumptions.defaultGuestsApplied) {
+  if (nextPlan.assumptions.defaultGuestsApplied) {
     delete nextPlan.assumptions.defaultGuestsApplied;
   }
   return nextPlan;
@@ -865,6 +747,26 @@ const clampResultLimit = (value, fallback) => {
   return Math.min(SEARCH_RESULTS_HARD_CAP, Math.max(1, Math.floor(numeric)));
 };
 
+const getMissingDataQuestion = (inputType, language) => {
+  const lang = language || "en";
+  if (inputType === "dateRange") {
+    if (lang === "es") return "¿Para qué fechas estás buscando?";
+    if (lang === "pt") return "Para quais datas você está buscando?";
+    return "What dates are you looking for?";
+  }
+  if (inputType === "guestCount") {
+    if (lang === "es") return "¿Cuántos huéspedes van a ser?";
+    if (lang === "pt") return "Quantos hóspedes serão?";
+    return "How many guests will be staying?";
+  }
+  if (inputType === "nationality") {
+    if (lang === "es") return "Para mostrarte precios en tiempo real necesito saber tu nacionalidad. ¿De dónde sos?";
+    if (lang === "pt") return "Para mostrar preços ao vivo preciso saber sua nacionalidade. De onde você é?";
+    return "To show you live rates I need your nationality. Where are you from?";
+  }
+  return "";
+};
+
 const hasSearchDates = (plan) =>
   Boolean(plan?.dates?.checkIn && plan?.dates?.checkOut);
 
@@ -890,7 +792,7 @@ const LIVE_AVAILABILITY_FOLLOW_UP_PATTERN =
   /\b(disponibilidad real|precio real|precios reales|mostrarme disponibilidad|mostrame disponibilidad|mostrar disponibilidad|ver disponibilidad|ver precio real|live availability|live pricing|real availability|real prices|show availability|show me availability|show live rates)\b/i;
 
 const MORE_OPTIONS_PATTERN =
-  /\b(more options|more hotels|show more|show me more|more stays|another option|other options|otras opciones|mas opciones|más opciones|más hoteles|mas hoteles|mostrame mas|muéstrame más|mostrar mas|mostrar más|seguime mostrando|seguí mostrándome)\b/i;
+  /\b(more options|more hotels|show more|show me more|more stays|another option|other options|otras opciones|mas opciones|mÃ¡s opciones|mÃ¡s hoteles|mas hoteles|mostrame mas|muÃ©strame mÃ¡s|mostrar mas|mostrar mÃ¡s|seguime mostrando|seguÃ­ mostrÃ¡ndome)\b/i;
 
 const wantsExplicitLiveAvailability = (text) =>
   typeof text === "string" && LIVE_AVAILABILITY_FOLLOW_UP_PATTERN.test(text);
@@ -918,7 +820,13 @@ const resolveSearchLimits = ({ plan, limits }) => {
   };
 };
 
-export const runAiTurn = async ({
+/**
+ * runFunctionCallingTurn — Complete AI turn using OpenAI function calling.
+ * Replaces the old regex router + extractSearchPlan with a single streaming
+ * Call 1 that selects the tool, then executes search / Call 2 / direct text
+ * depending on which tool was chosen.
+ */
+export const runFunctionCallingTurn = async ({
   sessionId,
   userId,
   message,
@@ -927,33 +835,37 @@ export const runAiTurn = async ({
   stateOverride,
   uiEvent,
   context,
+  onTextChunk = null,
+  onEvent = null,
 } = {}) => {
   const startedAt = Date.now();
-  const timings = {};
+  const emitEvent = (type, data = {}) => {
+    if (typeof onEvent !== "function" || !type) return;
+    try { onEvent({ type, data }); } catch (_) {}
+  };
+  const emitTrace = (code, data = {}) => {
+    if (!code) return;
+    emitEvent("trace", { code, ...data });
+  };
 
-  // Circuit breaker — reject fast if OpenAI is experiencing issues
+  // Circuit breaker
   if (circuitBreaker.isOpen()) {
-    const cbErr = new Error("AI service is temporarily unavailable. Please try again in a moment.");
-    cbErr.code = "AI_CIRCUIT_OPEN";
-    cbErr.status = 503;
-    throw cbErr;
+    const err = new Error("AI service is temporarily unavailable. Please try again in a moment.");
+    err.code = "AI_CIRCUIT_OPEN";
+    err.status = 503;
+    throw err;
   }
 
   if (!AI_FLAGS.chatEnabled) {
     return {
-      inventory: buildEmptyInventory(),
-      carousels: [],
-      reply: "AI chat is disabled.",
-      followUps: [],
-      plan: null,
-      state: stateOverride || null,
+      inventory: buildEmptyInventory(), carousels: [], reply: "AI chat is disabled.",
+      followUps: [], plan: null, state: stateOverride || null,
       ui: { chips: [], cards: [], inputs: [], sections: [] },
-      intent: "SMALL_TALK",
-      nextAction: "SMALL_TALK",
-      safeMode: false,
+      intent: "SMALL_TALK", nextAction: "SMALL_TALK", safeMode: false,
     };
   }
 
+  // 1. Normalize messages
   let normalizedMessages = normalizeMessages(messages);
   if (!normalizedMessages.length && message) {
     normalizedMessages = [{ role: "user", content: String(message).trim() }];
@@ -962,326 +874,622 @@ export const runAiTurn = async ({
     normalizedMessages = normalizedMessages.slice(-AI_LIMITS.maxMessages);
   }
 
+  // 2. Load state — always falls back to getDefaultState() so existingState is never null
   const existingState =
     stateOverride ||
-    (sessionId && userId ? await loadAssistantState({ sessionId, userId }) : null);
+    (sessionId && userId ? await loadAssistantState({ sessionId, userId }) : null) ||
+    getDefaultState();
 
   const incomingTripContext = normalizeTripContext(context?.trip ?? context?.tripContext ?? context);
-  debugTripHub("incoming", {
-    sessionId,
-    userId,
-    hasTripContext: Boolean(incomingTripContext),
-    tripLocation: incomingTripContext?.locationText || incomingTripContext?.location?.city || null,
-  });
   const userContext = context && typeof context === "object" ? context : null;
-
-  const confirmedSearch = (userContext && typeof userContext === "object" && userContext.confirmedSearch)
-    ? userContext.confirmedSearch
-    : null;
-  const hasLastResults = Boolean(
-    (existingState?.lastShownInventorySummary?.hotels?.length || 0) + (existingState?.lastShownInventorySummary?.homes?.length || 0) > 0
-  );
-  const planStart = Date.now();
-  const planCandidateRaw = await extractSearchPlan(normalizedMessages, {
-    now: userContext?.now || userContext?.localDate || null,
-    confirmedSearch,
-    hasLastResults,
-  });
+  const confirmedSearch =
+    userContext && typeof userContext === "object" && userContext.confirmedSearch
+      ? userContext.confirmedSearch
+      : null;
   const latestUserMessage = extractLatestUserMessage(normalizedMessages);
-  const planCandidate = applySearchTextHeuristics(
-    planCandidateRaw,
-    latestUserMessage,
-    userContext?.now || userContext?.localDate || null
-  );
-  timings.planMs = Date.now() - planStart;
-  injectConfirmedSearchIntoPlan(planCandidate, confirmedSearch);
-  const { state: nextStateBase, plan: mergedPlanRaw } = applyPlanToState(existingState, planCandidate);
-  const planWithUi = applyUiEventToPlan(mergedPlanRaw, uiEvent);
-  const mergedPlanWithDefaults = applyPlanDefaults(planWithUi, nextStateBase);
-  const { state: nextState, plan: mergedPlan } = applyPlanToState(nextStateBase, mergedPlanWithDefaults);
-  const contextPassengerNationality = userContext?.passengerNationality ?? userContext?.nationality ?? null;
-  const contextPassengerResidence =
-    userContext?.passengerCountryOfResidence ?? userContext?.residence ?? null;
-  if (contextPassengerNationality && !mergedPlan.passengerNationality) {
-    mergedPlan.passengerNationality = contextPassengerNationality;
-  }
-  if (contextPassengerResidence && !mergedPlan.passengerCountryOfResidence) {
-    mergedPlan.passengerCountryOfResidence = contextPassengerResidence;
-  }
-  if (incomingTripContext) {
-    nextState.tripContext = mergeTripContext(nextState.tripContext, incomingTripContext);
-  }
-  const outcome = buildPlanOutcome({ state: nextState, plan: mergedPlan });
-  const policy = enforcePolicy({
-    state: nextState,
-    intent: outcome.intent,
-    nextAction: outcome.nextAction,
-  });
-  let resolvedIntent = policy.intent || outcome.intent;
-  let resolvedNextAction = policy.nextAction || outcome.nextAction;
-  if (
-    wantsExplicitLiveAvailability(latestUserMessage) &&
-    hasSearchDestination(nextState, mergedPlan) &&
-    hasSearchDates(mergedPlan) &&
-    hasSearchGuests(mergedPlan)
-  ) {
-    resolvedIntent = INTENTS.SEARCH;
-    resolvedNextAction = NEXT_ACTIONS.RUN_SEARCH;
-  }
-  const tripRequest = extractTripRequest({
-    text: latestUserMessage,
-    uiEvent,
-    tripContext: nextState.tripContext,
-  });
-  const wantsWeather = /(clima|tiempo|weather|temperatura|pronostico)/i.test(latestUserMessage);
-  const resolvedLocation = wantsWeather
-    ? await resolveWeatherLocation({
-      text: latestUserMessage,
-      tripContext: nextState.tripContext,
-      state: nextState,
-      plan: mergedPlan,
-      userContext,
-    })
-    : null;
-  const weather = resolvedLocation
-    ? await getWeatherSummary({ location: resolvedLocation, timeZone: userContext?.timeZone })
-    : null;
-  const weatherFromContext =
-    userContext && typeof userContext === "object" && userContext.weather ? userContext.weather : null;
-  const resolvedWeather = wantsWeather ? weather || weatherFromContext : weather;
-  if (mergedPlan && resolvedIntent) {
-    mergedPlan.intent = resolvedIntent;
+
+  // 3. Detect language
+  const language = detectLanguageFC(normalizedMessages, userContext);
+
+  // 3a. Cancel pending — user dismissed the data-collection card
+  if (userContext?.cancelPending === true) {
+    if (existingState.pendingToolCall) {
+      existingState.pendingToolCall = null;
+      await saveAssistantState({ sessionId, userId, state: existingState });
+    }
+    const cancelMsg = language === "es"
+      ? "Búsqueda cancelada. Podés empezar de nuevo cuando quieras."
+      : "Search cancelled. Feel free to start again whenever you'd like.";
+    onTextChunk?.(cancelMsg);
+    return {
+      reply: cancelMsg,
+      assistant: null,
+      followUps: [],
+      ui: { inputs: [], chips: [], cards: [], sections: [] },
+      plan: null,
+      inventory: buildEmptyInventory(),
+      carousels: [],
+      trip: null,
+      state: existingState,
+      intent: "SMALL_TALK",
+      nextAction: "SMALL_TALK",
+      safeMode: false,
+    };
   }
 
+  // 3b. Resume pending tool call — flag for later use after Call 1
+  // If user explicitly abandoned the data-collection flow (skipDataCollection), clear stored state
+  if (userContext?.skipDataCollection && existingState?.pendingToolCall) {
+    existingState.pendingToolCall = null;
+  }
+  const pendingTc = existingState?.pendingToolCall;
+  const incomingNationality = userContext?.passengerNationality ?? userContext?.nationality ?? null;
+  const incomingWhen = userContext?.confirmedSearch?.when ?? null;
+  const incomingWho = userContext?.confirmedSearch?.who ?? null;
+  const hasPendingToolCallResume = Boolean(
+    !userContext?.skipDataCollection &&
+    pendingTc?.toolName &&
+    !existingState?.locks?.bookingFlowLocked &&
+    (
+      (pendingTc.missingField === "nationality" && incomingNationality) ||
+      (pendingTc.missingField === "dateRange" && incomingWhen) ||
+      (pendingTc.missingField === "guestCount" && incomingWho)
+    )
+  );
+
+  // 4. Build Call 1 system prompt
+  const systemPrompt = buildSystemPrompt({ state: existingState, userContext, language });
+
+  // 5. Thinking event
+  emitEvent("thinking", {});
+  emitTrace("ANALYZING_MESSAGE", { messageLength: latestUserMessage ? String(latestUserMessage).trim().length : 0 });
+
+  // 6. Call 1 — streaming with tools
+  const client = ensureFCClient();
+  if (!client) {
+    throw new Error("OpenAI API key not configured");
+  }
+
+  let directText = "";
+  let finishReason = "stop";
+  const toolCallAccum = {};
+
+  try {
+    const stream = await client.chat.completions.create({
+      model: process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini",
+      tools: AI_TOOLS,
+      tool_choice: "auto",
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...normalizedMessages,
+      ],
+    });
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta;
+      const reason = chunk.choices[0]?.finish_reason;
+      if (reason) finishReason = reason;
+      if (!delta) continue;
+
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index ?? 0;
+          if (!toolCallAccum[idx]) toolCallAccum[idx] = { id: "", name: "", arguments: "" };
+          if (tc.id) toolCallAccum[idx].id += tc.id;
+          if (tc.function?.name) toolCallAccum[idx].name += tc.function.name;
+          if (tc.function?.arguments) toolCallAccum[idx].arguments += tc.function.arguments;
+        }
+      }
+
+      if (delta.content) {
+        directText += delta.content;
+        onTextChunk?.(delta.content);
+      }
+    }
+  } catch (callErr) {
+    circuitBreaker.onFailure?.();
+    throw callErr;
+  }
+
+  // Parse tool call from accumulated deltas
+  let toolCall = null;
+  if (finishReason === "tool_calls" && Object.keys(toolCallAccum).length > 0) {
+    const tc = toolCallAccum[0];
+    try {
+      toolCall = { id: tc.id, name: tc.name, args: JSON.parse(tc.arguments || "{}") };
+    } catch {
+      toolCall = null;
+    }
+  }
+
+  // 7a. Resume pending tool call — override toolCall to force the stored tool
+  if (hasPendingToolCallResume) {
+    toolCall = { id: "resume_pending", name: pendingTc.toolName, args: pendingTc.args || {} };
+  }
+
+  // 7b. bookingFlowLocked guard — force SMALL_TALK if locked
+  if (
+    existingState?.locks?.bookingFlowLocked &&
+    toolCall &&
+    ["search_stays", "get_stay_details"].includes(toolCall.name)
+  ) {
+    toolCall = null;
+  }
+
+  // 8. Handle tool cases
+  let plan = null;
   let inventory = buildEmptyInventory();
   let carousels = [];
-  if (resolvedNextAction === "RUN_SEARCH") {
-    const searchStart = Date.now();
-    const searchLimits = resolveSearchLimits({ plan: mergedPlan, limits });
+  let nextAction = "SMALL_TALK";
+  let resolvedIntent = "SMALL_TALK";
+  let preparedReply = null;
+  let stayDetailsFromDb = null;
 
-    // Check if we have previous results to exclude (for pagination/"more options")
-    // Only exclude if the search plan is roughly similar (e.g. same location)
-    // For simplicity, we assume if we are in the same session and doing a search, we want fresh results.
-    const excludeIds = wantsAdditionalSearchResults(latestUserMessage)
+  if (toolCall?.name === "search_stays") {
+    // ---- A. SEARCH ----
+    // Check if we're resuming from a stored pendingToolCall (interrupted to collect missing data)
+    const storedPending = existingState?.pendingToolCall || null;
+    const originalToolArgs = storedPending?.args || toolCall.args;
+
+    // Build plan: from stored args (if resuming) OR new tool args
+    plan = buildPlanFromToolArgs(originalToolArgs, language);
+    console.log("[DEBUG-1] plan.guests después de buildPlanFromToolArgs:", JSON.stringify(plan.guests));
+    // Always inject confirmedSearch — dates/guests from UI widgets come through here on resume
+    injectConfirmedSearchIntoPlan(plan, confirmedSearch);
+    console.log("[DEBUG-2] plan.guests después de injectConfirmedSearchIntoPlan:", JSON.stringify(plan.guests));
+
+    // Helper: interrupt to collect a missing field, save pendingToolCall, stream question
+    const interruptForMissingData = async (inputType, nextActionValue) => {
+      const questionText = getMissingDataQuestion(inputType, language);
+      // Enrich stored args with data already in the plan so subsequent resumes have it
+      // (plan is captured by reference — reflects its current state when called)
+      const enrichedArgs = { ...originalToolArgs };
+      if (plan.dates?.checkIn) {
+        enrichedArgs.checkIn = plan.dates.checkIn;
+        enrichedArgs.checkOut = plan.dates.checkOut || null;
+      }
+      if (plan.guests?.adults != null) {
+        enrichedArgs.adults = plan.guests.adults;
+        enrichedArgs.children = plan.guests.children ?? 0;
+      }
+      existingState.pendingToolCall = {
+        toolName: "search_stays",
+        args: enrichedArgs,
+        missingField: inputType,
+        savedAt: Date.now(),
+      };
+      await saveAssistantState({ sessionId, userId, state: existingState });
+      onTextChunk?.(questionText);
+      return {
+        reply: questionText,
+        assistant: null,
+        followUps: [],
+        ui: { inputs: [{ type: inputType }] },
+        plan: null,
+        inventory: buildEmptyInventory(),
+        carousels: [],
+        trip: null,
+        state: existingState,
+        intent: "SEARCH",
+        nextAction: nextActionValue,
+        safeMode: false,
+      };
+    };
+
+    // 1. Recover dates/guests from existingState if the model passed nulls (e.g. follow-up
+    //    question misrouted as search_stays instead of answer_from_results).
+    if (!plan.dates?.checkIn && existingState?.dates?.checkIn) {
+      if (!plan.dates || typeof plan.dates !== "object") plan.dates = {};
+      plan.dates.checkIn  = existingState.dates.checkIn;
+      plan.dates.checkOut = existingState.dates.checkOut || null;
+      plan.dates.flexible = false;
+    }
+    if (!plan.guests?.adults && existingState?.guests?.adults) {
+      if (!plan.guests || typeof plan.guests !== "object") plan.guests = {};
+      plan.guests.adults   = existingState.guests.adults;
+      plan.guests.children = existingState.guests.children ?? 0;
+    }
+
+    // 2. Check dates — interrupt only if still missing after state fallback
+    if (!hasSearchDates(plan)) {
+      return await interruptForMissingData("dateRange", "ASK_FOR_DATES");
+    }
+
+    // Apply UI event (e.g. sort chips) and defaults
+    const planWithUi = applyUiEventToPlan(plan, uiEvent);
+    const planWithDefaults = applyPlanDefaults(planWithUi, existingState);
+
+    // 3. Check guests — interrupt only if still missing after state fallback
+    if (!hasSearchGuests(planWithDefaults)) {
+      return await interruptForMissingData("guestCount", "ASK_FOR_GUESTS");
+    }
+
+    const { plan: mergedPlan } = applyPlanToState(existingState, planWithDefaults);
+    plan = mergedPlan;
+
+    // 3. Inject nationality/residence from userContext
+    const contextNationality = userContext?.passengerNationality ?? userContext?.nationality ?? null;
+    const contextResidence = userContext?.passengerCountryOfResidence ?? userContext?.residence ?? null;
+    if (contextNationality) plan.passengerNationality = contextNationality;
+    if (contextResidence) plan.passengerCountryOfResidence = contextResidence;
+
+    // 4. Check nationality (needed for live rates)
+    if (!plan.passengerNationality) {
+      return await interruptForMissingData("nationality", "ASK_FOR_NATIONALITY");
+    }
+
+    // All data present — clear pendingToolCall
+    if (existingState.pendingToolCall) {
+      existingState.pendingToolCall = null;
+    }
+
+    const excludeIds = toolCall.args.wantsMoreResults
       ? existingState?.lastResultsContext?.shownIds || []
       : [];
 
-    inventory = await searchStays(mergedPlan, {
+    const searchLimits = resolveSearchLimits({ plan, limits });
+    const searchDestination = plan?.location?.city || existingState?.destination?.name || null;
+    const expectsLive = hasSearchDates(plan) && hasSearchGuests(plan);
+
+    emitTrace(expectsLive ? "SEARCH_STRATEGY_LIVE" : "SEARCH_STRATEGY_CATALOG", { destination: searchDestination });
+    emitEvent(expectsLive ? "searching_live" : "searching_catalog", { destination: searchDestination });
+    emitTrace("DESTINATION_RECOGNIZED", { destination: searchDestination });
+
+    const _t0 = Date.now();
+    inventory = await searchStays(plan, {
       limit: searchLimits.limit,
       maxResults: searchLimits.maxResults,
-      excludeIds
+      excludeIds,
+      traceSink: emitTrace,
     });
-    timings.searchMs = Date.now() - searchStart;
-    if ((inventory.homes?.length || 0) + (inventory.hotels?.length || 0) > 0) {
+    console.log("[timing] searchStays:", Date.now() - _t0, "ms");
+
+    const counts = {
+      homes: inventory?.homes?.length || 0,
+      hotels: inventory?.hotels?.length || 0,
+    };
+    emitEvent("results_final", { counts, total: counts.homes + counts.hotels });
+    emitTrace("RESULTS_FOUND", { ...counts, total: counts.homes + counts.hotels });
+
+    if (counts.homes + counts.hotels > 0) {
       try {
+        const _t1 = Date.now();
         carousels = await buildInventoryCarousels({
           inventory,
-          plan: mergedPlan,
-          state: nextState,
+          plan,
+          state: existingState,
           message: latestUserMessage,
           maxCarousels: 5,
           maxItems: 8,
         });
-      } catch (carouselErr) {
-        console.warn("[ai] buildInventoryCarousels failed", carouselErr?.message || carouselErr);
+        console.log("[timing] buildInventoryCarousels:", Date.now() - _t1, "ms");
+      } catch (err) {
+        console.warn("[ai] buildInventoryCarousels failed", err?.message || err);
       }
     }
-  }
 
-  let trip = null;
-  // Trip (post-booking assist) only when not in PLANNING or LOCATION mode (pre-trip planning / destination info)
-  const isPlanningOrLocation = resolvedIntent === INTENTS.PLANNING || resolvedIntent === INTENTS.LOCATION;
-  if (tripRequest && !isPlanningOrLocation) {
-    const tripStart = Date.now();
-    const location = await resolveTripLocation(nextState.tripContext, nextState, mergedPlan, userContext);
-    if (location) {
-      const suggestions = await buildTripSuggestions({ request: tripRequest, location });
-      const itinerary = buildItinerary({
-        request: tripRequest,
-        tripContext: nextState.tripContext,
-        suggestions,
+    nextAction = TOOL_TO_NEXT_ACTION.search_stays;
+    resolvedIntent = TOOL_TO_INTENT.search_stays;
+
+  } else if (toolCall?.name === "answer_from_results") {
+    // ---- B. ANSWER FROM RESULTS — Call 2 streaming with summary as context ----
+    nextAction = TOOL_TO_NEXT_ACTION.answer_from_results;
+    resolvedIntent = TOOL_TO_INTENT.answer_from_results;
+    plan = { intent: resolvedIntent, language };
+
+    if (!existingState?.lastShownInventorySummary) {
+      // No results in state — deterministic fallback, no LLM needed
+      const fallbackText = language === "es"
+        ? "No tengo resultados previos para responder eso. ¿Querés que busque hoteles en algún destino?"
+        : "I don't have previous results to answer that. Would you like me to search for hotels somewhere?";
+      preparedReply = { text: fallbackText, sections: [] };
+      onTextChunk?.(fallbackText);
+    } else {
+      // Build summary context to inject into the system prompt
+      const summaryContext = buildLastShownResultsContextText(
+        existingState.lastShownInventorySummary,
+        latestUserMessage
+      );
+      const call2System = buildCall2SystemPrompt({
+        toolName: "answer_from_results",
+        toolArgs: toolCall.args,
+        userContext,
+        language,
+        summaryContext,
       });
-      let insights = [];
-      let preparation = [];
-      const isHubInit = (uiEvent?.id || uiEvent?.event || uiEvent) === "TRIP_HUB_INIT";
 
-      if (isHubInit) {
-        const addons = await generateTripAddons({
-          tripContext: nextState.tripContext,
-          location,
-          lang: mergedPlan?.language || "en"
+      const call2Messages = [
+        { role: "system", content: call2System },
+        ...normalizedMessages,
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [{
+            id: toolCall.id || "call_0",
+            type: "function",
+            function: { name: "answer_from_results", arguments: JSON.stringify(toolCall.args) },
+          }],
+        },
+        {
+          role: "tool",
+          tool_call_id: toolCall.id || "call_0",
+          content: summaryContext || "No hotel data available in context. Inform the user you need them to run a new search.",
+        },
+      ];
+
+      let accumulated = "";
+      try {
+        const call2Stream = await client.chat.completions.create({
+          model: process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini",
+          stream: true,
+          messages: call2Messages,
         });
-        insights = addons.insights;
-        preparation = addons.preparation;
+        for await (const chunk of call2Stream) {
+          const content = chunk.choices[0]?.delta?.content || "";
+          if (content) {
+            accumulated += content;
+            onTextChunk?.(content);
+          }
+        }
+      } catch (err) {
+        console.warn("[ai] answer_from_results Call 2 failed", err?.message || err);
+        accumulated = language === "es"
+          ? "No pude revisar esos resultados ahora. Probá de nuevo."
+          : "I couldn't check those results right now. Try again.";
+        onTextChunk?.(accumulated);
       }
 
-      trip = {
-        request: tripRequest,
-        location,
-        suggestions,
-        itinerary,
-        insights,
-        preparation,
-      };
-      resolvedIntent = INTENTS.TRIP;
-      resolvedNextAction = NEXT_ACTIONS.RUN_TRIP;
-      if (mergedPlan) {
-        mergedPlan.intent = INTENTS.TRIP;
+      preparedReply = { text: accumulated, sections: [] };
+    }
+
+  } else if (
+    toolCall?.name === "plan_trip" ||
+    toolCall?.name === "get_destination_info" ||
+    toolCall?.name === "get_stay_details"
+  ) {
+    // ---- C. PLANNING / LOCATION / DETAILS ----
+    nextAction = TOOL_TO_NEXT_ACTION[toolCall.name];
+    resolvedIntent = TOOL_TO_INTENT[toolCall.name];
+    plan = {
+      intent: resolvedIntent,
+      language,
+      location: { city: toolCall.args.destination || null },
+    };
+
+    if (toolCall.name === "get_stay_details") {
+      try {
+        const details = await getStayDetails({ stayId: toolCall.args.stayId, type: toolCall.args.type });
+        if (details?.details) {
+          stayDetailsFromDb = buildStayDetailsContextForPrompt(details);
+        }
+      } catch (err) {
+        console.warn("[ai] getStayDetails failed", err?.message || err);
       }
     }
-    timings.tripMs = Date.now() - tripStart;
+
+    // Call 2 — streaming text generation
+    const call2System = buildCall2SystemPrompt({ toolName: toolCall.name, toolArgs: toolCall.args, userContext, language });
+    const toolResultContent = stayDetailsFromDb
+      ? `Tool result: ${JSON.stringify(toolCall.args)}\n${stayDetailsFromDb}`
+      : `Tool result: ${JSON.stringify(toolCall.args)}`;
+
+    const call2Messages = [
+      { role: "system", content: call2System },
+      ...normalizedMessages,
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [{
+          id: toolCall.id || "call_0",
+          type: "function",
+          function: { name: toolCall.name, arguments: JSON.stringify(toolCall.args) },
+        }],
+      },
+      {
+        role: "tool",
+        tool_call_id: toolCall.id || "call_0",
+        content: toolResultContent,
+      },
+    ];
+
+    let accumulated = "";
+    try {
+      const call2Stream = await client.chat.completions.create({
+        model: process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini",
+        stream: true,
+        messages: call2Messages,
+      });
+      for await (const chunk of call2Stream) {
+        const content = chunk.choices[0]?.delta?.content || "";
+        if (content) {
+          accumulated += content;
+          onTextChunk?.(content);
+        }
+      }
+    } catch (err) {
+      console.warn("[ai] Call 2 stream failed", err?.message || err);
+      accumulated = language === "es"
+        ? "No pude generar esa respuesta ahora. Intentá de nuevo."
+        : "I couldn't generate that response right now. Try again.";
+      onTextChunk?.(accumulated);
+    }
+
+    preparedReply = { text: accumulated, sections: [] };
+
+  } else {
+    // ---- D. SMALL_TALK — text already streamed in Call 1 ----
+    nextAction = "SMALL_TALK";
+    resolvedIntent = "SMALL_TALK";
+    plan = { intent: "SMALL_TALK", language };
+
+    if (!directText) {
+      const fallbacks = language === "es"
+        ? ["Listo. Contame qué necesitás.", "Dale, ¿en qué te ayudo?", "Acá estoy. ¿En qué andás?"]
+        : ["Sure, what can I help you with?", "Got it. What do you need?", "Here when you need me."];
+      directText = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+      onTextChunk?.(directText);
+    }
+
+    preparedReply = { text: directText, sections: [] };
   }
 
-  const updatedState = updateStageFromAction(nextState, resolvedNextAction);
-  if (resolvedNextAction === "RUN_SEARCH") {
-    const previousShownIds = nextState?.lastResultsContext?.shownIds || [];
+  // 9. Apply plan to state
+  if (!plan) plan = { intent: resolvedIntent, language };
+
+  const { state: nextState } = applyPlanToState(existingState, plan);
+  if (incomingTripContext) {
+    nextState.tripContext = mergeTripContext(nextState.tripContext, incomingTripContext);
+  }
+
+  // Nationality/residence from context
+  const contextPassengerNationality = userContext?.passengerNationality ?? userContext?.nationality ?? null;
+  const contextPassengerResidence = userContext?.passengerCountryOfResidence ?? userContext?.residence ?? null;
+  if (contextPassengerNationality && !plan.passengerNationality) {
+    plan.passengerNationality = contextPassengerNationality;
+  }
+  if (contextPassengerResidence && !plan.passengerCountryOfResidence) {
+    plan.passengerCountryOfResidence = contextPassengerResidence;
+  }
+
+  const updatedState = updateStageFromAction(nextState, nextAction);
+
+  // Update inventory summary for search
+  if (nextAction === "RUN_SEARCH") {
+    const previousShownIds = existingState?.lastResultsContext?.shownIds || [];
     const newShownIds = [
       ...(inventory.homes || []).map((item) => String(item.id)),
       ...(inventory.hotels || []).map((item) => String(item.id)),
     ].filter(Boolean);
-
-    // Accumulate IDs to support deep pagination/rejection
-    // Only reset if the user completely changed the destination/intent (which usually resets state anyway)
     const combinedIds = Array.from(new Set([...previousShownIds, ...newShownIds]));
-
     updatedState.lastResultsContext = {
       lastSearchId: `search-${Date.now()}`,
       shownIds: combinedIds,
     };
-
     const lastShownSummary = buildLastShownInventorySummary(inventory, updatedState.lastResultsContext.lastSearchId);
-    if (lastShownSummary) {
-      updatedState.lastShownInventorySummary = lastShownSummary;
-    }
-    const lastSearchParams = buildLastSearchParams(mergedPlan);
-    if (lastSearchParams) {
-      updatedState.lastSearchParams = lastSearchParams;
-    }
-
-    console.log("[ai] search complete", {
-      previousCount: previousShownIds.length,
-      newCount: newShownIds.length,
-      totalExcludedNext: combinedIds.length
-    });
+    if (lastShownSummary) updatedState.lastShownInventorySummary = lastShownSummary;
+    const lastSearchParams = buildLastSearchParams(plan);
+    if (lastSearchParams) updatedState.lastSearchParams = lastSearchParams;
   }
 
-  // ---- Visual Context Injection ----
+  console.log("[timing] total turn:", Date.now() - startedAt, "ms");
+  console.log("[ai] functionCalling.tool", {
+    tool: toolCall?.name || "none",
+    nextAction,
+    destination: plan?.location?.city || null,
+  });
+
+  // Trip handling (post-booking assist — separate from planning/location)
+  let trip = null;
+  const isPlanningOrLocation = resolvedIntent === INTENTS.PLANNING || resolvedIntent === INTENTS.LOCATION;
+  const tripRequest = extractTripRequest({ text: latestUserMessage, uiEvent, tripContext: nextState.tripContext });
+  if (tripRequest && !isPlanningOrLocation) {
+    const tripStart = Date.now();
+    const location = await resolveTripLocation(nextState.tripContext, nextState, plan, userContext);
+    if (location) {
+      const suggestions = await buildTripSuggestions({ request: tripRequest, location });
+      const itinerary = buildItinerary({ request: tripRequest, tripContext: nextState.tripContext, suggestions });
+      let insights = [], preparation = [];
+      const isHubInit = (uiEvent?.id || uiEvent?.event || uiEvent) === "TRIP_HUB_INIT";
+      if (isHubInit) {
+        const addons = await generateTripAddons({ tripContext: nextState.tripContext, location, lang: plan?.language || "en" });
+        insights = addons.insights;
+        preparation = addons.preparation;
+      }
+      trip = { request: tripRequest, location, suggestions, itinerary, insights, preparation };
+      resolvedIntent = INTENTS.TRIP;
+      nextAction = NEXT_ACTIONS.RUN_TRIP;
+      if (plan) plan.intent = INTENTS.TRIP;
+    }
+    debugTripHub("tripMs", Date.now() - tripStart);
+  }
+
+  // Weather
+  const wantsWeather = /(clima|tiempo|weather|temperatura|pronostico)/i.test(latestUserMessage);
+  const resolvedLocation = wantsWeather
+    ? await resolveWeatherLocation({ text: latestUserMessage, tripContext: nextState.tripContext, state: nextState, plan, userContext })
+    : null;
+  const weather = resolvedLocation
+    ? await getWeatherSummary({ location: resolvedLocation, timeZone: userContext?.timeZone })
+    : null;
+
+  // Visual context
   let visualContext = null;
-  const destinationName = mergedPlan?.location?.city || nextState?.destination?.name;
-
-  // Only fetch visuals if we have a destination but NO search results yet (to avoid clutter)
-  const hasNoResults = (!inventory.homes?.length && !inventory.hotels?.length);
-  const isAskingForDetails = [NEXT_ACTIONS.ASK_FOR_DATES, NEXT_ACTIONS.ASK_FOR_GUESTS].includes(resolvedNextAction);
-
+  const destinationName = plan?.location?.city || nextState?.destination?.name;
+  const hasNoResults = !inventory.homes?.length && !inventory.hotels?.length;
   const wantsDestinationPhotos =
-    resolvedNextAction === "RUN_LOCATION" ||
-    resolvedNextAction === "RUN_PLANNING" ||
-    hasNoResults ||
-    isAskingForDetails;
+    nextAction === "RUN_LOCATION" || nextAction === "RUN_PLANNING" || hasNoResults;
   if (destinationName && wantsDestinationPhotos && !trip) {
     try {
       const images = await searchDestinationImages(destinationName, 3);
-      if (images.length) {
-        visualContext = {
-          type: "destination_gallery",
-          title: destinationName,
-          images: images
-        };
-      }
+      if (images.length) visualContext = { type: "destination_gallery", title: destinationName, images };
     } catch (err) {
-      console.warn("[ai] visual context fetch failed", err);
+      console.warn("[ai] visual context failed", err);
     }
   }
 
-  const tripSearchContext = buildTripSearchContextText(updatedState, mergedPlan);
-  const lastShownResultsContext = buildLastShownResultsContextText(existingState?.lastShownInventorySummary, latestUserMessage) ?? null;
+  const tripSearchContext = buildTripSearchContextText(updatedState, plan);
+  const lastShownResultsContext =
+    buildLastShownResultsContextText(existingState?.lastShownInventorySummary, latestUserMessage) ?? null;
   const inventoryForReply =
-    resolvedNextAction !== NEXT_ACTIONS.RUN_SEARCH && existingState?.lastShownInventorySummary
+    nextAction !== NEXT_ACTIONS.RUN_SEARCH && existingState?.lastShownInventorySummary
       ? existingState.lastShownInventorySummary
       : undefined;
 
-  let stayDetailsFromDb = null;
-  const requestedStay = resolveRequestedStayFromMessage(latestUserMessage, existingState?.lastShownInventorySummary);
-  if (requestedStay) {
-    try {
-      const details = await getStayDetails({ stayId: requestedStay.stayId, type: requestedStay.type });
-      if (details?.details) {
-        stayDetailsFromDb = buildStayDetailsContextForPrompt(details);
-      }
-    } catch (err) {
-      console.warn("[ai] getStayDetails for chat failed", requestedStay.stayId, err?.message || err);
-    }
-  }
-
-  let preparedReply = null;
-  if (resolvedNextAction === NEXT_ACTIONS.ANSWER_WITH_LAST_RESULTS && existingState?.lastShownInventorySummary) {
-    try {
-      preparedReply = await buildPreparedReplyFromLastResults({
-        summary: existingState.lastShownInventorySummary,
-        latestUserMessage,
-        language: mergedPlan?.language || null,
-      });
-    } catch (preparedReplyErr) {
-      console.warn("[ai] prepared reply from last results failed", preparedReplyErr?.message || preparedReplyErr);
-    }
-  }
-
-  const renderStart = Date.now();
+  // 10. Render (streaming already done above; pass onTextChunk: null)
+  // 10. Render (streaming already done above; pass onTextChunk: null)
   const rendered = await renderAssistantPayload({
-    plan: mergedPlan,
+    plan,
     messages: normalizedMessages,
     inventory,
-    nextAction: resolvedNextAction,
+    nextAction,
     trip,
     tripContext: nextState.tripContext,
     userContext,
-    weather: resolvedWeather,
-    missing: outcome.missing,
+    weather,
+    missing: [],
     visualContext,
     tripSearchContext,
     lastShownResultsContext,
     inventoryForReply,
     stayDetailsFromDb,
     preparedReply,
+    // Pass real onTextChunk for RUN_SEARCH so the renderer emits the intro via SSE.
+    // For all other actions, streaming was already done above (Call 1 or Call 2).
+    onTextChunk: nextAction === NEXT_ACTIONS.RUN_SEARCH ? onTextChunk : null,
   });
-  debugTripHub("reply", {
-    sessionId,
-    intent: resolvedIntent,
-    nextAction: resolvedNextAction,
-    tripGenerated: Boolean(trip),
-    reply: summarizeReply(rendered?.assistant?.text),
-  });
-  timings.renderMs = Date.now() - renderStart;
-  timings.totalMs = Date.now() - startedAt;
 
-  // Mark circuit breaker as healthy after a successful OpenAI turn
   circuitBreaker.onSuccess();
 
   logAiEvent("turn", {
     sessionId,
     userId,
     intent: resolvedIntent,
-    nextAction: resolvedNextAction,
-    missing: outcome.missing,
+    nextAction,
+    missing: [],
     homes: inventory.homes?.length || 0,
     hotels: inventory.hotels?.length || 0,
     trip: trip ? trip.suggestions?.length || 0 : 0,
-    timings,
+    planSource: "function_calling",
   });
 
+  // 11. Return
   return {
     reply: rendered.assistant?.text || "",
     assistant: rendered.assistant || { text: "", tone: "neutral", disclaimers: [] },
     followUps: rendered.followUps || [],
     ui: rendered.ui || { chips: [], cards: [], inputs: [], sections: [] },
-    plan: mergedPlan,
+    plan,
     inventory,
     carousels: Array.isArray(carousels) ? carousels : [],
     trip,
-    weather: resolvedWeather,
+    weather,
     state: updatedState,
     intent: resolvedIntent,
-    nextAction: resolvedNextAction,
-    safeMode: outcome.safeMode,
+    nextAction,
+    safeMode: Boolean(existingState?.locks?.bookingFlowLocked),
   };
 };
+
+export const runAiTurn = async (params) => runFunctionCallingTurn(params);
+

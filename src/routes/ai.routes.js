@@ -8,6 +8,7 @@ import {
   getAiChat,
   getAiHealth,
   handleAiChat,
+  handleAiChatStream,
   listAiChats,
 } from "../controllers/ai.controller.js";
 
@@ -40,6 +41,7 @@ const aiSessionWriteLimiter = buildAiLimiter(AI_RATE_LIMITS.sessionWritePerMinut
 
 router.get("/health", getAiHealth); // circuit breaker + readiness status (no extra rate limit)
 router.post("/chat", aiTurnLimiter, handleAiChat);
+router.post("/chat/stream", aiTurnLimiter, handleAiChatStream);
 router.post("/chats", aiSessionWriteLimiter, createAiChat);
 router.get("/chats", aiSessionReadLimiter, listAiChats);
 router.get("/chats/:sessionId", aiSessionReadLimiter, getAiChat);
