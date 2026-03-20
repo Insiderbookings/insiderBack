@@ -25,22 +25,22 @@ async function up(queryInterface) {
 
   // Backfill booking hotel/room into stay_hotel if missing
   if (await tableExists("stay_hotel")) {
-    if (dialect.startsWith("mysql")) {
+    const hasBookingHotelId = await columnExists("booking", "hotel_id");
+    const hasBookingRoomId = await columnExists("booking", "room_id");
+
+    if (hasBookingHotelId || hasBookingRoomId) {
+      const hotelSelect = hasBookingHotelId ? "b.hotel_id" : "NULL";
+      const roomSelect = hasBookingRoomId ? "b.room_id" : "NULL";
+      const whereParts = [];
+      if (hasBookingHotelId) whereParts.push("b.hotel_id IS NOT NULL");
+      if (hasBookingRoomId) whereParts.push("b.room_id IS NOT NULL");
+
       await queryInterface.sequelize.query(`
         INSERT INTO stay_hotel (stay_id, hotel_id, room_id)
-        SELECT b.id, b.hotel_id, b.room_id
+        SELECT b.id, ${hotelSelect}, ${roomSelect}
         FROM booking b
         LEFT JOIN stay_hotel sh ON sh.stay_id = b.id
-        WHERE (b.hotel_id IS NOT NULL OR b.room_id IS NOT NULL)
-          AND sh.id IS NULL;
-      `);
-    } else {
-      await queryInterface.sequelize.query(`
-        INSERT INTO stay_hotel (stay_id, hotel_id, room_id)
-        SELECT b.id, b.hotel_id, b.room_id
-        FROM booking b
-        LEFT JOIN stay_hotel sh ON sh.stay_id = b.id
-        WHERE (b.hotel_id IS NOT NULL OR b.room_id IS NOT NULL)
+        WHERE (${whereParts.join(" OR ")})
           AND sh.id IS NULL;
       `);
     }

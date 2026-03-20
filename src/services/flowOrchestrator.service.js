@@ -555,6 +555,7 @@ const serializeFlow = (flow) => {
     pricingSnapshotConfirmed: plain.pricing_snapshot_confirmed,
     cancelQuoteSnapshot: plain.cancel_quote_snapshot,
     cancelResultSnapshot: plain.cancel_result_snapshot,
+    resumeOfferToken: buildResumableOfferToken(plain.selected_offer),
     createdAt: plain.created_at,
     updatedAt: plain.updated_at,
   };
@@ -694,6 +695,35 @@ const buildOfferPayload = ({
     createdAt: now,
     exp: now + ttlSeconds * 1000,
   };
+};
+
+const buildResumableOfferPayload = (offer) => {
+  if (!offer || typeof offer !== "object") return null;
+  const hotelId = String(offer.hotelId || "").trim();
+  const fromDate = String(offer.fromDate || "").trim();
+  const toDate = String(offer.toDate || "").trim();
+  const roomTypeCode = String(offer.roomTypeCode || "").trim();
+  const rateBasisId = String(offer.rateBasisId || "").trim();
+  const rooms =
+    Array.isArray(offer.rooms) ? offer.rooms : String(offer.rooms || "").trim() || null;
+  const hasRooms =
+    (Array.isArray(rooms) && rooms.length > 0) || (typeof rooms === "string" && rooms.length > 0);
+  if (!hotelId || !fromDate || !toDate || !roomTypeCode || !rateBasisId || !hasRooms) {
+    return null;
+  }
+  const ttlSeconds = Number(process.env.FLOW_TOKEN_TTL_SECONDS || 900);
+  const now = Date.now();
+  return {
+    ...offer,
+    createdAt: now,
+    exp: now + ttlSeconds * 1000,
+  };
+};
+
+const buildResumableOfferToken = (offer) => {
+  const payload = buildResumableOfferPayload(offer);
+  if (!payload) return null;
+  return signOfferToken(payload);
 };
 
 const toBoolean = (value) => {
@@ -967,6 +997,12 @@ const createWebbedsClientSafe = () => {
 const sharedClient = createWebbedsClientSafe();
 
 const getRequestId = (req) => req?.id || req?.headers?.["x-request-id"];
+const resolveFlowClientType = (req) => {
+  const raw = String(req?.headers?.["x-client-type"] || "").trim().toLowerCase();
+  if (raw === "web") return "WEB";
+  if (raw === "mobile" || raw === "app" || raw === "ios" || raw === "android") return "MOBILE";
+  return "UNKNOWN";
+};
 const logStep = async ({
   flowId,
   step,
@@ -1315,6 +1351,7 @@ export class FlowOrchestratorService {
       status: FLOW_STATUSES.STARTED,
       search_context: {
         hotelId: hotel.id ?? resolvedHotelCode,
+        hotelName: hotel.name ?? null,
         fromDate,
         toDate,
         currency: normalizeCurrency(currency),
@@ -1323,6 +1360,7 @@ export class FlowOrchestratorService {
         passengerNationality: ensureNumericCode(passengerNationality, defaultCountryCode),
         passengerCountryOfResidence: ensureNumericCode(passengerCountryOfResidence, defaultCountryCode),
         cityCode: cityCode ?? null,
+        clientType: resolveFlowClientType(req),
       },
     });
     console.info("[flows] started", { flowId });
