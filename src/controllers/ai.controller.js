@@ -3,6 +3,7 @@ import {
   AI_CHAT_REQUEST_LIMITS,
 } from "../modules/ai/ai.config.js";
 import { runAiTurn } from "../modules/ai/ai.service.js";
+import { filterWebSourcesForPolicy } from "../modules/ai/ai.webSearchPolicy.js";
 import { circuitBreaker } from "../modules/ai/ai.telemetry.js";
 import { saveAssistantState } from "../modules/ai/ai.stateStore.js";
 import { isAssistantEnabled } from "../services/aiAssistant.service.js";
@@ -262,6 +263,10 @@ const sanitizeContextPayload = (value) => {
   }
   if (raw.weather != null && typeof raw.weather === "object") next.weather = raw.weather;
 
+  // Flow-control flags — boolean signals from the frontend
+  if (raw.cancelPending === true) next.cancelPending = true;
+  if (raw.skipDataCollection === true) next.skipDataCollection = true;
+
   let serialized = "";
   try {
     serialized = JSON.stringify(next) || "";
@@ -427,6 +432,31 @@ const buildItemsFromInventory = (inventory) => {
   return items.filter((i) => i.id);
 };
 
+const normalizeAssistantWebSources = (sources = [], { allowCompetitors = false } = {}) => {
+  const normalizedSources = Array.isArray(sources)
+    ? sources
+        .map((source) => {
+          const title = typeof source?.title === "string" ? source.title.trim() : "";
+          const url = typeof source?.url === "string" ? source.url.trim() : "";
+          if (!url) return null;
+          return { title, url };
+        })
+        .filter(Boolean)
+    : [];
+  return filterWebSourcesForPolicy(normalizedSources, { allowCompetitors }).safeSources;
+};
+
+const buildAssistantUiSnapshot = (ui, webSources = [], options = {}) => {
+  const normalizedWebSources = normalizeAssistantWebSources(webSources, options);
+  const baseUi = ui && typeof ui === "object" && !Array.isArray(ui) ? ui : null;
+  if (!baseUi && !normalizedWebSources.length) return null;
+  if (!normalizedWebSources.length) return baseUi;
+  return {
+    ...(baseUi || {}),
+    webSources: normalizedWebSources,
+  };
+};
+
 export const handleAiChat = async (req, res) => {
   const userId = getAuthenticatedUserId(req);
   if (!userId) {
@@ -530,12 +560,15 @@ export const handleAiChat = async (req, res) => {
       });
 
       try {
+        const assistantUiSnapshot = buildAssistantUiSnapshot(result.ui, result.webSources, {
+          allowCompetitors: Boolean(result.allowCompetitorWebSources),
+        });
         await appendAssistantChatMessage(conversationId, userId, {
           role: "assistant",
           content: result.reply || "Ok.",
           planSnapshot: result.plan,
           inventorySnapshot: result.inventory,
-          uiSnapshot: result.ui ?? null,
+          uiSnapshot: assistantUiSnapshot,
         });
         try {
           await saveAssistantState({
@@ -560,7 +593,11 @@ export const handleAiChat = async (req, res) => {
       };
       const sections = Array.isArray(result.ui?.sections) ? result.ui.sections : [];
       const quick_replies = Array.isArray(result.followUps) ? result.followUps : [];
-      const items = buildItemsFromInventory(result.inventory);
+      const cappedInventory = {
+        hotels: (result.inventory?.hotels || []).slice(0, 30),
+        homes: (result.inventory?.homes || []).slice(0, 30),
+      };
+      const items = buildItemsFromInventory(cappedInventory);
       res.removeListener("close", onClientClose);
       return res.json({
         ok: true,
@@ -574,6 +611,9 @@ export const handleAiChat = async (req, res) => {
         carousels: Array.isArray(result.carousels) ? result.carousels : [],
         trip: result.trip,
         counts,
+        webSources: normalizeAssistantWebSources(result.webSources, {
+          allowCompetitors: Boolean(result.allowCompetitorWebSources),
+        }),
         searchContext: searchContext || undefined,
         sections,
         quick_replies,
@@ -601,6 +641,203 @@ export const handleAiChat = async (req, res) => {
     }
   } finally {
     releaseSessionTurn(conversationId);
+  }
+};
+
+export const handleAiChatStream = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  let requestPayload;
+  try {
+    requestPayload = normalizeAiRequest(req.body || {});
+  } catch (err) {
+    if (trySendKnownAiError(res, err)) return;
+    return res.status(400).json({ error: "Invalid AI chat payload.", code: "AI_INVALID_PAYLOAD" });
+  }
+
+  let { conversationId, incomingMessage, limits, context, uiEvent } = requestPayload;
+
+  if (context?.user?.id != null) {
+    const ctxId = String(context.user.id).trim();
+    if (ctxId && ctxId !== String(userId)) {
+      return res.status(403).json({ error: "Forbidden: context user mismatch.", code: "AI_CONTEXT_USER_MISMATCH" });
+    }
+  }
+
+  if (!incomingMessage && !uiEvent) {
+    return res.status(400).json({ error: "message is required", code: "AI_INVALID_PAYLOAD" });
+  }
+
+  if (incomingMessage) {
+    const moderation = await isContentAllowed(incomingMessage);
+    if (!moderation.allowed) {
+      return res.status(400).json({
+        error: "Your message contains content that is not allowed. Please keep the conversation respectful.",
+        code: CONTENT_NOT_ALLOWED_CODE,
+      });
+    }
+  }
+
+  // Set SSE headers immediately so client gets feedback fast
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  const sendEvent = (type, data) => {
+    try { res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`); } catch (_) {}
+  };
+
+  sendEvent("thinking", {});
+
+  try {
+    if (!conversationId) {
+      const session = await createAssistantSessionForUser(userId);
+      conversationId = session.id;
+    }
+  } catch (err) {
+    sendEvent("error", { message: "Unable to create chat session" });
+    return res.end();
+  }
+
+  if (!tryAcquireSessionTurn(conversationId)) {
+    sendEvent("error", { message: "This chat is already processing another request. Please wait.", code: "AI_CHAT_TURN_IN_PROGRESS" });
+    return res.end();
+  }
+
+  try {
+    if (incomingMessage) {
+      try {
+        await appendAssistantChatMessage(conversationId, userId, { role: "user", content: incomingMessage, reserveSlots: 1 });
+      } catch (err) {
+        if (trySendKnownAiError(res, err)) { res.end(); return; }
+        sendEvent("error", { message: "Unable to save chat message" });
+        return res.end();
+      }
+    }
+
+    let storedMessages = [];
+    try {
+      storedMessages = await fetchAssistantMessages(conversationId, userId, { limit: AI_CHAT_HISTORY_LIMITS.contextDefault });
+    } catch (err) {
+      sendEvent("error", { message: "Unable to load messages" });
+      return res.end();
+    }
+
+    const normalizedMessages = storedMessages.map((msg) => ({
+      role: msg.role === "assistant" ? "assistant" : msg.role === "system" ? "system" : "user",
+      content: msg.content,
+    }));
+
+    let accumulatedText = "";
+
+    const result = await runAiTurn({
+      sessionId: conversationId,
+      userId,
+      messages: normalizedMessages,
+      limits,
+      uiEvent,
+      context,
+      onEvent: (event) => {
+        if (!event?.type) return;
+        if (event.type === "results_partial") {
+          const partialInventory = event.data?.inventory ?? null;
+          const cappedPartialInventory = partialInventory ? {
+            hotels: (partialInventory.hotels || []).slice(0, 30),
+            homes: (partialInventory.homes || []).slice(0, 30),
+          } : null;
+          const partialItems = buildItemsFromInventory(cappedPartialInventory);
+          const partialSearchContext = buildSearchContext({
+            nextAction: "RUN_SEARCH",
+            plan: event.data?.plan ?? null,
+            state: event.data?.state ?? null,
+          });
+          sendEvent(event.type, {
+            destination: event.data?.destination || undefined,
+            counts: event.data?.counts || undefined,
+            total: event.data?.total || 0,
+            inventory: cappedPartialInventory,
+            items: partialItems,
+            searchContext: partialSearchContext || undefined,
+          });
+          return;
+        }
+        sendEvent(event.type, event.data || {});
+      },
+      onTextChunk: (chunk) => {
+        accumulatedText += chunk;
+        sendEvent("delta", { content: chunk });
+      },
+    });
+
+    const replyText = accumulatedText || result.assistant?.text || result.reply || "";
+
+    const searchContext = buildSearchContext(result);
+    const counts = {
+      homes: Array.isArray(result.inventory?.homes) ? result.inventory.homes.length : 0,
+      hotels: Array.isArray(result.inventory?.hotels) ? result.inventory.hotels.length : 0,
+    };
+    const sections = Array.isArray(result.ui?.sections) ? result.ui.sections : [];
+    const quick_replies = Array.isArray(result.followUps) ? result.followUps : [];
+    const cappedInventory = {
+      hotels: (result.inventory?.hotels || []).slice(0, 30),
+      homes: (result.inventory?.homes || []).slice(0, 30),
+    };
+    const items = buildItemsFromInventory(cappedInventory);
+
+    sendEvent("results_final", {
+      counts,
+      total: counts.homes + counts.hotels,
+      searchContext: searchContext || undefined,
+    });
+
+    sendEvent("done", {
+      ok: true,
+      conversationId,
+      sessionId: conversationId,
+      reply: replyText,
+      message: replyText,
+      assistant: result.assistant || { text: replyText, tone: "neutral", disclaimers: [] },
+      ui: result.ui,
+      state: result.state,
+      plan: result.plan,
+      carousels: Array.isArray(result.carousels) ? result.carousels : [],
+      trip: result.trip,
+      counts,
+      webSources: normalizeAssistantWebSources(result.webSources, {
+        allowCompetitors: Boolean(result.allowCompetitorWebSources),
+      }),
+      searchContext: searchContext || undefined,
+      sections,
+      quick_replies,
+      items,
+      intent: result.intent,
+      nextAction: result.nextAction,
+      assistantReady: isAssistantEnabled(),
+      quickStartPrompts: QUICK_START_PROMPTS,
+    });
+
+    // Persist in background — does not block the client
+    const assistantUiSnapshot = buildAssistantUiSnapshot(result.ui, result.webSources, {
+      allowCompetitors: Boolean(result.allowCompetitorWebSources),
+    });
+    appendAssistantChatMessage(conversationId, userId, {
+      role: "assistant",
+      content: replyText || "Ok.",
+      planSnapshot: result.plan,
+      inventorySnapshot: result.inventory,
+      uiSnapshot: assistantUiSnapshot,
+    }).then(() =>
+      saveAssistantState({ sessionId: conversationId, userId, state: result.state })
+    ).catch(err => console.error("[ai] stream: failed to persist assistant reply", err));
+  } catch (err) {
+    console.error("[ai] stream: chat failed", { sessionId: conversationId, userId, error: err?.message });
+    sendEvent("error", { message: "Unable to process assistant query right now" });
+  } finally {
+    releaseSessionTurn(conversationId);
+    res.end();
   }
 };
 

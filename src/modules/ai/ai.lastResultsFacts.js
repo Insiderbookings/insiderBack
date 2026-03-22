@@ -141,6 +141,8 @@ const PRICE_INFO_QUERY_PATTERN =
   /\b(cuanto sale|cuánto sale|precio|tarifa|rate|price|how much)\b/i;
 const MULTIPLE_SELECTION_PATTERN =
   /\b(cuales|cuáles|which ones|which of|what are|show me|list|lista|mostrame|muestrame)\b/i;
+const RECOMMENDATION_QUERY_PATTERN =
+  /\b(recomendame|recomiendame|recomendaciones?|recommend(?: me|ations?)?|what do you recommend|which one would you pick|what would you pick|cu[aá]l me recomiendas|qu[eé] me recomiendas|cu[aá]l elegir[ií]as|best option|me conviene)\b/i;
 
 const FAMILY_QUERY_PATTERNS = [
   /\b(mejor(?:es)?\s+para\s+(?:chicos|ninos|niños|bebes|bebés|familia|family|kids|children))\b/i,
@@ -263,6 +265,9 @@ const detectMultipleSelection = (message = "") =>
 
 const detectPriceInfoQuery = (message = "") =>
   PRICE_INFO_QUERY_PATTERN.test(String(message || ""));
+
+const detectRecommendationQuery = (message = "") =>
+  RECOMMENDATION_QUERY_PATTERN.test(String(message || ""));
 
 const buildFeatureLabelText = (features = [], language = "es", mode = "all") =>
   joinHumanList(
@@ -526,6 +531,46 @@ const buildFamilyReply = ({ items, language = "es", wantsMultiple = false }) => 
   return [intro, ...bullets].filter(Boolean).join("\n");
 };
 
+const buildRecommendationReply = ({ items, language = "es", wantsMultiple = false }) => {
+  const ordered = sortByDisplayOrder(items);
+  if (!ordered.length) return null;
+
+  const selected = ordered.slice(0, wantsMultiple ? Math.min(3, ordered.length) : 1);
+  const intro =
+    language === "es"
+      ? wantsMultiple
+        ? "Tomando como base los últimos resultados, estas serían mis primeras recomendaciones."
+        : "Tomando como base los últimos resultados, esta sería mi primera recomendación."
+      : wantsMultiple
+        ? "Based on the latest results, these would be my top recommendations."
+        : "Based on the latest results, this would be my top recommendation.";
+
+  const bullets = selected.map((item) => {
+    const reasons = unique([
+      normalizeString(item.shortReason),
+      ...pickTopReasonsForRecommendation(item, language),
+    ]).slice(0, 2);
+    const suffix = reasons.length ? ` (${joinHumanList(reasons, language)})` : "";
+    return `- ${buildBulletLabel(item, language)}${suffix}`;
+  });
+
+  return [intro, ...bullets].filter(Boolean).join("\n");
+};
+
+const pickTopReasonsForRecommendation = (item = {}, language = "es") => {
+  const reasons = [];
+  if (normalizeString(item.stars)) {
+    reasons.push(language === "es" ? `${item.stars} de categoría` : `${item.stars} category`);
+  }
+  if (normalizeString(item.city)) {
+    reasons.push(language === "es" ? `bien ubicado en ${item.city}` : `well located in ${item.city}`);
+  }
+  if (toNumberOrNull(item.pricePerNight) != null) {
+    reasons.push(language === "es" ? "precio visible" : "visible pricing");
+  }
+  return reasons;
+};
+
 const buildPositionFeatureReply = ({
   item,
   positionRef,
@@ -682,6 +727,7 @@ export const buildPreparedReplyFromLastResults = async ({
   const positionRef = detectPositionReference(latestUserMessage);
   const wantsMultiple = detectMultipleSelection(latestUserMessage);
   const wantsPriceInfo = detectPriceInfoQuery(latestUserMessage);
+  const recommendationQuery = detectRecommendationQuery(latestUserMessage);
 
   if (positionRef && features.length) {
     const selectedItem = selectPositionItem(items, positionRef);
@@ -986,6 +1032,41 @@ export const buildPreparedReplyFromLastResults = async ({
           items: selected.map(({ item, reasons }) =>
             buildFactRow(item, targetLanguage, {
               tags: reasons,
+            })
+          ),
+        }),
+      ],
+    };
+  }
+
+  if (recommendationQuery) {
+    const selected = sortByDisplayOrder(items).slice(0, wantsMultiple ? Math.min(3, items.length) : 1);
+    return {
+      text: buildRecommendationReply({
+        items,
+        language: targetLanguage,
+        wantsMultiple,
+      }),
+      sections: [
+        buildComparisonSection({
+          eyebrow: targetLanguage === "es" ? "Recomendación" : "Recommendation",
+          title:
+            targetLanguage === "es"
+              ? wantsMultiple ? "Mis primeras opciones" : "Mi primera opción"
+              : wantsMultiple ? "My top options" : "My top option",
+          body:
+            targetLanguage === "es"
+              ? "Tomo como base el orden y las señales guardadas de la última búsqueda."
+              : "This is based on the saved order and signals from the latest search.",
+          tone: "positive",
+          layoutVariant: wantsMultiple ? "leaderboard" : "spotlight",
+          items: selected.map((item, index) =>
+            buildFactRow(item, targetLanguage, {
+              tags: [
+                index === 0
+                  ? targetLanguage === "es" ? "top pick" : "top pick"
+                  : targetLanguage === "es" ? "recomendado" : "recommended",
+              ],
             })
           ),
         }),

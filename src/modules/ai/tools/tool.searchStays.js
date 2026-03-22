@@ -1,6 +1,6 @@
 import { searchHomesForPlan, searchHotelsForPlan } from "../../../services/assistantSearch.service.js";
 
-export const searchStays = async (plan, { limit, maxResults = 15, excludeIds = [] } = {}) => {
+export const searchStays = async (plan, { limit, maxResults = 15, excludeIds = [], traceSink = null } = {}) => {
   const SEARCH_HOMES_ENABLED = false; // Feature flag: Temporarily disabled
 
   const listingTypes =
@@ -24,7 +24,7 @@ export const searchStays = async (plan, { limit, maxResults = 15, excludeIds = [
 
   const [homesResult, hotelsResult] = await Promise.all([
     wantsHomes ? searchHomesForPlan(plan, { limit: limit?.homes, excludeIds }) : { items: [], matchType: "NONE" },
-    wantsHotels ? searchHotelsForPlan(plan, { limit: limit?.hotels, excludeIds }) : { items: [], matchType: "NONE" },
+    wantsHotels ? searchHotelsForPlan(plan, { limit: limit?.hotels, excludeIds, traceSink }) : { items: [], matchType: "NONE" },
   ]);
 
   const homes = Array.isArray(homesResult?.items) ? homesResult.items : [];
