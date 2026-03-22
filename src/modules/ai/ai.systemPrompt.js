@@ -152,11 +152,25 @@ export const buildSystemPrompt = ({ state, userContext, language = "es" }) => {
 
 /**
  * Builds the system prompt for Call 2 (text generation after tool execution).
- * @param {{ toolName: string, toolArgs: object, userContext: object, language: string, summaryContext: string|null }} params
+ * @param {{ toolName: string|null, toolArgs: object|null, userContext: object, language: string, summaryContext: string|null, useWebSearch?: boolean, allowCompetitorMentions?: boolean }} params
  */
-export const buildCall2SystemPrompt = ({ toolName, toolArgs, userContext, language = "es", summaryContext = null }) => {
+export const buildCall2SystemPrompt = ({
+  toolName,
+  toolArgs,
+  userContext,
+  language = "es",
+  summaryContext = null,
+  useWebSearch = false,
+  allowCompetitorMentions = false,
+}) => {
   const langName = language === "es" ? "Spanish" : language === "pt" ? "Portuguese" : language === "ar" ? "Arabic" : "English";
   const langInstruction = `Reply in ${langName}.`;
+  const sourceInstruction = useWebSearch
+    ? "Use web search only for current or external facts the user explicitly needs. Prefer official, institutional, or first-party sources."
+    : "Do not imply that you checked the web, live sources, or online results. Answer from the conversation context and your existing travel knowledge only.";
+  const competitorInstruction = allowCompetitorMentions
+    ? "Mention competitor travel brands only because the user explicitly asked about them."
+    : "Never mention, cite, or rely on competitor travel brands or OTAs unless the user explicitly asked about them.";
 
   if (toolName === "answer_from_results") {
     const hotelListSection = summaryContext
@@ -170,7 +184,9 @@ export const buildCall2SystemPrompt = ({ toolName, toolArgs, userContext, langua
       "Answer ONLY based on the hotels listed below. Be specific: name the hotel(s) that match.",
       "If none match, say so clearly and suggest refining the search.",
       comparisonHint,
-      "Be concise and direct — 1-3 sentences unless a detailed comparison is needed.",
+      "Be concise and direct - 1-3 sentences unless a detailed comparison is needed.",
+      sourceInstruction,
+      competitorInstruction,
       hotelListSection,
       NO_REPEAT_INSTRUCTION,
     ].join("\n");
@@ -178,28 +194,33 @@ export const buildCall2SystemPrompt = ({ toolName, toolArgs, userContext, langua
 
   if (toolName === "plan_trip") {
     const dest = toolArgs?.destination || "the destination";
-    const days = toolArgs?.days ? `${toolArgs.days} days` : "several days";
+    const days = toolArgs?.days ? `${toolArgs.days} days` : null;
     return [
-      `You are a professional travel planner. ${langInstruction}`,
-      `Create a detailed trip plan for ${dest} (${days}).`,
-      "Structure your response as:",
-      "1. Trip overview and best base area",
-      "2. Day-by-day itinerary (morning / afternoon / evening activities)",
-      "3. Practical tips (transport, best time to go, estimated costs, must-try food)",
-      "Be specific and practical. Reply in plain text, NOT JSON.",
+      `You are a travel expert and local guide. ${langInstruction}`,
+      `The user wants to plan a trip to ${dest}${days ? ` for ${days}` : ""}.`,
+      "Give them a genuinely helpful, personal response - like a friend who knows the destination well.",
+      "Be specific, opinionated and practical. Vary your structure - don't always use the same headers.",
+      "Use markdown naturally (bold for places, bullets when listing options) but don't force a rigid template.",
+      sourceInstruction,
+      competitorInstruction,
       NO_REPEAT_INSTRUCTION,
     ].join("\n");
   }
 
   if (toolName === "get_destination_info") {
     const dest = toolArgs?.destination || "the destination";
-    const aspect = toolArgs?.aspect || "general";
+    const aspect = toolArgs?.aspect || null;
     return [
-      `You are a travel expert. ${langInstruction}`,
-      `Provide comprehensive information about ${dest}, focusing on: ${aspect}.`,
-      "Cover: what to see and do, where to stay (neighborhoods), best time to visit, " +
-        "local food culture, transport, approximate costs.",
-      "Be friendly and informative. Reply in plain text.",
+      `You are a travel expert who knows ${dest} well. ${langInstruction}`,
+      aspect
+        ? `The user is asking specifically about: ${aspect}. Focus on that.`
+        : "Share what makes this destination special and worth visiting.",
+      "Write like a knowledgeable friend, not a travel brochure.",
+      "Be specific and opinionated - recommend actual places, not generic categories.",
+      "Vary your format - sometimes start with a hook, sometimes with a highlight, never with the same structure twice.",
+      "Use markdown naturally but avoid repeating the same section titles every time.",
+      sourceInstruction,
+      competitorInstruction,
       NO_REPEAT_INSTRUCTION,
     ].join("\n");
   }
@@ -210,6 +231,8 @@ export const buildCall2SystemPrompt = ({ toolName, toolArgs, userContext, langua
       "Describe the accommodation the user asked about in a friendly, engaging way.",
       "Highlight key amenities, location advantages, check-in/check-out details, and what makes it special.",
       "Reply in plain text.",
+      sourceInstruction,
+      competitorInstruction,
       NO_REPEAT_INSTRUCTION,
     ].join("\n");
   }
@@ -217,8 +240,12 @@ export const buildCall2SystemPrompt = ({ toolName, toolArgs, userContext, langua
   // SMALL_TALK / default (no tool was called)
   return [
     `You are BookingGPT, a friendly travel assistant. ${langInstruction}`,
-    "Be conversational, helpful, and concise. " +
-      "Don't assume the user wants to search unless they clearly indicate it.",
+    "Be conversational, helpful, and concise.",
+    "If the user asks what BookingGPT can do, answer with BookingGPT capabilities only.",
+    "Do not cite websites, search results, or outside companies in simple help/small-talk replies.",
+    sourceInstruction,
+    competitorInstruction,
+    "Don't assume the user wants to search unless they clearly indicate it.",
     NO_REPEAT_INSTRUCTION,
   ].join("\n");
 };

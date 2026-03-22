@@ -85,6 +85,7 @@ const mapSession = (session, { includeMetadata = true } = {}) => {
 const mapMessage = (message) => {
   if (!message) return null;
   const data = message.get({ plain: true });
+  const ui = parseJsonField(data.ui_snapshot) || null;
   return {
     id: data.id,
     sessionId: data.session_id,
@@ -94,7 +95,8 @@ const mapMessage = (message) => {
     updatedAt: data.updated_at,
     planSnapshot: parseJsonField(data.plan_snapshot) || null,
     inventorySnapshot: parseJsonField(data.inventory_snapshot) || null,
-    ui: parseJsonField(data.ui_snapshot) || null,
+    ui,
+    webSources: Array.isArray(ui?.webSources) ? ui.webSources : [],
   };
 };
 

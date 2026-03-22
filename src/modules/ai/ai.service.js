@@ -7,6 +7,10 @@ import { renderAssistantPayload } from "./ai.renderer.js";
 import { AI_TOOLS, buildPlanFromToolArgs, TOOL_TO_NEXT_ACTION, TOOL_TO_INTENT } from "./ai.tools.js";
 import { buildSystemPrompt, buildCall2SystemPrompt } from "./ai.systemPrompt.js";
 import { loadAssistantState, saveAssistantState, getDefaultState } from "./ai.stateStore.js";
+import {
+  assessWebSearchResult,
+  decideCall2WebSearch,
+} from "./ai.webSearchPolicy.js";
 import { geocodePlace, getNearbyPlaces, getWeatherSummary, searchStays, searchDestinationImages, getStayDetails } from "./tools/index.js";
 import { logAiEvent, circuitBreaker } from "./ai.telemetry.js";
 
@@ -16,6 +20,196 @@ const ensureFCClient = () => {
   if (!_fcApiKey) return null;
   if (!_fcClient) _fcClient = new OpenAI({ apiKey: _fcApiKey });
   return _fcClient;
+};
+
+const CALL2_WEB_SEARCH_MODEL = "gpt-4o-search-preview";
+
+const normalizeWebSource = (annotation) => {
+  if (annotation?.type !== "url_citation") return null;
+  const title = typeof annotation?.url_citation?.title === "string"
+    ? annotation.url_citation.title.trim()
+    : "";
+  const url = typeof annotation?.url_citation?.url === "string"
+    ? annotation.url_citation.url.trim()
+    : "";
+  if (!url) return null;
+  return { title, url };
+};
+
+const dedupeWebSources = (annotations = []) => {
+  const seen = new Set();
+  const sources = [];
+  annotations.forEach((annotation) => {
+    const source = normalizeWebSource(annotation);
+    if (!source) return;
+    const dedupeKey = `${source.url}::${source.title}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    sources.push(source);
+  });
+  return sources;
+};
+
+const streamCall2Completion = async ({
+  client,
+  messages,
+  onTextChunk = null,
+  useWebSearch = false,
+  onWebSearchStart = null,
+  webSearchContext = null,
+  streamText = true,
+} = {}) => {
+  if (useWebSearch) {
+    onWebSearchStart?.(webSearchContext || {});
+  }
+  const request = {
+    model: useWebSearch
+      ? CALL2_WEB_SEARCH_MODEL
+      : (process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini"),
+    stream: true,
+    messages,
+  };
+  if (useWebSearch) {
+    request.web_search_options = {};
+  }
+
+  const stream = await client.chat.completions.create(request);
+  let accumulated = "";
+  const annotations = [];
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta;
+    if (!delta) continue;
+
+    const content = typeof delta.content === "string" ? delta.content : "";
+    if (content) {
+      accumulated += content;
+      if (streamText) {
+        onTextChunk?.(content);
+      }
+    }
+
+    if (Array.isArray(delta.annotations) && delta.annotations.length) {
+      annotations.push(...delta.annotations);
+    }
+  }
+
+  return {
+    text: accumulated,
+    webSources: dedupeWebSources(annotations),
+  };
+};
+
+const executeCall2WithPolicy = async ({
+  client,
+  messages,
+  fallbackMessages = null,
+  onTextChunk = null,
+  emitEvent = null,
+  emitTrace = null,
+  webSearchDecision,
+  toolName = null,
+  toolArgs = null,
+} = {}) => {
+  const decision = webSearchDecision || decideCall2WebSearch({ toolName, toolArgs });
+  const tracePayload = {
+    toolName: decision.toolName,
+    reason: decision.reason,
+    trigger: decision.trigger || undefined,
+    destination: decision.destination || undefined,
+    competitorRequested: Boolean(decision.allowCompetitorMentions),
+  };
+
+  if (decision.enabled) {
+    emitTrace?.("WEB_SEARCH_ALLOWED", tracePayload);
+  } else {
+    emitTrace?.("WEB_SEARCH_SKIPPED", tracePayload);
+  }
+
+  const runCall2 = ({ useWebSearch, streamText = true, messagesOverride = null } = {}) =>
+    streamCall2Completion({
+      client,
+      messages: messagesOverride || messages,
+      onTextChunk,
+      useWebSearch,
+      streamText,
+      onWebSearchStart: (data) => {
+        emitEvent?.("web_searching", data);
+        emitTrace?.("WEB_SEARCHING", data);
+      },
+      webSearchContext: {
+        toolName: decision.toolName,
+        destination: decision.destination || null,
+        aspect: toolArgs?.aspect || null,
+        reason: decision.reason,
+        trigger: decision.trigger || null,
+      },
+    });
+
+  if (!decision.enabled) {
+    const result = await runCall2({
+      useWebSearch: false,
+      streamText: true,
+      messagesOverride: fallbackMessages || messages,
+    });
+    return {
+      text: result.text,
+      webSources: [],
+      allowCompetitorWebSources: false,
+      usedWebSearch: false,
+    };
+  }
+
+  const webResult = await runCall2({ useWebSearch: true, streamText: false });
+  const assessedResult = assessWebSearchResult({
+    text: webResult.text,
+    sources: webResult.webSources,
+    allowCompetitors: decision.allowCompetitorMentions,
+  });
+
+  if (!assessedResult.accepted) {
+    const blockedSource = assessedResult.blockedSources[0] || null;
+    const blockedDomain =
+      blockedSource?.hostname ||
+      blockedSource?.brand ||
+      assessedResult.blockedMentions[0] ||
+      null;
+    emitTrace?.("WEB_SEARCH_BLOCKED_SOURCE", {
+      toolName: decision.toolName,
+      reason: assessedResult.reason,
+      trigger: decision.trigger || undefined,
+      domain: blockedDomain || undefined,
+      competitorRequested: Boolean(decision.allowCompetitorMentions),
+    });
+    emitTrace?.("WEB_SEARCH_FALLBACK_NON_WEB", {
+      toolName: decision.toolName,
+      reason: assessedResult.reason,
+      trigger: decision.trigger || undefined,
+      domain: blockedDomain || undefined,
+    });
+    const fallbackResult = await runCall2({
+      useWebSearch: false,
+      streamText: true,
+      messagesOverride: fallbackMessages || messages,
+    });
+    return {
+      text: fallbackResult.text,
+      webSources: [],
+      allowCompetitorWebSources: false,
+      usedWebSearch: false,
+    };
+  }
+
+  if (webResult.text) {
+    onTextChunk?.(webResult.text);
+  }
+
+  return {
+    text: webResult.text,
+    webSources: assessedResult.safeSources,
+    allowCompetitorWebSources: Boolean(decision.allowCompetitorMentions),
+    usedWebSearch: true,
+  };
 };
 
 const detectLanguageFC = (messages, userContext) => {
@@ -861,6 +1055,7 @@ export const runFunctionCallingTurn = async ({
       inventory: buildEmptyInventory(), carousels: [], reply: "AI chat is disabled.",
       followUps: [], plan: null, state: stateOverride || null,
       ui: { chips: [], cards: [], inputs: [], sections: [] },
+      webSources: [],
       intent: "SMALL_TALK", nextAction: "SMALL_TALK", safeMode: false,
     };
   }
@@ -906,6 +1101,7 @@ export const runFunctionCallingTurn = async ({
       assistant: null,
       followUps: [],
       ui: { inputs: [], chips: [], cards: [], sections: [] },
+      webSources: [],
       plan: null,
       inventory: buildEmptyInventory(),
       carousels: [],
@@ -984,7 +1180,6 @@ export const runFunctionCallingTurn = async ({
 
       if (delta.content) {
         directText += delta.content;
-        onTextChunk?.(delta.content);
       }
     }
   } catch (callErr) {
@@ -1025,6 +1220,8 @@ export const runFunctionCallingTurn = async ({
   let resolvedIntent = "SMALL_TALK";
   let preparedReply = null;
   let stayDetailsFromDb = null;
+  let webSources = [];
+  let allowCompetitorWebSources = false;
 
   if (toolCall?.name === "search_stays") {
     // ---- A. SEARCH ----
@@ -1066,6 +1263,7 @@ export const runFunctionCallingTurn = async ({
         assistant: null,
         followUps: [],
         ui: { inputs: [{ type: inputType }] },
+        webSources: [],
         plan: null,
         inventory: buildEmptyInventory(),
         carousels: [],
@@ -1191,12 +1389,30 @@ export const runFunctionCallingTurn = async ({
         existingState.lastShownInventorySummary,
         latestUserMessage
       );
+      const webSearchDecision = decideCall2WebSearch({
+        toolName: "answer_from_results",
+        latestUserMessage,
+        toolArgs: toolCall.args,
+        state: existingState,
+        userContext,
+      });
       const call2System = buildCall2SystemPrompt({
         toolName: "answer_from_results",
         toolArgs: toolCall.args,
         userContext,
         language,
         summaryContext,
+        useWebSearch: webSearchDecision.enabled,
+        allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
+      });
+      const fallbackCall2System = buildCall2SystemPrompt({
+        toolName: "answer_from_results",
+        toolArgs: toolCall.args,
+        userContext,
+        language,
+        summaryContext,
+        useWebSearch: false,
+        allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
       });
 
       const call2Messages = [
@@ -1217,26 +1433,38 @@ export const runFunctionCallingTurn = async ({
           content: summaryContext || "No hotel data available in context. Inform the user you need them to run a new search.",
         },
       ];
+      const fallbackCall2Messages = [
+        { ...call2Messages[0], content: fallbackCall2System },
+        ...call2Messages.slice(1),
+      ];
 
       let accumulated = "";
       try {
-        const call2Stream = await client.chat.completions.create({
-          model: process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini",
-          stream: true,
+        const call2Result = await executeCall2WithPolicy({
+          client,
           messages: call2Messages,
+          fallbackMessages: fallbackCall2Messages,
+          onTextChunk,
+          emitEvent,
+          emitTrace,
+          webSearchDecision,
+          toolName: "answer_from_results",
+          toolArgs: toolCall.args,
         });
-        for await (const chunk of call2Stream) {
-          const content = chunk.choices[0]?.delta?.content || "";
-          if (content) {
-            accumulated += content;
-            onTextChunk?.(content);
-          }
-        }
+        accumulated = call2Result.text;
+        webSources = call2Result.webSources;
+        allowCompetitorWebSources = Boolean(call2Result.allowCompetitorWebSources);
       } catch (err) {
         console.warn("[ai] answer_from_results Call 2 failed", err?.message || err);
         accumulated = language === "es"
           ? "No pude revisar esos resultados ahora. Probá de nuevo."
           : "I couldn't check those results right now. Try again.";
+        onTextChunk?.(accumulated);
+      }
+      if (!String(accumulated || "").trim()) {
+        accumulated = language === "es"
+          ? "No encontré suficiente contexto para responder eso con claridad."
+          : "I couldn't find enough context to answer that clearly.";
         onTextChunk?.(accumulated);
       }
 
@@ -1269,7 +1497,29 @@ export const runFunctionCallingTurn = async ({
     }
 
     // Call 2 — streaming text generation
-    const call2System = buildCall2SystemPrompt({ toolName: toolCall.name, toolArgs: toolCall.args, userContext, language });
+    const webSearchDecision = decideCall2WebSearch({
+      toolName: toolCall.name,
+      latestUserMessage,
+      toolArgs: toolCall.args,
+      state: existingState,
+      userContext,
+    });
+    const call2System = buildCall2SystemPrompt({
+      toolName: toolCall.name,
+      toolArgs: toolCall.args,
+      userContext,
+      language,
+      useWebSearch: webSearchDecision.enabled,
+      allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
+    });
+    const fallbackCall2System = buildCall2SystemPrompt({
+      toolName: toolCall.name,
+      toolArgs: toolCall.args,
+      userContext,
+      language,
+      useWebSearch: false,
+      allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
+    });
     const toolResultContent = stayDetailsFromDb
       ? `Tool result: ${JSON.stringify(toolCall.args)}\n${stayDetailsFromDb}`
       : `Tool result: ${JSON.stringify(toolCall.args)}`;
@@ -1292,21 +1542,27 @@ export const runFunctionCallingTurn = async ({
         content: toolResultContent,
       },
     ];
+    const fallbackCall2Messages = [
+      { ...call2Messages[0], content: fallbackCall2System },
+      ...call2Messages.slice(1),
+    ];
 
     let accumulated = "";
     try {
-      const call2Stream = await client.chat.completions.create({
-        model: process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini",
-        stream: true,
+      const call2Result = await executeCall2WithPolicy({
+        client,
         messages: call2Messages,
+        fallbackMessages: fallbackCall2Messages,
+        onTextChunk,
+        emitEvent,
+        emitTrace,
+        webSearchDecision,
+        toolName: toolCall.name,
+        toolArgs: toolCall.args,
       });
-      for await (const chunk of call2Stream) {
-        const content = chunk.choices[0]?.delta?.content || "";
-        if (content) {
-          accumulated += content;
-          onTextChunk?.(content);
-        }
-      }
+      accumulated = call2Result.text;
+      webSources = call2Result.webSources;
+      allowCompetitorWebSources = Boolean(call2Result.allowCompetitorWebSources);
     } catch (err) {
       console.warn("[ai] Call 2 stream failed", err?.message || err);
       accumulated = language === "es"
@@ -1314,16 +1570,73 @@ export const runFunctionCallingTurn = async ({
         : "I couldn't generate that response right now. Try again.";
       onTextChunk?.(accumulated);
     }
+    if (!String(accumulated || "").trim()) {
+      accumulated = language === "es"
+        ? "No pude completar esa respuesta en este momento."
+        : "I couldn't complete that response right now.";
+      onTextChunk?.(accumulated);
+    }
 
     preparedReply = { text: accumulated, sections: [] };
 
   } else {
-    // ---- D. SMALL_TALK — text already streamed in Call 1 ----
+    // ---- D. SMALL_TALK — Call 2 with optional web search ----
     nextAction = "SMALL_TALK";
     resolvedIntent = "SMALL_TALK";
     plan = { intent: "SMALL_TALK", language };
+    const webSearchDecision = decideCall2WebSearch({
+      toolName: "small_talk",
+      latestUserMessage,
+      toolArgs: null,
+      state: existingState,
+      userContext,
+    });
 
-    if (!directText) {
+    const call2System = buildCall2SystemPrompt({
+      toolName: null,
+      toolArgs: null,
+      userContext,
+      language,
+      useWebSearch: webSearchDecision.enabled,
+      allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
+    });
+    const fallbackCall2System = buildCall2SystemPrompt({
+      toolName: null,
+      toolArgs: null,
+      userContext,
+      language,
+      useWebSearch: false,
+      allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
+    });
+    const call2Messages = [
+      { role: "system", content: call2System },
+      ...normalizedMessages,
+    ];
+    const fallbackCall2Messages = [
+      { role: "system", content: fallbackCall2System },
+      ...normalizedMessages,
+    ];
+
+    try {
+      const call2Result = await executeCall2WithPolicy({
+        client,
+        messages: call2Messages,
+        fallbackMessages: fallbackCall2Messages,
+        onTextChunk,
+        emitEvent,
+        emitTrace,
+        webSearchDecision,
+        toolName: "small_talk",
+        toolArgs: null,
+      });
+      directText = call2Result.text;
+      webSources = call2Result.webSources;
+      allowCompetitorWebSources = Boolean(call2Result.allowCompetitorWebSources);
+    } catch (err) {
+      console.warn("[ai] small_talk Call 2 failed", err?.message || err);
+    }
+
+    if (!String(directText || "").trim()) {
       const fallbacks = language === "es"
         ? ["Listo. Contame qué necesitás.", "Dale, ¿en qué te ayudo?", "Acá estoy. ¿En qué andás?"]
         : ["Sure, what can I help you with?", "Got it. What do you need?", "Here when you need me."];
@@ -1484,6 +1797,8 @@ export const runFunctionCallingTurn = async ({
     carousels: Array.isArray(carousels) ? carousels : [],
     trip,
     weather,
+    webSources,
+    allowCompetitorWebSources,
     state: updatedState,
     intent: resolvedIntent,
     nextAction,

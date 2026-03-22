@@ -3,6 +3,7 @@ import {
   AI_CHAT_REQUEST_LIMITS,
 } from "../modules/ai/ai.config.js";
 import { runAiTurn } from "../modules/ai/ai.service.js";
+import { filterWebSourcesForPolicy } from "../modules/ai/ai.webSearchPolicy.js";
 import { circuitBreaker } from "../modules/ai/ai.telemetry.js";
 import { saveAssistantState } from "../modules/ai/ai.stateStore.js";
 import { isAssistantEnabled } from "../services/aiAssistant.service.js";
@@ -431,6 +432,31 @@ const buildItemsFromInventory = (inventory) => {
   return items.filter((i) => i.id);
 };
 
+const normalizeAssistantWebSources = (sources = [], { allowCompetitors = false } = {}) => {
+  const normalizedSources = Array.isArray(sources)
+    ? sources
+        .map((source) => {
+          const title = typeof source?.title === "string" ? source.title.trim() : "";
+          const url = typeof source?.url === "string" ? source.url.trim() : "";
+          if (!url) return null;
+          return { title, url };
+        })
+        .filter(Boolean)
+    : [];
+  return filterWebSourcesForPolicy(normalizedSources, { allowCompetitors }).safeSources;
+};
+
+const buildAssistantUiSnapshot = (ui, webSources = [], options = {}) => {
+  const normalizedWebSources = normalizeAssistantWebSources(webSources, options);
+  const baseUi = ui && typeof ui === "object" && !Array.isArray(ui) ? ui : null;
+  if (!baseUi && !normalizedWebSources.length) return null;
+  if (!normalizedWebSources.length) return baseUi;
+  return {
+    ...(baseUi || {}),
+    webSources: normalizedWebSources,
+  };
+};
+
 export const handleAiChat = async (req, res) => {
   const userId = getAuthenticatedUserId(req);
   if (!userId) {
@@ -534,12 +560,15 @@ export const handleAiChat = async (req, res) => {
       });
 
       try {
+        const assistantUiSnapshot = buildAssistantUiSnapshot(result.ui, result.webSources, {
+          allowCompetitors: Boolean(result.allowCompetitorWebSources),
+        });
         await appendAssistantChatMessage(conversationId, userId, {
           role: "assistant",
           content: result.reply || "Ok.",
           planSnapshot: result.plan,
           inventorySnapshot: result.inventory,
-          uiSnapshot: result.ui ?? null,
+          uiSnapshot: assistantUiSnapshot,
         });
         try {
           await saveAssistantState({
@@ -582,6 +611,9 @@ export const handleAiChat = async (req, res) => {
         carousels: Array.isArray(result.carousels) ? result.carousels : [],
         trip: result.trip,
         counts,
+        webSources: normalizeAssistantWebSources(result.webSources, {
+          allowCompetitors: Boolean(result.allowCompetitorWebSources),
+        }),
         searchContext: searchContext || undefined,
         sections,
         quick_replies,
@@ -774,6 +806,9 @@ export const handleAiChatStream = async (req, res) => {
       carousels: Array.isArray(result.carousels) ? result.carousels : [],
       trip: result.trip,
       counts,
+      webSources: normalizeAssistantWebSources(result.webSources, {
+        allowCompetitors: Boolean(result.allowCompetitorWebSources),
+      }),
       searchContext: searchContext || undefined,
       sections,
       quick_replies,
@@ -785,12 +820,15 @@ export const handleAiChatStream = async (req, res) => {
     });
 
     // Persist in background — does not block the client
+    const assistantUiSnapshot = buildAssistantUiSnapshot(result.ui, result.webSources, {
+      allowCompetitors: Boolean(result.allowCompetitorWebSources),
+    });
     appendAssistantChatMessage(conversationId, userId, {
       role: "assistant",
       content: replyText || "Ok.",
       planSnapshot: result.plan,
       inventorySnapshot: result.inventory,
-      uiSnapshot: result.ui ?? null,
+      uiSnapshot: assistantUiSnapshot,
     }).then(() =>
       saveAssistantState({ sessionId: conversationId, userId, state: result.state })
     ).catch(err => console.error("[ai] stream: failed to persist assistant reply", err));
