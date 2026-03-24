@@ -281,6 +281,64 @@ const clampText = (value, max = 160) => {
   return `${text.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
 };
 
+const compactHotelCardPickReason = (value, language = "es") => {
+  const text = String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/[.!]+$/g, "")
+    .trim();
+  if (!text) return null;
+
+  if (language === "es") {
+    let match =
+      text.match(/^te deja bien parado para moverte cerca de (.+)$/i) ||
+      text.match(/^cerca de (.+)$/i);
+    if (match?.[1]) return clampText(`Cerca de ${match[1].trim()}`, 24);
+
+    match =
+      text.match(/^queda bien ubicado para moverte por (.+)$/i) ||
+      text.match(/^bien ubicado en (.+)$/i);
+    if (match?.[1]) return clampText(`Bien ubicado en ${match[1].trim()}`, 24);
+
+    match =
+      text.match(/^la zona de (.+?) suele funcionar bien si buscas algo .+$/i) ||
+      text.match(/^la zona de (.+?) le da mejor encaje que a otras alternativas cercanas$/i);
+    if (match?.[1]) return clampText(`Buen fit en ${match[1].trim()}`, 24);
+
+    if (/^encaja mejor con un plan /i.test(text)) return "Buen fit";
+    if (/moverte a pie|caminable/i.test(text)) return "Caminable";
+    if (/tranquilo|descansar/i.test(text)) return "Mas tranquilo";
+    if (/refinado|premium|mas cuidado/i.test(text)) return "Mas premium";
+
+    match = text.match(/(\d)\s*estrellas/i);
+    if (match?.[1]) return `${match[1]} estrellas`;
+
+    if (/precio/i.test(text)) return "Buen precio";
+    if (/valor|equilib|balance/i.test(text)) return "Buen balance";
+    if (/simple/i.test(text)) return "Opcion simple";
+    if (/vista/i.test(text)) return "Buena vista";
+    if (/recomend/i.test(text)) return "Recomendado";
+    if (/favorit/i.test(text)) return "Favorito";
+  }
+
+  if (language === "en") {
+    if (/walk|on foot/i.test(text)) return "Walkable";
+    if (/quiet|unwind/i.test(text)) return "Quieter";
+    if (/premium|refined|polished/i.test(text)) return "Premium";
+    if (/price|value|balance/i.test(text)) return "Good value";
+    if (/view/i.test(text)) return "Nice view";
+  }
+
+  if (language === "pt") {
+    if (/a pe|percorrer/i.test(text)) return "Caminhavel";
+    if (/tranquilo|descansar/i.test(text)) return "Mais tranquilo";
+    if (/premium|refinado/i.test(text)) return "Mais premium";
+    if (/preco|valor|equilibr/i.test(text)) return "Bom valor";
+    if (/vista/i.test(text)) return "Boa vista";
+  }
+
+  return clampText(text, 24);
+};
+
 const firstSentence = (value) => {
   const text = String(value || "")
     .replace(/\s+/g, " ")
@@ -1947,6 +2005,7 @@ const buildHotelPickSection = (
   const characteristics = (
     amenityLabels && amenityLabels.length ? amenityLabels : amenities
   ).slice(0, 5);
+  const compactPickReason = compactHotelCardPickReason(pickReason, language);
   const appreciation = buildAppreciationLine(pickReason, language);
   return {
     type: "hotelCard",
@@ -1969,10 +2028,7 @@ const buildHotelPickSection = (
         ? Number(priceFrom)
         : null,
     currency,
-    pickReason:
-      pickReason && String(pickReason).trim()
-        ? String(pickReason).trim()
-        : null,
+    pickReason: compactPickReason,
   };
 };
 

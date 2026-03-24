@@ -7796,6 +7796,40 @@ export const runFunctionCallingTurn = async ({
         `[ai] answer_from_results: hotelsPool=${hotelsPool.length} (${cachedRaw ? "rawCache" : "summary"})`,
       );
 
+      const compactHotelCardPickReason = (value) => {
+        const text = String(value || "")
+          .replace(/\s+/g, " ")
+          .replace(/[.!]+$/g, "")
+          .trim();
+        if (!text) return null;
+        const truncate = (input) =>
+          input.length <= 24 ? input : `${input.slice(0, 23).trimEnd()}…`;
+
+        let match =
+          text.match(/^te deja bien parado para moverte cerca de (.+)$/i) ||
+          text.match(/^cerca de (.+)$/i);
+        if (match?.[1]) return truncate(`Cerca de ${String(match[1]).trim()}`);
+
+        match =
+          text.match(/^queda bien ubicado para moverte por (.+)$/i) ||
+          text.match(/^bien ubicado en (.+)$/i);
+        if (match?.[1]) return truncate(`Bien ubicado en ${String(match[1]).trim()}`);
+
+        match =
+          text.match(/^la zona de (.+?) suele funcionar bien si buscas algo .+$/i) ||
+          text.match(/^la zona de (.+?) le da mejor encaje que a otras alternativas cercanas$/i);
+        if (match?.[1]) return truncate(`Buen fit en ${String(match[1]).trim()}`);
+
+        if (/^encaja mejor con un plan /i.test(text)) return "Buen fit";
+        if (/moverte a pie|caminable/i.test(text)) return "Caminable";
+        if (/tranquilo|descansar/i.test(text)) return "Mas tranquilo";
+        if (/refinado|premium|mas cuidado/i.test(text)) return "Mas premium";
+        if (/precio/i.test(text)) return "Buen precio";
+        if (/valor|equilib|balance/i.test(text)) return "Buen balance";
+        if (/vista/i.test(text)) return "Buena vista";
+        return truncate(text);
+      };
+
       const makeHotelCard = (h, rank) => {
         const starsNum =
           typeof h.stars === "number"
@@ -7818,10 +7852,9 @@ export const runFunctionCallingTurn = async ({
               ? Number(h.pricePerNight)
               : null,
           currency: h.currency || "USD",
-          pickReason:
-            h.shortReason ||
-            (Array.isArray(h.matchReasons) && h.matchReasons[0]) ||
-            null,
+          pickReason: compactHotelCardPickReason(
+            h.shortReason || (Array.isArray(h.matchReasons) && h.matchReasons[0]) || null,
+          ),
         };
       };
 
