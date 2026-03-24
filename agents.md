@@ -36,6 +36,11 @@ Hotel bookings are **stateful** and managed by `FlowOrchestratorService`.
 - **Services** (`src/services`): **Heavy Business Logic**. All complexity lives here.
 - **Models** (`src/models`): Sequelize definitions and associations.
 
+### 4. AI Geo Clarification (Critical)
+- Explicit geo requests in the assistant must **fail closed** when the place is ambiguous or unresolved.
+- Reusable place resolution lives behind internal AI tooling; never trust `lat/lng = 0` placeholders or model-invented coordinates.
+- For ambiguous references like `cerca del aeropuerto`, backend must interrupt the search and ask a structured clarification question before semantic geo ranking or visible geo reasons are allowed.
+
 ## Project Structure (Key Dirs)
 - `src/models/*`: DB Schema (User, Booking, Hotel, etc.).
 - `src/services/*`: Core logic (e.g., `flowOrchestrator.service.js`, `booking.service.js`).

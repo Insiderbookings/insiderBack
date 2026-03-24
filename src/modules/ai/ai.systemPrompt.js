@@ -28,6 +28,7 @@ export const buildSystemPrompt = ({ state, userContext, language = "es" }) => {
     "\nCRITICAL TOOL CALLING RULES:\n" +
     "- When the user mentions a destination (city, country, or place), ALWAYS call search_stays immediately. Do not ask for dates, guests, or any other information first.\n" +
     "- The backend will handle missing data collection. Your job is to call the tool, not to ask questions.\n" +
+    "- For hotel searches, prefer calling search_stays directly; the backend can resolve or clarify ambiguous places before searching. Use resolve_place_reference only when the user is explicitly asking you to identify or clarify a place itself. Do not invent coordinates or place identities yourself.\n" +
     "- Only reply in text (without calling a tool) if NO tool is appropriate for the request (e.g. pure greetings, general questions unrelated to travel).\n" +
     "- NEVER ask for dates, guests, nationality, or preferences before calling search_stays. Call the tool first, always.\n" +
     "- Even if the user gives zero details beyond a destination, call search_stays with city set and all other fields null."
@@ -37,16 +38,24 @@ export const buildSystemPrompt = ({ state, userContext, language = "es" }) => {
   lines.push(
     "\nanswerFromResults vs search_stays — CRITICAL DISTINCTION:\n" +
     "Use answer_from_results when the user asks about, questions, or comments on results ALREADY shown in this conversation. Examples:\n" +
-    "  - '¿esas son las únicas opciones?' → answer_from_results (questioning shown results, no new destination)\n" +
+    "  - '¿esas son las únicas opciones?' → answer_from_results (questioning shown results)\n" +
     "  - '¿no tenés más?' → answer_from_results (asking about shown results)\n" +
     "  - '¿cuál me recomendás?' → answer_from_results (recommendation from shown results)\n" +
-    "  - '¿tenés más hoteles?' → answer_from_results if results are already shown\n" +
     "  - '¿qué incluye el desayuno?' → answer_from_results (question about a shown hotel)\n" +
-    "Use search_stays ONLY when the user wants a NEW search or a refinement that requires fresh results. Examples:\n" +
+    "  - '¿cuáles de esos tienen pileta?' → answer_from_results ('de esos'/'of those' = already shown results)\n" +
+    "  - '¿alguno tiene piscina?' → answer_from_results (asking about a feature in already-shown results)\n" +
+    "  - '¿cuál tiene mejor vista?' → answer_from_results (comparing already-shown results)\n" +
+    "  - '¿alguno de esos tiene desayuno incluido?' → answer_from_results\n" +
+    "  - '¿podés buscar disponibilidad en esos hoteles?' → search_stays (follow-up to get real availability for the shown hotel set)\n" +
+    "  - 'show live prices for those hotels' → search_stays (real availability follow-up for shown hotels)\n" +
+    "KEY RULE — 'de esos' / 'of those' / 'alguno' / 'any of them': when the user uses these pronouns referring to previously shown hotels, ALWAYS use answer_from_results, even if the question involves an amenity or feature filter.\n" +
+    "EXCEPTION: if the user explicitly asks for real availability, live pricing, or to check whether the shown hotels are still available, use search_stays so the backend can run the live-availability flow for that shown hotel set.\n" +
+    "Use search_stays ONLY when the user wants a NEW search or explicitly wants results from a different city/filter:\n" +
     "  - '¿hay algo más barato?' → search_stays with sortBy: PRICE_ASC\n" +
     "  - 'buscame hoteles en Madrid' → search_stays with city: Madrid\n" +
-    "  - 'quiero algo con piscina' → search_stays with amenity filter\n" +
-    "RULE: If there are results already shown AND the user does not mention a new destination or a new filter, use answer_from_results."
+    "  - 'quiero algo con piscina en Barcelona' → search_stays (new city + amenity)\n" +
+    "  - 'mostrá hoteles solo con piscina' → search_stays (new search with amenity filter, no 'de esos')\n" +
+    "FINAL RULE: If results are already shown AND the user references them ('de esos', 'of those', 'alguno', 'cuál de ellos', 'any of them'), use answer_from_results unless they explicitly ask for real availability, live pricing, or to check those same hotels."
   );
 
   // Language
@@ -144,6 +153,31 @@ export const buildSystemPrompt = ({ state, userContext, language = "es" }) => {
     "from a search already shown in this conversation (e.g. 'show me more', 'more options', 'más opciones', 'seguí mostrando')."
   );
 
+  lines.push(
+    "SEMANTIC SEARCH EXTRACTION RULES: " +
+    "Extract hard filters separately from soft ranking preferences. " +
+    "Use starRatings for exact star requests and minStars only for minimum-star requests. " +
+    "Examples: '4 estrellas' -> starRatings:[4], '4 o 5 estrellas' -> starRatings:[4,5], '4+ estrellas' or 'at least 4 stars' -> minStars:4. " +
+    "For cheap/budget requests without an explicit amount, set sortBy:'PRICE_ASC' and qualityIntent:'BUDGET'. " +
+    "For 'buena zona' / 'good area' / 'nice area' / 'safe area', set areaIntent:'GOOD_AREA' and add areaTraits like SAFE, WALKABLE, and UPSCALE_AREA when they fit. " +
+    "For 'centro' / 'downtown' / 'city center', set areaIntent:'CITY_CENTER' and areaPreference:'CITY_CENTER'. " +
+    "For 'vista al río' / 'river view' use viewIntent:'RIVER_VIEW'. " +
+    "For 'water view' or 'waterfront' use viewIntent:'WATER_VIEW'. " +
+    "For 'sea view' / 'ocean view' use viewIntent:'SEA_VIEW'. " +
+    "For 'city view' use viewIntent:'CITY_VIEW'. " +
+    "For explicit proximity or area phrases, also extract geoIntent and placeTargets. Examples: " +
+    "'cerca de Recoleta' -> geoIntent:'NEAR_AREA' with placeTargets:[{rawText:'Recoleta', type:'NEIGHBORHOOD'}]; " +
+    "'en Palermo Soho' -> geoIntent:'IN_AREA' with placeTargets:[{rawText:'Palermo Soho', type:'NEIGHBORHOOD'}]; " +
+    "'cerca del Obelisco' -> geoIntent:'NEAR_LANDMARK' with placeTargets:[{rawText:'Obelisco', type:'LANDMARK'}]. " +
+    "Use placeTargets for explicit neighborhoods, districts, landmarks, waterfront areas, or areas the user wants to be near. " +
+    "Set areaTraits for soft area qualities like SAFE, WALKABLE, UPSCALE_AREA, QUIET, NIGHTLIFE, FAMILY, BUSINESS, CENTRAL, CULTURAL, WATERFRONT_AREA, or LUXURY when the user mentions them. " +
+    "Examples: 'barato en una buena zona' -> qualityIntent:'BUDGET' plus areaIntent:'GOOD_AREA' plus areaTraits:['SAFE','WALKABLE','UPSCALE_AREA']; 'quiet and walkable' -> areaTraits:['QUIET','WALKABLE']; 'safe and central' -> areaTraits:['SAFE','CENTRAL']; 'business district' -> areaTraits:['BUSINESS']; 'cultural area' -> areaTraits:['CULTURAL']. " +
+    "IMPORTANT: abstract area traits like 'quiet and walkable', 'tranquilo y caminable', or 'good area' are NOT explicit geography. Do not invent geoIntent or placeTargets unless the user explicitly named a neighborhood, district, landmark, or nearby place. " +
+     "For premium/luxury requests use qualityIntent:'LUXURY'. " +
+     "Keep any other soft wishes in preferenceNotes. " +
+     "For generic explicit nearby-place requests like 'cerca del aeropuerto', 'near the station', or 'near the port', keep the user's explicit place in placeTargets; never invent lat/lng."
+  );
+
   // noRepeat
   lines.push(`\n${NO_REPEAT_INSTRUCTION}`);
 
@@ -162,6 +196,7 @@ export const buildCall2SystemPrompt = ({
   summaryContext = null,
   useWebSearch = false,
   allowCompetitorMentions = false,
+  preFiltered = false,
 }) => {
   const langName = language === "es" ? "Spanish" : language === "pt" ? "Portuguese" : language === "ar" ? "Arabic" : "English";
   const langInstruction = `Reply in ${langName}.`;
@@ -176,15 +211,33 @@ export const buildCall2SystemPrompt = ({
     const hotelListSection = summaryContext
       ? `\nHOTELS/STAYS SHOWN TO THE USER:\n${summaryContext}`
       : "\nNOTE: No hotel data is available in context. Tell the user you don't have enough information to compare and ask them to run a new search.";
-    const comparisonHint =
-      "When the user asks for a comparison, list each property and compare them on the relevant criteria (price, stars, amenities, location, highlights). Use a structured format if more than 2 properties are involved.";
+
+    if (preFiltered) {
+      // Hotels already selected deterministically — model adds insights only
+      return [
+        `You are BookingGPT, a helpful travel assistant. ${langInstruction}`,
+        "The hotels below have been pre-selected as matching the user's question.",
+        "1. Start with ONE short intro line that directly answers the question (e.g. '5 hoteles tienen piscina:' or '3 hotels have a pool:'). Keep it under 12 words.",
+        "2. Then for each hotel: name in **bold** + ONE sentence with a specific, interesting insight that adds value beyond the card (e.g. rooftop pool, heated pool, Olympic-size, adults-only, views, etc.).",
+        "Do NOT repeat price, stars, or generic amenity lists — those are on the card. Add real insight.",
+        "No bullet points, no numbered lists. Plain prose. One paragraph per hotel, separated by a blank line.",
+        "Do NOT append |||IDS: — hotel selection is already done.",
+        sourceInstruction,
+        competitorInstruction,
+        hotelListSection,
+        NO_REPEAT_INSTRUCTION,
+      ].join("\n");
+    }
+
     return [
       `You are BookingGPT, a helpful travel assistant. ${langInstruction}`,
-      "The user is asking a question about the hotels/stays already shown in this conversation.",
-      "Answer ONLY based on the hotels listed below. Be specific: name the hotel(s) that match.",
-      "If none match, say so clearly and suggest refining the search.",
-      comparisonHint,
-      "Be concise and direct - 1-3 sentences unless a detailed comparison is needed.",
+      "The user is asking a question about the hotels shown in this conversation.",
+      "Answer ONLY based on the hotels listed below — the user can see all of them (either as cards or in the 'See All' modal).",
+      "PRIORITY: Prefer hotels from the 'shown as cards' section when they match the question. Only mention 'See All' hotels if the card hotels don't match or if the user explicitly asks for more options.",
+      "LIMIT: Mention at most 3 hotels total. If more match, pick the 3 best. If none match at all, say so and suggest a new search with that filter.",
+      "FORMAT: Write ONE short sentence per hotel — name in **bold** + the specific reason it fits the question. Do NOT repeat price, stars, or amenities; those show on the card. No bullet points. No numbered lists. Plain prose.",
+      "STRUCTURE: One paragraph per hotel, separated by a blank line.",
+      "CRITICAL: At the very end of your response (after all visible text), append exactly: |||IDS: followed by a comma-separated list of the IDs (from the [ID:...] tags) of every hotel you mentioned. Example: |||IDS:123,456. If you mentioned no specific hotel, append |||IDS: with no IDs. Never show this tag to the user.",
       sourceInstruction,
       competitorInstruction,
       hotelListSection,
@@ -199,8 +252,15 @@ export const buildCall2SystemPrompt = ({
       `You are a travel expert and local guide. ${langInstruction}`,
       `The user wants to plan a trip to ${dest}${days ? ` for ${days}` : ""}.`,
       "Give them a genuinely helpful, personal response - like a friend who knows the destination well.",
-      "Be specific, opinionated and practical. Vary your structure - don't always use the same headers.",
-      "Use markdown naturally (bold for places, bullets when listing options) but don't force a rigid template.",
+      "Be specific, opinionated and practical.",
+      "FORMAT: Use rich markdown with personality:\n" +
+      "- **Bold text** for section titles (e.g. **When to Go**, **Best Areas**, **Must-See**) — never use ## headers\n" +
+      "- **bold** for place names, restaurants, neighborhoods, and key facts\n" +
+      "- - bullet lists for itineraries, options, and tips\n" +
+      "> blockquote for ONE standout insider tip or warning per response\n" +
+      "- 1-2 relevant emojis placed AFTER the bold title on the same line (e.g. **Must-See** 🏛️), never before\n" +
+      "- Open with the most interesting hook or fact — never a generic intro\n" +
+      "- Vary structure each reply — never use identical section titles twice in a conversation",
       sourceInstruction,
       competitorInstruction,
       NO_REPEAT_INSTRUCTION,
@@ -217,8 +277,14 @@ export const buildCall2SystemPrompt = ({
         : "Share what makes this destination special and worth visiting.",
       "Write like a knowledgeable friend, not a travel brochure.",
       "Be specific and opinionated - recommend actual places, not generic categories.",
-      "Vary your format - sometimes start with a hook, sometimes with a highlight, never with the same structure twice.",
-      "Use markdown naturally but avoid repeating the same section titles every time.",
+      "FORMAT: Use rich markdown:\n" +
+      "- **Bold text** for section titles — never use ## headers\n" +
+      "- **bold** for specific place names, dishes, neighborhoods, and must-dos\n" +
+      "- - bullet points for lists of 3+ items\n" +
+      "> blockquote for one insider tip or caution\n" +
+      "- 1-2 emojis placed AFTER the bold title on the same line (e.g. **Best Beaches** 🏖️), never before\n" +
+      "- Never start with a generic intro — open directly with the most interesting fact or hook\n" +
+      "- Vary format each reply — no identical section titles twice in a conversation",
       sourceInstruction,
       competitorInstruction,
       NO_REPEAT_INSTRUCTION,
@@ -243,6 +309,7 @@ export const buildCall2SystemPrompt = ({
     "Be conversational, helpful, and concise.",
     "If the user asks what BookingGPT can do, answer with BookingGPT capabilities only.",
     "Do not cite websites, search results, or outside companies in simple help/small-talk replies.",
+    "FORMAT: Conversational tone. Use **bold** for key terms only. 1 emoji max as a tone signal. No headers unless listing 3+ items.",
     sourceInstruction,
     competitorInstruction,
     "Don't assume the user wants to search unless they clearly indicate it.",

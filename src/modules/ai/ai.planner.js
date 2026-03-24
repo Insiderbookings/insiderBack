@@ -14,6 +14,8 @@ export const NEXT_ACTIONS = {
   ASK_FOR_DESTINATION: "ASK_FOR_DESTINATION",
   ASK_FOR_DATES: "ASK_FOR_DATES",
   ASK_FOR_GUESTS: "ASK_FOR_GUESTS",
+  ASK_FOR_NATIONALITY: "ASK_FOR_NATIONALITY",
+  ASK_FOR_PLACE_DISAMBIGUATION: "ASK_FOR_PLACE_DISAMBIGUATION",
   RUN_SEARCH: "RUN_SEARCH",
   RUN_TRIP: "RUN_TRIP",
   RUN_PLANNING: "RUN_PLANNING",
@@ -92,6 +94,12 @@ export const applyPlanToState = (state, plan) => {
   const baseState = clone(state || getDefaultState());
   const mergedPlan = mergeSearchPlans(baseState.searchPlan || {}, plan || {});
   baseState.searchPlan = mergedPlan;
+  if (
+    mergedPlan.searchExecutionMode === "CATALOG_DISCOVERY" ||
+    mergedPlan.searchExecutionMode === "LIVE_AVAILABILITY"
+  ) {
+    baseState.searchExecutionMode = mergedPlan.searchExecutionMode;
+  }
 
   const location = mergedPlan.location || {};
   const destinationName = buildDestinationName(location);

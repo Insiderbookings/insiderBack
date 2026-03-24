@@ -7,7 +7,11 @@ import { getNearbyPlaces } from "../modules/ai/tools/tool.places.js";
 import { getLocalNews } from "../modules/ai/tools/tool.news.js";
 import { enqueueTripHubEnsure } from "./tripHubPacksQueue.service.js";
 
-const DEFAULT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-4o-mini";
+const DEFAULT_MODEL =
+  process.env.AI_MODEL_LEGACY_ASSISTANT ||
+  process.env.AI_MODEL_CALL2_DEFAULT ||
+  process.env.OPENAI_ASSISTANT_MODEL ||
+  "gpt-5-mini";
 const apiKey = process.env.OPENAI_API_KEY;
 let openaiClient = null;
 const DEFAULT_OPENAI_TIMEOUT_MS = Number(process.env.AI_OPENAI_TIMEOUT_MS) || 20000;

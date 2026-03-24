@@ -9,6 +9,292 @@ const DEFAULT_RADIUS_KM = 10;
 const MAX_RADIUS_KM = 15;
 const MIN_RADIUS_KM = 0.5;
 
+const PLACE_TYPE_HINT_SET = new Set([
+  "AIRPORT",
+  "LANDMARK",
+  "DISTRICT",
+  "STATION",
+  "PORT",
+  "VENUE",
+  "GENERIC",
+]);
+
+const normalizeResolverText = (value) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const normalizePlaceTypeHint = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  return PLACE_TYPE_HINT_SET.has(normalized) ? normalized : "GENERIC";
+};
+
+const isPlaceholderCoordPair = (lat, lng) => lat === 0 && lng === 0;
+
+const hasValidCoordPair = (lat, lng) =>
+  Number.isFinite(lat) &&
+  Number.isFinite(lng) &&
+  !isPlaceholderCoordPair(lat, lng);
+
+const inferPlaceTypeHintFromQuery = (query = "", fallback = "GENERIC") => {
+  const normalized = normalizeResolverText(query);
+  if (!normalized) return normalizePlaceTypeHint(fallback);
+  if (/\b(airport|aeropuerto|aeroparque|ezeiza)\b/.test(normalized)) {
+    return "AIRPORT";
+  }
+  if (/\b(station|estacion|terminal|retiro)\b/.test(normalized)) {
+    return "STATION";
+  }
+  if (/\b(port|puerto|harbor|marina)\b/.test(normalized)) {
+    return "PORT";
+  }
+  if (
+    /\b(obelisco|obelisk|cemetery|cementerio|museum|museo|park|parque|tower|torre|stadium|estadio|arena|plaza)\b/.test(
+      normalized,
+    )
+  ) {
+    return "LANDMARK";
+  }
+  if (/\b(neighborhood|barrio|district|zona|area)\b/.test(normalized)) {
+    return "DISTRICT";
+  }
+  return normalizePlaceTypeHint(fallback);
+};
+
+const isGenericPlaceQuery = (query = "", placeTypeHint = "GENERIC") => {
+  const normalized = normalizeResolverText(query);
+  if (!normalized) return false;
+  if (
+    placeTypeHint === "AIRPORT" &&
+    /^(airport|aeropuerto)$/.test(normalized)
+  ) {
+    return true;
+  }
+  if (
+    placeTypeHint === "STATION" &&
+    /^(station|estacion|terminal)$/.test(normalized)
+  ) {
+    return true;
+  }
+  if (
+    placeTypeHint === "PORT" &&
+    /^(port|puerto|harbor)$/.test(normalized)
+  ) {
+    return true;
+  }
+  return /^(center|centro|downtown)$/.test(normalized);
+};
+
+const buildResolverCandidate = (entry, source = "catalog") => ({
+  id: String(entry.id || ""),
+  label: entry.label || entry.normalizedName || entry.name || "Place",
+  normalizedName: entry.normalizedName || entry.name || entry.label || "Place",
+  subtitle:
+    [entry.city, entry.country].filter(Boolean).join(", ") || null,
+  placeType: entry.placeType || "GENERIC",
+  city: entry.city || null,
+  country: entry.country || null,
+  lat: hasValidCoordPair(Number(entry.lat), Number(entry.lng))
+    ? Number(entry.lat)
+    : null,
+  lng: hasValidCoordPair(Number(entry.lat), Number(entry.lng))
+    ? Number(entry.lng)
+    : null,
+  radiusMeters: Number.isFinite(Number(entry.radiusMeters))
+    ? Math.max(300, Number(entry.radiusMeters))
+    : null,
+  source,
+  aliases: Array.isArray(entry.aliases) ? entry.aliases : [],
+  confidence: entry.confidence || null,
+});
+
+const buildClarificationQuestion = (language = "es", placeTypeHint = "GENERIC") => {
+  const lang = String(language || "es").toLowerCase();
+  if (placeTypeHint === "AIRPORT") {
+    if (lang.startsWith("en")) return "Which airport do you mean?";
+    if (lang.startsWith("pt")) return "A qual aeroporto você se refere?";
+    return "¿A cuál aeropuerto te referís?";
+  }
+  if (placeTypeHint === "STATION") {
+    if (lang.startsWith("en")) return "Which station do you mean?";
+    if (lang.startsWith("pt")) return "A qual estação você se refere?";
+    return "¿A qué estación te referís?";
+  }
+  if (placeTypeHint === "PORT") {
+    if (lang.startsWith("en")) return "Which port do you mean?";
+    if (lang.startsWith("pt")) return "A qual porto você se refere?";
+    return "¿A qué puerto te referís?";
+  }
+  if (lang.startsWith("en")) return "Which place do you mean exactly?";
+  if (lang.startsWith("pt")) return "A qual lugar você se refere exatamente?";
+  return "¿A qué lugar te referís exactamente?";
+};
+
+const buildNotFoundQuestion = (language = "es") => {
+  const lang = String(language || "es").toLowerCase();
+  if (lang.startsWith("en")) {
+    return "I couldn't identify that place clearly. Can you be more specific?";
+  }
+  if (lang.startsWith("pt")) {
+    return "Nao consegui identificar esse lugar com clareza. Pode ser mais especifico?";
+  }
+  return "No pude ubicar ese lugar con claridad. ¿Podés ser más específico?";
+};
+
+const mapGoogleResultToResolverCandidate = (item = {}, placeTypeHint = "GENERIC") => {
+  const lat = toNumber(item.geometry?.location?.lat);
+  const lng = toNumber(item.geometry?.location?.lng);
+  if (!hasValidCoordPair(lat, lng)) return null;
+  const types = Array.isArray(item.types) ? item.types : [];
+  const hint = normalizePlaceTypeHint(placeTypeHint);
+  if (
+    hint === "AIRPORT" &&
+    !types.includes("airport") &&
+    !/\b(airport|aeropuerto|aeroparque|ezeiza)\b/i.test(item.name || "")
+  ) {
+    return null;
+  }
+  if (
+    hint === "STATION" &&
+    !types.some((type) =>
+      ["train_station", "transit_station", "subway_station", "bus_station"].includes(type),
+    ) &&
+    !/\b(station|estacion|terminal)\b/i.test(item.name || "")
+  ) {
+    return null;
+  }
+  if (
+    hint === "PORT" &&
+    !types.some((type) => ["port", "marina"].includes(type)) &&
+    !/\b(port|puerto|harbor|marina)\b/i.test(item.name || "")
+  ) {
+    return null;
+  }
+
+  return buildResolverCandidate(
+    {
+      id: item.place_id,
+      label: item.name || item.formatted_address || "Place",
+      normalizedName: item.name || item.formatted_address || "Place",
+      placeType:
+        hint !== "GENERIC"
+          ? hint
+          : types.includes("airport")
+            ? "AIRPORT"
+            : "LANDMARK",
+      city: null,
+      country: null,
+      lat,
+      lng,
+      radiusMeters:
+        hint === "AIRPORT"
+          ? 6000
+          : hint === "LANDMARK"
+            ? 2000
+            : 3000,
+      aliases: [],
+      confidence: 0.7,
+    },
+    "google_places",
+  );
+};
+
+const resolveGooglePlaceCandidates = async ({
+  query,
+  city,
+  country,
+  placeTypeHint = "GENERIC",
+  maxCandidates = 5,
+} = {}) => {
+  if (AI_PLACES_DISABLED) return [];
+  const apiKey =
+    process.env.GOOGLE_PLACES_API_KEY ||
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.GOOGLE_API_KEY;
+  if (!apiKey) return [];
+
+  try {
+    const mergedQuery = [query, city, country].filter(Boolean).join(", ");
+    const { data } = await axios.get(
+      "https://maps.googleapis.com/maps/api/place/textsearch/json",
+      {
+        params: { query: mergedQuery, key: apiKey },
+        timeout: 5000,
+      },
+    );
+    if (!Array.isArray(data?.results) || !data.results.length) return [];
+    return data.results
+      .map((item) => mapGoogleResultToResolverCandidate(item, placeTypeHint))
+      .filter(Boolean)
+      .slice(0, Math.max(1, Math.min(Number(maxCandidates) || 5, 6)));
+  } catch (err) {
+    console.warn("[ai] resolve place reference failed", err?.message || err);
+    return [];
+  }
+};
+
+const finalizePlaceResolution = ({
+  candidates = [],
+  query,
+  language = "es",
+  placeTypeHint = "GENERIC",
+} = {}) => {
+  const normalizedCandidates = Array.isArray(candidates)
+    ? candidates.filter(Boolean)
+    : [];
+  if (!normalizedCandidates.length) {
+    return {
+      status: "NOT_FOUND",
+      confidence: "LOW",
+      resolved_place: null,
+      candidates: [],
+      clarification_question: buildNotFoundQuestion(language),
+    };
+  }
+
+  const top = normalizedCandidates[0];
+  const second = normalizedCandidates[1] || null;
+  const topScore = Number(top._score || 0);
+  const secondScore = Number(second?._score || 0);
+  const genericQuery = isGenericPlaceQuery(query, placeTypeHint);
+  const topCandidate = {
+    ...top,
+    confidence:
+      top.source === "catalog" && topScore >= 120
+        ? "HIGH"
+        : top.source === "catalog"
+          ? "MEDIUM"
+          : "MEDIUM",
+  };
+
+  if (
+    normalizedCandidates.length === 1 ||
+    (!genericQuery && topScore >= 120 && topScore - secondScore >= 25)
+  ) {
+    return {
+      status: "RESOLVED",
+      confidence: topCandidate.confidence,
+      resolved_place: topCandidate,
+      candidates: [],
+      clarification_question: null,
+    };
+  }
+
+  return {
+    status: "AMBIGUOUS",
+    confidence: "MEDIUM",
+    resolved_place: null,
+    candidates: normalizedCandidates.map(({ _score: _drop, ...candidate }) => candidate),
+    clarification_question: buildClarificationQuestion(language, placeTypeHint),
+  };
+};
+
 const toNumber = (value) => {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
@@ -259,4 +545,49 @@ export const searchDestinationImages = async (query, limit = 2) => {
     console.warn("[ai] destination image search failed", err?.message || err);
     return [];
   }
+};
+
+export const resolvePlaceReference = async ({
+  query,
+  city = null,
+  country = null,
+  place_type_hint = "GENERIC",
+  intent_mode = "NEAR_PLACE",
+  language = "es",
+  max_candidates = 5,
+} = {}) => {
+  const trimmedQuery = String(query || "").trim();
+  if (!trimmedQuery) {
+    return {
+      status: "NOT_FOUND",
+      confidence: "LOW",
+      resolved_place: null,
+      candidates: [],
+      clarification_question: buildNotFoundQuestion(language),
+    };
+  }
+
+  const placeTypeHint = inferPlaceTypeHintFromQuery(
+    trimmedQuery,
+    place_type_hint,
+  );
+  const maxCandidates = Math.max(
+    1,
+    Math.min(Number(max_candidates) || 5, 6),
+  );
+
+  const googleCandidates = await resolveGooglePlaceCandidates({
+    query: trimmedQuery,
+    city,
+    country,
+    placeTypeHint,
+    maxCandidates,
+  });
+  return finalizePlaceResolution({
+    candidates: googleCandidates,
+    query: trimmedQuery,
+    language,
+    placeTypeHint,
+    intentMode: intent_mode,
+  });
 };

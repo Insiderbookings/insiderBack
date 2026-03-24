@@ -30,6 +30,14 @@ import {
 
 import { planReferralFirstBookingDiscount } from "../services/referralRewards.service.js"
 import { FlowOrchestratorService } from "../services/flowOrchestrator.service.js"
+import {
+  captureHold,
+  holdForHotelPayment,
+  isGuestWalletHotelsEnabled,
+  releaseHold,
+  resolveRewardReleaseAt,
+  scheduleEarn,
+} from "../services/guestWallet.service.js"
 
 
 const provider = new WebbedsProvider()
@@ -188,6 +196,26 @@ const buildPaymentScopeKey = ({ flow, bookingId, hotelId, checkIn, checkOut, gue
       Number.isFinite(Number(selectedOffer.minimumSelling)) ? Number(selectedOffer.minimumSelling) : null,
   }
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex")
+}
+
+const buildPaymentIntentIdempotencyKey = ({
+  paymentScopeKey,
+  amountForStripe,
+  currency,
+  walletAppliedMinor = 0,
+}) => {
+  const digest = createHash("sha256")
+    .update(
+      JSON.stringify({
+        paymentScopeKey,
+        amountForStripe,
+        currency: String(currency || "").toUpperCase(),
+        walletAppliedMinor: Math.max(0, Number(walletAppliedMinor) || 0),
+      }),
+    )
+    .digest("hex")
+    .slice(0, 32)
+  return `hotel-pi-${digest}`
 }
 
 const findPendingBookingByPaymentScope = async ({ userId, flowId, bookingId, paymentScopeKey }) => {
@@ -460,6 +488,7 @@ export const createPaymentIntent = async (req, res, next) => {
       holder, // { firstName, lastName, ... }
       roomName,
       requestId,
+      useWallet = false,
     } = req.body
     const requestTag =
       requestId ||
@@ -496,6 +525,7 @@ export const createPaymentIntent = async (req, res, next) => {
         phone: maskPhone(holder?.phone),
       },
       roomName,
+      useWallet: Boolean(useWallet),
       userId,
     })
 
@@ -935,25 +965,15 @@ export const createPaymentIntent = async (req, res, next) => {
     }
     const totalDiscountAmount = roundCurrency(referralFirstBookingDiscount)
     const grossTotal = roundCurrency(Math.max(0, totalBeforeDiscount - totalDiscountAmount))
+    const grossTotalUsd =
+      totalBeforeDiscount > 0
+        ? roundCurrency(amountUsd * (grossTotal / totalBeforeDiscount))
+        : roundCurrency(amountUsd)
+    const walletFeatureEnabled = isGuestWalletHotelsEnabled()
+    const walletRequested = walletFeatureEnabled && Boolean(useWallet)
+    const walletRewardReleaseAt = resolveRewardReleaseAt({ flow, bookedAt: new Date() })
+    const walletRewardReleaseAtIso = walletRewardReleaseAt?.toISOString?.() || null
 
-    const pricingSnapshotPayload = {
-      flowId: flow.id,
-      totalBeforeDiscount,
-      referralFirstBooking: referralFirstBookingPlan?.apply
-        ? {
-          pct: referralFirstBookingPlan.pct,
-          amount: roundCurrency(referralFirstBookingDiscount),
-          currency: referralFirstBookingPlan.currency,
-          applied: true,
-        }
-        : null,
-      totalDiscountAmount,
-      total: grossTotal,
-      currency: finalCurrency,
-      publicMarkedAmount,
-      minimumSelling,
-      effectivePublicAmount: amountUsd,
-    }
     const paymentScopeKey = buildPaymentScopeKey({
       flow,
       bookingId,
@@ -970,34 +990,76 @@ export const createPaymentIntent = async (req, res, next) => {
       paymentScopeKey,
     })
 
-    if (localBooking?.payment_intent_id) {
-      try {
-        const existingPaymentIntent = await stripe.paymentIntents.retrieve(localBooking.payment_intent_id)
-        if (isReusablePaymentIntentStatus(existingPaymentIntent?.status)) {
-          console.info(`${logPrefix} reusing existing payment intent`, {
-            localBookingId: localBooking.id,
-            paymentIntentId: existingPaymentIntent.id,
-            paymentIntentStatus: existingPaymentIntent.status,
-          })
-          return res.json(
-            buildPaymentIntentResponse({
-              booking: localBooking,
-              paymentIntent: existingPaymentIntent,
-              flowId: flow.id,
-              pricingSnapshot: localBooking.pricing_snapshot || pricingSnapshotPayload,
-            }),
-          )
+    const baseMeta = {
+      hotelId: resolvedHotelId,
+      hotelName: inventorySnapshot?.hotelName ?? null,
+      hotelImage: inventorySnapshot?.hotelImage ?? null,
+      roomName,
+      location: inventorySnapshot?.location ?? null,
+      guests: { adults, children },
+      flowId: flow.id,
+      paymentScopeKey,
+      ...(referral.influencerId
+        ? {
+          referral: {
+            influencerUserId: referral.influencerId,
+            code: referral.code || null,
+          },
         }
-      } catch (paymentIntentLookupError) {
-        console.warn(`${logPrefix} existing payment intent lookup failed`, {
-          localBookingId: localBooking.id,
-          paymentIntentId: localBooking.payment_intent_id,
-          error: paymentIntentLookupError?.message || paymentIntentLookupError,
-        })
-      }
+        : {}),
+      ...(referralFirstBookingPlan?.apply
+        ? {
+          referralFirstBooking: {
+            pct: referralFirstBookingPlan.pct,
+            amount: roundCurrency(referralFirstBookingDiscount),
+            currency: referralFirstBookingPlan.currency,
+            applied: true,
+          },
+        }
+        : {}),
+      basePriceUsd: providerAmountUsd,
+      chargedBasePriceUsd: amountUsd,
+      publicMarkedAmount,
+      minimumSelling,
+      publicMarkupRate: markupRate,
+      pricingRole: publicPricingRole,
+      requestUserRole,
+      exchangeRate: appliedRate,
+      exchangeRateSource: rateSource || null,
+      exchangeRateDate: rateDate || null,
+      fxQuoteUsed,
+      stripeFxQuoteId,
+      stripeFxRate: stripeFxQuoteId ? appliedRate : null,
+      stripeFxBaseRate,
+      stripeFxFeeRate,
+      stripeFxReferenceRate,
+      stripeFxReferenceProvider,
+      stripeFxExpiresAt,
     }
 
-    const bookingPayload = {
+    const basePricingSnapshotPayload = {
+      flowId: flow.id,
+      totalBeforeDiscount,
+      referralFirstBooking: referralFirstBookingPlan?.apply
+        ? {
+          pct: referralFirstBookingPlan.pct,
+          amount: roundCurrency(referralFirstBookingDiscount),
+          currency: referralFirstBookingPlan.currency,
+          applied: true,
+        }
+        : null,
+      totalDiscountAmount,
+      totalBeforeWallet: grossTotal,
+      totalBeforeWalletUsd: grossTotalUsd,
+      total: grossTotal,
+      totalUsd: grossTotalUsd,
+      currency: finalCurrency,
+      publicMarkedAmount,
+      minimumSelling,
+      effectivePublicAmount: amountUsd,
+    }
+
+    const baseBookingPayload = {
       user_id: req.user?.id || null,
       influencer_user_id: referral.influencerId,
       flow_id: flow.id,
@@ -1016,62 +1078,17 @@ export const createPaymentIntent = async (req, res, next) => {
       payment_status: "UNPAID",
       gross_price: grossTotal,
       currency: finalCurrency,
-      pricing_snapshot: pricingSnapshotPayload,
-      meta: {
-        hotelId: resolvedHotelId,
-        hotelName: inventorySnapshot?.hotelName ?? null,
-        hotelImage: inventorySnapshot?.hotelImage ?? null,
-        roomName,
-        location: inventorySnapshot?.location ?? null,
-        guests: { adults, children },
-        flowId: flow.id,
-        paymentScopeKey,
-        ...(referral.influencerId
-          ? {
-            referral: {
-              influencerUserId: referral.influencerId,
-              code: referral.code || null,
-            },
-          }
-          : {}),
-        ...(referralFirstBookingPlan?.apply
-          ? {
-            referralFirstBooking: {
-              pct: referralFirstBookingPlan.pct,
-              amount: roundCurrency(referralFirstBookingDiscount),
-              currency: referralFirstBookingPlan.currency,
-              applied: true,
-            },
-          }
-          : {}),
-        basePriceUsd: providerAmountUsd,
-        chargedBasePriceUsd: amountUsd,
-        publicMarkedAmount,
-        minimumSelling,
-        publicMarkupRate: markupRate,
-        pricingRole: publicPricingRole,
-        requestUserRole,
-        exchangeRate: appliedRate,
-        exchangeRateSource: rateSource || null,
-        exchangeRateDate: rateDate || null,
-        fxQuoteUsed,
-        stripeFxQuoteId,
-        stripeFxRate: stripeFxQuoteId ? appliedRate : null,
-        stripeFxBaseRate,
-        stripeFxFeeRate,
-        stripeFxReferenceRate,
-        stripeFxReferenceProvider,
-        stripeFxExpiresAt,
-      },
+      pricing_snapshot: basePricingSnapshotPayload,
+      meta: baseMeta,
       inventory_snapshot: inventorySnapshot,
       guest_snapshot: guestSnapshot,
     }
     const isExistingBooking = Boolean(localBooking)
+    const previousPaymentIntentId = localBooking?.payment_intent_id || null
     if (isExistingBooking) {
       booking_ref = localBooking.booking_ref
       await localBooking.update({
-        ...bookingPayload,
-        payment_intent_id: null,
+        ...baseBookingPayload,
         payment_provider: "STRIPE",
       })
       console.info(`${logPrefix} local booking refreshed`, {
@@ -1082,7 +1099,8 @@ export const createPaymentIntent = async (req, res, next) => {
       booking_ref = `WB-${Date.now().toString(36).toUpperCase()}`
       localBooking = await models.Booking.create({
         booking_ref,
-        ...bookingPayload,
+        payment_provider: "STRIPE",
+        ...baseBookingPayload,
       })
       console.info(`${logPrefix} local booking created`, {
         localBookingId: localBooking.id,
@@ -1114,7 +1132,83 @@ export const createPaymentIntent = async (req, res, next) => {
       })
     }
 
-    // 2. Create Stripe Payment Intent
+    let walletHoldResult = null
+    if (walletRequested) {
+      walletHoldResult = await holdForHotelPayment({
+        userId,
+        stayId: localBooking.id,
+        paymentScopeKey,
+        publicTotalUsd: grossTotalUsd,
+        minimumSellingUsd: minimumSelling ?? 0,
+        meta: {
+          bookingRef: localBooking.booking_ref || booking_ref || null,
+          flowId: flow.id,
+          bookingId,
+          requestId: requestTag,
+        },
+      })
+    } else {
+      await releaseHold({
+        userId,
+        stayId: localBooking.id,
+        paymentScopeKey,
+        reason: "wallet_not_requested",
+      })
+    }
+
+    const walletAppliedUsd = roundCurrency(walletHoldResult?.appliedUsd || 0)
+    const walletAppliedMinor = Math.max(0, Number(walletHoldResult?.appliedMinor) || 0)
+    const chargeAfterWalletUsd = roundCurrency(
+      walletHoldResult?.chargeAfterWalletUsd ?? grossTotalUsd
+    )
+    const chargeAfterWallet =
+      grossTotalUsd > 0
+        ? roundCurrency(grossTotal * (chargeAfterWalletUsd / grossTotalUsd))
+        : grossTotal
+    const walletAppliedAmount = roundCurrency(Math.max(0, grossTotal - chargeAfterWallet))
+    const rewardPendingUsd = roundCurrency(grossTotalUsd * 0.02)
+    const walletBlockedByMinimumSelling = roundCurrency(
+      Math.max(0, grossTotalUsd - (minimumSelling ?? 0))
+    ) <= 0
+    const pricingSnapshotPayload = {
+      ...basePricingSnapshotPayload,
+      total: chargeAfterWallet,
+      totalUsd: chargeAfterWalletUsd,
+      wallet: walletFeatureEnabled
+        ? {
+          requested: walletRequested,
+          appliedUsd: walletAppliedUsd,
+          appliedAmount: walletAppliedAmount,
+          chargeAfterWalletUsd,
+          chargeAfterWallet,
+          blockedByMinimumSelling: walletBlockedByMinimumSelling,
+          holdId: walletHoldResult?.holdId || null,
+          rewardPendingUsd,
+          rewardReleaseAt: walletRewardReleaseAtIso,
+        }
+        : null,
+    }
+    const finalBookingPayload = {
+      ...baseBookingPayload,
+      gross_price: chargeAfterWallet,
+      pricing_snapshot: pricingSnapshotPayload,
+      meta: {
+        ...baseMeta,
+        wallet: walletFeatureEnabled
+          ? {
+            requested: walletRequested,
+            appliedUsd: walletAppliedUsd,
+            appliedAmount: walletAppliedAmount,
+            chargeAfterWalletUsd,
+            chargeAfterWallet,
+            blockedByMinimumSelling: walletBlockedByMinimumSelling,
+            holdId: walletHoldResult?.holdId || null,
+            rewardPendingUsd,
+            rewardReleaseAt: walletRewardReleaseAtIso,
+          }
+          : null,
+      },
+    }
 
     const zeroDecimalCurrencies = new Set([
       "BIF",
@@ -1141,7 +1235,73 @@ export const createPaymentIntent = async (req, res, next) => {
       : zeroDecimalCurrencies.has(currencyUpper)
         ? 0
         : 2
-    const amountForStripe = Math.round(grossTotal * Math.pow(10, minorUnit))
+    const amountForStripe = Math.round(chargeAfterWallet * Math.pow(10, minorUnit))
+    let reusablePaymentIntent = null
+    if (previousPaymentIntentId) {
+      try {
+        const existingPaymentIntent = await stripe.paymentIntents.retrieve(previousPaymentIntentId)
+        const sameAmount =
+          Number(existingPaymentIntent?.amount) === Number(amountForStripe) &&
+          String(existingPaymentIntent?.currency || "").toLowerCase() ===
+            String(currencyUpper || "").toLowerCase()
+        if (sameAmount && isReusablePaymentIntentStatus(existingPaymentIntent?.status)) {
+          reusablePaymentIntent = existingPaymentIntent
+        } else if (
+          isReusablePaymentIntentStatus(existingPaymentIntent?.status) &&
+          existingPaymentIntent?.status !== "canceled"
+        ) {
+          try {
+            await stripe.paymentIntents.cancel(existingPaymentIntent.id, {
+              cancellation_reason: "abandoned",
+            })
+          } catch (cancelExistingIntentError) {
+            console.warn(`${logPrefix} previous payment intent cancel failed`, {
+              localBookingId: localBooking.id,
+              paymentIntentId: existingPaymentIntent.id,
+              error: cancelExistingIntentError?.message || cancelExistingIntentError,
+            })
+          }
+        }
+      } catch (paymentIntentLookupError) {
+        console.warn(`${logPrefix} existing payment intent lookup failed`, {
+          localBookingId: localBooking.id,
+          paymentIntentId: previousPaymentIntentId,
+          error: paymentIntentLookupError?.message || paymentIntentLookupError,
+        })
+      }
+    }
+
+    if (reusablePaymentIntent) {
+      if (walletRequested && walletHoldResult?.holdId) {
+        await models.GuestWalletHold.update(
+          { payment_intent_id: reusablePaymentIntent.id },
+          { where: { id: walletHoldResult.holdId } },
+        )
+      }
+      await localBooking.update({
+        ...finalBookingPayload,
+        payment_intent_id: reusablePaymentIntent.id,
+        payment_provider: "STRIPE",
+        charge_amount_minor: amountForStripe,
+        charge_currency: currencyUpper,
+      })
+      console.info(`${logPrefix} reusing existing payment intent`, {
+        localBookingId: localBooking.id,
+        paymentIntentId: reusablePaymentIntent.id,
+        paymentIntentStatus: reusablePaymentIntent.status,
+        walletRequested,
+        walletAppliedUsd,
+      })
+      return res.json(
+        buildPaymentIntentResponse({
+          booking: localBooking,
+          paymentIntent: reusablePaymentIntent,
+          flowId: flow.id,
+          pricingSnapshot: pricingSnapshotPayload,
+        }),
+      )
+    }
+
     const paymentIntentParams = {
       amount: amountForStripe,
       currency: currencyUpper.toLowerCase(),
@@ -1160,7 +1320,12 @@ export const createPaymentIntent = async (req, res, next) => {
 
     const paymentIntentOptions = {
       ...(stripeFxQuoteId && stripeFxVersion ? { apiVersion: stripeFxVersion } : {}),
-      idempotencyKey: `hotel-pi-${paymentScopeKey}`,
+      idempotencyKey: buildPaymentIntentIdempotencyKey({
+        paymentScopeKey,
+        amountForStripe,
+        currency: currencyUpper,
+        walletAppliedMinor,
+      }),
     }
     logStripeFxDebug("paymentIntent.create", {
       amount: amountForStripe,
@@ -1169,10 +1334,23 @@ export const createPaymentIntent = async (req, res, next) => {
       apiVersion: paymentIntentOptions?.apiVersion || null,
     })
 
-    const paymentIntent = await stripe.paymentIntents.create(
-      paymentIntentParams,
-      paymentIntentOptions,
-    )
+    let paymentIntent = null
+    try {
+      paymentIntent = await stripe.paymentIntents.create(
+        paymentIntentParams,
+        paymentIntentOptions,
+      )
+    } catch (paymentIntentCreateError) {
+      if (walletRequested) {
+        await releaseHold({
+          userId,
+          stayId: localBooking.id,
+          paymentScopeKey,
+          reason: "payment_intent_create_failed",
+        }).catch(() => {})
+      }
+      throw paymentIntentCreateError
+    }
     logStripeFxDebug("paymentIntent.created", {
       id: paymentIntent?.id || null,
       currency: paymentIntent?.currency || null,
@@ -1182,7 +1360,14 @@ export const createPaymentIntent = async (req, res, next) => {
     console.info(`${logPrefix} payment intent created`, { paymentIntentId: paymentIntent.id })
 
     // 3. Update Local Booking with Payment Intent ID
+    if (walletRequested && walletHoldResult?.holdId) {
+      await models.GuestWalletHold.update(
+        { payment_intent_id: paymentIntent.id },
+        { where: { id: walletHoldResult.holdId } },
+      )
+    }
     await localBooking.update({
+      ...finalBookingPayload,
       payment_intent_id: paymentIntent.id,
       payment_provider: "STRIPE",
       charge_amount_minor: amountForStripe,
@@ -1255,6 +1440,34 @@ export const capturePaymentIntent = async (req, res, next) => {
         updates.booked_at = new Date()
       }
       await booking.update(updates)
+      try {
+        await captureHold({
+          userId: booking.user_id,
+          stayId: booking.id,
+          paymentIntentId: intentId,
+        })
+        await scheduleEarn({
+          userId: booking.user_id,
+          stayId: booking.id,
+          publicTotalUsd:
+            Number(booking.pricing_snapshot?.totalBeforeWalletUsd) ||
+            Number(booking.meta?.wallet?.chargeAfterWalletUsd) + Number(booking.meta?.wallet?.appliedUsd) ||
+            Number(booking.pricing_snapshot?.effectivePublicAmount) ||
+            Number(booking.gross_price) ||
+            0,
+          releaseAt:
+            booking.pricing_snapshot?.wallet?.rewardReleaseAt ||
+            booking.meta?.wallet?.rewardReleaseAt ||
+            null,
+          bookingRef: booking.booking_ref || null,
+        })
+      } catch (walletCaptureError) {
+        console.error("[webbeds] capturePaymentIntent wallet hooks failed", {
+          bookingId: booking.id,
+          paymentIntentId: intentId,
+          error: walletCaptureError?.message || walletCaptureError,
+        })
+      }
 
       // --- NOTIFICATIONS (Email & Chat) ---
       try {
@@ -1409,6 +1622,21 @@ export const cancelPaymentIntent = async (req, res, next) => {
         updates.status = "CANCELLED"
       }
       await booking.update(updates)
+      try {
+        await releaseHold({
+          userId: booking.user_id,
+          stayId: booking.id,
+          paymentScopeKey: booking.meta?.paymentScopeKey || null,
+          paymentIntentId: intentId,
+          reason: reason || "payment_intent_cancelled",
+        })
+      } catch (walletReleaseError) {
+        console.error("[webbeds] cancelPaymentIntent wallet release failed", {
+          bookingId: booking.id,
+          paymentIntentId: intentId,
+          error: walletReleaseError?.message || walletReleaseError,
+        })
+      }
     }
 
     return res.json({
