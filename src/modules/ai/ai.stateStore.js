@@ -4,6 +4,7 @@ const STATE_KEY = "assistantState";
 
 export const getDefaultState = () => ({
   stage: "NEED_DESTINATION",
+  searchExecutionMode: "CATALOG_DISCOVERY",
   destination: { name: null, lat: null, lon: null },
   dates: { checkIn: null, checkOut: null, flexible: true },
   guests: { adults: null, children: null },
@@ -21,7 +22,9 @@ export const getDefaultState = () => ({
   tripContext: null,
   lastShownInventorySummary: null,
   lastResultsContext: null,
+  lastReferencedHotelIds: [],
   lastSearchParams: null,
+  currentSearchContextKey: null,
   pendingToolCall: null,
 });
 

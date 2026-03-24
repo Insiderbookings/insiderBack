@@ -221,6 +221,27 @@ export default (sequelize) => {
         onDelete: "CASCADE",
       });
     }
+    if (models.GuestWalletAccount) {
+      User.hasOne(models.GuestWalletAccount, {
+        foreignKey: "user_id",
+        as: "guestWalletAccount",
+        onDelete: "CASCADE",
+      });
+    }
+    if (models.GuestWalletLedger) {
+      User.hasMany(models.GuestWalletLedger, {
+        foreignKey: "user_id",
+        as: "guestWalletLedgerEntries",
+        onDelete: "CASCADE",
+      });
+    }
+    if (models.GuestWalletHold) {
+      User.hasMany(models.GuestWalletHold, {
+        foreignKey: "user_id",
+        as: "guestWalletHolds",
+        onDelete: "CASCADE",
+      });
+    }
     if (models.RefreshToken) {
       User.hasMany(models.RefreshToken, {
         foreignKey: "user_id",

@@ -41,6 +41,11 @@ import {
 } from "../controllers/roleRequest.controller.js"
 import { uploadImagesToS3Fields } from "../middleware/s3UploadFields.js"
 import { getUserContracts, getUserContractsSummary, acceptContract } from "../controllers/contract.controller.js"
+import {
+  getGuestWalletSummary,
+  getGuestWalletTransactions,
+  previewGuestWalletForHotel,
+} from "../controllers/guestWallet.controller.js"
 
 const router = Router()
 
@@ -100,6 +105,9 @@ router.post("/me/discount-code", applyDiscountCode)
 router.get("/contracts", getUserContracts)
 router.get("/contracts/summary", getUserContractsSummary)
 router.post("/contracts/:id/accept", acceptContract)
+router.get("/me/wallet", getGuestWalletSummary)
+router.get("/me/wallet/transactions", getGuestWalletTransactions)
+router.post("/me/wallet/preview/hotel", previewGuestWalletForHotel)
 
 // User profile
 router.get("/me", getCurrentUser)

@@ -177,6 +177,12 @@ export default (sequelize) => {
     if (models.BookingUser) {
       Stay.hasMany(models.BookingUser, { foreignKey: "stay_id", as: "members" });
     }
+    if (models.GuestWalletHold) {
+      Stay.hasMany(models.GuestWalletHold, { foreignKey: "stay_id", as: "walletHolds" });
+    }
+    if (models.GuestWalletLedger) {
+      Stay.hasMany(models.GuestWalletLedger, { foreignKey: "stay_id", as: "walletLedgerEntries" });
+    }
   };
 
   return Stay;

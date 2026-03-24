@@ -9,11 +9,16 @@ import { mapHomeToCard } from "../utils/homeMapper.js";
 import { formatStaticHotel } from "../utils/webbedsMapper.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 import { resolvePoiToCoordinates, getNearbyPlaces, computeDistanceKm } from "../modules/ai/tools/tool.places.js";
+import { resolveSemanticCatalogContext } from "../modules/ai/ai.semanticCatalog.js";
 import { resolveWebbedsCityMatch } from "./webbedsCityResolver.service.js";
 
 const ASSISTANT_SEARCH_MAX_LIMIT = Math.max(
   20,
   Math.min(120, Number(process.env.AI_SEARCH_MAX_LIMIT || 120))
+);
+const CHAT_VISIBLE_SEMANTIC_LIMIT = Math.max(
+  5,
+  Math.min(30, Number(process.env.AI_CHAT_VISIBLE_HOTEL_LIMIT || 30))
 );
 const DEBUG_ASSISTANT_SEARCH =
   String(process.env.AI_DEBUG_LOGS || "").trim().toLowerCase() === "true";
@@ -72,6 +77,17 @@ const serializeProximityAnchorForCache = (proximityAnchor) => {
           lat: toNumberOrNull(place?.location?.lat),
           lng: toNumberOrNull(place?.location?.lng),
         })),
+    };
+  }
+  if (proximityAnchor.type === "PLACE_TARGET") {
+    return {
+      type: "PLACE_TARGET",
+      target: {
+        name: String(proximityAnchor.target?.name || "").trim() || null,
+        lat: toNumberOrNull(proximityAnchor.target?.lat),
+        lng: toNumberOrNull(proximityAnchor.target?.lng),
+        radiusMeters: toNumberOrNull(proximityAnchor.target?.radiusMeters),
+      },
     };
   }
   return { type: String(proximityAnchor.type || "").trim().toUpperCase() || null };
@@ -133,6 +149,15 @@ const toNumberOrNull = (value) => {
   if (value === null || value === undefined) return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+};
+
+const normalizeCoordinatePair = (latValue, lngValue) => {
+  const lat = toNumberOrNull(latValue);
+  const lng = toNumberOrNull(lngValue);
+  if (lat === 0 && lng === 0) {
+    return { lat: null, lng: null };
+  }
+  return { lat, lng };
 };
 
 const DEFAULT_COORDINATE_RADIUS_KM = 25;
@@ -481,6 +506,2529 @@ const resolveCountryName = (name) => {
   return COUNTRY_NAME_ALIASES_EN[key] || stripDiacritics(name.trim());
 };
 
+const resolveSemanticLanguage = (plan = {}) => {
+  const raw = String(plan?.language || "es").trim().toLowerCase();
+  if (raw.startsWith("en")) return "en";
+  if (raw.startsWith("pt")) return "pt";
+  return "es";
+};
+
+const pickSemanticCopy = (language, values = {}) =>
+  values?.[language] || values?.en || values?.es || "";
+
+const normalizeSemanticKey = (value) =>
+  stripDiacritics(String(value || "").toLowerCase())
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const normalizeHotelNameForMatch = (value) =>
+  normalizeSemanticKey(value)
+    .replace(
+      /\b(hotel|resort|suite|suites|inn|spa|by|the|and|apartments?|apart-hotel|apart hotel)\b/g,
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+
+const tokenizeSemanticName = (value) =>
+  normalizeHotelNameForMatch(value)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+const normalizeExactStarRatings = (value) =>
+  Array.from(
+    new Set(
+      (Array.isArray(value) ? value : [])
+        .map((entry) => Number(entry))
+        .filter((entry) => Number.isFinite(entry) && entry >= 1 && entry <= 5)
+        .map((entry) => Math.round(entry)),
+    ),
+  ).sort((a, b) => a - b);
+
+const resolveClassificationCodesForExactRatings = (starRatings = []) => {
+  const allowed = new Set(normalizeExactStarRatings(starRatings));
+  if (!allowed.size) return [];
+  return Object.entries(WEBBEDS_CLASSIFICATION_CODE_TO_STARS)
+    .filter(([, stars]) => allowed.has(stars))
+    .map(([code]) => Number(code));
+};
+
+const computeHotelNameSimilarity = (left, right) => {
+  const a = normalizeHotelNameForMatch(left);
+  const b = normalizeHotelNameForMatch(right);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.94;
+  const tokensA = tokenizeSemanticName(a);
+  const tokensB = tokenizeSemanticName(b);
+  if (!tokensA.length || !tokensB.length) return 0;
+  const setA = new Set(tokensA);
+  const setB = new Set(tokensB);
+  const overlap = tokensA.filter((token) => setB.has(token)).length;
+  const coverageA = overlap / setA.size;
+  const coverageB = overlap / setB.size;
+  const firstTokenBonus =
+    tokensA[0] && tokensA[0] === tokensB[0] ? 0.08 : 0;
+  return Math.min(0.99, (coverageA + coverageB) / 2 + firstTokenBonus);
+};
+
+const GOOD_AREA_HINTS_BY_CITY = {
+  "buenos aires": [
+    "palermo",
+    "recoleta",
+    "puerto madero",
+    "belgrano",
+    "san telmo",
+  ],
+};
+
+const WATERFRONT_HINTS_BY_CITY = {
+  "buenos aires": [
+    "puerto madero",
+    "costanera",
+    "rio de la plata",
+    "waterfront",
+    "riverfront",
+  ],
+};
+
+const collectStringLeaves = (value, acc = []) => {
+  if (!value) return acc;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed) acc.push(trimmed);
+    return acc;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry) => collectStringLeaves(entry, acc));
+    return acc;
+  }
+  if (typeof value === "object") {
+    Object.values(value).forEach((entry) => collectStringLeaves(entry, acc));
+  }
+  return acc;
+};
+
+const flattenHotelDescriptionTexts = (hotel = {}) => {
+  const snippets = [
+    hotel.shortDescription,
+    hotel.description,
+    ...(hotel.descriptions ? collectStringLeaves(hotel.descriptions, []) : []),
+  ]
+    .map((entry) => String(entry || "").trim())
+    .filter(Boolean);
+  return Array.from(new Set(snippets));
+};
+
+const buildHotelSemanticTextParts = (hotel = {}) => {
+  const parts = [
+    hotel.name,
+    hotel.address,
+    hotel.city,
+    hotel.country,
+    hotel.region,
+    ...(Array.isArray(hotel.locations) ? hotel.locations : []),
+    ...(Array.isArray(hotel.geoLocations)
+      ? hotel.geoLocations.map((entry) => entry?.name).filter(Boolean)
+      : []),
+    ...flattenHotelDescriptionTexts(hotel),
+  ];
+  return parts
+    .map((entry) => String(entry || "").trim())
+    .filter(Boolean);
+};
+
+const buildHotelSemanticTextBlob = (hotel = {}) =>
+  normalizeSemanticKey(buildHotelSemanticTextParts(hotel).join(" "));
+
+const buildSemanticPriceContext = (cards = []) => {
+  const prices = cards
+    .map((card) => toNumberOrNull(card?.pricePerNight))
+    .filter((value) => value != null)
+    .sort((a, b) => a - b);
+  if (!prices.length) {
+    return { q1: null, median: null, q3: null };
+  }
+  const pickQuantile = (ratio) => prices[Math.min(prices.length - 1, Math.floor((prices.length - 1) * ratio))];
+  return {
+    q1: pickQuantile(0.25),
+    median: pickQuantile(0.5),
+    q3: pickQuantile(0.75),
+  };
+};
+
+const resolvePlanCityKey = (plan = {}) =>
+  normalizeSemanticKey(plan?.location?.city || plan?.location?.rawQuery || "");
+
+const collectSemanticPlaceTargets = (plan = {}) => {
+  const combined = [
+    ...(Array.isArray(plan?.placeTargets) ? plan.placeTargets : []),
+    ...(Array.isArray(plan?.semanticSearch?.webContext?.resolvedPlaces)
+      ? plan.semanticSearch.webContext.resolvedPlaces
+      : []),
+  ];
+  const deduped = [];
+  const seen = new Set();
+  for (const target of combined) {
+    if (!target || typeof target !== "object") continue;
+    const rawText =
+      typeof target.rawText === "string" && target.rawText.trim()
+        ? target.rawText.trim()
+        : typeof target.normalizedName === "string" && target.normalizedName.trim()
+          ? target.normalizedName.trim()
+          : "";
+    if (!rawText) continue;
+    const normalizedName =
+      typeof target.normalizedName === "string" && target.normalizedName.trim()
+        ? target.normalizedName.trim()
+        : rawText;
+    const key = normalizeSemanticKey(
+      `${normalizedName}|${target.type || ""}|${target.city || ""}|${target.country || ""}`,
+    );
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const coordinates = normalizeCoordinatePair(target.lat, target.lng);
+    deduped.push({
+      rawText,
+      normalizedName,
+      type: typeof target.type === "string" ? target.type : null,
+      city: typeof target.city === "string" ? target.city : null,
+      country: typeof target.country === "string" ? target.country : null,
+      aliases: Array.isArray(target.aliases)
+        ? Array.from(
+            new Set(
+              target.aliases
+                .map((entry) =>
+                  typeof entry === "string" && entry.trim()
+                    ? entry.trim()
+                    : null,
+                )
+                .filter(Boolean),
+            ),
+          )
+        : [],
+      lat: coordinates.lat,
+      lng: coordinates.lng,
+      radiusMeters:
+        toNumberOrNull(target.radiusMeters) != null
+          ? Math.max(300, Number(target.radiusMeters))
+          : null,
+      confidence: toNumberOrNull(target.confidence),
+    });
+  }
+  return deduped;
+};
+
+const collectSemanticPlaceTokens = (plan = {}) => {
+  const tokens = [];
+  for (const target of collectSemanticPlaceTargets(plan)) {
+    const rawEntries = [
+      target.rawText,
+      target.normalizedName,
+      ...(Array.isArray(target.aliases) ? target.aliases : []),
+    ];
+    rawEntries.forEach((entry) => {
+      const token = normalizeSemanticKey(entry);
+      if (!token || token.length < 3) return;
+      tokens.push({ token, target });
+    });
+  }
+  const deduped = [];
+  const seen = new Set();
+  tokens.forEach((entry) => {
+    const key = `${entry.token}|${entry.target?.normalizedName || entry.target?.rawText || ""}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    deduped.push(entry);
+  });
+  return deduped;
+};
+
+const formatSemanticPlaceLabel = (place = {}) =>
+  place?.normalizedName || place?.rawText || null;
+
+const findMatchedSemanticPlaceToken = (blob, placeTokens = []) => {
+  if (!blob || !Array.isArray(placeTokens) || !placeTokens.length) return null;
+  return (
+    placeTokens.find((entry) => entry?.token && blob.includes(entry.token)) ||
+    null
+  );
+};
+
+const computeDistanceMetersToPlaceTarget = (hotel = {}, target = {}) => {
+  if (!hotel?.geoPoint || target?.lat == null || target?.lng == null) return null;
+  const distanceKm = computeDistanceKm(hotel.geoPoint, {
+    lat: target.lat,
+    lng: target.lng,
+  });
+  if (distanceKm == null) return null;
+  return Math.max(0, Math.round(distanceKm * 1000));
+};
+
+const resolveAreaTraitLabel = (language, trait) => {
+  const normalizedTrait = String(trait || "").trim().toUpperCase();
+  const labels = {
+    GOOD_AREA: {
+      es: "buena zona",
+      en: "a strong area",
+      pt: "boa região",
+    },
+    SAFE: {
+      es: "zona segura",
+      en: "a safer area",
+      pt: "área segura",
+    },
+    QUIET: {
+      es: "zona tranquila",
+      en: "a quieter area",
+      pt: "área tranquila",
+    },
+    NIGHTLIFE: {
+      es: "vida nocturna",
+      en: "nightlife",
+      pt: "vida noturna",
+    },
+    WALKABLE: {
+      es: "zona caminable",
+      en: "a walkable area",
+      pt: "área caminhável",
+    },
+    UPSCALE_AREA: {
+      es: "zona premium",
+      en: "an upscale area",
+      pt: "área premium",
+    },
+    FAMILY: {
+      es: "perfil familiar",
+      en: "a family-friendly profile",
+      pt: "perfil familiar",
+    },
+    LUXURY: {
+      es: "perfil premium",
+      en: "a premium profile",
+      pt: "perfil premium",
+    },
+    BUSINESS: {
+      es: "zona de negocios",
+      en: "a business-friendly area",
+      pt: "área de negócios",
+    },
+    CENTRAL: {
+      es: "zona céntrica",
+      en: "a central area",
+      pt: "área central",
+    },
+    CULTURAL: {
+      es: "zona cultural",
+      en: "a cultural area",
+      pt: "área cultural",
+    },
+    WATERFRONT_AREA: {
+      es: "zona ribereña",
+      en: "a waterfront area",
+      pt: "área à beira d'água",
+    },
+  };
+  const picked = labels[normalizedTrait];
+  return picked ? pickSemanticCopy(language, picked) : null;
+};
+
+const buildCatalogEntityTokens = (entry = {}) =>
+  [entry?.name, ...(Array.isArray(entry?.aliases) ? entry.aliases : [])]
+    .map((value) => normalizeSemanticKey(value))
+    .filter(Boolean);
+
+const buildCatalogEntityLabel = (entry = {}) => entry?.name || null;
+
+const buildCatalogEntityMatch = ({ hotel, blob, entry, type = "ZONE" } = {}) => {
+  if (!entry || typeof entry !== "object") return null;
+  const tokens = buildCatalogEntityTokens(entry);
+  if (!tokens.length) return null;
+  const textMatched = tokens.some((token) => blob.includes(token));
+  const radiusMeters =
+    Math.max(
+      300,
+      Number(
+        toNumberOrNull(entry?.radiusMeters) ??
+          (type === "LANDMARK" ? 1600 : 2600),
+      ),
+    ) || (type === "LANDMARK" ? 1600 : 2600);
+  const distanceMeters =
+    hotel?.geoPoint &&
+    toNumberOrNull(entry?.lat) != null &&
+    toNumberOrNull(entry?.lng) != null
+      ? Math.max(
+          0,
+          Math.round(
+            (computeDistanceKm(hotel.geoPoint, {
+              lat: Number(entry.lat),
+              lng: Number(entry.lng),
+            }) || 0) * 1000,
+          ),
+        )
+      : null;
+  const insideRadius =
+    distanceMeters != null && distanceMeters <= radiusMeters;
+  const nearbyRadius =
+    distanceMeters != null &&
+    distanceMeters <= Math.max(600, Math.round(radiusMeters * 1.35));
+  const score =
+    (textMatched ? (type === "LANDMARK" ? 62 : 54) : 0) +
+    (insideRadius ? (type === "LANDMARK" ? 72 : 64) : nearbyRadius ? 24 : 0);
+  if (!score) return null;
+  return {
+    entry,
+    type,
+    textMatched,
+    insideRadius,
+    nearbyRadius,
+    distanceMeters,
+    radiusMeters,
+    score,
+  };
+};
+
+const resolveBestCatalogEntityMatch = ({
+  hotel,
+  blob,
+  entries = [],
+  type = "ZONE",
+} = {}) =>
+  (Array.isArray(entries) ? entries : [])
+    .map((entry) => buildCatalogEntityMatch({ hotel, blob, entry, type }))
+    .filter(Boolean)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      if (left.textMatched !== right.textMatched) {
+        return left.textMatched ? -1 : 1;
+      }
+      if (left.insideRadius !== right.insideRadius) {
+        return left.insideRadius ? -1 : 1;
+      }
+      return (left.distanceMeters ?? Number.MAX_SAFE_INTEGER) -
+        (right.distanceMeters ?? Number.MAX_SAFE_INTEGER);
+    })[0] || null;
+
+const countCatalogTraitOverlap = (requestedTraits = [], entry = {}) =>
+  (Array.isArray(requestedTraits) ? requestedTraits : []).filter((trait) =>
+    Array.isArray(entry?.traits)
+      ? entry.traits.includes(String(trait || "").trim().toUpperCase())
+      : false,
+  );
+
+const resolveSemanticInferenceMode = (plan = {}) =>
+  String(plan?.semanticSearch?.intentProfile?.inferenceMode || "")
+    .trim()
+    .toUpperCase();
+
+const isExplicitSemanticGeoSearch = (plan = {}) =>
+  resolveSemanticInferenceMode(plan) === "EXPLICIT_GEO" ||
+  Boolean(plan?.geoIntent) ||
+  collectSemanticPlaceTargets(plan).length > 0;
+
+const isTraitProfileSemanticSearch = (plan = {}) =>
+  resolveSemanticInferenceMode(plan) === "TRAIT_PROFILE";
+
+const resolveSemanticMatchConfidence = ({
+  score = 0,
+  semanticEvidence = [],
+  matchedZone = null,
+  matchedLandmark = null,
+  plan = {},
+} = {}) => {
+  const strongEvidence = Array.isArray(semanticEvidence)
+    ? semanticEvidence.some((entry) =>
+        STRONG_SEMANTIC_CHAT_EVIDENCE_TYPES.has(entry?.type),
+      )
+    : false;
+  const traitProfileMode = isTraitProfileSemanticSearch(plan);
+  if (
+    !traitProfileMode &&
+    (strongEvidence ||
+      matchedLandmark?.insideRadius ||
+      matchedLandmark?.textMatched ||
+      matchedZone?.insideRadius ||
+      matchedZone?.textMatched)
+  ) {
+    return "HIGH";
+  }
+  if (traitProfileMode && (strongEvidence || score >= 30)) {
+    return "MEDIUM";
+  }
+  if (score >= 30 || matchedZone?.nearbyRadius || matchedLandmark?.nearbyRadius) {
+    return "MEDIUM";
+  }
+  return "LOW";
+};
+
+const resolveSemanticScopeEligibility = ({
+  plan = {},
+  semanticEvidence = [],
+  semanticScore = 0,
+  matchedZone = null,
+  matchedLandmark = null,
+  modelNameMatch = null,
+  zoneTraitOverlapCount = 0,
+} = {}) => {
+  const strongEvidence = Array.isArray(semanticEvidence)
+    ? semanticEvidence.some((entry) =>
+        STRONG_SEMANTIC_CHAT_EVIDENCE_TYPES.has(entry?.type),
+      )
+    : false;
+  const hasExplicitGeoIntent = isExplicitSemanticGeoSearch(plan);
+  const traitProfileMode = isTraitProfileSemanticSearch(plan);
+  const hasAreaIntent =
+    Boolean(plan?.areaIntent) ||
+    (Array.isArray(plan?.areaTraits) && plan.areaTraits.length) ||
+    (Array.isArray(plan?.semanticSearch?.intentProfile?.userRequestedAreaTraits) &&
+      plan.semanticSearch.intentProfile.userRequestedAreaTraits.length) ||
+    (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedAreaTraits) &&
+      plan.semanticSearch.intentProfile.requestedAreaTraits.length);
+
+  if (hasExplicitGeoIntent) {
+    return Boolean(
+      strongEvidence ||
+        matchedZone?.textMatched ||
+        matchedZone?.insideRadius ||
+        matchedLandmark?.textMatched ||
+        matchedLandmark?.insideRadius,
+    );
+  }
+  if (traitProfileMode) {
+    const traitProfileSupportSignals = Array.isArray(semanticEvidence)
+      ? new Set(
+          semanticEvidence
+            .map((entry) => String(entry?.label || "").trim())
+            .filter(
+              (label) =>
+                label === "catalog_zone_trait_overlap" ||
+                label === "candidate_landmark_profile_match" ||
+                label === "exact_star_match" ||
+                label === "budget_rank" ||
+                label === "value_rank" ||
+                label === "luxury_profile" ||
+                /^area_trait_/.test(label) ||
+                /_description$/.test(label),
+            ),
+        ).size
+      : 0;
+    return Boolean(
+      strongEvidence ||
+        zoneTraitOverlapCount > 0 ||
+        traitProfileSupportSignals > 0 ||
+        matchedZone?.textMatched ||
+        matchedLandmark?.textMatched,
+    );
+  }
+  if (plan?.viewIntent) {
+    return Boolean(strongEvidence || modelNameMatch || semanticScore >= 24);
+  }
+  if (hasAreaIntent) {
+    return Boolean(strongEvidence || matchedZone || semanticScore >= 18);
+  }
+  if (plan?.qualityIntent) {
+    return semanticScore >= 12;
+  }
+  return semanticScore > 0 || strongEvidence;
+};
+
+const collectSemanticNeighborhoodHints = (plan = {}, catalogContext = null) => {
+  const cityKey = resolvePlanCityKey(plan);
+  const resolvedCatalogContext =
+    catalogContext && typeof catalogContext === "object"
+      ? catalogContext
+      : resolveSemanticCatalogContext({ plan });
+  const cityCatalog = resolvedCatalogContext?.cityCatalog || null;
+  const hints = new Set(
+    (Array.isArray(plan?.semanticSearch?.neighborhoodHints)
+      ? plan.semanticSearch.neighborhoodHints
+    : []
+    ).map((entry) => normalizeSemanticKey(entry)).filter(Boolean),
+  );
+
+  collectSemanticPlaceTargets(plan).forEach((target) => {
+    [target.rawText, target.normalizedName, ...(target.aliases || [])]
+      .map((entry) => normalizeSemanticKey(entry))
+      .filter(Boolean)
+      .forEach((entry) => hints.add(entry));
+  });
+
+  const addCatalogEntryHints = (entry = {}) => {
+    [entry?.name, ...(Array.isArray(entry?.aliases) ? entry.aliases : [])]
+      .map((value) => normalizeSemanticKey(value))
+      .filter(Boolean)
+      .forEach((value) => hints.add(value));
+  };
+
+  (Array.isArray(resolvedCatalogContext?.explicitZones)
+    ? resolvedCatalogContext.explicitZones
+    : []
+  ).forEach(addCatalogEntryHints);
+  (Array.isArray(resolvedCatalogContext?.candidateZones)
+    ? resolvedCatalogContext.candidateZones
+    : []
+  ).forEach(addCatalogEntryHints);
+  (Array.isArray(resolvedCatalogContext?.explicitLandmarks)
+    ? resolvedCatalogContext.explicitLandmarks
+    : []
+  ).forEach((landmark) => {
+    addCatalogEntryHints(landmark);
+    const zoneIds = Array.isArray(landmark?.zoneIds) ? landmark.zoneIds : [];
+    zoneIds.forEach((zoneId) => {
+      const zone = Array.isArray(cityCatalog?.zones)
+        ? cityCatalog.zones.find((entry) => entry?.id === zoneId)
+        : null;
+      if (zone) addCatalogEntryHints(zone);
+    });
+  });
+
+  if (plan?.areaIntent === "GOOD_AREA" && !cityCatalog) {
+    (GOOD_AREA_HINTS_BY_CITY[cityKey] || []).forEach((entry) =>
+      hints.add(normalizeSemanticKey(entry)),
+    );
+  }
+  if (
+    (plan?.viewIntent === "RIVER_VIEW" || plan?.viewIntent === "WATER_VIEW") &&
+    !cityCatalog
+  ) {
+    (WATERFRONT_HINTS_BY_CITY[cityKey] || []).forEach((entry) =>
+      hints.add(normalizeSemanticKey(entry)),
+    );
+  }
+  if (plan?.areaIntent === "CITY_CENTER") {
+    ["city center", "downtown", "centro", "microcentro"].forEach((entry) =>
+      hints.add(normalizeSemanticKey(entry)),
+    );
+  }
+  return Array.from(hints).filter(Boolean);
+};
+
+const resolveMatchedNeighborhood = (blob, hints = []) => {
+  for (const hint of hints) {
+    if (hint && blob.includes(hint)) return hint;
+  }
+  return null;
+};
+
+const resolveBestModelCandidateMatch = (hotelName, candidateNames = []) => {
+  if (!hotelName || !Array.isArray(candidateNames) || !candidateNames.length) {
+    return null;
+  }
+  const ranked = candidateNames
+    .map((candidate) => ({
+      candidate,
+      score: computeHotelNameSimilarity(hotelName, candidate),
+    }))
+    .sort((a, b) => b.score - a.score);
+  if (!ranked.length || ranked[0].score < 0.82) return null;
+  if (ranked[1] && ranked[0].score - ranked[1].score < 0.08) return null;
+  return ranked[0];
+};
+
+const buildLocalizedHotelReason = (language, kind, payload = {}) => {
+  switch (kind) {
+    case "exact_stars":
+      return pickSemanticCopy(language, {
+        es: `Cumple con ${payload.stars} estrellas`,
+        en: `Matches the requested ${payload.stars}-star level`,
+        pt: `Cumpre o pedido de ${payload.stars} estrelas`,
+      });
+    case "budget":
+      return pickSemanticCopy(language, {
+        es: "Está entre las opciones más económicas",
+        en: "It is among the more affordable options",
+        pt: "Está entre as opções mais econômicas",
+      });
+    case "value":
+      return pickSemanticCopy(language, {
+        es: "Buena relación precio-calidad",
+        en: "Good value for money",
+        pt: "Boa relação custo-benefício",
+      });
+    case "luxury":
+      return pickSemanticCopy(language, {
+        es: "Tiene un perfil más premium",
+        en: "It has a more premium profile",
+        pt: "Tem um perfil mais premium",
+      });
+    case "river_view_text":
+      return pickSemanticCopy(language, {
+        es: "La descripción menciona vista al río",
+        en: "The description mentions river views",
+        pt: "A descrição menciona vista para o rio",
+      });
+    case "water_view_text":
+      return pickSemanticCopy(language, {
+        es: "La descripción menciona vista al agua",
+        en: "The description mentions water views",
+        pt: "A descrição menciona vista para a água",
+      });
+    case "sea_view_text":
+      return pickSemanticCopy(language, {
+        es: "La descripción menciona vista al mar",
+        en: "The description mentions sea views",
+        pt: "A descrição menciona vista para o mar",
+      });
+    case "area_match":
+      return pickSemanticCopy(language, {
+        es: `Ubicado en ${payload.area}`,
+        en: `Located in ${payload.area}`,
+        pt: `Localizado em ${payload.area}`,
+      });
+    case "inside_area":
+      return pickSemanticCopy(language, {
+        es: `Dentro del área de ${payload.area}`,
+        en: `Within the ${payload.area} area`,
+        pt: `Dentro da área de ${payload.area}`,
+      });
+    case "near_place":
+      return pickSemanticCopy(language, {
+        es: `Cerca de ${payload.place}`,
+        en: `Near ${payload.place}`,
+        pt: `Perto de ${payload.place}`,
+      });
+    case "area_trait":
+      return pickSemanticCopy(language, {
+        es: `Coincide con la preferencia de ${payload.trait}`,
+        en: `Matches the preference for ${payload.trait}`,
+        pt: `Combina com a preferência por ${payload.trait}`,
+      });
+    case "center_hint":
+      return pickSemanticCopy(language, {
+        es: "Cerca del centro",
+        en: "Close to the center",
+        pt: "Perto do centro",
+      });
+    default:
+      return null;
+  }
+};
+
+const uniqueReasonList = (reasons = [], max = 6) =>
+  Array.from(
+    new Set(
+      reasons
+        .map((reason) => String(reason || "").trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, max);
+
+const hasVerifiedGeoEvidenceForCard = (card = {}) => {
+  const evidence = [
+    ...(Array.isArray(card?.semanticEvidence) ? card.semanticEvidence : []),
+    ...(Array.isArray(card?.semanticMatch?.evidence) ? card.semanticMatch.evidence : []),
+  ];
+  return evidence.some((entry) => entry?.type === "verified_geo");
+};
+
+const isGeoReasonText = (reason = "", matchedPlaceName = null) => {
+  const normalizedReason = String(reason || "").trim().toLowerCase();
+  if (!normalizedReason) return false;
+  if (
+    /^(cerca de|near |within the |inside the |dentro del area de|dentro del área de)/.test(
+      normalizedReason,
+    )
+  ) {
+    return true;
+  }
+  if (matchedPlaceName) {
+    return normalizedReason.includes(String(matchedPlaceName).trim().toLowerCase());
+  }
+  return false;
+};
+
+const sanitizeVisibleGeoReasons = (hotel = {}, reasons = [], max = 6) => {
+  const list = Array.isArray(reasons) ? reasons : [];
+  if (!list.length) return [];
+  if (hasVerifiedGeoEvidenceForCard(hotel)) {
+    return uniqueReasonList(list, max);
+  }
+  const matchedPlaceName =
+    hotel?.matchedPlaceTarget?.normalizedName ||
+    hotel?.matchedPlaceTarget?.rawText ||
+    null;
+  return uniqueReasonList(
+    list.filter((reason) => !isGeoReasonText(reason, matchedPlaceName)),
+    max,
+  );
+};
+
+const uniqueOrderedStringList = (values = [], max = 12) =>
+  Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, max);
+
+const buildRequestedTraitNarrative = (language, requestedAreaTraits = []) => {
+  const traits = new Set(
+    (Array.isArray(requestedAreaTraits) ? requestedAreaTraits : []).map((trait) =>
+      String(trait || "").trim().toUpperCase(),
+    ),
+  );
+
+  if (traits.has("QUIET") && traits.has("WALKABLE")) {
+    return pickSemanticCopy(language, {
+      es: "mas tranquilo para descansar y comodo para moverte a pie",
+      en: "quieter to unwind and easy to explore on foot",
+      pt: "mais tranquilo para descansar e confortavel para caminhar",
+    });
+  }
+  if (traits.has("SAFE") && traits.has("WALKABLE")) {
+    return pickSemanticCopy(language, {
+      es: "mas cuidada y facil de recorrer caminando",
+      en: "more comfortable and easy to explore on foot",
+      pt: "mais cuidadosa e facil de percorrer a pe",
+    });
+  }
+  if (traits.has("UPSCALE_AREA") && traits.has("WALKABLE")) {
+    return pickSemanticCopy(language, {
+      es: "mas refinado y facil de recorrer caminando",
+      en: "more refined and easy to explore on foot",
+      pt: "mais refinado e facil de percorrer a pe",
+    });
+  }
+  if (traits.has("QUIET")) {
+    return pickSemanticCopy(language, {
+      es: "mas tranquilo para descansar",
+      en: "quieter to unwind",
+      pt: "mais tranquilo para descansar",
+    });
+  }
+  if (traits.has("WALKABLE")) {
+    return pickSemanticCopy(language, {
+      es: "comodo para moverte a pie",
+      en: "easy to explore on foot",
+      pt: "confortavel para caminhar",
+    });
+  }
+  if (traits.has("SAFE")) {
+    return pickSemanticCopy(language, {
+      es: "en una zona mas cuidada",
+      en: "in a more comfortable area",
+      pt: "em uma area mais cuidada",
+    });
+  }
+  if (traits.has("UPSCALE_AREA")) {
+    return pickSemanticCopy(language, {
+      es: "con un entorno mas refinado",
+      en: "with a more refined setting",
+      pt: "com um entorno mais refinado",
+    });
+  }
+  if (traits.has("FAMILY")) {
+    return pickSemanticCopy(language, {
+      es: "comodo para viajar en familia",
+      en: "comfortable for a family stay",
+      pt: "confortavel para viajar em familia",
+    });
+  }
+  return null;
+};
+
+const buildDecisionExplanationSignals = (reasonFamilies = []) => {
+  const reasonTypes = new Set(
+    (Array.isArray(reasonFamilies) ? reasonFamilies : [])
+      .map((entry) => String(entry?.type || "").trim())
+      .filter(Boolean),
+  );
+  return {
+    zone_fit: reasonTypes.has("zone_fit"),
+    walkability: reasonTypes.has("walkability"),
+    quiet_profile: reasonTypes.has("quiet_profile"),
+    value: reasonTypes.has("value"),
+    premium_profile: reasonTypes.has("premium_profile"),
+    stars_match: reasonTypes.has("stars_match"),
+    view_match: reasonTypes.has("view_match"),
+    landmark_proximity: reasonTypes.has("landmark_proximity"),
+  };
+};
+
+const buildDecisionExplanationAngleTexts = (reasonFamilies = []) =>
+  (Array.isArray(reasonFamilies) ? reasonFamilies : []).reduce((acc, entry) => {
+    const angle = String(entry?.comparisonAngle || "").trim();
+    const text = String(entry?.text || "").trim();
+    if (!angle || !text || acc[angle]) return acc;
+    acc[angle] = text;
+    return acc;
+  }, {});
+
+const hasSemanticEvidenceLabel = (semanticEvidence = [], predicate = null) =>
+  Array.isArray(semanticEvidence)
+    ? semanticEvidence.some((entry) => {
+        const label = String(entry?.label || "").trim();
+        if (!label) return false;
+        if (typeof predicate === "function") return predicate(label, entry);
+        return label === predicate;
+      })
+    : false;
+
+const resolvePriceTierForHotel = (nightlyPrice, priceContext = {}) => {
+  if (nightlyPrice == null) return "UNKNOWN";
+  if (priceContext?.q1 != null && nightlyPrice <= priceContext.q1) return "LOW";
+  if (priceContext?.q3 != null && nightlyPrice >= priceContext.q3) return "HIGH";
+  return "MID";
+};
+
+const buildDecisionExplanation = ({
+  language,
+  plan,
+  requestedAreaTraits = [],
+  matchedZone = null,
+  matchedLandmark = null,
+  zoneTraitOverlap = [],
+  semanticEvidence = [],
+  hotelStars = null,
+  nightlyPrice = null,
+  priceContext = {},
+  confidence = "LOW",
+} = {}) => {
+  const explicitGeoMode = isExplicitSemanticGeoSearch(plan);
+  const traitProfileMode = isTraitProfileSemanticSearch(plan);
+  const zoneLabel = buildCatalogEntityLabel(matchedZone?.entry) || null;
+  const landmarkLabel = buildCatalogEntityLabel(matchedLandmark?.entry) || null;
+  const profileNarrative = buildRequestedTraitNarrative(language, requestedAreaTraits);
+  const reasonFamilies = [];
+  const addReasonFamily = (type, strength, text, comparisonAngle) => {
+    if (!text || !String(text).trim()) return;
+    reasonFamilies.push({
+      type,
+      strength,
+      text: String(text).trim(),
+      comparisonAngle: comparisonAngle || type,
+    });
+  };
+
+  const canMentionZone = Boolean(
+    zoneLabel &&
+      (explicitGeoMode ||
+        (traitProfileMode &&
+          (matchedZone?.textMatched ||
+            matchedZone?.insideRadius ||
+            zoneTraitOverlap.length > 0))),
+  );
+
+  if (explicitGeoMode && zoneLabel && (matchedZone?.textMatched || matchedZone?.insideRadius)) {
+    addReasonFamily(
+      "zone_fit",
+      94,
+      pickSemanticCopy(language, {
+        es: `queda bien ubicado para moverte por ${zoneLabel}`,
+        en: `it is well placed for staying around ${zoneLabel}`,
+        pt: `fica bem localizado para se mover por ${zoneLabel}`,
+      }),
+      "zone_fit",
+    );
+  } else if (traitProfileMode && canMentionZone && profileNarrative) {
+    addReasonFamily(
+      "zone_fit",
+      84,
+      pickSemanticCopy(language, {
+        es: `la zona de ${zoneLabel} suele funcionar bien si buscas algo ${profileNarrative}`,
+        en: `${zoneLabel} usually fits well if you want something ${profileNarrative}`,
+        pt: `${zoneLabel} costuma funcionar bem se voce quer algo ${profileNarrative}`,
+      }),
+      "zone_fit",
+    );
+  } else if (traitProfileMode && profileNarrative) {
+    addReasonFamily(
+      "zone_fit",
+      68,
+      pickSemanticCopy(language, {
+        es: `encaja mejor con un plan ${profileNarrative}`,
+        en: `it fits better if you want something ${profileNarrative}`,
+        pt: `combina melhor com um plano ${profileNarrative}`,
+      }),
+      "profile_fit",
+    );
+  }
+
+  if (
+    landmarkLabel &&
+    explicitGeoMode &&
+    (matchedLandmark?.textMatched || matchedLandmark?.insideRadius)
+  ) {
+    addReasonFamily(
+      "landmark_proximity",
+      88,
+      pickSemanticCopy(language, {
+        es: `te deja bien parado para moverte cerca de ${landmarkLabel}`,
+        en: `it keeps you well placed near ${landmarkLabel}`,
+        pt: `deixa voce bem posicionado perto de ${landmarkLabel}`,
+      }),
+      "landmark_proximity",
+    );
+  }
+
+  if (
+    requestedAreaTraits.includes("QUIET") &&
+    (hasSemanticEvidenceLabel(semanticEvidence, "area_trait_quiet") ||
+      matchedZone?.entry?.traits?.includes("QUIET"))
+  ) {
+    addReasonFamily(
+      "quiet_profile",
+      80,
+      pickSemanticCopy(language, {
+        es: "se siente mas tranquilo para descansar",
+        en: "it feels quieter to unwind",
+        pt: "parece mais tranquilo para descansar",
+      }),
+      "quiet_profile",
+    );
+  }
+
+  if (
+    requestedAreaTraits.includes("WALKABLE") &&
+    (hasSemanticEvidenceLabel(semanticEvidence, "area_trait_walkable") ||
+      matchedZone?.entry?.traits?.includes("WALKABLE"))
+  ) {
+    addReasonFamily(
+      "walkability",
+      78,
+      pickSemanticCopy(language, {
+        es: "te deja moverte a pie con mas comodidad",
+        en: "it is easier to explore on foot",
+        pt: "facilita se mover a pe",
+      }),
+      "walkability",
+    );
+  }
+
+  if (
+    (requestedAreaTraits.includes("UPSCALE_AREA") || plan?.qualityIntent === "LUXURY") &&
+    (matchedZone?.entry?.traits?.includes("UPSCALE_AREA") ||
+      hotelStars >= 5 ||
+      hasSemanticEvidenceLabel(semanticEvidence, "luxury_profile"))
+  ) {
+    addReasonFamily(
+      "premium_profile",
+      70,
+      pickSemanticCopy(language, {
+        es: "suma un entorno mas refinado que otras alternativas de este grupo",
+        en: "it brings a more refined setting than similar alternatives",
+        pt: "traz um entorno mais refinado do que alternativas parecidas",
+      }),
+      "premium_profile",
+    );
+  } else if (hotelStars >= 5) {
+    addReasonFamily(
+      "premium_profile",
+      62,
+      pickSemanticCopy(language, {
+        es: "dentro de este grupo se siente mas cuidado que otras alternativas parecidas",
+        en: "within this group it feels more polished than similar alternatives",
+        pt: "dentro deste grupo parece mais cuidado do que alternativas parecidas",
+      }),
+      "premium_profile",
+    );
+  }
+
+  if (hasSemanticEvidenceLabel(semanticEvidence, "exact_star_match") && hotelStars != null) {
+    addReasonFamily(
+      "stars_match",
+      76,
+      pickSemanticCopy(language, {
+        es: `cumple exacto con las ${hotelStars} estrellas que pediste`,
+        en: `it matches the ${hotelStars}-star level you asked for`,
+        pt: `cumpre exatamente as ${hotelStars} estrelas pedidas`,
+      }),
+      "stars_match",
+    );
+  }
+
+  if (hasSemanticEvidenceLabel(semanticEvidence, "budget_rank")) {
+    addReasonFamily(
+      "value",
+      74,
+      pickSemanticCopy(language, {
+        es: "queda bien parado por precio dentro de las opciones comparables",
+        en: "it stays well positioned on price among comparable options",
+        pt: "fica bem posicionado em preco entre opcoes parecidas",
+      }),
+      "value",
+    );
+  } else if (hasSemanticEvidenceLabel(semanticEvidence, "value_rank")) {
+    addReasonFamily(
+      "value",
+      72,
+      pickSemanticCopy(language, {
+        es: "equilibra mejor ubicacion y valor que otras opciones parecidas",
+        en: "it balances location and value better than similar options",
+        pt: "equilibra localizacao e valor melhor do que opcoes parecidas",
+      }),
+      "value",
+    );
+  } else if (nightlyPrice != null && hotelStars != null && hotelStars <= 3) {
+    addReasonFamily(
+      "value",
+      58,
+      pickSemanticCopy(language, {
+        es: "entra como una alternativa mas simple para priorizar ubicacion",
+        en: "it works as a simpler option if you want to prioritize location",
+        pt: "entra como uma alternativa mais simples para priorizar localizacao",
+      }),
+      "value",
+    );
+  } else if (nightlyPrice != null && hotelStars != null && hotelStars === 4) {
+    addReasonFamily(
+      "value",
+      60,
+      pickSemanticCopy(language, {
+        es: "mantiene un equilibrio mas redondo entre zona y nivel de hotel",
+        en: "it keeps a more rounded balance between area and hotel level",
+        pt: "mantem um equilibrio mais redondo entre area e nivel do hotel",
+      }),
+      "balance",
+    );
+  }
+
+  if (
+    hasSemanticEvidenceLabel(
+      semanticEvidence,
+      (label) =>
+        label === "river_view_description" ||
+        label === "water_view_description" ||
+        label === "sea_view_description",
+    )
+  ) {
+    addReasonFamily(
+      "view_match",
+      82,
+      pickSemanticCopy(language, {
+        es: "la vista aparece respaldada por la descripcion del hotel",
+        en: "the view is supported by the hotel description",
+        pt: "a vista esta respaldada pela descricao do hotel",
+      }),
+      "view_match",
+    );
+  }
+
+  if (!reasonFamilies.length && canMentionZone && zoneLabel) {
+    addReasonFamily(
+      "zone_fit",
+      56,
+      pickSemanticCopy(language, {
+        es: `la zona de ${zoneLabel} le da mejor encaje que a otras alternativas cercanas`,
+        en: `${zoneLabel} gives it a better fit than nearby alternatives`,
+        pt: `${zoneLabel} da um encaixe melhor do que alternativas proximas`,
+      }),
+      "zone_fit",
+    );
+  }
+
+  if (!reasonFamilies.length) {
+    const priceTier = resolvePriceTierForHotel(nightlyPrice, priceContext);
+    addReasonFamily(
+      priceTier === "LOW" || priceTier === "MID" ? "value" : "zone_fit",
+      40,
+      pickSemanticCopy(language, {
+        es:
+          priceTier === "LOW" || priceTier === "MID"
+            ? "entra bien como opcion equilibrada dentro de esta busqueda"
+            : "queda bien parado dentro del grupo que mejor encaja con esta busqueda",
+        en:
+          priceTier === "LOW" || priceTier === "MID"
+            ? "it lands well as a balanced option for this search"
+            : "it sits well within the group that best fits this search",
+        pt:
+          priceTier === "LOW" || priceTier === "MID"
+            ? "entra bem como uma opcao equilibrada para esta busca"
+            : "fica bem posicionado dentro do grupo que melhor encaixa nesta busca",
+      }),
+      priceTier === "LOW" || priceTier === "MID" ? "value" : "overall_fit",
+    );
+  }
+
+  reasonFamilies.sort((left, right) => right.strength - left.strength);
+  const primaryReason = reasonFamilies[0] || null;
+  const secondaryReason =
+    reasonFamilies.find((entry) => entry.type !== primaryReason?.type) || null;
+  const allowedAngles = uniqueOrderedStringList(
+    reasonFamilies.map((entry) => entry.comparisonAngle || entry.type),
+    8,
+  );
+  const signals = buildDecisionExplanationSignals(reasonFamilies);
+  const angleTexts = buildDecisionExplanationAngleTexts(reasonFamilies);
+
+  return {
+    primaryReasonType: primaryReason?.type || null,
+    primaryReasonText: primaryReason?.text || null,
+    secondaryReasonType: secondaryReason?.type || null,
+    secondaryReasonText: secondaryReason?.text || null,
+    comparisonAngle:
+      secondaryReason?.comparisonAngle ||
+      primaryReason?.comparisonAngle ||
+      "overall_fit",
+    canMentionZone,
+    mentionedZoneLabel: canMentionZone ? zoneLabel : null,
+    confidence,
+    allowedAngles,
+    angleTexts,
+    signals,
+    allowedClaims: uniqueOrderedStringList(
+      [
+        primaryReason?.text || null,
+        secondaryReason?.text || null,
+        ...Object.values(angleTexts),
+        canMentionZone ? zoneLabel : null,
+        landmarkLabel,
+      ],
+      12,
+    ),
+  };
+};
+
+const hasSemanticSearchIntent = (plan = {}) =>
+  Boolean(
+    (Array.isArray(plan?.starRatings) && plan.starRatings.length) ||
+      plan?.geoIntent ||
+      (Array.isArray(plan?.placeTargets) && plan.placeTargets.length) ||
+      plan?.viewIntent ||
+      plan?.areaIntent ||
+      plan?.qualityIntent ||
+      (Array.isArray(plan?.areaTraits) && plan.areaTraits.length) ||
+      (Array.isArray(plan?.preferenceNotes) && plan.preferenceNotes.length) ||
+      (Array.isArray(plan?.semanticSearch?.candidateHotelNames) &&
+        plan.semanticSearch.candidateHotelNames.length) ||
+      (Array.isArray(plan?.semanticSearch?.neighborhoodHints) &&
+        plan.semanticSearch.neighborhoodHints.length) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedAreaTraits) &&
+        plan.semanticSearch.intentProfile.requestedAreaTraits.length) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.userRequestedAreaTraits) &&
+        plan.semanticSearch.intentProfile.userRequestedAreaTraits.length) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedZones) &&
+        plan.semanticSearch.intentProfile.requestedZones.length) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedLandmarks) &&
+        plan.semanticSearch.intentProfile.requestedLandmarks.length) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.candidateZones) &&
+        plan.semanticSearch.intentProfile.candidateZones.length) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.candidateLandmarks) &&
+        plan.semanticSearch.intentProfile.candidateLandmarks.length) ||
+      (Array.isArray(plan?.semanticSearch?.webContext?.resolvedPlaces) &&
+        plan.semanticSearch.webContext.resolvedPlaces.length),
+  );
+
+const STRONG_SEMANTIC_CHAT_EVIDENCE_TYPES = new Set([
+  "verified_geo",
+  "verified_text",
+  "verified_structured",
+  "web_candidate_matched",
+]);
+
+const resolveSemanticTargetRadiusMeters = (target = {}) => {
+  const explicitRadius = toNumberOrNull(target?.radiusMeters);
+  if (explicitRadius != null) return Math.max(300, Number(explicitRadius));
+  if (target?.type === "LANDMARK") return 1600;
+  if (target?.type === "NEIGHBORHOOD" || target?.type === "DISTRICT") {
+    return 2800;
+  }
+  if (target?.type === "WATERFRONT") return 3500;
+  return 2200;
+};
+
+const hasSemanticChatScopeIntent = (plan = {}) =>
+  Boolean(
+    plan?.geoIntent ||
+      collectSemanticPlaceTargets(plan).length ||
+      plan?.viewIntent ||
+      plan?.areaIntent ||
+      plan?.qualityIntent ||
+      (Array.isArray(plan?.areaTraits) && plan.areaTraits.length) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedAreaTraits) &&
+        plan.semanticSearch.intentProfile.requestedAreaTraits.length) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.userRequestedAreaTraits) &&
+        plan.semanticSearch.intentProfile.userRequestedAreaTraits.length) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedZones) &&
+        plan.semanticSearch.intentProfile.requestedZones.length) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedLandmarks) &&
+        plan.semanticSearch.intentProfile.requestedLandmarks.length) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.candidateZones) &&
+        plan.semanticSearch.intentProfile.candidateZones.length) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.candidateLandmarks) &&
+        plan.semanticSearch.intentProfile.candidateLandmarks.length) ||
+      (Array.isArray(plan?.preferenceNotes) && plan.preferenceNotes.length) ||
+      (Array.isArray(plan?.semanticSearch?.candidateHotelNames) &&
+        plan.semanticSearch.candidateHotelNames.length) ||
+      (Array.isArray(plan?.semanticSearch?.neighborhoodHints) &&
+        plan.semanticSearch.neighborhoodHints.length) ||
+      Boolean(plan?.preferences?.nearbyInterest) ||
+      normalizeIdList(
+        plan?.referenceHotelIds ?? plan?.semanticSearch?.referenceHotelIds,
+      ).length,
+  );
+
+const resolveSemanticChatScopeReason = (plan = {}) => {
+  const referenceHotelIds = normalizeIdList(
+    plan?.referenceHotelIds ?? plan?.semanticSearch?.referenceHotelIds,
+  );
+  if (referenceHotelIds.length) return "REFERENCE_SET";
+  if (isExplicitSemanticGeoSearch(plan)) {
+    return "SEMANTIC_GEO";
+  }
+  if (
+    (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedZones) &&
+      plan.semanticSearch.intentProfile.requestedZones.length) ||
+    (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedLandmarks) &&
+      plan.semanticSearch.intentProfile.requestedLandmarks.length)
+  ) {
+    return "SEMANTIC_GEO";
+  }
+  if (isTraitProfileSemanticSearch(plan)) {
+    return "SEMANTIC_TRAITS";
+  }
+  if (plan?.viewIntent) return "VIEW";
+  if (
+    plan?.areaIntent ||
+    (Array.isArray(plan?.areaTraits) && plan.areaTraits.length) ||
+    (Array.isArray(plan?.semanticSearch?.neighborhoodHints) &&
+      plan.semanticSearch.neighborhoodHints.length)
+  ) {
+    return "AREA";
+  }
+  if (plan?.qualityIntent) return "QUALITY";
+  return hasSemanticChatScopeIntent(plan) ? "SEMANTIC_CONTEXT" : null;
+};
+
+const resolveSemanticChatScopeThreshold = (plan = {}) => {
+  if (isExplicitSemanticGeoSearch(plan) || plan?.viewIntent) {
+    return 24;
+  }
+  if (isTraitProfileSemanticSearch(plan)) {
+    return 18;
+  }
+  if (
+    plan?.areaIntent ||
+    (Array.isArray(plan?.areaTraits) && plan.areaTraits.length) ||
+    (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedAreaTraits) &&
+      plan.semanticSearch.intentProfile.requestedAreaTraits.length) ||
+    Boolean(plan?.preferences?.nearbyInterest)
+  ) {
+    return 18;
+  }
+  if (plan?.qualityIntent) return 16;
+  return 12;
+};
+
+const hasStrongSemanticEvidence = (card = {}) =>
+  Array.isArray(card?.semanticEvidence)
+    ? card.semanticEvidence.some((entry) =>
+        STRONG_SEMANTIC_CHAT_EVIDENCE_TYPES.has(entry?.type),
+      )
+    : false;
+
+const resolveSemanticMatchConfidenceRank = (confidence = null) => {
+  const normalized = String(confidence || "").trim().toUpperCase();
+  if (normalized === "HIGH") return 3;
+  if (normalized === "MEDIUM") return 2;
+  if (normalized === "LOW") return 1;
+  return 0;
+};
+
+const hasScopeEligibleSemanticMatch = (card = {}) =>
+  card?.semanticMatch?.scopeEligible === true;
+
+const resolveSemanticScopeConfidence = (cards = []) => {
+  const normalizedCards = Array.isArray(cards) ? cards : [];
+  const ranks = normalizedCards
+    .map((card) =>
+      resolveSemanticMatchConfidenceRank(card?.semanticMatch?.confidence),
+    )
+    .filter((rank) => rank > 0);
+  if (!ranks.length) {
+    if (
+      normalizedCards.some(
+        (card) =>
+          hasStrongSemanticEvidence(card) ||
+          (toNumberOrNull(card?.semanticScore) ?? 0) >= 24,
+      )
+    ) {
+      return "MEDIUM";
+    }
+    return "LOW";
+  }
+  if (ranks.every((rank) => rank >= 3)) return "HIGH";
+  if (ranks.some((rank) => rank >= 2)) return "MEDIUM";
+  return "LOW";
+};
+
+const clampSemanticScopeConfidence = (scopeConfidence = null, plan = {}) => {
+  const normalized = String(scopeConfidence || "").trim().toUpperCase();
+  if (!normalized) return null;
+  if (isTraitProfileSemanticSearch(plan) && normalized === "HIGH") {
+    return "MEDIUM";
+  }
+  return normalized;
+};
+
+const countTraitProfileSupportSignals = (card = {}) =>
+  Array.isArray(card?.semanticEvidence)
+    ? new Set(
+        card.semanticEvidence
+          .map((entry) => String(entry?.label || "").trim())
+          .filter(
+            (label) =>
+              label === "catalog_zone_trait_overlap" ||
+              label === "candidate_landmark_profile_match" ||
+              label === "exact_star_match" ||
+              label === "budget_rank" ||
+              label === "value_rank" ||
+              label === "luxury_profile" ||
+              /^area_trait_/.test(label) ||
+              /_description$/.test(label),
+          ),
+      ).size
+    : 0;
+
+const isWithinUsefulSemanticScopeRadius = (card = {}, plan = {}) => {
+  const primaryPlaceTarget = collectSemanticPlaceTargets(plan)[0] || null;
+  const distanceMeters = toNumberOrNull(card?.distanceMeters);
+  if (!primaryPlaceTarget || distanceMeters == null) return false;
+  const radiusMeters = resolveSemanticTargetRadiusMeters(primaryPlaceTarget);
+  return distanceMeters <= Math.max(400, Math.round(radiusMeters * 1.25));
+};
+
+const resolveThreadPickDiversityAngle = (card = {}) =>
+  String(card?.decisionExplanation?.comparisonAngle || "overall_fit")
+    .trim()
+    .toLowerCase();
+
+const resolveThreadPickZoneKey = (card = {}) =>
+  String(card?.semanticMatch?.matchedZoneId || "").trim().toLowerCase();
+
+const resolveThreadPickPriceTier = (card = {}) => {
+  const price = toNumberOrNull(card?.pricePerNight);
+  if (price == null) return "unknown";
+  if (price <= 120) return "low";
+  if (price >= 280) return "high";
+  return "mid";
+};
+
+const selectSemanticThreadTopPicks = ({ cards = [], plan = {}, limit = 5 } = {}) => {
+  const normalizedCards = Array.isArray(cards) ? cards.filter(Boolean) : [];
+  const cappedLimit = Math.max(1, Math.min(limit, 5));
+  if (!normalizedCards.length) return [];
+  if (!hasSemanticSearchIntent(plan) || normalizedCards.length <= cappedLimit) {
+    return normalizedCards.slice(0, cappedLimit);
+  }
+
+  const traitProfileMode = isTraitProfileSemanticSearch(plan);
+  const pool = normalizedCards.slice(
+    0,
+    traitProfileMode ? Math.min(20, normalizedCards.length) : normalizedCards.length,
+  );
+  const topScore = toNumberOrNull(pool[0]?.semanticScore) ?? 0;
+  const scoreBandFloor = topScore - 18;
+  const poolZoneKeys = uniqueOrderedStringList(
+    pool.map((card) => resolveThreadPickZoneKey(card)).filter(Boolean),
+    8,
+  );
+  const bandZoneKeys = uniqueOrderedStringList(
+    pool
+      .filter((card) => (toNumberOrNull(card?.semanticScore) ?? 0) >= scoreBandFloor)
+      .map((card) => resolveThreadPickZoneKey(card))
+      .filter(Boolean),
+    8,
+  );
+  const targetDistinctZones = traitProfileMode
+    ? Math.min(Math.max(1, bandZoneKeys.length || poolZoneKeys.length), 3, cappedLimit)
+    : 0;
+  const selected = [];
+  const selectedIds = new Set();
+  const usedZones = new Set();
+  const usedAngles = new Set();
+  const usedStars = new Set();
+  const usedPriceTiers = new Set();
+  const usedZoneAngles = new Set();
+  const zoneCounts = new Map();
+
+  const markSelected = (card) => {
+    selected.push(card);
+    const zoneKey = resolveThreadPickZoneKey(card);
+    if (zoneKey) {
+      usedZones.add(zoneKey);
+      zoneCounts.set(zoneKey, (zoneCounts.get(zoneKey) || 0) + 1);
+    }
+    const angleKey = resolveThreadPickDiversityAngle(card);
+    usedAngles.add(angleKey);
+    if (zoneKey) {
+      usedZoneAngles.add(`${zoneKey}::${angleKey}`);
+    }
+    usedStars.add(String(resolveHotelStars(card) || "unknown"));
+    usedPriceTiers.add(resolveThreadPickPriceTier(card));
+    selectedIds.add(String(card?.id || ""));
+  };
+
+  markSelected(pool[0]);
+
+  const computeAdjustedScore = (card) => {
+    const score = toNumberOrNull(card?.semanticScore) ?? 0;
+    const zoneKey = resolveThreadPickZoneKey(card);
+    const angleKey = resolveThreadPickDiversityAngle(card);
+    const starsKey = String(resolveHotelStars(card) || "unknown");
+    const priceTierKey = resolveThreadPickPriceTier(card);
+    const zoneCount = zoneKey ? zoneCounts.get(zoneKey) || 0 : 0;
+    const sameZoneSameAngle = zoneKey
+      ? usedZoneAngles.has(`${zoneKey}::${angleKey}`)
+      : false;
+    const withinCompetitiveBand = score >= scoreBandFloor;
+    let adjustedScore = score;
+
+    if (traitProfileMode) {
+      if (zoneKey) {
+        adjustedScore += usedZones.has(zoneKey) ? -(10 + zoneCount * 8) : 20;
+        if (
+          zoneCount >= 2 &&
+          withinCompetitiveBand &&
+          usedZones.size < targetDistinctZones
+        ) {
+          adjustedScore -= 36;
+        }
+        if (!usedZones.has(zoneKey) && usedZones.size < targetDistinctZones) {
+          adjustedScore += 12;
+        }
+      }
+      adjustedScore += sameZoneSameAngle ? -16 : 0;
+      adjustedScore += usedAngles.has(angleKey) ? -6 : 10;
+      adjustedScore += usedStars.has(starsKey) ? -2 : 4;
+      adjustedScore += usedPriceTiers.has(priceTierKey) ? -1 : 3;
+    } else {
+      if (zoneKey && !usedZones.has(zoneKey)) adjustedScore += 8;
+      if (!usedAngles.has(angleKey)) adjustedScore += 4;
+      if (!usedStars.has(starsKey)) adjustedScore += 2;
+    }
+    return adjustedScore;
+  };
+
+  while (selected.length < cappedLimit) {
+    const remainingPool = pool.filter(
+      (card) => !selectedIds.has(String(card?.id || "")),
+    );
+    if (!remainingPool.length) break;
+    const nextCard = remainingPool.sort((left, right) => {
+      const adjustedLeft = computeAdjustedScore(left);
+      const adjustedRight = computeAdjustedScore(right);
+      if (adjustedRight !== adjustedLeft) {
+        return adjustedRight - adjustedLeft;
+      }
+      const scoreLeft = toNumberOrNull(left?.semanticScore) ?? 0;
+      const scoreRight = toNumberOrNull(right?.semanticScore) ?? 0;
+      if (scoreRight !== scoreLeft) return scoreRight - scoreLeft;
+      return 0;
+    })[0];
+    if (!nextCard) break;
+    markSelected(nextCard);
+  }
+
+  normalizedCards.forEach((card) => {
+    if (
+      selected.length < cappedLimit &&
+      !selectedIds.has(String(card?.id || ""))
+    ) {
+      markSelected(card);
+    }
+  });
+
+  return selected.slice(0, cappedLimit);
+};
+
+export const scopeChatRelevantHotelCards = ({
+  cards = [],
+  plan = {},
+  limit = ASSISTANT_SEARCH_MAX_LIMIT,
+  traceSink = null,
+} = {}) => {
+  const normalizedCards = Array.isArray(cards) ? cards.filter(Boolean) : [];
+  const requestedLimit = clampLimit(limit, ASSISTANT_SEARCH_MAX_LIMIT);
+  const scopeReason = resolveSemanticChatScopeReason(plan);
+  const scopeEnabled = Boolean(scopeReason);
+  const visibleLimit = scopeEnabled
+    ? Math.min(requestedLimit, CHAT_VISIBLE_SEMANTIC_LIMIT)
+    : requestedLimit;
+  const baseScope = {
+    candidateHotelCount: normalizedCards.length,
+    strongHotelCount: normalizedCards.length,
+    relevantHotelCount: normalizedCards.length,
+    visibleHotelCount: Math.min(normalizedCards.length, visibleLimit),
+    scopeMode: "NONE",
+    scopeReason,
+    warningMode: null,
+    scopeConfidence: null,
+    scopeExpansionReason: null,
+  };
+
+  if (!scopeEnabled) {
+    return {
+      cards: normalizedCards.slice(0, visibleLimit),
+      searchScope: baseScope,
+    };
+  }
+
+  const threshold = resolveSemanticChatScopeThreshold(plan);
+  const positiveRelevant = normalizedCards.filter(
+    (card) => toNumberOrNull(card?.semanticScore) != null && Number(card.semanticScore) > 0,
+  );
+  const strongRelevant = normalizedCards.filter((card) => {
+    const semanticScore = toNumberOrNull(card?.semanticScore) ?? 0;
+    const traitProfileMode = isTraitProfileSemanticSearch(plan);
+    return (
+      hasScopeEligibleSemanticMatch(card) ||
+      hasStrongSemanticEvidence(card) ||
+      isWithinUsefulSemanticScopeRadius(card, plan) ||
+      (!traitProfileMode && semanticScore >= threshold) ||
+      (traitProfileMode &&
+        semanticScore >= threshold &&
+        countTraitProfileSupportSignals(card) >= 2)
+    );
+  });
+
+  let relevantCards = [];
+  let scopeMode = "STRICT";
+  let scopeExpansionReason = null;
+
+  if (scopeReason === "REFERENCE_SET") {
+    relevantCards = normalizedCards;
+  } else if (strongRelevant.length >= 5) {
+    relevantCards = strongRelevant;
+  } else if (strongRelevant.length >= 1) {
+    const usedIds = new Set(
+      strongRelevant.map((card) => String(card?.id || "")).filter(Boolean),
+    );
+    const filler = positiveRelevant.filter((card) => {
+      const id = String(card?.id || "");
+      return !id || !usedIds.has(id);
+    });
+    relevantCards = [...strongRelevant, ...filler.slice(0, 5 - strongRelevant.length)];
+    scopeMode = "RELAXED";
+    scopeExpansionReason = "INSUFFICIENT_STRONG_MATCHES";
+  } else if (positiveRelevant.length) {
+    relevantCards = positiveRelevant;
+    scopeMode = "RELAXED";
+    scopeExpansionReason = "ONLY_MEDIUM_MATCHES_AVAILABLE";
+  }
+
+  const visibleCards = relevantCards.slice(0, visibleLimit);
+  const scopeConfidence = clampSemanticScopeConfidence(
+    resolveSemanticScopeConfidence(visibleCards),
+    plan,
+  );
+  const warningMode =
+    scopeMode === "RELAXED"
+      ? "EXPANDED_WITH_NOTICE"
+      : scopeConfidence === "LOW"
+        ? "APPROXIMATE_WITH_NOTICE"
+        : null;
+  const searchScope = {
+    candidateHotelCount: normalizedCards.length,
+    strongHotelCount: strongRelevant.length,
+    relevantHotelCount: relevantCards.length,
+    visibleHotelCount: visibleCards.length,
+    scopeMode: visibleCards.length ? scopeMode : "STRICT",
+    scopeReason,
+    warningMode,
+    scopeConfidence: visibleCards.length ? scopeConfidence : "LOW",
+    scopeExpansionReason:
+      visibleCards.length && scopeMode === "RELAXED"
+        ? scopeExpansionReason
+        : visibleCards.length
+          ? null
+          : "NO_RELEVANT_MATCHES",
+  };
+
+  const threadTopPickIds = selectSemanticThreadTopPicks({
+    cards: visibleCards,
+    plan,
+    limit: Math.min(5, visibleCards.length),
+  }).map((card) => String(card?.id || "")).filter(Boolean);
+  if (threadTopPickIds.length) {
+    searchScope.threadTopPickIds = threadTopPickIds;
+  }
+
+  if (!visibleCards.length) {
+    emitSearchTrace(traceSink, "SEMANTIC_CHAT_SCOPE_EMPTY", {
+      label: "No catalog hotels stayed relevant after semantic scoping",
+      debugLabel:
+        `Semantic scope ${scopeReason} kept 0 of ${normalizedCards.length} candidate hotel(s)`,
+      ...searchScope,
+      threshold,
+    });
+    return { cards: [], searchScope };
+  }
+
+  emitSearchTrace(
+    traceSink,
+    scopeMode === "RELAXED"
+      ? "SEMANTIC_CHAT_SCOPE_RELAXED"
+      : "SEMANTIC_CHAT_SCOPE_APPLIED",
+    {
+      label:
+        scopeMode === "RELAXED"
+          ? "Showing the closest semantic matches available with scope expansion"
+          : "Scoped chat results to the hotels that match this request",
+      debugLabel:
+        `Semantic scope ${scopeReason} kept ${visibleCards.length}/${normalizedCards.length} visible hotel(s)` +
+        ` (${relevantCards.length} relevant before cap, mode=${scopeMode}, confidence=${scopeConfidence})`,
+      ...searchScope,
+      threshold,
+    },
+  );
+
+  const defaultThreadPickIds = visibleCards
+    .slice(0, Math.min(5, visibleCards.length))
+    .map((card) => String(card?.id || ""))
+    .filter(Boolean);
+  if (
+    threadTopPickIds.length &&
+    JSON.stringify(threadTopPickIds) !== JSON.stringify(defaultThreadPickIds)
+  ) {
+    emitSearchTrace(traceSink, "SEMANTIC_TOP_PICKS_DIVERSIFIED", {
+      beforeIds: defaultThreadPickIds,
+      afterIds: threadTopPickIds,
+      visibleHotelCount: visibleCards.length,
+      scopeReason,
+    });
+  }
+
+  return { cards: visibleCards, searchScope };
+};
+
+const finalizeScopedHotelSearchResult = ({
+  cards = [],
+  plan = {},
+  limit = ASSISTANT_SEARCH_MAX_LIMIT,
+  traceSink = null,
+  matchType = "EXACT",
+  metadata = {},
+} = {}) => {
+  const scoped = scopeChatRelevantHotelCards({
+    cards,
+    plan,
+    limit,
+    traceSink,
+  });
+  return {
+    items: scoped.cards,
+    matchType,
+    searchScope: scoped.searchScope,
+    ...metadata,
+  };
+};
+
+const buildSemanticSignalsForHotel = ({
+  plan,
+  hotel,
+  neighborhoodHints = [],
+  priceContext = {},
+  candidateHotelNames = [],
+  catalogContext = null,
+}) => {
+  const language = resolveSemanticLanguage(plan);
+  const blob = buildHotelSemanticTextBlob(hotel);
+  const descriptionBlob = normalizeSemanticKey(
+    flattenHotelDescriptionTexts(hotel).join(" "),
+  );
+  const resolvedCatalogContext =
+    catalogContext && typeof catalogContext === "object"
+      ? catalogContext
+      : resolveSemanticCatalogContext({ plan });
+  const intentProfile =
+    resolvedCatalogContext?.profile &&
+    typeof resolvedCatalogContext.profile === "object"
+      ? resolvedCatalogContext.profile
+      : {};
+  const requestedAreaTraits = Array.isArray(intentProfile?.userRequestedAreaTraits)
+    ? intentProfile.userRequestedAreaTraits
+    : Array.isArray(intentProfile?.requestedAreaTraits)
+      ? intentProfile.requestedAreaTraits
+      : [];
+  const explicitGeoMode = isExplicitSemanticGeoSearch(plan);
+  const traitProfileMode = isTraitProfileSemanticSearch(plan);
+  const exactStarRatings = normalizeExactStarRatings(
+    plan?.starRatings || plan?.hotelFilters?.starRatings,
+  );
+  const hotelStars = resolveHotelStars(hotel);
+  const nightlyPrice = toNumberOrNull(hotel?.pricePerNight);
+  const placeTokens = explicitGeoMode ? collectSemanticPlaceTokens(plan) : [];
+  const semanticPlaceTargets = explicitGeoMode ? collectSemanticPlaceTargets(plan) : [];
+  const matchedPlaceToken = explicitGeoMode
+    ? findMatchedSemanticPlaceToken(blob, placeTokens)
+    : null;
+  const primaryPlaceTarget = explicitGeoMode ? semanticPlaceTargets[0] || null : null;
+  const matchedPlaceTargetFromPlan =
+    explicitGeoMode ? matchedPlaceToken?.target || primaryPlaceTarget : null;
+  const targetRadiusMeters =
+    toNumberOrNull(matchedPlaceTargetFromPlan?.radiusMeters) ??
+    (matchedPlaceTargetFromPlan?.type === "LANDMARK"
+      ? 1600
+      : matchedPlaceTargetFromPlan?.type === "NEIGHBORHOOD" ||
+          matchedPlaceTargetFromPlan?.type === "DISTRICT"
+        ? 2800
+        : matchedPlaceTargetFromPlan?.type === "WATERFRONT"
+          ? 3500
+          : 2200);
+  const placeDistanceMeters = matchedPlaceTargetFromPlan
+    ? computeDistanceMetersToPlaceTarget(hotel, matchedPlaceTargetFromPlan)
+    : null;
+  const explicitZoneMatch = resolveBestCatalogEntityMatch({
+    hotel,
+    blob,
+    entries: resolvedCatalogContext?.explicitZones,
+    type: "ZONE",
+  });
+  const candidateZoneMatch = resolveBestCatalogEntityMatch({
+    hotel,
+    blob,
+    entries: resolvedCatalogContext?.candidateZones,
+    type: "ZONE",
+  });
+  const matchedZone = explicitZoneMatch || candidateZoneMatch;
+  const explicitLandmarkMatch = resolveBestCatalogEntityMatch({
+    hotel,
+    blob,
+    entries: resolvedCatalogContext?.explicitLandmarks,
+    type: "LANDMARK",
+  });
+  const candidateLandmarkMatch = resolveBestCatalogEntityMatch({
+    hotel,
+    blob,
+    entries: resolvedCatalogContext?.candidateLandmarks,
+    type: "LANDMARK",
+  });
+  const matchedLandmark = explicitGeoMode
+    ? explicitLandmarkMatch || candidateLandmarkMatch
+    : explicitLandmarkMatch;
+  const zoneTraitOverlap = countCatalogTraitOverlap(
+    requestedAreaTraits,
+    matchedZone?.entry,
+  );
+  const reasons = [];
+  const semanticEvidence = [];
+  let score = 0;
+
+  if (exactStarRatings.length && hotelStars != null && exactStarRatings.includes(hotelStars)) {
+    score += 70;
+    reasons.push(
+      buildLocalizedHotelReason(language, "exact_stars", { stars: hotelStars }),
+    );
+    semanticEvidence.push({
+      type: "verified_structured",
+      label: "exact_star_match",
+      value: String(hotelStars),
+    });
+  }
+
+  const matchedNeighborhood =
+    buildCatalogEntityLabel(matchedZone?.entry) ||
+    resolveMatchedNeighborhood(blob, neighborhoodHints);
+  const modelNameMatch = resolveBestModelCandidateMatch(
+    hotel?.name,
+    candidateHotelNames,
+  );
+
+  if (explicitGeoMode && matchedPlaceTargetFromPlan) {
+    const placeLabel = formatSemanticPlaceLabel(matchedPlaceTargetFromPlan);
+    const hasExactPlaceTextMatch = Boolean(matchedPlaceToken?.token);
+    const hasGeoMatch =
+      placeDistanceMeters != null &&
+      placeDistanceMeters <= Math.max(400, Math.round(targetRadiusMeters * 1.25));
+
+    if (hasExactPlaceTextMatch) {
+      score += plan?.geoIntent === "IN_AREA" ? 58 : 46;
+      reasons.push(
+        buildLocalizedHotelReason(
+          language,
+          plan?.geoIntent === "IN_AREA" ? "inside_area" : "near_place",
+          { area: placeLabel, place: placeLabel },
+        ),
+      );
+      semanticEvidence.push({
+        type: "verified_text",
+        label: "place_text_match",
+        value: placeLabel,
+      });
+    }
+
+    if (hasGeoMatch) {
+      score +=
+        placeDistanceMeters <= targetRadiusMeters
+          ? plan?.geoIntent === "IN_AREA"
+            ? 72
+            : 64
+          : 38;
+      reasons.push(
+        buildLocalizedHotelReason(
+          language,
+          placeDistanceMeters <= targetRadiusMeters &&
+            plan?.geoIntent === "IN_AREA"
+            ? "inside_area"
+            : "near_place",
+          { area: placeLabel, place: placeLabel },
+        ),
+      );
+      semanticEvidence.push({
+        type: "verified_geo",
+        label: "place_distance_match",
+        value: placeLabel,
+      });
+      } else if (
+      placeDistanceMeters != null &&
+      placeDistanceMeters <= Math.max(8000, targetRadiusMeters * 3)
+    ) {
+      score += 16;
+      semanticEvidence.push({
+        type: "weak_hint",
+        label: "place_distance_hint",
+        value: placeLabel,
+      });
+    }
+  }
+
+  if (matchedLandmark) {
+    const landmarkLabel = buildCatalogEntityLabel(matchedLandmark.entry);
+    if (matchedLandmark.textMatched) {
+      score += explicitGeoMode ? 54 : 28;
+      if (explicitGeoMode) {
+        reasons.push(
+          buildLocalizedHotelReason(language, "near_place", {
+            place: landmarkLabel,
+          }),
+        );
+      }
+      semanticEvidence.push({
+        type: explicitGeoMode ? "verified_text" : "verified_structured",
+        label: explicitGeoMode
+          ? "catalog_landmark_text_match"
+          : "candidate_landmark_profile_match",
+        value: landmarkLabel,
+      });
+    }
+    if (matchedLandmark.insideRadius) {
+      score += explicitGeoMode ? 68 : 22;
+      if (explicitGeoMode) {
+        reasons.push(
+          buildLocalizedHotelReason(language, "near_place", {
+            place: landmarkLabel,
+          }),
+        );
+      }
+      semanticEvidence.push({
+        type: explicitGeoMode ? "verified_geo" : "weak_hint",
+        label: explicitGeoMode
+          ? "catalog_landmark_distance_match"
+          : "candidate_landmark_distance_hint",
+        value: landmarkLabel,
+      });
+    } else if (matchedLandmark.nearbyRadius) {
+      score += 20;
+      semanticEvidence.push({
+        type: "weak_hint",
+        label: "catalog_landmark_distance_hint",
+        value: landmarkLabel,
+      });
+    }
+  }
+
+  if (matchedZone) {
+    const zoneLabel = buildCatalogEntityLabel(matchedZone.entry);
+    if (matchedZone.textMatched) {
+      score += matchedZone === explicitZoneMatch ? 52 : traitProfileMode ? 26 : 40;
+      reasons.push(
+        buildLocalizedHotelReason(
+          language,
+          explicitGeoMode
+            ? plan?.geoIntent === "IN_AREA"
+              ? "inside_area"
+              : "area_match"
+            : "area_match",
+          { area: zoneLabel, place: zoneLabel },
+        ),
+      );
+      semanticEvidence.push({
+        type: explicitGeoMode ? "verified_text" : "verified_structured",
+        label: explicitGeoMode
+          ? "catalog_zone_text_match"
+          : "candidate_zone_profile_match",
+        value: zoneLabel,
+      });
+    }
+    if (matchedZone.insideRadius) {
+      score += matchedZone === explicitZoneMatch ? 62 : traitProfileMode ? 20 : 48;
+      if (explicitGeoMode) {
+        reasons.push(
+          buildLocalizedHotelReason(
+            language,
+            plan?.geoIntent === "IN_AREA" ? "inside_area" : "area_match",
+            { area: zoneLabel, place: zoneLabel },
+          ),
+        );
+      }
+      semanticEvidence.push({
+        type: explicitGeoMode ? "verified_geo" : "weak_hint",
+        label: explicitGeoMode
+          ? "catalog_zone_distance_match"
+          : "candidate_zone_distance_hint",
+        value: zoneLabel,
+      });
+    } else if (matchedZone.nearbyRadius) {
+      score += 18;
+      semanticEvidence.push({
+        type: "weak_hint",
+        label: "catalog_zone_distance_hint",
+        value: zoneLabel,
+      });
+    }
+    if (zoneTraitOverlap.length) {
+      score += Math.min(40, zoneTraitOverlap.length * 14);
+      zoneTraitOverlap.slice(0, 2).forEach((trait) => {
+        const label = resolveAreaTraitLabel(language, trait);
+        if (!label) return;
+        reasons.push(
+          buildLocalizedHotelReason(language, "area_trait", { trait: label }),
+        );
+      });
+      semanticEvidence.push({
+        type: "verified_structured",
+        label: "catalog_zone_trait_overlap",
+        value: zoneLabel,
+      });
+    }
+  }
+
+  if (plan?.viewIntent === "RIVER_VIEW") {
+    const textHasRiver = /\b(river|rio|rio de la plata)\b/.test(descriptionBlob);
+    const zoneHasWaterfrontTrait = Boolean(
+      matchedZone?.entry?.traits?.includes("WATERFRONT_AREA"),
+    );
+    if (textHasRiver) {
+      score += 48;
+      reasons.push(buildLocalizedHotelReason(language, "river_view_text"));
+      semanticEvidence.push({
+        type: "verified_text",
+        label: "river_view_description",
+      });
+    } else if (zoneHasWaterfrontTrait || matchedNeighborhood) {
+      score += 32;
+      reasons.push(
+        buildLocalizedHotelReason(language, "area_match", {
+          area: buildCatalogEntityLabel(matchedZone?.entry) || matchedNeighborhood,
+        }),
+      );
+      semanticEvidence.push({
+        type: "verified_geo",
+        label: "waterfront_neighborhood",
+        value: buildCatalogEntityLabel(matchedZone?.entry) || matchedNeighborhood,
+      });
+    } else if (modelNameMatch) {
+      score += 18;
+      semanticEvidence.push({
+        type: "web_candidate_matched",
+        label: "river_view_candidate",
+        value: modelNameMatch.candidate,
+      });
+    }
+  } else if (plan?.viewIntent === "WATER_VIEW") {
+    const textHasWater =
+      /\b(waterfront|water view|water|harbor|marina|port|puerto|costanera)\b/.test(
+        descriptionBlob,
+      );
+    const zoneHasWaterfrontTrait = Boolean(
+      matchedZone?.entry?.traits?.includes("WATERFRONT_AREA"),
+    );
+    if (textHasWater) {
+      score += 44;
+      reasons.push(buildLocalizedHotelReason(language, "water_view_text"));
+      semanticEvidence.push({
+        type: "verified_text",
+        label: "water_view_description",
+      });
+    } else if (zoneHasWaterfrontTrait || matchedNeighborhood) {
+      score += 28;
+      reasons.push(
+        buildLocalizedHotelReason(language, "area_match", {
+          area: buildCatalogEntityLabel(matchedZone?.entry) || matchedNeighborhood,
+        }),
+      );
+      semanticEvidence.push({
+        type: "verified_geo",
+        label: "waterfront_neighborhood",
+        value: buildCatalogEntityLabel(matchedZone?.entry) || matchedNeighborhood,
+      });
+    } else if (modelNameMatch) {
+      score += 16;
+      semanticEvidence.push({
+        type: "web_candidate_matched",
+        label: "water_view_candidate",
+        value: modelNameMatch.candidate,
+      });
+    }
+  } else if (plan?.viewIntent === "SEA_VIEW") {
+    if (/\b(sea|ocean|mar)\b/.test(descriptionBlob)) {
+      score += 44;
+      reasons.push(buildLocalizedHotelReason(language, "sea_view_text"));
+      semanticEvidence.push({
+        type: "verified_text",
+        label: "sea_view_description",
+      });
+    } else if (modelNameMatch) {
+      score += 16;
+      semanticEvidence.push({
+        type: "web_candidate_matched",
+        label: "sea_view_candidate",
+        value: modelNameMatch.candidate,
+      });
+    }
+  }
+
+  if (plan?.areaIntent === "GOOD_AREA" && (matchedZone || matchedNeighborhood)) {
+    score += 34;
+    reasons.push(
+      buildLocalizedHotelReason(language, "area_match", {
+        area: buildCatalogEntityLabel(matchedZone?.entry) || matchedNeighborhood,
+      }),
+    );
+    semanticEvidence.push({
+      type: "verified_geo",
+      label: "good_area_neighborhood",
+      value: buildCatalogEntityLabel(matchedZone?.entry) || matchedNeighborhood,
+    });
+  }
+
+  const areaTraits = Array.from(
+    new Set([
+      ...(Array.isArray(plan?.areaTraits) ? plan.areaTraits : []),
+      ...requestedAreaTraits,
+    ]),
+  );
+  areaTraits.forEach((trait) => {
+    const label = resolveAreaTraitLabel(language, trait);
+    if (!label) return;
+    let matched = false;
+    switch (String(trait || "").trim().toUpperCase()) {
+      case "GOOD_AREA":
+      case "SAFE":
+        matched =
+          Boolean(matchedZone) ||
+          Boolean(matchedNeighborhood || (explicitGeoMode ? matchedPlaceTargetFromPlan : null));
+        break;
+      case "QUIET":
+        matched =
+          Boolean(matchedZone?.entry?.traits?.includes("QUIET")) ||
+          /\b(quiet|silent|residential|tranquil|tranquilo|tranquila)\b/.test(
+            blob,
+          );
+        break;
+      case "NIGHTLIFE":
+        matched =
+          Boolean(matchedZone?.entry?.traits?.includes("NIGHTLIFE")) ||
+          /\b(nightlife|bars|restaurants|trendy|vibrant|vida nocturna)\b/.test(
+            blob,
+          );
+        break;
+      case "WALKABLE":
+        matched =
+          Boolean(matchedZone?.entry?.traits?.includes("WALKABLE")) ||
+          /\b(walkable|walk|steps from|walking distance|a pasos|a pie)\b/.test(
+            blob,
+          );
+        break;
+      case "FAMILY":
+        matched =
+          Boolean(matchedZone?.entry?.traits?.includes("FAMILY")) ||
+          /\b(family|kids|children|childcare|babysitting|family room)\b/.test(
+            blob,
+          );
+        break;
+      case "UPSCALE_AREA":
+        matched =
+          Boolean(matchedZone?.entry?.traits?.includes("UPSCALE_AREA")) ||
+          hotelStars >= 5 ||
+          hotel?.preferred ||
+          hotel?.exclusive ||
+          /\b(luxury|premium|exclusive|upscale)\b/.test(blob);
+        break;
+      case "BUSINESS":
+        matched =
+          Boolean(matchedZone?.entry?.traits?.includes("BUSINESS")) ||
+          /\b(business|corporate|conference|work trip)\b/.test(blob);
+        break;
+      case "CENTRAL":
+        matched =
+          Boolean(matchedZone?.entry?.traits?.includes("CENTRAL")) ||
+          /\b(city center|downtown|centro|microcentro|central)\b/.test(blob);
+        break;
+      case "CULTURAL":
+        matched =
+          Boolean(matchedZone?.entry?.traits?.includes("CULTURAL")) ||
+          /\b(cultural|historic|museum|museo|art|arte|heritage)\b/.test(blob);
+        break;
+      case "WATERFRONT_AREA":
+        matched =
+          Boolean(matchedZone?.entry?.traits?.includes("WATERFRONT_AREA")) ||
+          /\b(waterfront|river|rio|sea|ocean|marina|harbor|costanera)\b/.test(
+            blob,
+          );
+        break;
+      case "LUXURY":
+        matched =
+          hotelStars >= 5 ||
+          hotel?.preferred ||
+          hotel?.exclusive ||
+          /\b(luxury|premium|exclusive)\b/.test(blob);
+        break;
+      default:
+        matched = false;
+        break;
+    }
+    if (!matched) return;
+    score +=
+      trait === "GOOD_AREA" ||
+      trait === "SAFE" ||
+      trait === "UPSCALE_AREA"
+        ? 18
+        : 12;
+    reasons.push(
+      buildLocalizedHotelReason(language, "area_trait", { trait: label }),
+    );
+    semanticEvidence.push({
+      type:
+        traitProfileMode
+          ? "verified_structured"
+          : trait === "GOOD_AREA" ||
+              trait === "SAFE" ||
+              trait === "UPSCALE_AREA"
+            ? "verified_geo"
+            : "verified_text",
+      label: `area_trait_${String(trait || "").trim().toLowerCase()}`,
+      value: label,
+    });
+  });
+
+  if (
+    plan?.areaIntent === "CITY_CENTER" &&
+    (Boolean(matchedZone?.entry?.traits?.includes("CENTRAL")) ||
+      /\b(city center|downtown|centro|microcentro)\b/.test(blob))
+  ) {
+    score += 24;
+    reasons.push(buildLocalizedHotelReason(language, "center_hint"));
+    semanticEvidence.push({
+      type: "verified_geo",
+      label: "city_center_hint",
+    });
+  }
+
+  if (
+    plan?.qualityIntent === "BUDGET" &&
+    nightlyPrice != null &&
+    priceContext?.q1 != null &&
+    nightlyPrice <= priceContext.q1
+  ) {
+    score += 30;
+    reasons.push(buildLocalizedHotelReason(language, "budget"));
+    semanticEvidence.push({
+      type: "verified_structured",
+      label: "budget_rank",
+      value: String(nightlyPrice),
+    });
+  }
+
+  if (
+    plan?.qualityIntent === "VALUE" &&
+    nightlyPrice != null &&
+    priceContext?.median != null &&
+    nightlyPrice <= priceContext.median &&
+    hotelStars != null &&
+    hotelStars >= 4
+  ) {
+    score += 28;
+    reasons.push(buildLocalizedHotelReason(language, "value"));
+    semanticEvidence.push({
+      type: "verified_structured",
+      label: "value_rank",
+      value: String(nightlyPrice),
+    });
+  }
+
+  if (
+    plan?.qualityIntent === "LUXURY" &&
+    (hotelStars >= 5 ||
+      hotel?.preferred ||
+      hotel?.exclusive ||
+      (nightlyPrice != null &&
+        priceContext?.q3 != null &&
+        nightlyPrice >= priceContext.q3))
+  ) {
+    score += 26;
+    reasons.push(buildLocalizedHotelReason(language, "luxury"));
+    semanticEvidence.push({
+      type: "verified_structured",
+      label: "luxury_profile",
+    });
+  }
+
+  const distanceMeters = [
+    toNumberOrNull(placeDistanceMeters),
+    toNumberOrNull(matchedLandmark?.distanceMeters),
+    toNumberOrNull(matchedZone?.distanceMeters),
+  ]
+    .filter((value) => value != null)
+    .sort((left, right) => left - right)[0] ?? null;
+  const matchedPlaceTarget =
+    explicitGeoMode &&
+    matchedPlaceTargetFromPlan &&
+    formatSemanticPlaceLabel(matchedPlaceTargetFromPlan)
+      ? {
+          rawText: matchedPlaceTargetFromPlan.rawText || null,
+          normalizedName: matchedPlaceTargetFromPlan.normalizedName || null,
+          type: matchedPlaceTargetFromPlan.type || null,
+        }
+      : explicitGeoMode && matchedLandmark
+        ? {
+            rawText: buildCatalogEntityLabel(matchedLandmark.entry),
+            normalizedName: buildCatalogEntityLabel(matchedLandmark.entry),
+            type: "LANDMARK",
+          }
+        : explicitGeoMode && matchedZone
+          ? {
+              rawText: buildCatalogEntityLabel(matchedZone.entry),
+              normalizedName: buildCatalogEntityLabel(matchedZone.entry),
+              type: "NEIGHBORHOOD",
+            }
+          : null;
+  const confidence = resolveSemanticMatchConfidence({
+    score,
+    semanticEvidence,
+    matchedZone,
+    matchedLandmark,
+    plan,
+  });
+  const decisionExplanation = buildDecisionExplanation({
+    language,
+    plan,
+    requestedAreaTraits,
+    matchedZone,
+    matchedLandmark,
+    zoneTraitOverlap,
+    semanticEvidence,
+    hotelStars,
+    nightlyPrice,
+    priceContext,
+    confidence,
+  });
+
+  return {
+    score,
+    reasons: uniqueReasonList(reasons, 5),
+    semanticEvidence: semanticEvidence.slice(0, 5),
+    distanceMeters,
+    matchedPlaceTarget,
+    semanticMatch: {
+      score,
+      confidence,
+      matchedZoneId: matchedZone?.entry?.id ?? null,
+      matchedLandmarkId: matchedLandmark?.entry?.id ?? null,
+      evidence: semanticEvidence.slice(0, 6),
+      scopeEligible: resolveSemanticScopeEligibility({
+        plan,
+        semanticEvidence,
+        semanticScore: score,
+        matchedZone,
+        matchedLandmark,
+        modelNameMatch,
+        zoneTraitOverlapCount: zoneTraitOverlap.length,
+      }),
+    },
+    decisionExplanation,
+  };
+};
+
+const applySemanticHotelRanking = (cards = [], plan = {}) => {
+  if (!Array.isArray(cards) || !cards.length) return [];
+  const priceContext = buildSemanticPriceContext(cards);
+  const catalogContext = resolveSemanticCatalogContext({ plan });
+  const neighborhoodHints = collectSemanticNeighborhoodHints(plan, catalogContext);
+  const candidateHotelNames = Array.isArray(plan?.semanticSearch?.candidateHotelNames)
+    ? plan.semanticSearch.candidateHotelNames
+    : [];
+  const semanticActive = hasSemanticSearchIntent(plan);
+
+  const annotated = cards.map((hotel, index) => {
+    const semantic = buildSemanticSignalsForHotel({
+      plan,
+      hotel,
+      neighborhoodHints,
+      priceContext,
+      candidateHotelNames,
+      catalogContext,
+    });
+    const mergedReasons = sanitizeVisibleGeoReasons(
+      {
+        ...hotel,
+        matchedPlaceTarget: semantic.matchedPlaceTarget || hotel?.matchedPlaceTarget || null,
+        semanticEvidence: semantic.semanticEvidence,
+        semanticMatch: semantic.semanticMatch,
+      },
+      [...semantic.reasons, ...(Array.isArray(hotel?.matchReasons) ? hotel.matchReasons : [])],
+      6,
+    );
+    const safeShortReason =
+      semantic.decisionExplanation?.primaryReasonText &&
+      !isGeoReasonText(
+        semantic.decisionExplanation.primaryReasonText,
+        semantic.matchedPlaceTarget?.normalizedName || semantic.matchedPlaceTarget?.rawText || null,
+      )
+        ? semantic.decisionExplanation.primaryReasonText
+        : mergedReasons[0] || null;
+    return {
+      ...hotel,
+      semanticScore: semantic.score,
+      semanticEvidence: semantic.semanticEvidence,
+      distanceMeters:
+        semantic.distanceMeters != null ? semantic.distanceMeters : null,
+      matchedPlaceTarget: semantic.matchedPlaceTarget || null,
+      semanticMatch:
+        semantic.semanticMatch && typeof semantic.semanticMatch === "object"
+          ? semantic.semanticMatch
+          : null,
+      decisionExplanation:
+        semantic.decisionExplanation && typeof semantic.decisionExplanation === "object"
+          ? semantic.decisionExplanation
+          : null,
+      matchReasons: mergedReasons,
+      shortReason: safeShortReason,
+      __baseIndex: index,
+    };
+  });
+
+  if (!semanticActive) {
+    return annotated.map(({ __baseIndex: _drop, ...hotel }) => hotel);
+  }
+
+  annotated.sort((left, right) => {
+    if (right.semanticScore !== left.semanticScore) {
+      return right.semanticScore - left.semanticScore;
+    }
+    return left.__baseIndex - right.__baseIndex;
+  });
+
+  return annotated.map(({ __baseIndex: _drop, ...hotel }) => hotel);
+};
+
+const emitSemanticCandidateMatchTrace = (
+  traceSink,
+  plan = {},
+  cards = [],
+) => {
+  const candidateHotelNames = Array.isArray(plan?.semanticSearch?.candidateHotelNames)
+    ? plan.semanticSearch.candidateHotelNames
+    : [];
+  if (!candidateHotelNames.length) return;
+  const matchedCount = (Array.isArray(cards) ? cards : []).filter((card) =>
+    Array.isArray(card?.semanticEvidence)
+      ? card.semanticEvidence.some(
+          (entry) => entry?.type === "web_candidate_matched",
+        )
+      : false,
+  ).length;
+  if (!matchedCount) {
+    emitSearchTrace(traceSink, "SEMANTIC_LOCAL_MATCH_REJECTED", {
+      reason: "no_strict_catalog_match",
+      candidateHotelCount: candidateHotelNames.length,
+    });
+  }
+};
+
+const mapHotelCardsForOutput = ({
+  cards = [],
+  plan = {},
+  limit = ASSISTANT_SEARCH_MAX_LIMIT,
+  extraReasons = [],
+} = {}) =>
+  cards
+    .map((hotel) => {
+      const baseReasons = Array.isArray(hotel?.matchReasons)
+        ? hotel.matchReasons
+        : buildHotelMatchReasons({ plan, hotel });
+      const mergedReasons = sanitizeVisibleGeoReasons(
+        hotel,
+        [...baseReasons, ...(Array.isArray(extraReasons) ? extraReasons : [])],
+        6,
+      );
+      return {
+        ...hotel,
+        stars: resolveHotelStars(hotel),
+        inventoryType: "HOTEL",
+        matchReasons: mergedReasons,
+        shortReason:
+          (!isGeoReasonText(
+            hotel?.shortReason,
+            hotel?.matchedPlaceTarget?.normalizedName || hotel?.matchedPlaceTarget?.rawText || null,
+          )
+            ? hotel?.shortReason
+            : null) ||
+          mergedReasons[0] ||
+          null,
+        semanticEvidence: Array.isArray(hotel?.semanticEvidence)
+          ? hotel.semanticEvidence.slice(0, 5)
+          : [],
+        semanticMatch:
+          hotel?.semanticMatch && typeof hotel.semanticMatch === "object"
+            ? {
+                score:
+                  toNumberOrNull(hotel.semanticMatch.score) != null
+                    ? Number(hotel.semanticMatch.score)
+                    : null,
+                confidence: hotel.semanticMatch.confidence ?? null,
+                matchedZoneId: hotel.semanticMatch.matchedZoneId ?? null,
+                matchedLandmarkId: hotel.semanticMatch.matchedLandmarkId ?? null,
+                scopeEligible: hotel.semanticMatch.scopeEligible === true,
+                evidence: Array.isArray(hotel.semanticMatch.evidence)
+                  ? hotel.semanticMatch.evidence.slice(0, 6)
+                  : [],
+              }
+            : null,
+        decisionExplanation:
+          hotel?.decisionExplanation && typeof hotel.decisionExplanation === "object"
+            ? {
+                primaryReasonType:
+                  hotel.decisionExplanation.primaryReasonType ?? null,
+                primaryReasonText:
+                  hotel.decisionExplanation.primaryReasonText ?? null,
+                secondaryReasonType:
+                  hotel.decisionExplanation.secondaryReasonType ?? null,
+                secondaryReasonText:
+                  hotel.decisionExplanation.secondaryReasonText ?? null,
+                comparisonAngle:
+                  hotel.decisionExplanation.comparisonAngle ?? null,
+                allowedAngles: Array.isArray(hotel.decisionExplanation.allowedAngles)
+                  ? hotel.decisionExplanation.allowedAngles.slice(0, 8)
+                  : [],
+                angleTexts:
+                  hotel.decisionExplanation.angleTexts &&
+                  typeof hotel.decisionExplanation.angleTexts === "object"
+                    ? { ...hotel.decisionExplanation.angleTexts }
+                    : {},
+                signals:
+                  hotel.decisionExplanation.signals &&
+                  typeof hotel.decisionExplanation.signals === "object"
+                    ? { ...hotel.decisionExplanation.signals }
+                    : {},
+                allowedClaims: Array.isArray(hotel.decisionExplanation.allowedClaims)
+                  ? hotel.decisionExplanation.allowedClaims.slice(0, 12)
+                  : [],
+                canMentionZone:
+                  hotel.decisionExplanation.canMentionZone === true,
+                mentionedZoneLabel:
+                  hotel.decisionExplanation.mentionedZoneLabel ?? null,
+                confidence: hotel.decisionExplanation.confidence ?? null,
+              }
+            : null,
+      };
+    })
+    .slice(0, limit);
+
 const buildStringFilter = (value) => {
   const trimmed = typeof value === "string" ? value.trim() : "";
   if (!trimmed) return null;
@@ -522,6 +3070,7 @@ const resolveBudgetMax = (plan) => toNumberOrNull(plan?.budget?.max);
  * or null when no proximity intent is present.
  */
 const resolveProximityAnchor = async (plan) => {
+  const primaryPlaceTarget = collectSemanticPlaceTargets(plan)[0] || null;
   const areaPrefs = Array.isArray(plan?.preferences?.areaPreference)
     ? plan.preferences.areaPreference.map((s) => String(s || "").toUpperCase())
     : [];
@@ -531,6 +3080,22 @@ const resolveProximityAnchor = async (plan) => {
       : null;
   const city = plan?.location?.city || null;
   const country = plan?.location?.country || null;
+
+  if (
+    primaryPlaceTarget &&
+    primaryPlaceTarget.lat != null &&
+    primaryPlaceTarget.lng != null
+  ) {
+    return {
+      type: "PLACE_TARGET",
+      target: {
+        name: formatSemanticPlaceLabel(primaryPlaceTarget),
+        lat: primaryPlaceTarget.lat,
+        lng: primaryPlaceTarget.lng,
+        radiusMeters: primaryPlaceTarget.radiusMeters ?? null,
+      },
+    };
+  }
 
   // CITY_CENTER: geocode "city center {city}, {country}"
   if (areaPrefs.includes("CITY_CENTER") && city) {
@@ -585,6 +3150,15 @@ const sortByProximity = (cards, proximityAnchor) => {
 
     if (proximityAnchor.type === "CITY_CENTER") {
       return computeDistanceKm(gp, proximityAnchor.anchor) ?? Number.MAX_SAFE_INTEGER;
+    }
+
+    if (proximityAnchor.type === "PLACE_TARGET") {
+      return (
+        computeDistanceKm(gp, {
+          lat: proximityAnchor.target?.lat,
+          lng: proximityAnchor.target?.lng,
+        }) ?? Number.MAX_SAFE_INTEGER
+      );
     }
 
     if (proximityAnchor.type === "NEARBY_INTEREST") {
@@ -1134,16 +3708,29 @@ export const searchHomesForPlan = async (plan = {}, options = {}) => {
 };
 
 const buildHotelMatchReasons = ({ plan, hotel }) => {
+  const language = resolveSemanticLanguage(plan);
   const reasons = [];
   if (plan?.location?.city && hotel.city) {
     if (hotel.city.toLowerCase().includes(plan.location.city.toLowerCase())) {
-      reasons.push(`Ubicado en ${hotel.city}`);
+      reasons.push(
+        pickSemanticCopy(language, {
+          es: `Ubicado en ${hotel.city}`,
+          en: `Located in ${hotel.city}`,
+          pt: `Localizado em ${hotel.city}`,
+        }),
+      );
     }
   }
   if (hotel.preferred) {
-    reasons.push("Hotel preferido de WebBeds");
+    reasons.push(
+      pickSemanticCopy(language, {
+        es: "Hotel preferido del catálogo",
+        en: "Preferred catalog hotel",
+        pt: "Hotel preferido do catálogo",
+      }),
+    );
   }
-  return reasons;
+  return uniqueReasonList(reasons, 4);
 };
 
 const hasExplicitHotelGuests = (plan = {}) => {
@@ -1404,7 +3991,13 @@ const applyHotelFilters = async (hotels, filters = {}) => {
   if (filters.preferredOnly) {
     filtered = filtered.filter((hotel) => hotel.preferred);
   }
-  if (filters.minRating != null) {
+  const exactStarRatings = normalizeExactStarRatings(filters.starRatings);
+  if (exactStarRatings.length) {
+    filtered = filtered.filter((hotel) => {
+      const stars = resolveHotelStars(hotel);
+      return stars != null && exactStarRatings.includes(stars);
+    });
+  } else if (filters.minRating != null) {
     const minStar = Math.round(filters.minRating);
     filtered = filtered.filter((hotel) => {
       // resolveHotelStars maps WebBeds classification codes (BIGINTs like 563) to star counts (1-5).
@@ -1534,14 +4127,9 @@ const runStaticHotelQuery = async (where, options) => {
   if (starOrder) {
     cards.sort((a, b) => (toNumberOrNull(b.stars) ?? 0) - (toNumberOrNull(a.stars) ?? 0));
   }
-  return cards
-    .map((hotel) => ({
-      ...hotel,
-      stars: resolveHotelStars(hotel),
-      inventoryType: "HOTEL",
-      matchReasons: buildHotelMatchReasons({ plan, hotel }),
-    }))
-    .slice(0, limit);
+  cards = applySemanticHotelRanking(cards, plan);
+  emitSemanticCandidateMatchTrace(traceSink, plan, cards);
+  return mapHotelCardsForOutput({ cards, plan, limit });
 };
 
 const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, coordinateFilter, proximityAnchor = null }) => {
@@ -1689,12 +4277,8 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
     });
   }
 
-  return filteredCards.slice(0, limit).map((hotel) => ({
-    ...hotel,
-    stars: resolveHotelStars(hotel),
-    inventoryType: "HOTEL",
-    matchReasons: buildHotelMatchReasons({ plan, hotel }),
-  }));
+  filteredCards = applySemanticHotelRanking(filteredCards, plan);
+  return mapHotelCardsForOutput({ cards: filteredCards, plan, limit });
 };
 
 const LIVE_SUPPLEMENT_MIN_RESULTS = Math.max(
@@ -1705,6 +4289,8 @@ const LIVE_SUPPLEMENT_MIN_RESULTS = Math.max(
 const buildLiveHotelAdvancedConditions = async ({ hotelFilters = {} } = {}) => {
   const conditions = [];
 
+  const exactStarRatings = normalizeExactStarRatings(hotelFilters.starRatings);
+
   if (hotelFilters.preferredOnly) {
     conditions.push({
       fieldName: "preferred",
@@ -1713,7 +4299,15 @@ const buildLiveHotelAdvancedConditions = async ({ hotelFilters = {} } = {}) => {
     });
   }
 
-  if (hotelFilters.minRating != null && Number.isFinite(Number(hotelFilters.minRating))) {
+  if (exactStarRatings.length >= 1) {
+    const exactMin = String(Math.min(...exactStarRatings));
+    const exactMax = String(Math.max(...exactStarRatings));
+    conditions.push({
+      fieldName: "rating",
+      fieldTest: "between",
+      fieldValues: [exactMin, exactMax],
+    });
+  } else if (hotelFilters.minRating != null && Number.isFinite(Number(hotelFilters.minRating))) {
     const minStar = Math.max(1, Math.round(Number(hotelFilters.minRating)));
     conditions.push({
       fieldName: "rating",
@@ -1780,6 +4374,7 @@ const shouldSupplementLiveResults = ({ liveResults = [], hotelFilters = {}, limi
   if (liveCount <= 0 || liveCount >= target) return false;
   return Boolean(
     hotelFilters.preferredOnly ||
+    (Array.isArray(hotelFilters.starRatings) && hotelFilters.starRatings.length) ||
     hotelFilters.minRating != null ||
     (Array.isArray(hotelFilters.amenityCodes) && hotelFilters.amenityCodes.length) ||
     (Array.isArray(hotelFilters.amenityItemIds) && hotelFilters.amenityItemIds.length)
@@ -1792,6 +4387,14 @@ const buildLiveCandidateHotelIds = async ({
   resolvedLocationCodes = null,
   limit,
 }) => {
+  const referenceHotelIds = normalizeIdList(
+    plan?.referenceHotelIds ?? plan?.semanticSearch?.referenceHotelIds,
+  );
+  const semanticCandidateNames = Array.isArray(
+    plan?.semanticSearch?.candidateHotelNames,
+  )
+    ? plan.semanticSearch.candidateHotelNames
+    : [];
   const locationCodes = resolvedLocationCodes || {};
   const requestedCityName =
     typeof plan?.location?.city === "string" && plan.location.city.trim()
@@ -1816,23 +4419,34 @@ const buildLiveCandidateHotelIds = async ({
     if (cityNameFilter) where.city_name = cityNameFilter;
   }
 
+  if (referenceHotelIds.length) {
+    where.hotel_id = { [Op.in]: referenceHotelIds };
+  }
   if (!Object.keys(where).length) return [];
 
-  const minStar =
-    hotelFilters.minRating != null && Number.isFinite(Number(hotelFilters.minRating))
-      ? Math.round(Number(hotelFilters.minRating))
-      : null;
-  if (minStar != null) {
-    const eligibleCodes = resolveClassificationCodesForMinRating(minStar);
-    if (eligibleCodes.length) {
-      where.classification_code = { [Op.in]: eligibleCodes };
+  const exactStarRatings = normalizeExactStarRatings(hotelFilters.starRatings);
+  if (exactStarRatings.length) {
+    const exactCodes = resolveClassificationCodesForExactRatings(exactStarRatings);
+    if (exactCodes.length) {
+      where.classification_code = { [Op.in]: exactCodes };
+    }
+  } else {
+    const minStar =
+      hotelFilters.minRating != null && Number.isFinite(Number(hotelFilters.minRating))
+        ? Math.round(Number(hotelFilters.minRating))
+        : null;
+    if (minStar != null) {
+      const eligibleCodes = resolveClassificationCodesForMinRating(minStar);
+      if (eligibleCodes.length) {
+        where.classification_code = { [Op.in]: eligibleCodes };
+      }
     }
   }
 
   const candidateLimit = Math.min(ASSISTANT_SEARCH_MAX_LIMIT, Math.max(limit * 3, 60));
   const rows = await models.WebbedsHotel.findAll({
     where,
-    attributes: ["hotel_id"],
+    attributes: ["hotel_id", "name"],
     order: [
       ["preferred", "DESC"],
       ["priority", "DESC"],
@@ -1841,9 +4455,36 @@ const buildLiveCandidateHotelIds = async ({
     limit: candidateLimit,
   });
 
-  return rows
-    .map((row) => String(row?.hotel_id || "").trim())
-    .filter(Boolean);
+  const normalizedIds = rows
+    .map((row) => ({
+      id: String(row?.hotel_id || "").trim(),
+      name: typeof row?.name === "string" ? row.name.trim() : "",
+    }))
+    .filter((row) => row.id);
+
+  if (semanticCandidateNames.length && !referenceHotelIds.length) {
+    const matchedIds = normalizedIds
+      .map((row) => {
+        const bestMatch = resolveBestModelCandidateMatch(
+          row.name,
+          semanticCandidateNames,
+        );
+        return bestMatch
+          ? {
+              id: row.id,
+              score: bestMatch.score,
+            }
+          : null;
+      })
+      .filter(Boolean)
+      .sort((left, right) => right.score - left.score)
+      .map((row) => row.id);
+    if (matchedIds.length) {
+      return Array.from(new Set(matchedIds));
+    }
+  }
+
+  return normalizedIds.map((row) => row.id);
 };
 
 const flattenGroupedLiveOptions = (groups = []) => {
@@ -1873,8 +4514,11 @@ const tryRunLiveHotelSearch = async ({
   if (!hasExplicitHotelGuests(plan)) return [];
   const provider = getLiveHotelProvider();
   if (!provider) return [];
+  const referenceHotelIds = normalizeIdList(
+    plan?.referenceHotelIds ?? plan?.semanticSearch?.referenceHotelIds,
+  );
   const locationCodes = resolvedLocationCodes || await resolveWebbedsLocationCodes(plan?.location || {});
-  if (!locationCodes.cityCode && !locationCodes.countryCode) return [];
+  if (!locationCodes.cityCode && !locationCodes.countryCode && !referenceHotelIds.length) return [];
   try {
     const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102";
     const passengerNationality =
@@ -2032,12 +4676,39 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     amenityItemIds: normalizeIdList(hotelFiltersRaw.amenityItemIds),
     preferredOnly: normalizeBooleanFlag(hotelFiltersRaw.preferredOnly) || prefFilters.hotelPreferredOnly,
     minRating: toNumberOrNull(hotelFiltersRaw.minRating),
+    starRatings: normalizeExactStarRatings(
+      hotelFiltersRaw.starRatings ?? plan?.starRatings,
+    ),
+  };
+  const referenceHotelIds = normalizeIdList(
+    plan?.referenceHotelIds ?? plan?.semanticSearch?.referenceHotelIds,
+  );
+  const semanticCatalogContext = resolveSemanticCatalogContext({ plan });
+  let latestHotelSearchScope = null;
+  const finalizeHotelSearchResult = ({
+    cards = [],
+    matchType = "EXACT",
+    metadata = {},
+  } = {}) => {
+    const finalized = finalizeScopedHotelSearchResult({
+      cards,
+      plan,
+      limit,
+      traceSink,
+      matchType,
+      metadata,
+    });
+    if (finalized?.searchScope) {
+      latestHotelSearchScope = finalized.searchScope;
+    }
+    return finalized;
   };
 
   console.log(
     `[search:hotels] START — city:"${plan?.location?.city || ""}" country:"${plan?.location?.country || ""}"` +
     ` landmark:"${plan?.location?.landmark || ""}"` +
     ` minRating:${normalizedHotelFilters.minRating ?? "none"}` +
+    ` starRatings:[${normalizedHotelFilters.starRatings.join(",")}]` +
     ` amenityCodes:[${normalizedHotelFilters.amenityCodes.join(",")}]` +
     ` preferredOnly:${normalizedHotelFilters.preferredOnly}` +
     ` limit:${limit}` +
@@ -2048,6 +4719,33 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   if (excludeIds.length > 0) {
     debugSearchLog(
       `[DEBUG_SEARCH] Exclude Sample: ${excludeIds.slice(0, 3).join(", ")} (Type: ${typeof excludeIds[0]})`
+    );
+  }
+  if (hasSemanticSearchIntent(plan)) {
+    emitSearchTrace(
+      traceSink,
+      semanticCatalogContext?.cityCatalog
+        ? "SEMANTIC_CITY_CATALOG_HIT"
+        : "SEMANTIC_CITY_CATALOG_MISS",
+      {
+        city: plan?.location?.city || null,
+        country: plan?.location?.country || null,
+        requestedZones: Array.isArray(
+          semanticCatalogContext?.profile?.requestedZones,
+        )
+          ? semanticCatalogContext.profile.requestedZones
+          : [],
+        requestedLandmarks: Array.isArray(
+          semanticCatalogContext?.profile?.requestedLandmarks,
+        )
+          ? semanticCatalogContext.profile.requestedLandmarks
+          : [],
+        requestedAreaTraits: Array.isArray(
+          semanticCatalogContext?.profile?.requestedAreaTraits,
+        )
+          ? semanticCatalogContext.profile.requestedAreaTraits
+          : [],
+      },
     );
   }
 
@@ -2124,7 +4822,13 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
             debugLabel: `Using ${filteredLive.length} live result(s) without static supplement`,
             total: filteredLive.length,
           });
-          return { items: filteredLive, matchType: "EXACT" };
+          const finalLiveResult = finalizeHotelSearchResult({
+            cards: filteredLive,
+            matchType: "EXACT",
+          });
+          if (finalLiveResult.items.length) {
+            return finalLiveResult;
+          }
         }
 
         emitSearchTrace(traceSink, "SUPPLEMENTING_WITH_CATALOG", {
@@ -2155,11 +4859,16 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
           console.log(
             `[search:hotels] live supplement → live:${filteredLive.length} static:${supplementItems.length} merged:${mergedItems.length}`
           );
-          return {
-            items: mergedItems,
+          const finalMergedResult = finalizeHotelSearchResult({
+            cards: mergedItems,
             matchType: "EXACT",
-            liveSupplemented: Boolean(supplementItems.length),
-          };
+            metadata: {
+              liveSupplemented: Boolean(supplementItems.length),
+            },
+          });
+          if (finalMergedResult.items.length) {
+            return finalMergedResult;
+          }
         }
 
         emitSearchTrace(traceSink, "LIVE_RESULTS_SELECTED", {
@@ -2167,7 +4876,13 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
           debugLabel: `Static supplement returned 0 items; keeping ${filteredLive.length} live result(s)`,
           total: filteredLive.length,
         });
-        return { items: filteredLive, matchType: "EXACT" };
+        const fallbackLiveResult = finalizeHotelSearchResult({
+          cards: filteredLive,
+          matchType: "EXACT",
+        });
+        if (fallbackLiveResult.items.length) {
+          return fallbackLiveResult;
+        }
       }
     }
     emitSearchTrace(traceSink, "FALLBACK_TO_CATALOG", {
@@ -2302,11 +5017,30 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   // Apply SQL-level classification_code filter when minRating is set.
   // IMPORTANT: classification_code is a BIGINT FK to webbeds_hotel_classification.code —
   // WebBeds codes are NOT 1-5 (e.g., 563 = Luxury/*****). Use the lookup table.
+  const exactStarRatings = normalizeExactStarRatings(
+    normalizedHotelFilters.starRatings,
+  );
+  const hasExactStarRequest = exactStarRatings.length > 0;
   const minStar =
-    normalizedHotelFilters.minRating != null && Number.isFinite(normalizedHotelFilters.minRating)
+    !hasExactStarRequest &&
+    normalizedHotelFilters.minRating != null &&
+    Number.isFinite(normalizedHotelFilters.minRating)
       ? Math.round(normalizedHotelFilters.minRating)
       : null;
-  if (minStar != null) {
+  if (hasExactStarRequest) {
+    const exactCodes = resolveClassificationCodesForExactRatings(
+      exactStarRatings,
+    );
+    if (exactCodes.length) {
+      where.classification_code = { [Op.in]: exactCodes };
+      debugSearchLog(
+        `[DEBUG_SEARCH] SQL exact star filter: classification_code IN (${exactCodes.join(",")}) [stars=${exactStarRatings.join(",")}]`,
+      );
+      console.log(
+        `[search:hotels] SQL exact star filter: [${exactStarRatings.join(",")}] → classification_code IN (${exactCodes.join(",")})`,
+      );
+    }
+  } else if (minStar != null) {
     const eligibleCodes = resolveClassificationCodesForMinRating(minStar);
     if (eligibleCodes.length) {
       where.classification_code = { [Op.in]: eligibleCodes };
@@ -2319,6 +5053,18 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
 
   if (excludeIds.length) {
     where.hotel_id = { [Op.notIn]: excludeIds };
+  }
+  if (referenceHotelIds.length) {
+    const existingHotelIdConstraint = where.hotel_id;
+    if (existingHotelIdConstraint?.[Op.notIn]) {
+      where.hotel_id = {
+        [Op.in]: referenceHotelIds.filter(
+          (hotelId) => !existingHotelIdConstraint[Op.notIn].includes(hotelId),
+        ),
+      };
+    } else {
+      where.hotel_id = { [Op.in]: referenceHotelIds };
+    }
   }
 
   // When minRating is set, SQL already pre-filters by classification_code so fetchMultiplier=1 is
@@ -2386,17 +5132,18 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     // POPULARITY and RELEVANCE: DB already ordered by preferred DESC, priority DESC — keep as-is.
   }
 
-  cards = cards
-    .map((hotel) => ({
-      ...hotel,
-      stars: resolveHotelStars(hotel),
-      inventoryType: "HOTEL",
-      matchReasons: buildHotelMatchReasons({ plan, hotel }),
-    }))
-    .slice(0, limit);
+  cards = applySemanticHotelRanking(cards, plan);
+  emitSemanticCandidateMatchTrace(traceSink, plan, cards);
+  cards = mapHotelCardsForOutput({ cards, plan, limit });
 
   const starFallbackOrder = [["classification_code", "DESC"], ["preferred", "DESC"], ["priority", "DESC"], ["name", "ASC"]];
-  if (cards.length > 0 && cards.length < MIN_STAR_FALLBACK_THRESHOLD && minStar != null && minStar >= 4) {
+  if (
+    !hasExactStarRequest &&
+    cards.length > 0 &&
+    cards.length < MIN_STAR_FALLBACK_THRESHOLD &&
+    minStar != null &&
+    minStar >= 4
+  ) {
     const relaxedCodes = resolveClassificationCodesForMinRating(minStar - 1);
     if (relaxedCodes.length) {
       const whereRelaxed = { ...where, classification_code: { [Op.in]: relaxedCodes } };
@@ -2420,8 +5167,15 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
           debugLabel: `Relaxed star filter from ${minStar}+ to ${minStar - 1}+ and got ${relaxedCardsFromStars.length} item(s)`,
         });
         console.log(`[search:hotels] Star filter relaxed: ${minStar}★ returned ${cards.length}, using ${minStar - 1}+★ → ${relaxedCardsFromStars.length} items`);
-        await enrichCardsWithAmenitiesFromTable(relaxedCardsFromStars);
-        return { items: relaxedCardsFromStars, matchType: "EXACT", starFilterRelaxed: true };
+        const finalRelaxedStarsResult = finalizeHotelSearchResult({
+          cards: relaxedCardsFromStars,
+          matchType: "EXACT",
+          metadata: { starFilterRelaxed: true },
+        });
+        if (finalRelaxedStarsResult.items.length) {
+          await enrichCardsWithAmenitiesFromTable(finalRelaxedStarsResult.items);
+          return finalRelaxedStarsResult;
+        }
       }
     }
 
@@ -2444,53 +5198,84 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
           debugLabel: `Dropped star filter ${minStar}+ and found ${allCards.length} item(s)`,
         });
         console.log(`[search:hotels] Star filter dropped: ${minStar}★ returned ${cards.length}, using all stars in location → ${allCards.length} items`);
-        await enrichCardsWithAmenitiesFromTable(allCards);
-        return { items: allCards, matchType: "EXACT", starFilterRelaxed: true };
+        const finalDroppedStarsResult = finalizeHotelSearchResult({
+          cards: allCards,
+          matchType: "EXACT",
+          metadata: { starFilterRelaxed: true },
+        });
+        if (finalDroppedStarsResult.items.length) {
+          await enrichCardsWithAmenitiesFromTable(finalDroppedStarsResult.items);
+          return finalDroppedStarsResult;
+        }
       }
     }
   }
 
   if (cards.length) {
     console.log(`[search:hotels] RESULT: EXACT — ${cards.length} items`);
-    await enrichCardsWithAmenitiesFromTable(cards);
-    return { items: cards, matchType: "EXACT" };
+    const finalExactResult = finalizeHotelSearchResult({
+      cards,
+      matchType: "EXACT",
+    });
+    if (finalExactResult.items.length) {
+      await enrichCardsWithAmenitiesFromTable(finalExactResult.items);
+      return finalExactResult;
+    }
   }
 
-  // Relaxed fallback: strip amenity/preferred filters but keep star filter.
-  // Because SQL already pre-filters by classification_code, `hotels` here are already star-correct —
-  // so even without the post-filter, we only show hotels of the requested star category.
-  console.log(`[search:hotels] strict=0 → relaxed fallback (${hotels.length} DB hotels, dropping amenity/preferred filters)`);
+  // Relaxed fallback: only relax preferred-only. Explicit amenities, budget caps and
+  // exact star requests remain hard constraints in Semantic Search V1.
+  console.log(
+    `[search:hotels] strict=0 → relaxed fallback (${hotels.length} DB hotels, dropping preferredOnly only)`,
+  );
   let relaxedCards = hotels.map(formatStaticHotel).filter(Boolean);
-  if (normalizedHotelFilters.minRating != null) {
-    const starOnlyFilters = { ...normalizedHotelFilters, amenityCodes: [], amenityItemIds: [], preferredOnly: false };
-    const starFiltered = await applyHotelFilters(relaxedCards, starOnlyFilters);
-    // SQL pre-filter guarantees these hotels have the right classification_code, so
-    // starFiltered should be non-empty. If somehow 0 (edge case), fall through with
-    // SQL-pre-filtered hotels (still correct star category, just missing post-filter validation).
-    if (starFiltered.length) relaxedCards = starFiltered;
+  const relaxedHardFilters = {
+    ...normalizedHotelFilters,
+    preferredOnly: false,
+  };
+  const relaxedHardFilteredCards = await applyHotelFilters(
+    relaxedCards,
+    relaxedHardFilters,
+  );
+  if (relaxedHardFilteredCards.length) {
+    relaxedCards = relaxedHardFilteredCards;
   }
-  relaxedCards = relaxedCards
-    .map((hotel) => ({
-      ...hotel,
-      stars: resolveHotelStars(hotel),
-      inventoryType: "HOTEL",
-      matchReasons: [...buildHotelMatchReasons({ plan, hotel }), "Opciones recomendadas con filtros flexibles"],
-    }))
-    .slice(0, limit);
+  const relaxedReason = pickSemanticCopy(resolveSemanticLanguage(plan), {
+    es: "Opciones cercanas a tu pedido, sin exigir catálogo preferido",
+    en: "Close matches without requiring preferred-catalog status",
+    pt: "Opções próximas ao seu pedido sem exigir catálogo preferido",
+  });
+  relaxedCards = applySemanticHotelRanking(relaxedCards, plan);
+  relaxedCards = mapHotelCardsForOutput({
+    cards: relaxedCards,
+    plan,
+    limit,
+    extraReasons: relaxedReason ? [relaxedReason] : [],
+  });
   if (relaxedCards.length) {
     emitSearchTrace(traceSink, "RELAXING_FILTERS", {
       label: "Relaxing some filters to avoid an empty result",
       debugLabel: `Strict filters returned 0; relaxed fallback produced ${relaxedCards.length} item(s)`,
     });
     console.log(`[search:hotels] RESULT: SIMILAR (relaxed) — ${relaxedCards.length} items`);
-    await enrichCardsWithAmenitiesFromTable(relaxedCards);
-    return { items: relaxedCards, matchType: "SIMILAR" };
+    const finalRelaxedResult = finalizeHotelSearchResult({
+      cards: relaxedCards,
+      matchType: "SIMILAR",
+    });
+    if (finalRelaxedResult.items.length) {
+      await enrichCardsWithAmenitiesFromTable(finalRelaxedResult.items);
+      return finalRelaxedResult;
+    }
   }
 
   if (hasLocation) {
     console.log(`[search:hotels] RESULT: NONE — location constraint present but 0 matches`);
     debugSearchLog("[assistant] no fallback hotels; location constraint present");
-    return { items: [], matchType: "NONE" };
+    return {
+      items: [],
+      matchType: "NONE",
+      searchScope: latestHotelSearchScope,
+    };
   }
 
   const fallbackWhere = {};
@@ -2544,26 +5329,43 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     limit: fetchLimit,
   });
 
-  const fallbackCards = fallbackHotels
-    .map(formatStaticHotel)
-    .filter(Boolean)
-    .map((hotel) => ({
-      ...hotel,
-      stars: resolveHotelStars(hotel),
-      inventoryType: "HOTEL",
-      matchReasons: [...buildHotelMatchReasons({ plan, hotel }), "Opciones recomendadas basadas en tu busqueda"],
-    }))
-    .slice(0, limit);
+  let fallbackCardsPool = fallbackHotels.map(formatStaticHotel).filter(Boolean);
+  fallbackCardsPool = await applyHotelFilters(fallbackCardsPool, {
+    ...normalizedHotelFilters,
+    preferredOnly: false,
+  });
+  const fallbackReason = pickSemanticCopy(resolveSemanticLanguage(plan), {
+    es: "Opciones recomendadas basadas en tu búsqueda",
+    en: "Recommended options based on your search",
+    pt: "Opções recomendadas com base na sua busca",
+  });
+  const fallbackCards = mapHotelCardsForOutput({
+    cards: applySemanticHotelRanking(fallbackCardsPool, plan),
+    plan,
+    limit,
+    extraReasons: fallbackReason ? [fallbackReason] : [],
+  });
 
-  const finalMatchType = fallbackCards.length ? "SIMILAR" : "NONE";
+  const finalFallbackResult = finalizeHotelSearchResult({
+    cards: fallbackCards,
+    matchType: fallbackCards.length ? "SIMILAR" : "NONE",
+  });
+  const finalMatchType = finalFallbackResult.items.length ? "SIMILAR" : "NONE";
   emitSearchTrace(traceSink, "GLOBAL_FALLBACK_RESULTS", {
-    label: fallbackCards.length
+    label: finalFallbackResult.items.length
       ? "Using broader fallback recommendations"
       : "No fallback recommendations available",
-    debugLabel: `Global fallback returned ${fallbackCards.length} item(s)`,
-    total: fallbackCards.length,
+    debugLabel: `Global fallback returned ${finalFallbackResult.items.length} visible item(s)`,
+    total: finalFallbackResult.items.length,
   });
   console.log(`[search:hotels] RESULT: ${finalMatchType} (global fallback) — ${fallbackCards.length} items`);
-  await enrichCardsWithAmenitiesFromTable(fallbackCards);
-  return { items: fallbackCards, matchType: finalMatchType };
+  if (finalFallbackResult.items.length) {
+    await enrichCardsWithAmenitiesFromTable(finalFallbackResult.items);
+    return finalFallbackResult;
+  }
+  return {
+    items: [],
+    matchType: "NONE",
+    searchScope: latestHotelSearchScope,
+  };
 };

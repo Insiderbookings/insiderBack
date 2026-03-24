@@ -1,3 +1,6 @@
+import path from "node:path";
+import { appendFile, mkdir } from "node:fs/promises";
+
 const toSafeString = (value) => {
   if (value == null) return "";
   try {
@@ -7,86 +10,198 @@ const toSafeString = (value) => {
   }
 };
 
-const AI_EVENT_LOGS_ENABLED =
-  String(process.env.AI_EVENT_LOGS || "").trim().toLowerCase() === "true";
+const isTruthyEnvFlag = (value) =>
+  new Set(["1", "true", "yes", "on"]).has(
+    String(value || "").trim().toLowerCase(),
+  );
 
-/** Do not pass message content or full assistant reply in payload — only metadata (ids, counts, timings). */
-export const logAiEvent = (label, payload = {}) => {
-  if (!AI_EVENT_LOGS_ENABLED) return;
-  const safePayload = payload && typeof payload === "object" ? payload : { value: payload };
-  console.log(`[ai] ${label}`, toSafeString(safePayload));
+const AI_EVENT_LOGS_ENABLED = isTruthyEnvFlag(process.env.AI_EVENT_LOGS);
+const AI_FILE_DEBUG_ENABLED = isTruthyEnvFlag(process.env.AI_FILE_DEBUG);
+const AI_FILE_DEBUG_PATH = path.resolve(
+  process.cwd(),
+  String(process.env.AI_FILE_DEBUG_PATH || "./logs/ai-semantic-debug.txt").trim(),
+);
+const AI_FILE_DEBUG_MAX_DEPTH = Math.max(
+  2,
+  Math.min(8, Number(process.env.AI_FILE_DEBUG_MAX_DEPTH || 6)),
+);
+const AI_FILE_DEBUG_MAX_ARRAY_ITEMS = Math.max(
+  5,
+  Math.min(50, Number(process.env.AI_FILE_DEBUG_MAX_ARRAY_ITEMS || 12)),
+);
+const AI_FILE_DEBUG_MAX_OBJECT_KEYS = Math.max(
+  10,
+  Math.min(80, Number(process.env.AI_FILE_DEBUG_MAX_OBJECT_KEYS || 30)),
+);
+const AI_FILE_DEBUG_MAX_STRING_LENGTH = Math.max(
+  120,
+  Math.min(4000, Number(process.env.AI_FILE_DEBUG_MAX_STRING_LENGTH || 1200)),
+);
+
+let aiFileDebugInitPromise = null;
+let aiFileDebugWriteQueue = Promise.resolve();
+let aiFileDebugWarningShown = false;
+
+const ensureAiFileDebugDirectory = async () => {
+  if (!aiFileDebugInitPromise) {
+    aiFileDebugInitPromise = mkdir(path.dirname(AI_FILE_DEBUG_PATH), {
+      recursive: true,
+    }).catch((error) => {
+      aiFileDebugInitPromise = null;
+      throw error;
+    });
+  }
+  return aiFileDebugInitPromise;
 };
 
-// ── Circuit Breaker ──────────────────────────────────────────────────────────
+const sanitizeAiDebugValue = (value, depth = 0, seen = new WeakSet()) => {
+  if (value == null) return value;
+  if (typeof value === "string") {
+    return value.length > AI_FILE_DEBUG_MAX_STRING_LENGTH
+      ? `${value.slice(0, AI_FILE_DEBUG_MAX_STRING_LENGTH)}...[truncated]`
+      : value;
+  }
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return value;
+  }
+  if (typeof value === "function") {
+    return `[Function ${value.name || "anonymous"}]`;
+  }
+  if (depth >= AI_FILE_DEBUG_MAX_DEPTH) {
+    if (Array.isArray(value)) {
+      return `[Array(${value.length}) depth-limited]`;
+    }
+    return "[Object depth-limited]";
+  }
+  if (Array.isArray(value)) {
+    const sliced = value
+      .slice(0, AI_FILE_DEBUG_MAX_ARRAY_ITEMS)
+      .map((entry) => sanitizeAiDebugValue(entry, depth + 1, seen));
+    if (value.length > AI_FILE_DEBUG_MAX_ARRAY_ITEMS) {
+      sliced.push({
+        __truncatedItems: value.length - AI_FILE_DEBUG_MAX_ARRAY_ITEMS,
+      });
+    }
+    return sliced;
+  }
+  if (typeof value === "object") {
+    if (seen.has(value)) return "[Circular]";
+    seen.add(value);
+    const out = {};
+    const keys = Object.keys(value);
+    keys.slice(0, AI_FILE_DEBUG_MAX_OBJECT_KEYS).forEach((key) => {
+      out[key] = sanitizeAiDebugValue(value[key], depth + 1, seen);
+    });
+    if (keys.length > AI_FILE_DEBUG_MAX_OBJECT_KEYS) {
+      out.__truncatedKeys = keys.length - AI_FILE_DEBUG_MAX_OBJECT_KEYS;
+    }
+    seen.delete(value);
+    return out;
+  }
+  return String(value);
+};
+
+export const logAiFileDebug = (stage, payload = {}, meta = {}) => {
+  if (!AI_FILE_DEBUG_ENABLED || !stage) return;
+  const entry = {
+    ts: new Date().toISOString(),
+    stage: String(stage).trim(),
+    ...sanitizeAiDebugValue(meta),
+    payload: sanitizeAiDebugValue(payload),
+  };
+  const line = `${JSON.stringify(entry)}\n`;
+
+  aiFileDebugWriteQueue = aiFileDebugWriteQueue
+    .then(async () => {
+      await ensureAiFileDebugDirectory();
+      await appendFile(AI_FILE_DEBUG_PATH, line, "utf8");
+    })
+    .catch((error) => {
+      if (aiFileDebugWarningShown) return;
+      aiFileDebugWarningShown = true;
+      console.warn("[ai] file debug logger failed", error?.message || error);
+    });
+};
+
+/**
+ * Do not pass message content or full assistant reply here by default.
+ * Keep this event logger metadata-oriented.
+ */
+export const logAiEvent = (label, payload = {}) => {
+  if (!AI_EVENT_LOGS_ENABLED) return;
+  const safePayload =
+    payload && typeof payload === "object" ? payload : { value: payload };
+  console.log(`[ai] ${label}`, toSafeString(safePayload));
+  logAiFileDebug("ai_event", safePayload, { label });
+};
+
+// Circuit breaker
 // Protects against OpenAI outages. Opens after FAILURE_THRESHOLD consecutive
 // failures within WINDOW_MS. After HALF_OPEN_AFTER_MS, allows one probe request.
-// If probe succeeds → closes. If probe fails → stays open.
-const FAILURE_THRESHOLD = 5;          // consecutive failures to open
-const WINDOW_MS = 60_000;             // failures must occur within 60s
-const HALF_OPEN_AFTER_MS = 30_000;    // try again after 30s
+// If probe succeeds -> closes. If probe fails -> stays open.
+const FAILURE_THRESHOLD = 5;
+const WINDOW_MS = 60_000;
+const HALF_OPEN_AFTER_MS = 30_000;
 
-const _cb = {
-  state: "CLOSED",       // CLOSED | OPEN | HALF_OPEN
+const cbState = {
+  state: "CLOSED",
   failures: 0,
   lastFailureAt: 0,
   openedAt: 0,
 };
 
 export const circuitBreaker = {
-  /**
-   * Returns true if the circuit allows requests to pass through.
-   * Call this before making OpenAI calls.
-   */
   isOpen() {
-    if (_cb.state === "CLOSED") return false;
-    if (_cb.state === "OPEN") {
-      if (Date.now() - _cb.openedAt >= HALF_OPEN_AFTER_MS) {
-        _cb.state = "HALF_OPEN";
-        console.info("[ai] circuit breaker → HALF_OPEN (probing)");
-        return false; // allow one probe
+    if (cbState.state === "CLOSED") return false;
+    if (cbState.state === "OPEN") {
+      if (Date.now() - cbState.openedAt >= HALF_OPEN_AFTER_MS) {
+        cbState.state = "HALF_OPEN";
+        console.info("[ai] circuit breaker -> HALF_OPEN (probing)");
+        return false;
       }
-      return true; // still open
+      return true;
     }
-    // HALF_OPEN — one probe already in flight, block others
     return false;
   },
 
-  /** Call on every successful OpenAI response. */
   onSuccess() {
-    if (_cb.state !== "CLOSED") {
-      console.info("[ai] circuit breaker → CLOSED (recovered)", { previousState: _cb.state });
+    if (cbState.state !== "CLOSED") {
+      console.info("[ai] circuit breaker -> CLOSED (recovered)", {
+        previousState: cbState.state,
+      });
     }
-    _cb.state = "CLOSED";
-    _cb.failures = 0;
-    _cb.lastFailureAt = 0;
+    cbState.state = "CLOSED";
+    cbState.failures = 0;
+    cbState.lastFailureAt = 0;
   },
 
-  /** Call on every OpenAI error/timeout. */
   onFailure(context = {}) {
     const now = Date.now();
-    // Reset failure count if last failure was outside the window
-    if (now - _cb.lastFailureAt > WINDOW_MS) {
-      _cb.failures = 0;
+    if (now - cbState.lastFailureAt > WINDOW_MS) {
+      cbState.failures = 0;
     }
-    _cb.failures += 1;
-    _cb.lastFailureAt = now;
+    cbState.failures += 1;
+    cbState.lastFailureAt = now;
 
-    if (_cb.state === "HALF_OPEN" || _cb.failures >= FAILURE_THRESHOLD) {
-      _cb.state = "OPEN";
-      _cb.openedAt = now;
-      console.error("[ai] circuit breaker → OPEN", {
-        failures: _cb.failures,
+    if (cbState.state === "HALF_OPEN" || cbState.failures >= FAILURE_THRESHOLD) {
+      cbState.state = "OPEN";
+      cbState.openedAt = now;
+      console.error("[ai] circuit breaker -> OPEN", {
+        failures: cbState.failures,
         ...context,
       });
     }
   },
 
-  /** Current state snapshot for health checks. */
   status() {
     return {
-      state: _cb.state,
-      failures: _cb.failures,
-      openedAt: _cb.openedAt || null,
+      state: cbState.state,
+      failures: cbState.failures,
+      openedAt: cbState.openedAt || null,
     };
   },
 };
