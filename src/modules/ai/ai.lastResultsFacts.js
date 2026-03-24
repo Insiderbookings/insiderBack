@@ -232,6 +232,19 @@ const collectItemFacts = (item = {}) =>
     ...normalizeTextList(item.business),
     ...normalizeTextList(item.descriptions),
     ...normalizeTextList(item.shortReason),
+    ...normalizeTextList(item.matchReasons),
+    ...normalizeTextList(
+      Array.isArray(item.semanticEvidence)
+        ? item.semanticEvidence.map((entry) => entry?.value || entry?.label || null)
+        : [],
+    ),
+    ...normalizeTextList(item.matchedPlaceTarget?.normalizedName),
+    ...normalizeTextList(item.matchedPlaceTarget?.rawText),
+    ...normalizeTextList(
+      Number.isFinite(Number(item.distanceMeters))
+        ? [`${Math.round(Number(item.distanceMeters))} meters`]
+        : [],
+    ),
   ]);
 
 const buildItemFactBlob = (item = {}) =>
@@ -319,6 +332,20 @@ const normalizeFactItem = (item = {}, inventoryType = "HOTEL", fallbackOrder = n
   business: unique(normalizeTextList(item.business)),
   descriptions: unique(normalizeTextList(item.descriptions)),
   shortReason: normalizeString(item.shortReason),
+  matchReasons: unique(normalizeTextList(item.matchReasons)),
+  semanticEvidence: Array.isArray(item.semanticEvidence)
+    ? item.semanticEvidence
+        .map((entry) =>
+          entry && typeof entry === "object"
+            ? {
+                type: normalizeString(entry.type),
+                label: normalizeString(entry.label),
+                value: normalizeString(entry.value),
+              }
+            : null,
+        )
+        .filter(Boolean)
+    : [],
 });
 
 const sortByDisplayOrder = (items = []) =>

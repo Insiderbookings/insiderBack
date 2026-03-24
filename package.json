@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "test": "node --test tests/providers/webbeds/searchHotels.test.js tests/providers/webbeds/provider.test.js",
+    "test": "node --test tests/providers/webbeds/searchHotels.test.js tests/providers/webbeds/provider.test.js tests/ai/searchTripRouting.test.js tests/ai/searchScope.test.js tests/ai/semanticCatalog.test.js tests/ai/searchContext.test.js tests/ai/rendererSemanticPicks.test.js",
     "payments:reconcile-once": "node src/scripts/reconcilePendingPayments.js",
     "hotels:export:csv": "node src/scripts/exportHotelsToCsv.js",
     "hotels:export:xlsx": "node src/scripts/exportHotelsToXlsx.js",

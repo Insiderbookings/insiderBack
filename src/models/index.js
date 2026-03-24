@@ -32,6 +32,9 @@ import InfluencerGoalProgressModel from "./InfluencerGoalProgress.js";
 import InfluencerGoalEventModel from "./InfluencerGoalEvent.js";
 import CouponWalletModel from "./CouponWallet.js";
 import CouponRedemptionModel from "./CouponRedemption.js";
+import GuestWalletAccountModel from "./GuestWalletAccount.js";
+import GuestWalletLedgerModel from "./GuestWalletLedger.js";
+import GuestWalletHoldModel from "./GuestWalletHold.js";
 
 import AddOnModel from "./AddOn.js";
 import AddOnOptionModel from "./AddonOption.js";
@@ -158,6 +161,9 @@ const models = {
   InfluencerGoalEvent: InfluencerGoalEventModel(sequelize),
   CouponWallet: CouponWalletModel(sequelize),
   CouponRedemption: CouponRedemptionModel(sequelize),
+  GuestWalletAccount: GuestWalletAccountModel(sequelize),
+  GuestWalletLedger: GuestWalletLedgerModel(sequelize),
+  GuestWalletHold: GuestWalletHoldModel(sequelize),
   OutsideMeta: OutsideMetaModel(sequelize),
   PayoutAccount: PayoutAccountModel(sequelize),
   PayoutBatch: PayoutBatchModel(sequelize),

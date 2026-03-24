@@ -1,6 +1,12 @@
-import { searchHomesForPlan, searchHotelsForPlan } from "../../../services/assistantSearch.service.js";
+import {
+  searchHomesForPlan,
+  searchHotelsForPlan,
+} from "../../../services/assistantSearch.service.js";
 
-export const searchStays = async (plan, { limit, maxResults = 15, excludeIds = [], traceSink = null } = {}) => {
+export const searchStays = async (
+  plan,
+  { limit, maxResults = 120, excludeIds = [], traceSink = null } = {},
+) => {
   const SEARCH_HOMES_ENABLED = false; // Feature flag: Temporarily disabled
 
   const listingTypes =
@@ -23,8 +29,16 @@ export const searchStays = async (plan, { limit, maxResults = 15, excludeIds = [
   // Homes are usually integers or UUIDs, Hotels are strings/integers. Passing full list is safe.
 
   const [homesResult, hotelsResult] = await Promise.all([
-    wantsHomes ? searchHomesForPlan(plan, { limit: limit?.homes, excludeIds }) : { items: [], matchType: "NONE" },
-    wantsHotels ? searchHotelsForPlan(plan, { limit: limit?.hotels, excludeIds, traceSink }) : { items: [], matchType: "NONE" },
+    wantsHomes
+      ? searchHomesForPlan(plan, { limit: limit?.homes, excludeIds })
+      : { items: [], matchType: "NONE" },
+    wantsHotels
+      ? searchHotelsForPlan(plan, {
+          limit: limit?.hotels,
+          excludeIds,
+          traceSink,
+        })
+      : { items: [], matchType: "NONE" },
   ]);
 
   const homes = Array.isArray(homesResult?.items) ? homesResult.items : [];
@@ -36,6 +50,10 @@ export const searchStays = async (plan, { limit, maxResults = 15, excludeIds = [
     matchTypes: {
       homes: homesResult?.matchType || "NONE",
       hotels: hotelsResult?.matchType || "NONE",
+    },
+    searchScope: {
+      homes: homesResult?.searchScope || null,
+      hotels: hotelsResult?.searchScope || null,
     },
     foundExact:
       homesResult?.matchType === "EXACT" || hotelsResult?.matchType === "EXACT",

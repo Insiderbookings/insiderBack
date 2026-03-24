@@ -149,6 +149,7 @@ const CONTEXT_STRING_MAX = {
   tripLocationText: 120,
   confirmedWhere: 200,
   confirmedPlaceId: 200,
+  confirmedPlaceSelectionId: 200,
   confirmedWhen: 100,
   confirmedWho: 100,
   nationalityCode: 20,
@@ -228,6 +229,12 @@ const sanitizeContextPayload = (value) => {
     next.confirmedSearch = {};
     if (cs.where != null) next.confirmedSearch.where = truncate(cs.where, CONTEXT_STRING_MAX.confirmedWhere);
     if (cs.placeId != null) next.confirmedSearch.placeId = truncate(cs.placeId, CONTEXT_STRING_MAX.confirmedPlaceId);
+    if (cs.placeSelectionId != null) {
+      next.confirmedSearch.placeSelectionId = truncate(
+        cs.placeSelectionId,
+        CONTEXT_STRING_MAX.confirmedPlaceSelectionId,
+      );
+    }
     if (cs.lat != null) {
       const lat = Number(cs.lat);
       if (Number.isFinite(lat)) next.confirmedSearch.lat = lat;
@@ -266,6 +273,7 @@ const sanitizeContextPayload = (value) => {
   // Flow-control flags — boolean signals from the frontend
   if (raw.cancelPending === true) next.cancelPending = true;
   if (raw.skipDataCollection === true) next.skipDataCollection = true;
+  if (raw.forceLiveAvailability === true) next.forceLiveAvailability = true;
 
   let serialized = "";
   try {
@@ -563,6 +571,23 @@ export const handleAiChat = async (req, res) => {
         const assistantUiSnapshot = buildAssistantUiSnapshot(result.ui, result.webSources, {
           allowCompetitors: Boolean(result.allowCompetitorWebSources),
         });
+        const orientationText =
+          typeof result?.orientationMessage === "string"
+            ? result.orientationMessage.trim()
+            : "";
+        if (orientationText && orientationText !== (result.reply || "").trim()) {
+          try {
+            await appendAssistantChatMessage(conversationId, userId, {
+              role: "assistant",
+              content: orientationText,
+            });
+          } catch (orientationErr) {
+            console.warn(
+              "[ai] failed to persist assistant orientation",
+              orientationErr?.message || orientationErr,
+            );
+          }
+        }
         await appendAssistantChatMessage(conversationId, userId, {
           role: "assistant",
           content: result.reply || "Ok.",
@@ -732,6 +757,8 @@ export const handleAiChatStream = async (req, res) => {
     }));
 
     let accumulatedText = "";
+    let accumulatedKickoffText = "";
+    let accumulatedClosingText = "";
 
     const result = await runAiTurn({
       sessionId: conversationId,
@@ -742,6 +769,12 @@ export const handleAiChatStream = async (req, res) => {
       context,
       onEvent: (event) => {
         if (!event?.type) return;
+        if (event.type === "assistant_message") {
+          accumulatedKickoffText =
+            String(event?.data?.text || accumulatedKickoffText || "").trim() || accumulatedKickoffText;
+          sendEvent(event.type, event.data || {});
+          return;
+        }
         if (event.type === "results_partial") {
           const partialInventory = event.data?.inventory ?? null;
           const cappedPartialInventory = partialInventory ? {
@@ -764,7 +797,20 @@ export const handleAiChatStream = async (req, res) => {
           });
           return;
         }
+        if (event.type === "closing_delta") {
+          accumulatedClosingText += event.data?.content || "";
+          sendEvent("closing_delta", { content: event.data?.content });
+          return;
+        }
+        if (event.type === "assistant_closing") {
+          sendEvent("assistant_closing", event.data || {});
+          return;
+        }
         sendEvent(event.type, event.data || {});
+      },
+      onKickoffChunk: (chunk) => {
+        accumulatedKickoffText += chunk;
+        sendEvent("kickoff_delta", { content: chunk });
       },
       onTextChunk: (chunk) => {
         accumulatedText += chunk;
@@ -817,21 +863,40 @@ export const handleAiChatStream = async (req, res) => {
       nextAction: result.nextAction,
       assistantReady: isAssistantEnabled(),
       quickStartPrompts: QUICK_START_PROMPTS,
+      closingMessage: accumulatedClosingText || result.closingMessage || null,
     });
 
     // Persist in background — does not block the client
     const assistantUiSnapshot = buildAssistantUiSnapshot(result.ui, result.webSources, {
       allowCompetitors: Boolean(result.allowCompetitorWebSources),
     });
-    appendAssistantChatMessage(conversationId, userId, {
-      role: "assistant",
-      content: replyText || "Ok.",
-      planSnapshot: result.plan,
-      inventorySnapshot: result.inventory,
-      uiSnapshot: assistantUiSnapshot,
-    }).then(() =>
-      saveAssistantState({ sessionId: conversationId, userId, state: result.state })
-    ).catch(err => console.error("[ai] stream: failed to persist assistant reply", err));
+    (async () => {
+      const orientationText =
+        typeof result?.orientationMessage === "string"
+          ? result.orientationMessage.trim()
+          : "";
+      if (orientationText && orientationText !== (replyText || "").trim()) {
+        try {
+          await appendAssistantChatMessage(conversationId, userId, {
+            role: "assistant",
+            content: orientationText,
+          });
+        } catch (orientationErr) {
+          console.warn(
+            "[ai] stream: failed to persist assistant orientation",
+            orientationErr?.message || orientationErr,
+          );
+        }
+      }
+      await appendAssistantChatMessage(conversationId, userId, {
+        role: "assistant",
+        content: replyText || "Ok.",
+        planSnapshot: result.plan,
+        inventorySnapshot: result.inventory,
+        uiSnapshot: assistantUiSnapshot,
+      });
+      await saveAssistantState({ sessionId: conversationId, userId, state: result.state });
+    })().catch(err => console.error("[ai] stream: failed to persist assistant reply", err));
   } catch (err) {
     console.error("[ai] stream: chat failed", { sessionId: conversationId, userId, error: err?.message });
     sendEvent("error", { message: "Unable to process assistant query right now" });

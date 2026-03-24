@@ -6,6 +6,12 @@ import {
     downgradeSignupBonusOnBookingCancel,
     reverseReferralRedemption,
 } from "../services/referralRewards.service.js";
+import {
+    deriveRefundRatio,
+    refundUsedAmount,
+    releaseHold,
+    reverseEarn,
+} from "../services/guestWallet.service.js";
 import crypto from "crypto";
 import { getWebbedsConfig } from "../providers/webbeds/config.js";
 import { createWebbedsClient } from "../providers/webbeds/client.js";
@@ -861,6 +867,60 @@ export const processBookingCancellation = async ({
         cancellationMeta,
     });
 
+    if (!wasPaid && booking.payment_intent_id) {
+        try {
+            await releaseHold({
+                userId: booking.user_id,
+                stayId: booking.id,
+                paymentScopeKey: booking.meta?.paymentScopeKey ?? null,
+                paymentIntentId: booking.payment_intent_id,
+                reason: "booking_cancelled_before_capture",
+            });
+        } catch (walletReleaseError) {
+            console.warn("cancelBooking: could not release guest wallet hold:", walletReleaseError?.message || walletReleaseError);
+        }
+    }
+
+    if (wasPaid) {
+        const walletRefundRatio = deriveRefundRatio({
+            refundedAmount: refundAmount,
+            chargedAmount: booking.gross_price,
+        });
+        if (walletRefundRatio > 0) {
+            try {
+                await refundUsedAmount({
+                    userId: booking.user_id,
+                    stayId: booking.id,
+                    refundRatio: walletRefundRatio,
+                    referenceKey: `guest-wallet:refund:cancel:${booking.id}:${cancellationMeta?.refundId || "no_refund_id"}`,
+                    meta: {
+                        source: "booking_cancel",
+                        refundAmount,
+                        refundCurrency,
+                    },
+                });
+            } catch (walletRefundError) {
+                console.warn("cancelBooking: could not restore guest wallet:", walletRefundError?.message || walletRefundError);
+            }
+
+            try {
+                await reverseEarn({
+                    userId: booking.user_id,
+                    stayId: booking.id,
+                    refundRatio: walletRefundRatio,
+                    referenceKey: `guest-wallet:reward-reverse:cancel:${booking.id}:${cancellationMeta?.refundId || "no_refund_id"}`,
+                    meta: {
+                        source: "booking_cancel",
+                        refundAmount,
+                        refundCurrency,
+                    },
+                });
+            } catch (walletReverseError) {
+                console.warn("cancelBooking: could not reverse guest wallet reward:", walletReverseError?.message || walletReverseError);
+            }
+        }
+    }
+
     // Calendar Cleanup
     if (booking.inventory_type === "HOME") {
         try {
@@ -1054,6 +1114,44 @@ export const processRefund = async ({ bookingId, amount = null, full = false, re
             reason
         }];
         await booking.update({ meta });
+
+        const walletRefundRatio = deriveRefundRatio({
+            refundedAmount: refundAmountCents / 100,
+            chargedAmount: booking.gross_price,
+        });
+        if (walletRefundRatio > 0) {
+            try {
+                await refundUsedAmount({
+                    userId: booking.user_id,
+                    stayId: booking.id,
+                    refundRatio: walletRefundRatio,
+                    referenceKey: `guest-wallet:refund:manual:${booking.id}:${refund.id}`,
+                    meta: {
+                        source: "manual_refund",
+                        refundId: refund.id,
+                        reason,
+                    },
+                });
+            } catch (walletRefundError) {
+                console.warn("processRefund: could not restore guest wallet:", walletRefundError?.message || walletRefundError);
+            }
+
+            try {
+                await reverseEarn({
+                    userId: booking.user_id,
+                    stayId: booking.id,
+                    refundRatio: walletRefundRatio,
+                    referenceKey: `guest-wallet:reward-reverse:manual:${booking.id}:${refund.id}`,
+                    meta: {
+                        source: "manual_refund",
+                        refundId: refund.id,
+                        reason,
+                    },
+                });
+            } catch (walletReverseError) {
+                console.warn("processRefund: could not reverse guest wallet reward:", walletReverseError?.message || walletReverseError);
+            }
+        }
     }
 
     return {
