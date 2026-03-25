@@ -40,7 +40,10 @@ const hasInventorySnapshot = (snapshot) => {
   return homes > 0 || hotels > 0;
 };
 
-const normalizeLimit = (value, { fallback = 1, min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
+const normalizeLimit = (
+  value,
+  { fallback = 1, min = 1, max = Number.MAX_SAFE_INTEGER } = {},
+) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) {
     return Math.min(max, Math.max(fallback, min));
@@ -58,13 +61,13 @@ const quotaError = (message, code, status = 429) => {
 const sessionQuotaError = () =>
   quotaError(
     "You have reached the maximum number of AI chat sessions. Delete an older chat to continue.",
-    "AI_CHAT_SESSION_QUOTA_EXCEEDED"
+    "AI_CHAT_SESSION_QUOTA_EXCEEDED",
   );
 
 const messageQuotaError = () =>
   quotaError(
     "This chat reached the maximum number of messages. Start a new chat to continue.",
-    "AI_CHAT_MESSAGE_QUOTA_EXCEEDED"
+    "AI_CHAT_MESSAGE_QUOTA_EXCEEDED",
   );
 
 const mapSession = (session, { includeMetadata = true } = {}) => {
@@ -96,6 +99,13 @@ const mapMessage = (message) => {
     planSnapshot: parseJsonField(data.plan_snapshot) || null,
     inventorySnapshot: parseJsonField(data.inventory_snapshot) || null,
     ui,
+    nextAction: ui?.meta?.nextAction || null,
+    followUpKind: ui?.meta?.followUpKind || null,
+    replyMode: ui?.meta?.replyMode || null,
+    referencedHotelIds: Array.isArray(ui?.meta?.referencedHotelIds)
+      ? ui.meta.referencedHotelIds
+      : [],
+    webSearchUsed: Boolean(ui?.meta?.webSearchUsed),
     webSources: Array.isArray(ui?.webSources) ? ui.webSources : [],
   };
 };
@@ -107,7 +117,10 @@ const notFoundError = () => {
   return error;
 };
 
-export const createAssistantSessionForUser = async (userId, { greeting } = {}) => {
+export const createAssistantSessionForUser = async (
+  userId,
+  { greeting } = {},
+) => {
   if (!userId) throw new Error("userId is required");
   const activeSessions = await models.AiChatSession.count({
     where: { user_id: userId },
@@ -129,7 +142,7 @@ export const createAssistantSessionForUser = async (userId, { greeting } = {}) =
         message_count: preview ? 1 : 0,
         metadata: {},
       },
-      { transaction }
+      { transaction },
     );
 
     if (normalizedGreeting) {
@@ -139,7 +152,7 @@ export const createAssistantSessionForUser = async (userId, { greeting } = {}) =
           role: "assistant",
           content: normalizedGreeting,
         },
-        { transaction }
+        { transaction },
       );
     }
 
@@ -151,7 +164,7 @@ export const createAssistantSessionForUser = async (userId, { greeting } = {}) =
 
 export const listAssistantSessionsForUser = async (
   userId,
-  { limit = AI_CHAT_HISTORY_LIMITS.listDefault } = {}
+  { limit = AI_CHAT_HISTORY_LIMITS.listDefault } = {},
 ) => {
   if (!userId) return [];
   const rows = await models.AiChatSession.findAll({
@@ -165,7 +178,11 @@ export const listAssistantSessionsForUser = async (
   return rows.map((row) => mapSession(row, { includeMetadata: false }));
 };
 
-export const getAssistantSessionForUser = async (sessionId, userId, options = {}) => {
+export const getAssistantSessionForUser = async (
+  sessionId,
+  userId,
+  options = {},
+) => {
   if (!sessionId || !userId) return null;
   return models.AiChatSession.findOne({
     where: { id: sessionId, user_id: userId },
@@ -173,7 +190,11 @@ export const getAssistantSessionForUser = async (sessionId, userId, options = {}
   });
 };
 
-export const getAssistantSessionOrThrow = async (sessionId, userId, options = {}) => {
+export const getAssistantSessionOrThrow = async (
+  sessionId,
+  userId,
+  options = {},
+) => {
   const session = await getAssistantSessionForUser(sessionId, userId, options);
   if (!session) throw notFoundError();
   return session;
@@ -182,7 +203,7 @@ export const getAssistantSessionOrThrow = async (sessionId, userId, options = {}
 export const getAssistantSessionWithMessages = async (
   sessionId,
   userId,
-  { limit = AI_CHAT_HISTORY_LIMITS.detailDefault } = {}
+  { limit = AI_CHAT_HISTORY_LIMITS.detailDefault } = {},
 ) => {
   const session = await getAssistantSessionOrThrow(sessionId, userId);
   const rows = await models.AiChatMessage.findAll({
@@ -202,7 +223,7 @@ export const getAssistantSessionWithMessages = async (
 export const fetchAssistantMessages = async (
   sessionId,
   userId,
-  { limit = AI_CHAT_HISTORY_LIMITS.contextDefault } = {}
+  { limit = AI_CHAT_HISTORY_LIMITS.contextDefault } = {},
 ) => {
   await getAssistantSessionOrThrow(sessionId, userId);
   const rows = await models.AiChatMessage.findAll({
@@ -226,12 +247,15 @@ export const appendAssistantChatMessage = async (
     inventorySnapshot = null,
     uiSnapshot = null,
     reserveSlots = 0,
-  } = {}
+  } = {},
 ) => {
   const normalizedRole = MESSAGE_ROLES.includes(role) ? role : "user";
   const sanitized = sanitizeContent(content);
   if (!sanitized) throw new Error("Message content is required");
-  const normalizedReserveSlots = Math.max(0, Math.floor(Number(reserveSlots) || 0));
+  const normalizedReserveSlots = Math.max(
+    0,
+    Math.floor(Number(reserveSlots) || 0),
+  );
 
   return sequelize.transaction(async (transaction) => {
     const lock = transaction.LOCK ? transaction.LOCK.UPDATE : undefined;
@@ -245,7 +269,7 @@ export const appendAssistantChatMessage = async (
     const currentCount = Number(session.message_count) || 0;
     const maxCountBeforeInsert = Math.max(
       1,
-      AI_CHAT_QUOTAS.maxMessagesPerSession - normalizedReserveSlots
+      AI_CHAT_QUOTAS.maxMessagesPerSession - normalizedReserveSlots,
     );
     if (currentCount >= maxCountBeforeInsert) {
       throw messageQuotaError();
@@ -260,7 +284,7 @@ export const appendAssistantChatMessage = async (
         inventory_snapshot: inventorySnapshot ?? null,
         ui_snapshot: uiSnapshot ?? null,
       },
-      { transaction }
+      { transaction },
     );
 
     const preview = buildPreview(sanitized);

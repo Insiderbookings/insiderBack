@@ -50,7 +50,9 @@ const FEATURE_CATALOG = [
     id: "airportShuttle",
     labels: { es: "traslado al aeropuerto", en: "airport shuttle" },
     detect: /\b(traslado|transfer|airport shuttle|airport transfer|shuttle)\b/i,
-    match: [/\b(traslado|transfer|airport shuttle|airport transfer|shuttle)\b/i],
+    match: [
+      /\b(traslado|transfer|airport shuttle|airport transfer|shuttle)\b/i,
+    ],
   },
   {
     id: "pets",
@@ -82,25 +84,29 @@ const POSITION_CATALOG = [
   {
     id: "first",
     order: 1,
-    detect: /\b(el primero|la primera|primero|primera|the first one|first one|the first|first)\b/i,
+    detect:
+      /\b(el primero|la primera|primero|primera|the first one|first one|the first|first)\b/i,
     labels: { es: "el primero", en: "the first one" },
   },
   {
     id: "second",
     order: 2,
-    detect: /\b(el segundo|la segunda|segundo|segunda|the second one|second one|the second|second)\b/i,
+    detect:
+      /\b(el segundo|la segunda|segundo|segunda|the second one|second one|the second|second)\b/i,
     labels: { es: "el segundo", en: "the second one" },
   },
   {
     id: "third",
     order: 3,
-    detect: /\b(el tercero|la tercera|tercero|tercera|the third one|third one|the third|third)\b/i,
+    detect:
+      /\b(el tercero|la tercera|tercero|tercera|the third one|third one|the third|third)\b/i,
     labels: { es: "el tercero", en: "the third one" },
   },
   {
     id: "last",
     order: -1,
-    detect: /\b(el ultimo|el último|la ultima|la última|ultimo|último|the last one|last one|the last|last)\b/i,
+    detect:
+      /\b(el ultimo|el último|la ultima|la última|ultimo|último|the last one|last one|the last|last)\b/i,
     labels: { es: "el ultimo", en: "the last one" },
   },
 ];
@@ -108,7 +114,8 @@ const POSITION_CATALOG = [
 const FAMILY_SIGNAL_CATALOG = [
   {
     id: "childcare",
-    pattern: /\b(ninera|niñera|nanny|babysitter|babysitting|childcare|child care)\b/i,
+    pattern:
+      /\b(ninera|niñera|nanny|babysitter|babysitting|childcare|child care)\b/i,
     labels: { es: "servicio de cuidado infantil", en: "childcare services" },
   },
   {
@@ -118,7 +125,8 @@ const FAMILY_SIGNAL_CATALOG = [
   },
   {
     id: "familyRoom",
-    pattern: /\b(family room|family suite|connecting rooms|interconnecting rooms|habitacion familiar|habitación familiar)\b/i,
+    pattern:
+      /\b(family room|family suite|connecting rooms|interconnecting rooms|habitacion familiar|habitación familiar)\b/i,
     labels: { es: "habitaciones familiares", en: "family rooms" },
   },
   {
@@ -128,7 +136,8 @@ const FAMILY_SIGNAL_CATALOG = [
   },
   {
     id: "playArea",
-    pattern: /\b(playground|play area|game room|arcade|playroom|kids pool|children's pool|childrens pool)\b/i,
+    pattern:
+      /\b(playground|play area|game room|arcade|playroom|kids pool|children's pool|childrens pool)\b/i,
     labels: { es: "espacios para chicos", en: "kids facilities" },
   },
 ];
@@ -144,6 +153,13 @@ const MULTIPLE_SELECTION_PATTERN =
 const RECOMMENDATION_QUERY_PATTERN =
   /\b(recomendame|recomiendame|recomendaciones?|recommend(?: me|ations?)?|what do you recommend|which one would you pick|what would you pick|cu[aá]l me recomiendas|qu[eé] me recomiendas|cu[aá]l elegir[ií]as|best option|me conviene)\b/i;
 
+const ONLY_OPTIONS_QUERY_PATTERN =
+  /\b(esas son las unicas opciones|son las unicas opciones|son las unicas|no tenes mas|no tienes mas|tenes mas|tienes mas|more options|show me more|show more|only options|only ones|any more|hay mas)\b/i;
+const NEGATED_FEATURE_QUERY_PATTERN =
+  /\b(no tienen|no tiene|sin |without |dont have|doesnt have|do not have|not have)\b/i;
+const OBJECTIVE_LOCATION_QUERY_PATTERN =
+  /\b(mejor ubicad|best located|better located|mejor zona|best area|better area|mas cerca|m[aÃ¡]s cerca|closest|walking distance|caminando|walkable)\b/i;
+
 const FAMILY_QUERY_PATTERNS = [
   /\b(mejor(?:es)?\s+para\s+(?:chicos|ninos|niños|bebes|bebés|familia|family|kids|children))\b/i,
   /\b(para\s+ir\s+con\s+(?:chicos|ninos|niños|bebes|bebés)|for\s+(?:kids|children|families))\b/i,
@@ -152,13 +168,16 @@ const FAMILY_QUERY_PATTERNS = [
 
 const isSpanish = (text = "") =>
   /\b(quiero|cuales|cuáles|tienen|tiene|de los|de las|hoteles|mencionaste|pileta|piscina|ninera|niñera|mas barato|más barato|familia|chicos)\b/i.test(
-    String(text || "")
+    String(text || ""),
   );
 
-const normalizeString = (value) => (typeof value === "string" ? value.trim() : "");
+const normalizeString = (value) =>
+  typeof value === "string" ? value.trim() : "";
 
 const normalizeDisplayCurrencyCode = (value) => {
-  const raw = String(value || "USD").trim().toUpperCase();
+  const raw = String(value || "USD")
+    .trim()
+    .toUpperCase();
   if (!raw) return "USD";
   if (/^\d+$/.test(raw)) {
     if (raw === "520" || raw === "840") return "USD";
@@ -180,7 +199,7 @@ const tryParseJson = (value) => {
   if (typeof value !== "string") return value;
   const trimmed = value.trim();
   if (!trimmed) return value;
-  if (!["[", "{", "\""].includes(trimmed[0])) return value;
+  if (!["[", "{", '"'].includes(trimmed[0])) return value;
   try {
     return JSON.parse(trimmed);
   } catch (_) {
@@ -214,14 +233,24 @@ const joinHumanList = (values = [], language = "es", conjunction = "and") => {
   if (!cleaned.length) return "";
   if (cleaned.length === 1) return cleaned[0];
   if (cleaned.length === 2) {
-    const joiner = conjunction === "or"
-      ? language === "es" ? " o " : " or "
-      : language === "es" ? " y " : " and ";
+    const joiner =
+      conjunction === "or"
+        ? language === "es"
+          ? " o "
+          : " or "
+        : language === "es"
+          ? " y "
+          : " and ";
     return `${cleaned[0]}${joiner}${cleaned[1]}`;
   }
-  const lastJoiner = conjunction === "or"
-    ? language === "es" ? " o " : " or "
-    : language === "es" ? " y " : " and ";
+  const lastJoiner =
+    conjunction === "or"
+      ? language === "es"
+        ? " o "
+        : " or "
+      : language === "es"
+        ? " y "
+        : " and ";
   return `${cleaned.slice(0, -1).join(", ")}${lastJoiner}${cleaned[cleaned.length - 1]}`;
 };
 
@@ -235,7 +264,9 @@ const collectItemFacts = (item = {}) =>
     ...normalizeTextList(item.matchReasons),
     ...normalizeTextList(
       Array.isArray(item.semanticEvidence)
-        ? item.semanticEvidence.map((entry) => entry?.value || entry?.label || null)
+        ? item.semanticEvidence.map(
+            (entry) => entry?.value || entry?.label || null,
+          )
         : [],
     ),
     ...normalizeTextList(item.matchedPlaceTarget?.normalizedName),
@@ -248,12 +279,12 @@ const collectItemFacts = (item = {}) =>
   ]);
 
 const buildItemFactBlob = (item = {}) =>
-  collectItemFacts(item)
-    .join(" | ")
-    .toLowerCase();
+  collectItemFacts(item).join(" | ").toLowerCase();
 
 const detectFeatures = (message = "") =>
-  FEATURE_CATALOG.filter((feature) => feature.detect.test(String(message || "")));
+  FEATURE_CATALOG.filter((feature) =>
+    feature.detect.test(String(message || "")),
+  );
 
 const detectFeatureMode = (message = "", features = []) => {
   if (features.length < 2) return "all";
@@ -271,7 +302,8 @@ const detectFamilyQuery = (message = "") =>
   FAMILY_QUERY_PATTERNS.some((pattern) => pattern.test(String(message || "")));
 
 const detectPositionReference = (message = "") =>
-  POSITION_CATALOG.find((entry) => entry.detect.test(String(message || ""))) || null;
+  POSITION_CATALOG.find((entry) => entry.detect.test(String(message || ""))) ||
+  null;
 
 const detectMultipleSelection = (message = "") =>
   MULTIPLE_SELECTION_PATTERN.test(String(message || ""));
@@ -282,17 +314,31 @@ const detectPriceInfoQuery = (message = "") =>
 const detectRecommendationQuery = (message = "") =>
   RECOMMENDATION_QUERY_PATTERN.test(String(message || ""));
 
+const detectOnlyOptionsQuery = (message = "") =>
+  ONLY_OPTIONS_QUERY_PATTERN.test(String(message || ""));
+
+const detectNegatedFeatureQuery = (message = "") =>
+  NEGATED_FEATURE_QUERY_PATTERN.test(String(message || ""));
+
+const detectObjectiveLocationQuery = (message = "") =>
+  OBJECTIVE_LOCATION_QUERY_PATTERN.test(String(message || ""));
+
 const buildFeatureLabelText = (features = [], language = "es", mode = "all") =>
   joinHumanList(
-    features.map((feature) => feature.labels?.[language] || feature.labels?.en || feature.id),
+    features.map(
+      (feature) =>
+        feature.labels?.[language] || feature.labels?.en || feature.id,
+    ),
     language,
-    mode === "any" ? "or" : "and"
+    mode === "any" ? "or" : "and",
   );
 
 const formatPriceLabel = (item = {}, language = "es") => {
   const amount = toNumberOrNull(item.pricePerNight);
   if (amount == null) return null;
-  const currency = normalizeDisplayCurrencyCode(normalizeString(item.currency) || "USD");
+  const currency = normalizeDisplayCurrencyCode(
+    normalizeString(item.currency) || "USD",
+  );
   try {
     return new Intl.NumberFormat(language === "es" ? "es-AR" : "en-US", {
       style: "currency",
@@ -308,7 +354,9 @@ const formatStayLabel = (item = {}, language = "es", options = {}) => {
   const showOrder = options.showOrder !== false;
   const name = item.name || item.title || "Stay";
   const prefix =
-    showOrder && Number.isFinite(Number(item.displayOrder)) ? `#${Number(item.displayOrder)} ` : "";
+    showOrder && Number.isFinite(Number(item.displayOrder))
+      ? `#${Number(item.displayOrder)} `
+      : "";
   const city = item.city ? `, ${item.city}` : "";
   const starsText = normalizeString(item.stars);
   const stars = starsText ? `, ${starsText}` : "";
@@ -321,12 +369,18 @@ const buildBulletLabel = (item = {}, language = "es", options = {}) => {
   return price ? `${base} - ${price}` : base;
 };
 
-const normalizeFactItem = (item = {}, inventoryType = "HOTEL", fallbackOrder = null) => ({
+const normalizeFactItem = (
+  item = {},
+  inventoryType = "HOTEL",
+  fallbackOrder = null,
+) => ({
   ...item,
   inventoryType,
   displayOrder: toNumberOrNull(item.displayOrder) ?? fallbackOrder,
   pricePerNight: toNumberOrNull(item.pricePerNight ?? item.price_per_night),
-  currency: normalizeDisplayCurrencyCode(normalizeString(item.currency) || "USD"),
+  currency: normalizeDisplayCurrencyCode(
+    normalizeString(item.currency) || "USD",
+  ),
   amenities: unique(normalizeTextList(item.amenities)),
   leisure: unique(normalizeTextList(item.leisure)),
   business: unique(normalizeTextList(item.business)),
@@ -350,19 +404,31 @@ const normalizeFactItem = (item = {}, inventoryType = "HOTEL", fallbackOrder = n
 
 const sortByDisplayOrder = (items = []) =>
   [...items].sort((left, right) => {
-    const leftOrder = toNumberOrNull(left.displayOrder) ?? Number.MAX_SAFE_INTEGER;
-    const rightOrder = toNumberOrNull(right.displayOrder) ?? Number.MAX_SAFE_INTEGER;
+    const leftOrder =
+      toNumberOrNull(left.displayOrder) ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder =
+      toNumberOrNull(right.displayOrder) ?? Number.MAX_SAFE_INTEGER;
     if (leftOrder !== rightOrder) return leftOrder - rightOrder;
-    return String(left.name || left.title || "").localeCompare(String(right.name || right.title || ""));
+    return String(left.name || left.title || "").localeCompare(
+      String(right.name || right.title || ""),
+    );
   });
 
 const enrichHotelsFromCatalog = async (hotels = []) => {
-  const hotelIds = hotels.map((hotel) => String(hotel.id || "")).filter(Boolean);
+  const hotelIds = hotels
+    .map((hotel) => String(hotel.id || ""))
+    .filter(Boolean);
   if (!hotelIds.length) return hotels;
   try {
     const rows = await models.WebbedsHotel.findAll({
       where: { hotel_id: hotelIds },
-      attributes: ["hotel_id", "amenities", "leisure", "business", "descriptions"],
+      attributes: [
+        "hotel_id",
+        "amenities",
+        "leisure",
+        "business",
+        "descriptions",
+      ],
       raw: true,
     });
     const byId = new Map(rows.map((row) => [String(row.hotel_id), row]));
@@ -377,13 +443,25 @@ const enrichHotelsFromCatalog = async (hotels = []) => {
           ...normalizeTextList(row.leisure),
           ...normalizeTextList(row.business),
         ]),
-        leisure: unique([...normalizeTextList(hotel.leisure), ...normalizeTextList(row.leisure)]),
-        business: unique([...normalizeTextList(hotel.business), ...normalizeTextList(row.business)]),
-        descriptions: unique([...normalizeTextList(hotel.descriptions), ...normalizeTextList(row.descriptions)]),
+        leisure: unique([
+          ...normalizeTextList(hotel.leisure),
+          ...normalizeTextList(row.leisure),
+        ]),
+        business: unique([
+          ...normalizeTextList(hotel.business),
+          ...normalizeTextList(row.business),
+        ]),
+        descriptions: unique([
+          ...normalizeTextList(hotel.descriptions),
+          ...normalizeTextList(row.descriptions),
+        ]),
       };
     });
   } catch (error) {
-    console.warn("[ai.lastResultsFacts] enrichHotelsFromCatalog failed", error?.message || error);
+    console.warn(
+      "[ai.lastResultsFacts] enrichHotelsFromCatalog failed",
+      error?.message || error,
+    );
     return hotels;
   }
 };
@@ -393,11 +471,11 @@ const buildOrderedItems = async (summary = {}) => {
   const summaryHomes = Array.isArray(summary.homes) ? summary.homes : [];
   const hotels = await enrichHotelsFromCatalog(summaryHotels);
   const normalizedHotels = hotels.map((hotel, index) =>
-    normalizeFactItem(hotel, "HOTEL", index + 1)
+    normalizeFactItem(hotel, "HOTEL", index + 1),
   );
   const homeFallbackStart = normalizedHotels.length;
   const normalizedHomes = summaryHomes.map((home, index) =>
-    normalizeFactItem(home, "HOME", homeFallbackStart + index + 1)
+    normalizeFactItem(home, "HOME", homeFallbackStart + index + 1),
   );
   return sortByDisplayOrder([...normalizedHotels, ...normalizedHomes]);
 };
@@ -406,27 +484,40 @@ const matchesFeatureSet = (item = {}, features = [], mode = "all") => {
   const blob = buildItemFactBlob(item);
   if (!features.length) return false;
   if (mode === "any") {
-    return features.some((feature) => feature.match.some((pattern) => pattern.test(blob)));
+    return features.some((feature) =>
+      feature.match.some((pattern) => pattern.test(blob)),
+    );
   }
-  return features.every((feature) => feature.match.some((pattern) => pattern.test(blob)));
+  return features.every((feature) =>
+    feature.match.some((pattern) => pattern.test(blob)),
+  );
 };
 
 const getComparablePricedItems = (items = []) => {
-  const priced = items.filter((item) => toNumberOrNull(item.pricePerNight) != null);
+  const priced = items.filter(
+    (item) => toNumberOrNull(item.pricePerNight) != null,
+  );
   if (!priced.length) return [];
   const currencyCounts = new Map();
   priced.forEach((item) => {
     const currency = normalizeString(item.currency) || "USD";
     currencyCounts.set(currency, (currencyCounts.get(currency) || 0) + 1);
   });
-  const dominantCurrency = [...currencyCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0];
-  return priced.filter((item) => (normalizeString(item.currency) || "USD") === dominantCurrency);
+  const dominantCurrency = [...currencyCounts.entries()].sort(
+    (left, right) => right[1] - left[1],
+  )[0]?.[0];
+  return priced.filter(
+    (item) => (normalizeString(item.currency) || "USD") === dominantCurrency,
+  );
 };
 
 const collectFamilyReasons = (item = {}, language = "es") => {
   const blob = buildItemFactBlob(item);
-  return FAMILY_SIGNAL_CATALOG.filter((signal) => signal.pattern.test(blob))
-    .map((signal) => signal.labels?.[language] || signal.labels?.en || signal.id);
+  return FAMILY_SIGNAL_CATALOG.filter((signal) =>
+    signal.pattern.test(blob),
+  ).map(
+    (signal) => signal.labels?.[language] || signal.labels?.en || signal.id,
+  );
 };
 
 const selectPositionItem = (items = [], positionRef = null) => {
@@ -449,8 +540,75 @@ const buildNoFeatureReply = ({ features, language = "es", mode = "all" }) => {
     : `From the results I showed you, I do not see ${combinedText} confirmed. If you want, I can run a fresh filtered search.`;
 };
 
-const buildFeatureReply = ({ items, features, language = "es", mode = "all" }) => {
-  const matches = items.filter((item) => matchesFeatureSet(item, features, mode));
+const buildNegativeFeatureReply = ({
+  items,
+  features,
+  language = "es",
+  mode = "all",
+}) => {
+  const matches = items.filter(
+    (item) => !matchesFeatureSet(item, features, mode),
+  );
+  if (!matches.length) {
+    const featureText = buildFeatureLabelText(features, language, mode);
+    return language === "es"
+      ? `De los resultados que te mostre, todos tienen ${featureText} confirmado.`
+      : `From the results I showed you, all of them have confirmed ${featureText}.`;
+  }
+  const featureText = buildFeatureLabelText(features, language, mode);
+  const intro =
+    language === "es"
+      ? matches.length === 1
+        ? `De los resultados que te mostre, este no tiene ${featureText} confirmado:`
+        : `De los resultados que te mostre, estos ${matches.length} no tienen ${featureText} confirmado:`
+      : matches.length === 1
+        ? `From the results I showed you, this one does not have confirmed ${featureText}:`
+        : `From the results I showed you, these ${matches.length} do not have confirmed ${featureText}:`;
+  const bullets = matches.map(
+    (item) => `- ${buildBulletLabel(item, language)}`,
+  );
+  return [intro, ...bullets].filter(Boolean).join("\n");
+};
+
+const buildOnlyOptionsReply = ({ items, language = "es" }) => {
+  const hotelCount = items.filter(
+    (item) => item.inventoryType === "HOTEL",
+  ).length;
+  const homeCount = items.filter(
+    (item) => item.inventoryType === "HOME",
+  ).length;
+  const totalCount = items.length;
+  if (!totalCount) {
+    return language === "es"
+      ? "No tengo resultados guardados de esa busqueda para responderte."
+      : "I do not have saved results from that search to answer that.";
+  }
+  const savedCountLabel =
+    language === "es"
+      ? `${totalCount} opcion${totalCount === 1 ? "" : "es"} guardada${totalCount === 1 ? "" : "s"}`
+      : `${totalCount} saved option${totalCount === 1 ? "" : "s"}`;
+  const mixLabel =
+    homeCount > 0
+      ? language === "es"
+        ? `${hotelCount} hoteles y ${homeCount} homes`
+        : `${hotelCount} hotels and ${homeCount} homes`
+      : language === "es"
+        ? `${hotelCount} hoteles`
+        : `${hotelCount} hotels`;
+  return language === "es"
+    ? `De esa busqueda tengo ${savedCountLabel}: ${mixLabel}. Las cards visibles fueron solo una parte del listado guardado.`
+    : `From that search I have ${savedCountLabel}: ${mixLabel}. The visible cards were only part of the saved list.`;
+};
+
+const buildFeatureReply = ({
+  items,
+  features,
+  language = "es",
+  mode = "all",
+}) => {
+  const matches = items.filter((item) =>
+    matchesFeatureSet(item, features, mode),
+  );
   if (!matches.length) {
     return buildNoFeatureReply({ features, language, mode });
   }
@@ -463,7 +621,9 @@ const buildFeatureReply = ({ items, features, language = "es", mode = "all" }) =
       : matches.length === 1
         ? `Yes. From the results I showed you, this one has confirmed ${featureText}:`
         : `Yes. From the results I showed you, these ${matches.length} have confirmed ${featureText}:`;
-  const bullets = matches.map((item) => `- ${buildBulletLabel(item, language)}`);
+  const bullets = matches.map(
+    (item) => `- ${buildBulletLabel(item, language)}`,
+  );
   const outro =
     matches.length < items.length
       ? language === "es"
@@ -489,7 +649,7 @@ const buildPriceReply = ({
   const sorted = [...comparable].sort((left, right) =>
     priceQuery === "mostExpensive"
       ? Number(right.pricePerNight) - Number(left.pricePerNight)
-      : Number(left.pricePerNight) - Number(right.pricePerNight)
+      : Number(left.pricePerNight) - Number(right.pricePerNight),
   );
 
   const selectionCount = wantsMultiple ? Math.min(3, sorted.length) : 1;
@@ -511,7 +671,9 @@ const buildPriceReply = ({
           ? "From the options I showed you, these are the cheapest with comparable pricing:"
           : "From the options I showed you, the cheapest one with comparable pricing is:";
 
-  const bullets = selected.map((item) => `- ${buildBulletLabel(item, language)}`);
+  const bullets = selected.map(
+    (item) => `- ${buildBulletLabel(item, language)}`,
+  );
   const omittedCount = items.length - comparable.length;
   const outro =
     omittedCount > 0
@@ -522,7 +684,11 @@ const buildPriceReply = ({
   return [intro, ...bullets, outro].filter(Boolean).join("\n");
 };
 
-const buildFamilyReply = ({ items, language = "es", wantsMultiple = false }) => {
+const buildFamilyReply = ({
+  items,
+  language = "es",
+  wantsMultiple = false,
+}) => {
   const ranked = items
     .map((item) => ({
       item,
@@ -533,7 +699,10 @@ const buildFamilyReply = ({ items, language = "es", wantsMultiple = false }) => 
       if (right.reasons.length !== left.reasons.length) {
         return right.reasons.length - left.reasons.length;
       }
-      return (toNumberOrNull(left.item.displayOrder) || 9999) - (toNumberOrNull(right.item.displayOrder) || 9999);
+      return (
+        (toNumberOrNull(left.item.displayOrder) || 9999) -
+        (toNumberOrNull(right.item.displayOrder) || 9999)
+      );
     });
 
   if (!ranked.length) {
@@ -542,7 +711,10 @@ const buildFamilyReply = ({ items, language = "es", wantsMultiple = false }) => 
       : "From the results I showed you, I do not see strong enough family-friendly signals. If you want, I can filter options that are more kid-oriented.";
   }
 
-  const selected = ranked.slice(0, wantsMultiple ? Math.min(3, ranked.length) : 1);
+  const selected = ranked.slice(
+    0,
+    wantsMultiple ? Math.min(3, ranked.length) : 1,
+  );
   const intro =
     language === "es"
       ? wantsMultiple
@@ -552,17 +724,25 @@ const buildFamilyReply = ({ items, language = "es", wantsMultiple = false }) => 
         ? "From the options I showed you, these look the most family-friendly:"
         : "From the options I showed you, this one looks the most family-friendly:";
 
-  const bullets = selected.map(({ item, reasons }) =>
-    `- ${buildBulletLabel(item, language)}${reasons.length ? ` (${joinHumanList(reasons, language)})` : ""}`
+  const bullets = selected.map(
+    ({ item, reasons }) =>
+      `- ${buildBulletLabel(item, language)}${reasons.length ? ` (${joinHumanList(reasons, language)})` : ""}`,
   );
   return [intro, ...bullets].filter(Boolean).join("\n");
 };
 
-const buildRecommendationReply = ({ items, language = "es", wantsMultiple = false }) => {
+const buildRecommendationReply = ({
+  items,
+  language = "es",
+  wantsMultiple = false,
+}) => {
   const ordered = sortByDisplayOrder(items);
   if (!ordered.length) return null;
 
-  const selected = ordered.slice(0, wantsMultiple ? Math.min(3, ordered.length) : 1);
+  const selected = ordered.slice(
+    0,
+    wantsMultiple ? Math.min(3, ordered.length) : 1,
+  );
   const intro =
     language === "es"
       ? wantsMultiple
@@ -577,7 +757,9 @@ const buildRecommendationReply = ({ items, language = "es", wantsMultiple = fals
       normalizeString(item.shortReason),
       ...pickTopReasonsForRecommendation(item, language),
     ]).slice(0, 2);
-    const suffix = reasons.length ? ` (${joinHumanList(reasons, language)})` : "";
+    const suffix = reasons.length
+      ? ` (${joinHumanList(reasons, language)})`
+      : "";
     return `- ${buildBulletLabel(item, language)}${suffix}`;
   });
 
@@ -587,10 +769,18 @@ const buildRecommendationReply = ({ items, language = "es", wantsMultiple = fals
 const pickTopReasonsForRecommendation = (item = {}, language = "es") => {
   const reasons = [];
   if (normalizeString(item.stars)) {
-    reasons.push(language === "es" ? `${item.stars} de categoría` : `${item.stars} category`);
+    reasons.push(
+      language === "es"
+        ? `${item.stars} de categoría`
+        : `${item.stars} category`,
+    );
   }
   if (normalizeString(item.city)) {
-    reasons.push(language === "es" ? `bien ubicado en ${item.city}` : `well located in ${item.city}`);
+    reasons.push(
+      language === "es"
+        ? `bien ubicado en ${item.city}`
+        : `well located in ${item.city}`,
+    );
   }
   if (toNumberOrNull(item.pricePerNight) != null) {
     reasons.push(language === "es" ? "precio visible" : "visible pricing");
@@ -613,7 +803,8 @@ const buildPositionFeatureReply = ({
 
   const featureText = buildFeatureLabelText(features, language, mode);
   const hasFeature = matchesFeatureSet(item, features, mode);
-  const label = positionRef.labels?.[language] || positionRef.labels?.en || "that one";
+  const label =
+    positionRef.labels?.[language] || positionRef.labels?.en || "that one";
   const stayLabel = formatStayLabel(item, language, { showOrder: true });
 
   return hasFeature
@@ -631,7 +822,8 @@ const buildPositionPriceReply = ({ item, positionRef, language = "es" }) => {
       ? "No pude identificar ese resultado dentro de los ultimos que te mostre."
       : "I could not identify that result among the latest options I showed you.";
   }
-  const label = positionRef.labels?.[language] || positionRef.labels?.en || "that one";
+  const label =
+    positionRef.labels?.[language] || positionRef.labels?.en || "that one";
   const stayLabel = formatStayLabel(item, language, { showOrder: true });
   const price = formatPriceLabel(item, language);
   if (!price) {
@@ -650,7 +842,8 @@ const buildPositionFamilyReply = ({ item, positionRef, language = "es" }) => {
       ? "No pude identificar ese resultado dentro de los ultimos que te mostre."
       : "I could not identify that result among the latest options I showed you.";
   }
-  const label = positionRef.labels?.[language] || positionRef.labels?.en || "that one";
+  const label =
+    positionRef.labels?.[language] || positionRef.labels?.en || "that one";
   const stayLabel = formatStayLabel(item, language, { showOrder: true });
   const reasons = collectFamilyReasons(item, language);
   if (!reasons.length) {
@@ -669,9 +862,13 @@ const buildFactRow = (item = {}, language = "es", options = {}) => {
   if (item.stars) subtitleParts.push(item.stars);
   if (options.subtitle) subtitleParts.push(options.subtitle);
   return {
-    id: String(item.id || item.displayOrder || item.name || item.title || Math.random()),
+    id: String(
+      item.id || item.displayOrder || item.name || item.title || Math.random(),
+    ),
     entityId: item.id != null ? String(item.id) : null,
-    inventoryType: String(item.inventoryType || options.inventoryType || "HOTEL").toUpperCase(),
+    inventoryType: String(
+      item.inventoryType || options.inventoryType || "HOTEL",
+    ).toUpperCase(),
     title: formatStayLabel(item, language, { showOrder: false }),
     subtitle: subtitleParts.join(" · ") || null,
     value: options.value || formatPriceLabel(item, language),
@@ -679,7 +876,9 @@ const buildFactRow = (item = {}, language = "es", options = {}) => {
     currency: item.currency || null,
     city: item.city || null,
     locationText: item.city || null,
-    tags: Array.isArray(options.tags) ? options.tags.filter(Boolean).slice(0, 3) : [],
+    tags: Array.isArray(options.tags)
+      ? options.tags.filter(Boolean).slice(0, 3)
+      : [],
   };
 };
 
@@ -743,7 +942,8 @@ export const buildPreparedReplyFromLastResults = async ({
 } = {}) => {
   if (!summary || !latestUserMessage) return null;
 
-  const targetLanguage = language || (isSpanish(latestUserMessage) ? "es" : "en");
+  const targetLanguage =
+    language || (isSpanish(latestUserMessage) ? "es" : "en");
   const items = await buildOrderedItems(summary);
   if (!items.length) return null;
 
@@ -754,11 +954,76 @@ export const buildPreparedReplyFromLastResults = async ({
   const positionRef = detectPositionReference(latestUserMessage);
   const wantsMultiple = detectMultipleSelection(latestUserMessage);
   const wantsPriceInfo = detectPriceInfoQuery(latestUserMessage);
-  const recommendationQuery = detectRecommendationQuery(latestUserMessage);
+  const recommendationQuery = false; // Recommendation asks should route through advisory follow-ups.
+  const wantsOnlyOptions = detectOnlyOptionsQuery(latestUserMessage);
+  const wantsNegatedFeatureMatch = detectNegatedFeatureQuery(latestUserMessage);
+  const wantsObjectiveLocation =
+    detectObjectiveLocationQuery(latestUserMessage);
+
+  if (wantsObjectiveLocation) {
+    return null;
+  }
+
+  if (wantsOnlyOptions) {
+    const hotelCount = items.filter(
+      (item) => item.inventoryType === "HOTEL",
+    ).length;
+    const homeCount = items.filter(
+      (item) => item.inventoryType === "HOME",
+    ).length;
+    return {
+      text: buildOnlyOptionsReply({
+        items,
+        language: targetLanguage,
+      }),
+      sections: [
+        buildComparisonSection({
+          eyebrow:
+            targetLanguage === "es" ? "Cobertura guardada" : "Saved scope",
+          title:
+            targetLanguage === "es"
+              ? "Esto es lo que tengo guardado"
+              : "This is what I have saved",
+          body:
+            targetLanguage === "es"
+              ? "La respuesta sale del snapshot completo de resultados, no solo de las cards visibles."
+              : "This answer comes from the full saved results snapshot, not just the visible cards.",
+          tone: "neutral",
+          layoutVariant: "comparison",
+          items: [
+            {
+              id: "saved_hotels",
+              title:
+                targetLanguage === "es" ? "Hoteles guardados" : "Saved hotels",
+              value: String(hotelCount),
+              subtitle:
+                targetLanguage === "es"
+                  ? "Incluye cards y listado extendido"
+                  : "Includes cards and extended list",
+            },
+            {
+              id: "saved_homes",
+              title:
+                targetLanguage === "es" ? "Homes guardadas" : "Saved homes",
+              value: String(homeCount),
+              subtitle:
+                targetLanguage === "es"
+                  ? "Tambien cuentan en el snapshot"
+                  : "Also included in the snapshot",
+            },
+          ],
+        }),
+      ],
+    };
+  }
 
   if (positionRef && features.length) {
     const selectedItem = selectPositionItem(items, positionRef);
-    const featureText = buildFeatureLabelText(features, targetLanguage, featureMode);
+    const featureText = buildFeatureLabelText(
+      features,
+      targetLanguage,
+      featureMode,
+    );
     return {
       text: buildPositionFeatureReply({
         item: selectedItem,
@@ -770,14 +1035,22 @@ export const buildPreparedReplyFromLastResults = async ({
       sections: selectedItem
         ? [
             buildAdvisorTakeSection({
-              eyebrow: targetLanguage === "es" ? "Resultado puntual" : "Specific result",
+              eyebrow:
+                targetLanguage === "es"
+                  ? "Resultado puntual"
+                  : "Specific result",
               title: formatStayLabel(selectedItem, targetLanguage),
               body:
                 targetLanguage === "es"
                   ? `Chequeo directo sobre ${positionRef.labels?.[targetLanguage] || "ese resultado"} para ${featureText}.`
                   : `Direct check on ${positionRef.labels?.[targetLanguage] || "that result"} for ${featureText}.`,
-              tone: matchesFeatureSet(selectedItem, features, featureMode) ? "positive" : "neutral",
-              tags: [featureText, formatPriceLabel(selectedItem, targetLanguage)],
+              tone: matchesFeatureSet(selectedItem, features, featureMode)
+                ? "positive"
+                : "neutral",
+              tags: [
+                featureText,
+                formatPriceLabel(selectedItem, targetLanguage),
+              ],
             }),
           ]
         : [],
@@ -795,7 +1068,8 @@ export const buildPreparedReplyFromLastResults = async ({
       sections: selectedItem
         ? [
             buildComparisonSection({
-              eyebrow: targetLanguage === "es" ? "Precio guardado" : "Saved price",
+              eyebrow:
+                targetLanguage === "es" ? "Precio guardado" : "Saved price",
               title: formatStayLabel(selectedItem, targetLanguage),
               body:
                 targetLanguage === "es"
@@ -812,7 +1086,9 @@ export const buildPreparedReplyFromLastResults = async ({
 
   if (positionRef && familyQuery) {
     const selectedItem = selectPositionItem(items, positionRef);
-    const familyReasons = selectedItem ? collectFamilyReasons(selectedItem, targetLanguage) : [];
+    const familyReasons = selectedItem
+      ? collectFamilyReasons(selectedItem, targetLanguage)
+      : [];
     return {
       text: buildPositionFamilyReply({
         item: selectedItem,
@@ -822,7 +1098,8 @@ export const buildPreparedReplyFromLastResults = async ({
       sections: selectedItem
         ? [
             buildAdvisorTakeSection({
-              eyebrow: targetLanguage === "es" ? "Lectura familiar" : "Family read",
+              eyebrow:
+                targetLanguage === "es" ? "Lectura familiar" : "Family read",
               title: formatStayLabel(selectedItem, targetLanguage),
               body:
                 familyReasons.length > 0
@@ -867,40 +1144,53 @@ export const buildPreparedReplyFromLastResults = async ({
     const sorted = [...comparable].sort((left, right) =>
       priceQuery === "mostExpensive"
         ? Number(right.pricePerNight) - Number(left.pricePerNight)
-        : Number(left.pricePerNight) - Number(right.pricePerNight)
+        : Number(left.pricePerNight) - Number(right.pricePerNight),
     );
-    const selected = sorted.slice(0, wantsMultiple ? Math.min(3, sorted.length) : 1);
+    const selected = sorted.slice(
+      0,
+      wantsMultiple ? Math.min(3, sorted.length) : 1,
+    );
     return {
-        text:
-          targetLanguage === "es"
-            ? priceQuery === "mostExpensive"
-              ? wantsMultiple
-                ? "Te marco los precios mas altos que tengo comparables entre los ultimos resultados."
-                : "Te marco el precio mas alto que tengo comparable entre los ultimos resultados."
-              : wantsMultiple
-                ? "Te marco los precios mas bajos que tengo comparables entre los ultimos resultados."
-                : "Te marco el precio mas bajo que tengo comparable entre los ultimos resultados."
-            : priceQuery === "mostExpensive"
-              ? wantsMultiple
-                ? "Here are the highest comparable prices from the latest options I showed you."
-                : "Here is the highest comparable price from the latest options I showed you."
-              : wantsMultiple
-                ? "Here are the lowest comparable prices from the latest options I showed you."
-                : "Here is the lowest comparable price from the latest options I showed you.",
+      text:
+        targetLanguage === "es"
+          ? priceQuery === "mostExpensive"
+            ? wantsMultiple
+              ? "Te marco los precios mas altos que tengo comparables entre los ultimos resultados."
+              : "Te marco el precio mas alto que tengo comparable entre los ultimos resultados."
+            : wantsMultiple
+              ? "Te marco los precios mas bajos que tengo comparables entre los ultimos resultados."
+              : "Te marco el precio mas bajo que tengo comparable entre los ultimos resultados."
+          : priceQuery === "mostExpensive"
+            ? wantsMultiple
+              ? "Here are the highest comparable prices from the latest options I showed you."
+              : "Here is the highest comparable price from the latest options I showed you."
+            : wantsMultiple
+              ? "Here are the lowest comparable prices from the latest options I showed you."
+              : "Here is the lowest comparable price from the latest options I showed you.",
       sections: [
         buildComparisonSection({
           eyebrow:
             targetLanguage === "es"
-              ? priceQuery === "mostExpensive" ? "Comparativa de precio" : "Comparativa de precio"
+              ? priceQuery === "mostExpensive"
+                ? "Comparativa de precio"
+                : "Comparativa de precio"
               : "Price comparison",
           title:
             targetLanguage === "es"
               ? priceQuery === "mostExpensive"
-                ? wantsMultiple ? "Los mas caros guardados" : "El mas caro guardado"
-                : wantsMultiple ? "Los mas baratos guardados" : "El mas barato guardado"
+                ? wantsMultiple
+                  ? "Los mas caros guardados"
+                  : "El mas caro guardado"
+                : wantsMultiple
+                  ? "Los mas baratos guardados"
+                  : "El mas barato guardado"
               : priceQuery === "mostExpensive"
-                ? wantsMultiple ? "Most expensive saved options" : "Most expensive saved option"
-                : wantsMultiple ? "Cheapest saved options" : "Cheapest saved option",
+                ? wantsMultiple
+                  ? "Most expensive saved options"
+                  : "Most expensive saved option"
+                : wantsMultiple
+                  ? "Cheapest saved options"
+                  : "Cheapest saved option",
           body:
             targetLanguage === "es"
               ? "Comparacion hecha sobre los precios guardados de los ultimos resultados que te mostre."
@@ -912,13 +1202,17 @@ export const buildPreparedReplyFromLastResults = async ({
               tags: [
                 targetLanguage === "es"
                   ? index === 0
-                    ? priceQuery === "mostExpensive" ? "tope de precio" : "mejor precio"
+                    ? priceQuery === "mostExpensive"
+                      ? "tope de precio"
+                      : "mejor precio"
                     : "comparable"
                   : index === 0
-                    ? priceQuery === "mostExpensive" ? "top price" : "best price"
+                    ? priceQuery === "mostExpensive"
+                      ? "top price"
+                      : "best price"
                     : "comparable",
               ],
-            })
+            }),
           ),
           footer:
             comparable.length < items.length
@@ -932,8 +1226,52 @@ export const buildPreparedReplyFromLastResults = async ({
   }
 
   if (features.length) {
-    const matches = items.filter((item) => matchesFeatureSet(item, features, featureMode));
-    const featureText = buildFeatureLabelText(features, targetLanguage, featureMode);
+    const matches = items.filter((item) =>
+      matchesFeatureSet(item, features, featureMode),
+    );
+    const featureText = buildFeatureLabelText(
+      features,
+      targetLanguage,
+      featureMode,
+    );
+    if (wantsNegatedFeatureMatch) {
+      const negativeMatches = items.filter(
+        (item) => !matchesFeatureSet(item, features, featureMode),
+      );
+      return {
+        text: buildNegativeFeatureReply({
+          items,
+          features,
+          language: targetLanguage,
+          mode: featureMode,
+        }),
+        sections: [
+          buildFactAnswerSection({
+            eyebrow:
+              targetLanguage === "es" ? "Filtro inverso" : "Inverse filter",
+            title:
+              targetLanguage === "es"
+                ? `Sin ${featureText} confirmado`
+                : `Without confirmed ${featureText}`,
+            body:
+              targetLanguage === "es"
+                ? "Esto sale de la informacion guardada para los resultados que te mostre."
+                : "This comes from the saved information for the results I showed you.",
+            tone: negativeMatches.length ? "neutral" : "positive",
+            layoutVariant: "checklist",
+            items: negativeMatches.map((item) =>
+              buildFactRow(item, targetLanguage, {
+                tags: [
+                  targetLanguage === "es"
+                    ? "sin confirmacion"
+                    : "not confirmed",
+                ],
+              }),
+            ),
+          }),
+        ],
+      };
+    }
     if (!matches.length) {
       return {
         text: buildNoFeatureReply({
@@ -943,7 +1281,8 @@ export const buildPreparedReplyFromLastResults = async ({
         }),
         sections: [
           buildAdvisorTakeSection({
-            eyebrow: targetLanguage === "es" ? "Dato confirmado" : "Confirmed detail",
+            eyebrow:
+              targetLanguage === "es" ? "Dato confirmado" : "Confirmed detail",
             title:
               targetLanguage === "es"
                 ? `Sin match confirmado para ${featureText}`
@@ -983,7 +1322,7 @@ export const buildPreparedReplyFromLastResults = async ({
           items: matches.map((item) =>
             buildFactRow(item, targetLanguage, {
               tags: [featureText],
-            })
+            }),
           ),
           footer:
             matches.length < items.length
@@ -1007,7 +1346,10 @@ export const buildPreparedReplyFromLastResults = async ({
         if (right.reasons.length !== left.reasons.length) {
           return right.reasons.length - left.reasons.length;
         }
-        return (toNumberOrNull(left.item.displayOrder) || 9999) - (toNumberOrNull(right.item.displayOrder) || 9999);
+        return (
+          (toNumberOrNull(left.item.displayOrder) || 9999) -
+          (toNumberOrNull(right.item.displayOrder) || 9999)
+        );
       });
 
     if (!ranked.length) {
@@ -1019,7 +1361,8 @@ export const buildPreparedReplyFromLastResults = async ({
         }),
         sections: [
           buildAdvisorTakeSection({
-            eyebrow: targetLanguage === "es" ? "Perfil familiar" : "Family profile",
+            eyebrow:
+              targetLanguage === "es" ? "Perfil familiar" : "Family profile",
             title:
               targetLanguage === "es"
                 ? "No veo senales familiares fuertes"
@@ -1033,7 +1376,10 @@ export const buildPreparedReplyFromLastResults = async ({
         ],
       };
     }
-    const selected = ranked.slice(0, wantsMultiple ? Math.min(3, ranked.length) : 1);
+    const selected = ranked.slice(
+      0,
+      wantsMultiple ? Math.min(3, ranked.length) : 1,
+    );
     return {
       text:
         targetLanguage === "es"
@@ -1048,8 +1394,12 @@ export const buildPreparedReplyFromLastResults = async ({
           eyebrow: targetLanguage === "es" ? "Lectura familiar" : "Family read",
           title:
             targetLanguage === "es"
-              ? wantsMultiple ? "Los mas family-friendly" : "El mas family-friendly"
-              : wantsMultiple ? "Most family-friendly" : "Most family-friendly option",
+              ? wantsMultiple
+                ? "Los mas family-friendly"
+                : "El mas family-friendly"
+              : wantsMultiple
+                ? "Most family-friendly"
+                : "Most family-friendly option",
           body:
             targetLanguage === "es"
               ? "Ordenado según las señales familiares que tengo confirmadas."
@@ -1059,7 +1409,7 @@ export const buildPreparedReplyFromLastResults = async ({
           items: selected.map(({ item, reasons }) =>
             buildFactRow(item, targetLanguage, {
               tags: reasons,
-            })
+            }),
           ),
         }),
       ],
@@ -1067,7 +1417,10 @@ export const buildPreparedReplyFromLastResults = async ({
   }
 
   if (recommendationQuery) {
-    const selected = sortByDisplayOrder(items).slice(0, wantsMultiple ? Math.min(3, items.length) : 1);
+    const selected = sortByDisplayOrder(items).slice(
+      0,
+      wantsMultiple ? Math.min(3, items.length) : 1,
+    );
     return {
       text: buildRecommendationReply({
         items,
@@ -1079,8 +1432,12 @@ export const buildPreparedReplyFromLastResults = async ({
           eyebrow: targetLanguage === "es" ? "Recomendación" : "Recommendation",
           title:
             targetLanguage === "es"
-              ? wantsMultiple ? "Mis primeras opciones" : "Mi primera opción"
-              : wantsMultiple ? "My top options" : "My top option",
+              ? wantsMultiple
+                ? "Mis primeras opciones"
+                : "Mi primera opción"
+              : wantsMultiple
+                ? "My top options"
+                : "My top option",
           body:
             targetLanguage === "es"
               ? "Tomo como base el orden y las señales guardadas de la última búsqueda."
@@ -1091,10 +1448,14 @@ export const buildPreparedReplyFromLastResults = async ({
             buildFactRow(item, targetLanguage, {
               tags: [
                 index === 0
-                  ? targetLanguage === "es" ? "top pick" : "top pick"
-                  : targetLanguage === "es" ? "recomendado" : "recommended",
+                  ? targetLanguage === "es"
+                    ? "top pick"
+                    : "top pick"
+                  : targetLanguage === "es"
+                    ? "recomendado"
+                    : "recommended",
               ],
-            })
+            }),
           ),
         }),
       ],

@@ -12,6 +12,7 @@ import {
 import { buildCancelBookingPayload, mapCancelBookingResponse } from "../providers/webbeds/cancelBooking.js";
 import { tokenizeCard } from "../providers/webbeds/rezpayments.js";
 import { logCurrencyDebug } from "../utils/currencyDebug.js";
+import { resolvePreauthPaymentRuntime } from "../utils/webbedsPaymentRuntime.js";
 import { convertCurrency } from "./currency.service.js";
 import { runJobFromApi } from "./jobScheduler.service.js";
 import { resolveEnabledCurrency } from "./currencySettings.service.js";
@@ -45,16 +46,7 @@ const FLOW_VERBOSE_LOGS = process.env.WEBBEDS_VERBOSE_LOGS === "true";
 const FLOW_RATE_DEBUG_LOGS = String(process.env.FLOW_RATE_DEBUG_LOGS || "")
   .trim()
   .toLowerCase() === "true";
-const WEBBEDS_PAYMENT_CONTEXT_MODE = String(
-  process.env.WEBBEDS_PAYMENT_CONTEXT_MODE || "guest",
-)
-  .trim()
-  .toLowerCase();
 const MERCHANT_CONTEXT_CACHE_KEY = "webbeds:merchant-payment-context";
-const MERCHANT_CONTEXT_TTL_SECONDS = Math.max(
-  300,
-  Number(process.env.WEBBEDS_MERCHANT_DEVICE_PAYLOAD_TTL_SECONDS || 3600),
-);
 
 const shortDebugToken = (token) => {
   const text = String(token || "").trim();
@@ -311,131 +303,6 @@ const summarizeRuntimePreauthContextForDebug = ({
     }
   })(),
 });
-
-const resolveRequestIpForPreauth = (req) => {
-  const forwarded = req?.headers?.["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.trim()) {
-    return forwarded
-      .split(",")
-      .map((value) => String(value || "").trim())
-      .find(Boolean) || null;
-  }
-  if (Array.isArray(forwarded)) {
-    return forwarded
-      .flatMap((value) => String(value || "").split(","))
-      .map((value) => value.trim())
-      .find(Boolean) || null;
-  }
-  return (
-    req?.headers?.["x-real-ip"] ||
-    req?.ip ||
-    req?.socket?.remoteAddress ||
-    req?.connection?.remoteAddress ||
-    null
-  );
-};
-
-const normalizeMerchantPayload = (payload) => {
-  const text = String(payload || "").trim();
-  return text || null;
-};
-
-const resolveClientDevicePayloadForPreauth = (body = {}) => {
-  const candidates = [
-    body?.devicePayload,
-    body?.payment?.devicePayload,
-    body?.paymentContext?.devicePayload,
-  ];
-  for (const candidate of candidates) {
-    const normalized = normalizeMerchantPayload(candidate);
-    if (normalized) return normalized;
-  }
-  return null;
-};
-
-const resolveClientIpOverrideForPreauth = (body = {}) => {
-  const candidates = [
-    body?.endUserIPAddress,
-    body?.endUserIPv4Address,
-    body?.payment?.endUserIPAddress,
-    body?.payment?.endUserIPv4Address,
-    body?.paymentContext?.endUserIPAddress,
-    body?.paymentContext?.endUserIPv4Address,
-  ];
-  for (const candidate of candidates) {
-    const normalized = String(candidate || "").trim();
-    if (normalized) return normalized;
-  }
-  return null;
-};
-
-const getMerchantPaymentContext = async () => {
-  const cached = await cache.get(MERCHANT_CONTEXT_CACHE_KEY);
-  if (!cached || typeof cached !== "object") return null;
-  return cached;
-};
-
-const resolvePreauthPaymentRuntime = async ({ body, req }) => {
-  const requestPayload = resolveClientDevicePayloadForPreauth(body);
-  const requestIp = resolveRequestIpForPreauth(req);
-  const clientIpOverride = resolveClientIpOverrideForPreauth(body);
-
-  if (WEBBEDS_PAYMENT_CONTEXT_MODE === "merchant") {
-    const merchantContext = await getMerchantPaymentContext();
-    const merchantPayload = normalizeMerchantPayload(merchantContext?.devicePayload);
-    const envPayload = normalizeMerchantPayload(process.env.WEBBEDS_DEVICE_PAYLOAD);
-    const merchantIp =
-      String(process.env.WEBBEDS_MERCHANT_PUBLIC_IP || "").trim() ||
-      String(process.env.WEBBEDS_DEFAULT_IP || "").trim() ||
-      null;
-
-    if (!merchantPayload && !envPayload) {
-      throw Object.assign(
-        new Error(
-          "Missing merchant device payload. Capture one in /ops/webbeds-payment-context or set WEBBEDS_DEVICE_PAYLOAD.",
-        ),
-        { status: 503, code: "MISSING_MERCHANT_DEVICE_PAYLOAD" },
-      );
-    }
-    if (!merchantIp) {
-      throw Object.assign(
-        new Error("Missing merchant public IP. Set WEBBEDS_MERCHANT_PUBLIC_IP for merchant mode."),
-        { status: 503, code: "MISSING_MERCHANT_PUBLIC_IP" },
-      );
-    }
-
-    return {
-      devicePayload: merchantPayload || envPayload,
-      devicePayloadSource: merchantPayload
-        ? "merchant-cache"
-        : envPayload
-          ? "merchant-env"
-          : "missing",
-      endUserIPAddress: merchantIp,
-      endUserIPAddressSource: "merchant-env",
-    };
-  }
-
-  const envPayload = normalizeMerchantPayload(process.env.WEBBEDS_DEVICE_PAYLOAD);
-  const envIp = String(process.env.WEBBEDS_DEFAULT_IP || "").trim() || null;
-
-  return {
-    devicePayload: requestPayload || envPayload || "static-device",
-    devicePayloadSource: requestPayload
-      ? "request"
-      : envPayload
-        ? "env"
-        : "fallback",
-    endUserIPAddress: clientIpOverride || requestIp || envIp || "127.0.0.1",
-    endUserIPAddressSource: clientIpOverride
-      ? "request.override"
-      : requestIp
-        ? "request"
-        : envIp
-          ? "env"
-          : "fallback",
-  };
-};
 
 const logFlowRateDebug = (event, payload = {}) => {
   if (!FLOW_RATE_DEBUG_LOGS) return;
@@ -2048,7 +1915,15 @@ export class FlowOrchestratorService {
       avsEmail: process.env.WEBBEDS_AVS_EMAIL || process.env.WEBBEDS_CC_EMAIL || "unknown@example.com",
       avsPhone: process.env.WEBBEDS_AVS_PHONE || "+10000000000",
     };
-    const paymentRuntime = await resolvePreauthPaymentRuntime({ body, req });
+    const paymentRuntime = await resolvePreauthPaymentRuntime({
+      body,
+      req,
+      getMerchantPaymentContext: async () => {
+        const cached = await cache.get(MERCHANT_CONTEXT_CACHE_KEY);
+        if (!cached || typeof cached !== "object") return null;
+        return cached;
+      },
+    });
 
     const payload = buildBookItineraryPayload({
       bookingCode: flow.itinerary_booking_code,

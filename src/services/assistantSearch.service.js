@@ -7,6 +7,10 @@ import { buildSearchHotelsPayload } from "../providers/webbeds/searchHotels.js";
 import cache from "./cache.js";
 import { mapHomeToCard } from "../utils/homeMapper.js";
 import { formatStaticHotel } from "../utils/webbedsMapper.js";
+import {
+  WEBBEDS_CLASSIFICATION_CODE_TO_STARS,
+  resolveWebbedsHotelStars,
+} from "../utils/webbedsStars.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 import { resolvePoiToCoordinates, getNearbyPlaces, computeDistanceKm } from "../modules/ai/tools/tool.places.js";
 import { resolveSemanticCatalogContext } from "../modules/ai/ai.semanticCatalog.js";
@@ -161,6 +165,7 @@ const normalizeCoordinatePair = (latValue, lngValue) => {
 };
 
 const DEFAULT_COORDINATE_RADIUS_KM = 25;
+const NEARBY_GEO_FALLBACK_RADII_METERS = [5000, 15000, 35000];
 const BLOCKED_CALENDAR_STATUSES = new Set(["RESERVED", "BLOCKED"]);
 const iLikeOp = getCaseInsensitiveLikeOp();
 
@@ -407,17 +412,6 @@ const getLiveHotelProvider = () => {
 const resolveDialect = () =>
   typeof sequelize.getDialect === "function" ? sequelize.getDialect() : "mysql";
 
-// WebBeds classification codes (webbeds_hotel_classification.code) — BIGINT, NOT the star count.
-// Verified against live DB: SELECT code, name FROM webbeds_hotel_classification ORDER BY code.
-const WEBBEDS_CLASSIFICATION_CODE_TO_STARS = {
-  559: 1,   // Economy *
-  560: 2,   // Budget **
-  561: 3,   // Standard ***
-  562: 4,   // Superior ****
-  563: 5,   // Luxury *****
-  // 48055 = Serviced Apartment, 55835 = Unrated — not mapped to stars
-};
-
 // Returns the list of classification_code BIGINTs for hotels with >= minStars.
 const resolveClassificationCodesForMinRating = (minStars) => {
   return Object.entries(WEBBEDS_CLASSIFICATION_CODE_TO_STARS)
@@ -426,14 +420,7 @@ const resolveClassificationCodesForMinRating = (minStars) => {
 };
 
 // Resolves a hotel's star count from its formatted card (classification.code is a BIGINT code).
-const resolveHotelStars = (hotel) => {
-  const classCode = toNumberOrNull(hotel.classification?.code);
-  if (classCode != null && WEBBEDS_CLASSIFICATION_CODE_TO_STARS[classCode] != null) {
-    return WEBBEDS_CLASSIFICATION_CODE_TO_STARS[classCode];
-  }
-  // fallback: raw rating string (some hotels may populate this)
-  return toNumberOrNull(hotel.rating);
-};
+const resolveHotelStars = (hotel) => resolveWebbedsHotelStars(hotel);
 
 // Strip diacritics so "Dubái" matches "Dubai", "Río" matches "Rio", etc.
 // WebBeds data is in English (no accents), so normalizing search terms is always safe.
@@ -2067,6 +2054,42 @@ export const scopeChatRelevantHotelCards = ({
     };
   }
 
+  // Fix A — Guard: skip SEMANTIC_CONTEXT filtering when there is no actionable signal.
+  // preferenceNotes are explanatory text, not filter predicates.
+  // inferenceMode NONE / RANK_ONLY explicitly means "do not filter".
+  if (scopeReason === "SEMANTIC_CONTEXT") {
+    const inferenceMode = resolveSemanticInferenceMode(plan);
+    const hasActionableSemanticSignal =
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedZones) &&
+        plan.semanticSearch.intentProfile.requestedZones.length > 0) ||
+      (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedLandmarks) &&
+        plan.semanticSearch.intentProfile.requestedLandmarks.length > 0) ||
+      collectSemanticPlaceTargets(plan).some(
+        (t) => Number.isFinite(t?.lat) && Number.isFinite(t?.lng),
+      ) ||
+      (inferenceMode &&
+        inferenceMode !== "NONE" &&
+        inferenceMode !== "RANK_ONLY");
+    if (!hasActionableSemanticSignal) {
+      emitSearchTrace(traceSink, "SEMANTIC_CHAT_SCOPE_SKIPPED", {
+        label: "SEMANTIC_CONTEXT scope skipped — no actionable semantic signal",
+        debugLabel:
+          `inferenceMode=${inferenceMode || "NONE"}, no requestedZones/Landmarks or geocoded placeTargets`,
+        scopeReason,
+        candidateHotelCount: normalizedCards.length,
+      });
+      return {
+        cards: normalizedCards.slice(0, visibleLimit),
+        searchScope: {
+          ...baseScope,
+          scopeMode: "CATALOG_MATCH",
+          scopeReason: "no_actionable_signal",
+          visibleHotelCount: Math.min(normalizedCards.length, visibleLimit),
+        },
+      };
+    }
+  }
+
   const threshold = resolveSemanticChatScopeThreshold(plan);
   const positiveRelevant = normalizedCards.filter(
     (card) => toNumberOrNull(card?.semanticScore) != null && Number(card.semanticScore) > 0,
@@ -2155,6 +2178,27 @@ export const scopeChatRelevantHotelCards = ({
       ...searchScope,
       threshold,
     });
+
+    // Fix B — Safety net: never return 0 visible hotels when candidates exist.
+    // Expand to full candidate list and mark as approximate so the UI can notice.
+    if (normalizedCards.length > 0) {
+      const fallbackCards = normalizedCards.slice(0, visibleLimit);
+      const fallbackScope = {
+        ...searchScope,
+        visibleHotelCount: fallbackCards.length,
+        scopeMode: "EXPAND_FALLBACK",
+        warningMode: "APPROXIMATE_WITH_NOTICE",
+        scopeExpansionReason: "zero_results_safety_net",
+      };
+      emitSearchTrace(traceSink, "SEMANTIC_CHAT_SCOPE_FALLBACK_EXPANDED", {
+        label: "Zero-result safety net: showing all catalog candidates",
+        debugLabel:
+          `Expanded from 0 to ${fallbackCards.length} hotel(s) after semantic scope produced no matches`,
+        ...fallbackScope,
+      });
+      return { cards: fallbackCards, searchScope: fallbackScope };
+    }
+
     return { cards: [], searchScope };
   }
 
@@ -2203,6 +2247,12 @@ const finalizeScopedHotelSearchResult = ({
   matchType = "EXACT",
   metadata = {},
 } = {}) => {
+  const searchScopePatch =
+    metadata?.searchScopePatch && typeof metadata.searchScopePatch === "object"
+      ? metadata.searchScopePatch
+      : null;
+  const { searchScopePatch: _searchScopePatch, ...restMetadata } =
+    metadata && typeof metadata === "object" ? metadata : {};
   const scoped = scopeChatRelevantHotelCards({
     cards,
     plan,
@@ -2212,8 +2262,13 @@ const finalizeScopedHotelSearchResult = ({
   return {
     items: scoped.cards,
     matchType,
-    searchScope: scoped.searchScope,
-    ...metadata,
+    searchScope: searchScopePatch
+      ? {
+          ...scoped.searchScope,
+          ...searchScopePatch,
+        }
+      : scoped.searchScope,
+    ...restMetadata,
   };
 };
 
@@ -3178,6 +3233,222 @@ const sortByProximity = (cards, proximityAnchor) => {
   return [...cards].sort((a, b) => getDistanceForCard(a) - getDistanceForCard(b));
 };
 
+const resolveNearbyFallbackOriginalDestination = (plan = {}) => {
+  const primaryPlaceTarget = collectSemanticPlaceTargets(plan)[0] || null;
+  return (
+    formatSemanticPlaceLabel(primaryPlaceTarget) ||
+    (typeof plan?.location?.landmark === "string" && plan.location.landmark.trim()
+      ? plan.location.landmark.trim()
+      : null) ||
+    (typeof plan?.location?.city === "string" && plan.location.city.trim()
+      ? plan.location.city.trim()
+      : null) ||
+    (typeof plan?.location?.address === "string" && plan.location.address.trim()
+      ? plan.location.address.trim()
+      : null) ||
+    (typeof plan?.location?.country === "string" && plan.location.country.trim()
+      ? plan.location.country.trim()
+      : null) ||
+    null
+  );
+};
+
+const resolveNearbyFallbackAnchor = async (plan = {}) => {
+  const primaryPlaceTarget = collectSemanticPlaceTargets(plan)[0] || null;
+  const primaryPlaceCoordinates = normalizeCoordinatePair(
+    primaryPlaceTarget?.lat,
+    primaryPlaceTarget?.lng,
+  );
+  if (
+    primaryPlaceCoordinates.lat != null &&
+    primaryPlaceCoordinates.lng != null
+  ) {
+    return {
+      lat: primaryPlaceCoordinates.lat,
+      lng: primaryPlaceCoordinates.lng,
+      label: formatSemanticPlaceLabel(primaryPlaceTarget),
+      source: "place_target",
+    };
+  }
+
+  const resolvedPoiCoordinates = normalizeCoordinatePair(
+    plan?.location?.resolvedPoi?.lat,
+    plan?.location?.resolvedPoi?.lng,
+  );
+  if (resolvedPoiCoordinates.lat != null && resolvedPoiCoordinates.lng != null) {
+    return {
+      lat: resolvedPoiCoordinates.lat,
+      lng: resolvedPoiCoordinates.lng,
+      label:
+        plan?.location?.resolvedPoi?.name ||
+        resolveNearbyFallbackOriginalDestination(plan),
+      source: "resolved_poi",
+    };
+  }
+
+  const locationCoordinates = normalizeCoordinatePair(
+    plan?.location?.lat,
+    plan?.location?.lng ?? plan?.location?.lon,
+  );
+  if (locationCoordinates.lat != null && locationCoordinates.lng != null) {
+    return {
+      lat: locationCoordinates.lat,
+      lng: locationCoordinates.lng,
+      label: resolveNearbyFallbackOriginalDestination(plan),
+      source: "location_coordinates",
+    };
+  }
+
+  const textualDestination = [
+    typeof plan?.location?.city === "string" && plan.location.city.trim()
+      ? plan.location.city.trim()
+      : typeof plan?.location?.address === "string" && plan.location.address.trim()
+        ? plan.location.address.trim()
+        : typeof plan?.location?.landmark === "string" && plan.location.landmark.trim()
+          ? plan.location.landmark.trim()
+          : null,
+    typeof plan?.location?.country === "string" && plan.location.country.trim()
+      ? plan.location.country.trim()
+      : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  if (!textualDestination) return null;
+
+  const poi = await resolvePoiToCoordinates(textualDestination);
+  const geocodedCoordinates = normalizeCoordinatePair(poi?.lat, poi?.lng);
+  if (geocodedCoordinates.lat == null || geocodedCoordinates.lng == null) {
+    return null;
+  }
+  return {
+    lat: geocodedCoordinates.lat,
+    lng: geocodedCoordinates.lng,
+    label: poi?.name || resolveNearbyFallbackOriginalDestination(plan),
+    source: "destination_geocode",
+  };
+};
+
+const buildNearbyFallbackSafePlan = (
+  plan = {},
+  anchor = {},
+  radiusMeters = NEARBY_GEO_FALLBACK_RADII_METERS[0],
+) => {
+  const safeRadiusKm = Math.max(0.5, Number(radiusMeters) / 1000);
+  const baseLocation =
+    plan?.location && typeof plan.location === "object" ? plan.location : {};
+  const semanticSearch =
+    plan?.semanticSearch && typeof plan.semanticSearch === "object"
+      ? plan.semanticSearch
+      : {};
+  const intentProfile =
+    semanticSearch?.intentProfile && typeof semanticSearch.intentProfile === "object"
+      ? semanticSearch.intentProfile
+      : {};
+  const webContext =
+    semanticSearch?.webContext && typeof semanticSearch.webContext === "object"
+      ? semanticSearch.webContext
+      : {};
+
+  return {
+    ...plan,
+    location: {
+      ...baseLocation,
+      city: null,
+      state: null,
+      country: null,
+      address: null,
+      landmark: null,
+      lat: anchor?.lat ?? null,
+      lng: anchor?.lng ?? null,
+      radiusKm: safeRadiusKm,
+      resolvedPoi:
+        anchor?.lat != null && anchor?.lng != null
+          ? {
+              lat: anchor.lat,
+              lng: anchor.lng,
+              name: anchor.label || null,
+            }
+          : null,
+    },
+    geoIntent: null,
+    areaIntent: null,
+    viewIntent: null,
+    areaTraits: [],
+    placeTargets: [],
+    preferenceNotes: [],
+    preferences: {
+      ...(plan?.preferences && typeof plan.preferences === "object"
+        ? plan.preferences
+        : {}),
+      nearbyInterest: null,
+      areaPreference: [],
+    },
+    semanticSearch: {
+      ...semanticSearch,
+      candidateHotelNames: [],
+      neighborhoodHints: [],
+      webContext: {
+        ...webContext,
+        resolvedPlaces: [],
+        neighborhoodHints: [],
+        candidateHotelNames: [],
+      },
+      intentProfile: {
+        ...intentProfile,
+        requestedZones: [],
+        requestedLandmarks: [],
+        candidateZones: [],
+        candidateLandmarks: [],
+      },
+    },
+  };
+};
+
+const deriveNearbyFallbackCities = ({
+  items = [],
+  anchor = null,
+  maxCities = 2,
+} = {}) => {
+  const cityStats = new Map();
+  items.forEach((item) => {
+    const cityLabel =
+      typeof item?.city === "string" && item.city.trim() ? item.city.trim() : null;
+    if (!cityLabel) return;
+    const distanceKm =
+      anchor?.lat != null &&
+      anchor?.lng != null &&
+      item?.geoPoint?.lat != null &&
+      item?.geoPoint?.lng != null
+        ? computeDistanceKm(item.geoPoint, {
+            lat: anchor.lat,
+            lng: anchor.lng,
+          })
+        : null;
+    const current = cityStats.get(cityLabel) || {
+      city: cityLabel,
+      count: 0,
+      minDistanceKm: Number.POSITIVE_INFINITY,
+    };
+    current.count += 1;
+    if (distanceKm != null && distanceKm < current.minDistanceKm) {
+      current.minDistanceKm = distanceKm;
+    }
+    cityStats.set(cityLabel, current);
+  });
+  return Array.from(cityStats.values())
+    .sort((left, right) => {
+      if (left.minDistanceKm !== right.minDistanceKm) {
+        return left.minDistanceKm - right.minDistanceKm;
+      }
+      if (right.count !== left.count) {
+        return right.count - left.count;
+      }
+      return left.city.localeCompare(right.city);
+    })
+    .slice(0, Math.max(1, maxCities))
+    .map((entry) => entry.city);
+};
+
 /** Preference intents: QUIET, BEACH_COAST, CITY_CENTER, FAMILY_FRIENDLY, LUXURY, BUDGET → filters */
 const deriveFiltersFromPreferences = (plan = {}) => {
   const areaPreference = Array.isArray(plan?.preferences?.areaPreference)
@@ -4102,11 +4373,15 @@ const runStaticHotelQuery = async (where, options) => {
     total: cards.length,
   });
   cards = await applyHotelFilters(cards, normalizedHotelFilters);
-  if (coordinateFilter && hasLocationFilter) {
+  if (coordinateFilter) {
     const nearby = cards.filter(
       (c) => c.geoPoint && matchesCoordinateFilter(c.geoPoint, coordinateFilter)
     );
-    if (nearby.length) cards = nearby;
+    if (hasLocationFilter) {
+      if (nearby.length) cards = nearby;
+    } else {
+      cards = nearby;
+    }
   }
   if (budgetMax != null) {
     cards = cards.filter(
@@ -4689,10 +4964,11 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     cards = [],
     matchType = "EXACT",
     metadata = {},
+    planOverride = plan,
   } = {}) => {
     const finalized = finalizeScopedHotelSearchResult({
       cards,
-      plan,
+      plan: planOverride || plan,
       limit,
       traceSink,
       matchType,
@@ -5074,6 +5350,202 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
       ? 3
       : 1;
   const fetchLimit = clampLimit(limit * fetchMultiplier);
+  const budgetMax = resolveBudgetMax(plan);
+  const tryNearbyGeoFallbackSearch = async () => {
+    const originalDestination = resolveNearbyFallbackOriginalDestination(plan);
+    const anchor = await resolveNearbyFallbackAnchor(plan);
+    emitSearchTrace(traceSink, "NEARBY_GEO_FALLBACK_REQUESTED", {
+      label: "Trying nearby geographic fallback",
+      debugLabel: `Nearby fallback requested for ${originalDestination || "unknown destination"}`,
+      originalDestination,
+      anchorLabel: anchor?.label || null,
+      anchorSource: anchor?.source || null,
+      hasLiveContext:
+        Boolean(plan?.dates?.checkIn) &&
+        Boolean(plan?.dates?.checkOut) &&
+        resolveGuestTotal(plan) != null,
+      mode: "CATALOG_GEO_EXPANSION",
+    });
+    if (!anchor || anchor.lat == null || anchor.lng == null) {
+      latestHotelSearchScope = {
+        ...(latestHotelSearchScope && typeof latestHotelSearchScope === "object"
+          ? latestHotelSearchScope
+          : {}),
+        nearbyFallbackApplied: false,
+        nearbyFallbackMode: "CATALOG_GEO_EXPANSION",
+        nearbyFallbackAnchorLabel: anchor?.label || null,
+        nearbyFallbackRadiiTried: [],
+        nearbyFallbackWinningRadiusMeters: null,
+        nearbyFallbackCities: [],
+        nearbyFallbackOriginalDestination: originalDestination,
+      };
+      emitSearchTrace(traceSink, "NEARBY_GEO_FALLBACK_EMPTY", {
+        label: "Nearby fallback skipped",
+        debugLabel: "Nearby fallback could not resolve a geographic anchor",
+        originalDestination,
+        reason: "anchor_unresolved",
+      });
+      return null;
+    }
+
+    const nearbySearchFilters = {
+      ...normalizedHotelFilters,
+      preferredOnly: false,
+    };
+    const nearbyExactStarRatings = normalizeExactStarRatings(
+      nearbySearchFilters.starRatings,
+    );
+    const nearbyHasExactStarRequest = nearbyExactStarRatings.length > 0;
+    const nearbyMinStar =
+      !nearbyHasExactStarRequest &&
+      nearbySearchFilters.minRating != null &&
+      Number.isFinite(nearbySearchFilters.minRating)
+        ? Math.round(nearbySearchFilters.minRating)
+        : null;
+    const radiiTried = [];
+
+    for (const radiusMeters of NEARBY_GEO_FALLBACK_RADII_METERS) {
+      radiiTried.push(radiusMeters);
+      emitSearchTrace(traceSink, "NEARBY_GEO_FALLBACK_RADIUS_ATTEMPT", {
+        label: "Expanding search radius",
+        debugLabel: `Nearby fallback trying radius ${radiusMeters}m around ${anchor.label || originalDestination || "anchor"}`,
+        originalDestination,
+        anchorLabel: anchor.label || null,
+        anchorSource: anchor.source || null,
+        radiusMeters,
+      });
+
+      const nearbyPlan = buildNearbyFallbackSafePlan(plan, anchor, radiusMeters);
+      const nearbyWhere = {};
+      if (excludeIds.length) {
+        nearbyWhere.hotel_id = { [Op.notIn]: excludeIds };
+      }
+      if (nearbyHasExactStarRequest) {
+        const exactCodes = resolveClassificationCodesForExactRatings(
+          nearbyExactStarRatings,
+        );
+        if (exactCodes.length) {
+          nearbyWhere.classification_code = { [Op.in]: exactCodes };
+        }
+      } else if (nearbyMinStar != null) {
+        const eligibleCodes = resolveClassificationCodesForMinRating(
+          nearbyMinStar,
+        );
+        if (eligibleCodes.length) {
+          nearbyWhere.classification_code = { [Op.in]: eligibleCodes };
+        }
+      }
+
+      const nearbyCoordinateFilter = buildCoordinateFilterUsingRadius(
+        nearbyPlan.location || {},
+      );
+      if (nearbyCoordinateFilter) {
+        nearbyWhere.lat = nearbyCoordinateFilter.latitude;
+        nearbyWhere.lng = nearbyCoordinateFilter.longitude;
+      }
+      const nearbyProximityAnchor = {
+        type: "PLACE_TARGET",
+        target: {
+          name: anchor.label || originalDestination || null,
+          lat: anchor.lat,
+          lng: anchor.lng,
+          radiusMeters,
+        },
+      };
+
+      let nearbyCards = await runStaticHotelQuery(nearbyWhere, {
+        normalizedHotelFilters: nearbySearchFilters,
+        fetchLimit,
+        limit,
+        coordinateFilter: nearbyCoordinateFilter,
+        hasLocationFilter: false,
+        budgetMax,
+        plan: nearbyPlan,
+        proximityAnchor: nearbyProximityAnchor,
+        traceSink,
+      });
+      nearbyCards = sortByProximity(nearbyCards, nearbyProximityAnchor);
+      if (!nearbyCards.length) {
+        continue;
+      }
+
+      const nearbyResult = finalizeHotelSearchResult({
+        cards: nearbyCards,
+        matchType: "SIMILAR",
+        planOverride: nearbyPlan,
+        metadata: {
+          searchScopePatch: {
+            nearbyFallbackApplied: true,
+            nearbyFallbackMode: "CATALOG_GEO_EXPANSION",
+            nearbyFallbackAnchorLabel: anchor.label || null,
+            nearbyFallbackRadiiTried: radiiTried.slice(),
+            nearbyFallbackWinningRadiusMeters: radiusMeters,
+            nearbyFallbackCities: [],
+            nearbyFallbackOriginalDestination: originalDestination,
+          },
+        },
+      });
+      if (!nearbyResult.items.length) {
+        continue;
+      }
+
+      const nearbyCities = deriveNearbyFallbackCities({
+        items: nearbyResult.items,
+        anchor,
+      });
+      nearbyResult.searchScope = {
+        ...(nearbyResult.searchScope && typeof nearbyResult.searchScope === "object"
+          ? nearbyResult.searchScope
+          : {}),
+        nearbyFallbackApplied: true,
+        nearbyFallbackMode: "CATALOG_GEO_EXPANSION",
+        nearbyFallbackAnchorLabel: anchor.label || null,
+        nearbyFallbackRadiiTried: radiiTried.slice(),
+        nearbyFallbackWinningRadiusMeters: radiusMeters,
+        nearbyFallbackCities: nearbyCities,
+        nearbyFallbackOriginalDestination: originalDestination,
+      };
+      latestHotelSearchScope = nearbyResult.searchScope;
+      emitSearchTrace(traceSink, "NEARBY_GEO_FALLBACK_APPLIED", {
+        label: "Using nearby catalog options",
+        debugLabel:
+          `Nearby fallback found ${nearbyResult.items.length} option(s) within ${radiusMeters}m` +
+          `${nearbyCities.length ? ` in ${nearbyCities.join(", ")}` : ""}`,
+        originalDestination,
+        anchorLabel: anchor.label || null,
+        anchorSource: anchor.source || null,
+        radiusMeters,
+        total: nearbyResult.items.length,
+        cities: nearbyCities,
+      });
+      await enrichCardsWithAmenitiesFromTable(nearbyResult.items);
+      return nearbyResult;
+    }
+
+    latestHotelSearchScope = {
+      ...(latestHotelSearchScope && typeof latestHotelSearchScope === "object"
+        ? latestHotelSearchScope
+        : {}),
+      nearbyFallbackApplied: false,
+      nearbyFallbackMode: "CATALOG_GEO_EXPANSION",
+      nearbyFallbackAnchorLabel: anchor.label || null,
+      nearbyFallbackRadiiTried: radiiTried,
+      nearbyFallbackWinningRadiusMeters: null,
+      nearbyFallbackCities: [],
+      nearbyFallbackOriginalDestination: originalDestination,
+    };
+    emitSearchTrace(traceSink, "NEARBY_GEO_FALLBACK_EMPTY", {
+      label: "Nearby fallback returned no options",
+      debugLabel:
+        `Nearby fallback found no hotels after radii ${radiiTried.join(", ")}m`,
+      originalDestination,
+      anchorLabel: anchor.label || null,
+      anchorSource: anchor.source || null,
+      radiiTried,
+      reason: "no_results",
+    });
+    return null;
+  };
 
   const hotels = await models.WebbedsHotel.findAll({
     where,
@@ -5109,7 +5581,6 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   }
 
   // Apply budget.max filter when the user specified an explicit numeric price cap.
-  const budgetMax = resolveBudgetMax(plan);
   if (budgetMax != null) {
     const beforeBudget = cards.length;
     cards = cards.filter(
@@ -5270,6 +5741,14 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
 
   if (hasLocation) {
     console.log(`[search:hotels] RESULT: NONE — location constraint present but 0 matches`);
+    const nearbyFallbackResult = await tryNearbyGeoFallbackSearch();
+    if (nearbyFallbackResult?.items?.length) {
+      console.log(
+        `[search:hotels] RESULT: SIMILAR (nearby fallback) - ${nearbyFallbackResult.items.length} items`,
+      );
+      return nearbyFallbackResult;
+    }
+    console.log("[search:hotels] FINAL RESULT: NONE after nearby fallback");
     debugSearchLog("[assistant] no fallback hotels; location constraint present");
     return {
       items: [],
