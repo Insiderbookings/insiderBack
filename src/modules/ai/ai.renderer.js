@@ -300,8 +300,12 @@ const compactHotelCardPickReason = (value, language = "es") => {
     if (match?.[1]) return clampText(`Bien ubicado en ${match[1].trim()}`, 24);
 
     match =
-      text.match(/^la zona de (.+?) suele funcionar bien si buscas algo .+$/i) ||
-      text.match(/^la zona de (.+?) le da mejor encaje que a otras alternativas cercanas$/i);
+      text.match(
+        /^la zona de (.+?) suele funcionar bien si buscas algo .+$/i,
+      ) ||
+      text.match(
+        /^la zona de (.+?) le da mejor encaje que a otras alternativas cercanas$/i,
+      );
     if (match?.[1]) return clampText(`Buen fit en ${match[1].trim()}`, 24);
 
     if (/^encaja mejor con un plan /i.test(text)) return "Buen fit";
@@ -477,19 +481,19 @@ const PICK_REASON_CATALOG = {
 const hasSemanticSearchPlan = (plan = {}) =>
   Boolean(
     (Array.isArray(plan?.starRatings) && plan.starRatings.length) ||
-      plan?.geoIntent ||
-      (Array.isArray(plan?.placeTargets) && plan.placeTargets.length) ||
-      plan?.viewIntent ||
-      plan?.areaIntent ||
-      plan?.qualityIntent ||
-      (Array.isArray(plan?.areaTraits) && plan.areaTraits.length) ||
-      (Array.isArray(plan?.preferenceNotes) && plan.preferenceNotes.length) ||
-      (Array.isArray(plan?.semanticSearch?.candidateHotelNames) &&
-        plan.semanticSearch.candidateHotelNames.length) ||
-      (Array.isArray(plan?.semanticSearch?.neighborhoodHints) &&
-        plan.semanticSearch.neighborhoodHints.length) ||
-      (Array.isArray(plan?.semanticSearch?.webContext?.resolvedPlaces) &&
-        plan.semanticSearch.webContext.resolvedPlaces.length),
+    plan?.geoIntent ||
+    (Array.isArray(plan?.placeTargets) && plan.placeTargets.length) ||
+    plan?.viewIntent ||
+    plan?.areaIntent ||
+    plan?.qualityIntent ||
+    (Array.isArray(plan?.areaTraits) && plan.areaTraits.length) ||
+    (Array.isArray(plan?.preferenceNotes) && plan.preferenceNotes.length) ||
+    (Array.isArray(plan?.semanticSearch?.candidateHotelNames) &&
+      plan.semanticSearch.candidateHotelNames.length) ||
+    (Array.isArray(plan?.semanticSearch?.neighborhoodHints) &&
+      plan.semanticSearch.neighborhoodHints.length) ||
+    (Array.isArray(plan?.semanticSearch?.webContext?.resolvedPlaces) &&
+      plan.semanticSearch.webContext.resolvedPlaces.length),
   );
 
 const getCanonicalSemanticTraits = (plan = {}) =>
@@ -504,27 +508,37 @@ const getCanonicalSemanticTraits = (plan = {}) =>
 const buildSemanticProfileLabel = (plan = {}, language = "es") => {
   const traits = new Set(
     getCanonicalSemanticTraits(plan).map((trait) =>
-      String(trait || "").trim().toUpperCase(),
+      String(trait || "")
+        .trim()
+        .toUpperCase(),
     ),
   );
-  const areaIntent = String(plan?.areaIntent || "").trim().toUpperCase();
+  const areaIntent = String(plan?.areaIntent || "")
+    .trim()
+    .toUpperCase();
   if (language === "es") {
     if (
       areaIntent === "GOOD_AREA" ||
-      (traits.has("SAFE") && traits.has("WALKABLE") && traits.has("UPSCALE_AREA"))
+      (traits.has("SAFE") &&
+        traits.has("WALKABLE") &&
+        traits.has("UPSCALE_AREA"))
     ) {
       return "de buena zona y caminable";
     }
-    if (traits.has("QUIET") && traits.has("WALKABLE")) return "tranquilo y caminable";
-    if (traits.has("SAFE") && traits.has("WALKABLE")) return "seguro y caminable";
+    if (traits.has("QUIET") && traits.has("WALKABLE"))
+      return "tranquilo y caminable";
+    if (traits.has("SAFE") && traits.has("WALKABLE"))
+      return "seguro y caminable";
     if (traits.has("QUIET")) return "tranquilo";
     if (traits.has("WALKABLE")) return "caminable";
     if (traits.has("SAFE")) return "en una zona mas cuidada";
     if (traits.has("UPSCALE_AREA")) return "con un entorno mas refinado";
   }
   if (language === "pt") {
-    if (traits.has("QUIET") && traits.has("WALKABLE")) return "tranquilo e facil de percorrer";
-    if (traits.has("SAFE") && traits.has("WALKABLE")) return "seguro e facil de percorrer";
+    if (traits.has("QUIET") && traits.has("WALKABLE"))
+      return "tranquilo e facil de percorrer";
+    if (traits.has("SAFE") && traits.has("WALKABLE"))
+      return "seguro e facil de percorrer";
   }
   if (
     areaIntent === "GOOD_AREA" ||
@@ -532,8 +546,10 @@ const buildSemanticProfileLabel = (plan = {}, language = "es") => {
   ) {
     return "in a good, walkable area";
   }
-  if (traits.has("QUIET") && traits.has("WALKABLE")) return "quiet and walkable";
-  if (traits.has("SAFE") && traits.has("WALKABLE")) return "comfortable and walkable";
+  if (traits.has("QUIET") && traits.has("WALKABLE"))
+    return "quiet and walkable";
+  if (traits.has("SAFE") && traits.has("WALKABLE"))
+    return "comfortable and walkable";
   if (traits.has("QUIET")) return "quiet";
   if (traits.has("WALKABLE")) return "walkable";
   if (traits.has("SAFE")) return "in a comfortable area";
@@ -579,17 +595,24 @@ const resolveDecisionExplanationAngleText = (item = {}, angle = null) => {
     decisionExplanation.comparisonAngle === normalizedAngle &&
     decisionExplanation.primaryReasonText
   ) {
-    return normalizeSemanticExplanationFragment(decisionExplanation.primaryReasonText);
+    return normalizeSemanticExplanationFragment(
+      decisionExplanation.primaryReasonText,
+    );
   }
   if (
     decisionExplanation.secondaryReasonType &&
     (decisionExplanation.secondaryReasonType === normalizedAngle ||
-      decisionExplanation.secondaryReasonType === normalizedAngle.replace(/_profile$/, "")) &&
+      decisionExplanation.secondaryReasonType ===
+        normalizedAngle.replace(/_profile$/, "")) &&
     decisionExplanation.secondaryReasonText
   ) {
-    return normalizeSemanticExplanationFragment(decisionExplanation.secondaryReasonText);
+    return normalizeSemanticExplanationFragment(
+      decisionExplanation.secondaryReasonText,
+    );
   }
-  return normalizeSemanticExplanationFragment(decisionExplanation.primaryReasonText);
+  return normalizeSemanticExplanationFragment(
+    decisionExplanation.primaryReasonText,
+  );
 };
 
 const pickDeterministicExplanationAngle = ({
@@ -787,7 +810,9 @@ const normalizeSemanticExplanationPlanForPicks = ({
   picks = [],
 } = {}) => {
   if (!explanationPlan || typeof explanationPlan !== "object") return null;
-  const planItems = Array.isArray(explanationPlan.items) ? explanationPlan.items : [];
+  const planItems = Array.isArray(explanationPlan.items)
+    ? explanationPlan.items
+    : [];
   if (!planItems.length || !Array.isArray(picks) || !picks.length) return null;
   const itemById = new Map(
     planItems
@@ -795,13 +820,22 @@ const normalizeSemanticExplanationPlanForPicks = ({
         const hotelId = String(item?.hotelId || "").trim();
         const sentence = normalizeSemanticExplanationSentence(item?.sentence);
         if (!hotelId || !sentence) return null;
-        return [hotelId, { hotelId, angle: String(item?.angle || "").trim() || null, sentence }];
+        return [
+          hotelId,
+          {
+            hotelId,
+            angle: String(item?.angle || "").trim() || null,
+            sentence,
+          },
+        ];
       })
       .filter(Boolean),
   );
   const normalizedItems = picks
     .map((pick) => {
-      const hotelId = String(pick?.item?.id || pick?.item?.hotelCode || "").trim();
+      const hotelId = String(
+        pick?.item?.id || pick?.item?.hotelCode || "",
+      ).trim();
       return hotelId ? itemById.get(hotelId) || null : null;
     })
     .filter(Boolean);
@@ -814,7 +848,8 @@ const normalizeSemanticExplanationPlanForPicks = ({
     intro,
     items: normalizedItems,
     source:
-      typeof explanationPlan.source === "string" && explanationPlan.source.trim()
+      typeof explanationPlan.source === "string" &&
+      explanationPlan.source.trim()
         ? explanationPlan.source.trim()
         : null,
     fallbackUsed: explanationPlan.fallbackUsed === true,
@@ -828,7 +863,12 @@ export const buildDeterministicSemanticExplanationPlan = ({
   seed = 0,
 } = {}) => {
   if (!hasSemanticSearchPlan(plan)) return null;
-  const picks = getTopInventoryPicksByCategory(inventory, plan, language, seed).slice(0, 5);
+  const picks = getTopInventoryPicksByCategory(
+    inventory,
+    plan,
+    language,
+    seed,
+  ).slice(0, 5);
   if (!picks.length) return null;
   const destination = plan?.location?.city || plan?.location?.country || null;
   const semanticProfileLabel = buildSemanticProfileLabel(plan, language);
@@ -1017,7 +1057,9 @@ export const getTopInventoryPicksByCategory = (
       : baseSource;
   if (!source.length) return [];
   if (hasSemanticSearchPlan(plan)) {
-    const preferredIds = Array.isArray(inventory?.searchScope?.hotels?.threadTopPickIds)
+    const preferredIds = Array.isArray(
+      inventory?.searchScope?.hotels?.threadTopPickIds,
+    )
       ? inventory.searchScope.hotels.threadTopPickIds
       : [];
     const sourceById = new Map(
@@ -1386,8 +1428,7 @@ const buildFilterContext = (plan, language) => {
 const buildEnhancedFilterContext = (plan, language) => {
   const baseContext = buildFilterContext(plan, language);
   const base = Array.isArray(baseContext) ? baseContext : [];
-  const lang =
-    language === "es" ? "es" : language === "pt" ? "pt" : "en";
+  const lang = language === "es" ? "es" : language === "pt" ? "pt" : "en";
   const semanticParts = [];
   const placeTargets = Array.isArray(plan?.placeTargets)
     ? plan.placeTargets
@@ -1395,13 +1436,15 @@ const buildEnhancedFilterContext = (plan, language) => {
       ? plan.semanticSearch.webContext.resolvedPlaces
       : [];
   const exactStarRatings = Array.isArray(plan?.starRatings)
-    ? [...new Set(
-        plan.starRatings
-          .map((value) => Number(value))
-          .filter(
-            (value) => Number.isFinite(value) && value >= 1 && value <= 5,
-          ),
-      )].sort((a, b) => a - b)
+    ? [
+        ...new Set(
+          plan.starRatings
+            .map((value) => Number(value))
+            .filter(
+              (value) => Number.isFinite(value) && value >= 1 && value <= 5,
+            ),
+        ),
+      ].sort((a, b) => a - b)
     : [];
 
   if (exactStarRatings.length) {
@@ -1592,7 +1635,9 @@ const buildEnhancedFilterContext = (plan, language) => {
   Array.from(
     new Set([
       ...(Array.isArray(plan?.areaTraits) ? plan.areaTraits : []),
-      ...(Array.isArray(plan?.semanticSearch?.intentProfile?.requestedAreaTraits)
+      ...(Array.isArray(
+        plan?.semanticSearch?.intentProfile?.requestedAreaTraits,
+      )
         ? plan.semanticSearch.intentProfile.requestedAreaTraits
         : []),
     ]),
@@ -2082,6 +2127,23 @@ const buildStructuredSearchReply = ({
   const hotelSearchScope = inventory?.searchScope?.hotels || null;
   const scopeWarningMode = hotelSearchScope?.warningMode || null;
   const scopeConfidence = hotelSearchScope?.scopeConfidence || null;
+  const nearbyFallbackApplied =
+    hotelSearchScope?.nearbyFallbackApplied === true;
+  const nearbyFallbackCities = Array.isArray(
+    hotelSearchScope?.nearbyFallbackCities,
+  )
+    ? hotelSearchScope.nearbyFallbackCities
+        .map((entry) =>
+          typeof entry === "string" && entry.trim() ? entry.trim() : null,
+        )
+        .filter(Boolean)
+        .slice(0, 2)
+    : [];
+  const nearbyFallbackOriginalDestination =
+    hotelSearchScope?.nearbyFallbackOriginalDestination ||
+    plan?.location?.landmark ||
+    destination ||
+    null;
   const strongScopedCount =
     Number.isFinite(Number(hotelSearchScope?.strongHotelCount)) &&
     Number(hotelSearchScope.strongHotelCount) > 0
@@ -2123,6 +2185,12 @@ const buildStructuredSearchReply = ({
         ? plan.areaTraits
         : [];
   const semanticProfileLabel = buildSemanticProfileLabel(plan, language);
+  const nearbyCitiesJoined = nearbyFallbackCities
+    .join(", ")
+    .replace(
+      /, ([^,]*)$/,
+      language === "es" ? " y $1" : language === "pt" ? " e $1" : " and $1",
+    );
 
   let introVariants;
   if (isLiveMode) {
@@ -2144,7 +2212,10 @@ const buildStructuredSearchReply = ({
           `${name ? `${name}, ` : ""}${countPhrase.toLowerCase()}${destEn} for your dates.`,
           `These are the options I see available${destEn}.`,
         ];
-  } else if (semanticTraitProfileActive && scopeWarningMode === "EXPANDED_WITH_NOTICE") {
+  } else if (
+    semanticTraitProfileActive &&
+    scopeWarningMode === "EXPANDED_WITH_NOTICE"
+  ) {
     introVariants = isSpanish
       ? [
           `Encontré ${Math.max(1, strongScopedCount || total)} opciones muy alineadas con un perfil ${semanticProfileLabel || "como el que pediste"} y completé con hoteles cercanos a ese estilo.`,
@@ -2275,7 +2346,9 @@ const buildStructuredSearchReply = ({
     plan?.assumptions?.separateSemanticOrientationMessage === true;
   const progressiveResultsIntro =
     orientationDeliveredSeparately &&
-    (semanticGeoActive || semanticTraitProfileActive || Boolean(plan?.viewIntent))
+    (semanticGeoActive ||
+      semanticTraitProfileActive ||
+      Boolean(plan?.viewIntent))
       ? copyForLanguage(language, {
           es:
             total === 1
@@ -2293,7 +2366,9 @@ const buildStructuredSearchReply = ({
       : null;
   const progressiveResultsIntroSafe =
     orientationDeliveredSeparately &&
-    (semanticGeoActive || semanticTraitProfileActive || Boolean(plan?.viewIntent))
+    (semanticGeoActive ||
+      semanticTraitProfileActive ||
+      Boolean(plan?.viewIntent))
       ? copyForLanguage(language, {
           es:
             total === 1
@@ -2323,8 +2398,22 @@ const buildStructuredSearchReply = ({
         ? "Aqui esta a opcao recomendada."
         : "Aqui estao as opcoes recomendadas.",
   });
-  const finalResultsIntro =
-    assumedDefaultGuests && isLiveMode
+  const nearbyFallbackIntroSafe = nearbyFallbackApplied
+    ? copyForLanguage(language, {
+        es: nearbyCitiesJoined
+          ? `No encontre hoteles en ${nearbyFallbackOriginalDestination || "ese destino"}, pero si opciones cercanas en ${nearbyCitiesJoined}.`
+          : `No encontre hoteles en ${nearbyFallbackOriginalDestination || "ese destino"}, pero si opciones cercanas que pueden servirte.`,
+        en: nearbyCitiesJoined
+          ? `I did not find hotels in ${nearbyFallbackOriginalDestination || "that destination"}, but I did find nearby options in ${nearbyCitiesJoined}.`
+          : `I did not find hotels in ${nearbyFallbackOriginalDestination || "that destination"}, but I did find nearby options that could work for you.`,
+        pt: nearbyCitiesJoined
+          ? `Nao encontrei hoteis em ${nearbyFallbackOriginalDestination || "esse destino"}, mas encontrei opcoes proximas em ${nearbyCitiesJoined}.`
+          : `Nao encontrei hoteis em ${nearbyFallbackOriginalDestination || "esse destino"}, mas encontrei opcoes proximas que podem funcionar para voce.`,
+      })
+    : null;
+  const finalResultsIntro = nearbyFallbackIntroSafe
+    ? nearbyFallbackIntroSafe
+    : assumedDefaultGuests && isLiveMode
       ? language === "es"
         ? `${neutralResultsIntroSafe} Tome 1 adulto por defecto para mostrarte precio real; si viajas con mas personas, lo ajustamos.`
         : `${neutralResultsIntroSafe} I used 1 adult by default to show live pricing; if more people are traveling, we can adjust it.`
@@ -2333,23 +2422,35 @@ const buildStructuredSearchReply = ({
   void introWithAssumption;
   void progressiveResultsIntro;
   void progressiveResultsIntroSafe;
-  const footerText = isLiveMode
+  const footerText = nearbyFallbackApplied
     ? copyForLanguage(language, {
-        es: "Abrí el que más te guste para ver fotos, ubicación y política de cancelación.",
-        en: "Open the one you like most to view photos, location, and cancellation policy.",
-        pt: "Abra o que mais gostar para ver fotos, localização e política de cancelamento.",
+        es: isLiveMode
+          ? "Estas opciones cercanas son exploratorias. Si queres, hago una pasada precisa con precio real para esa zona cercana."
+          : "Si queres, ajusto la busqueda a una de esas zonas cercanas para afinar mas.",
+        en: isLiveMode
+          ? "These nearby options are exploratory. If you want, I can run a precise live-pricing search for that nearby area."
+          : "If you want, I can narrow the search to one of those nearby areas.",
+        pt: isLiveMode
+          ? "Estas opcoes proximas sao exploratorias. Se quiser, faco uma busca precisa com preco real para essa area proxima."
+          : "Se quiser, posso ajustar a busca para uma dessas areas proximas.",
       })
-    : scopeWarningMode === "EXPANDED_WITH_NOTICE" || scopeConfidence === "LOW"
+    : isLiveMode
       ? copyForLanguage(language, {
-          es: "Si querés, puedo afinar la zona o el estilo del hotel para acotar todavía más.",
-          en: "If you want, I can narrow the area or hotel style even further.",
-          pt: "Se quiser, posso refinar a área ou o estilo do hotel para filtrar ainda mais.",
+          es: "Abrí el que más te guste para ver fotos, ubicación y política de cancelación.",
+          en: "Open the one you like most to view photos, location, and cancellation policy.",
+          pt: "Abra o que mais gostar para ver fotos, localização e política de cancelamento.",
         })
-    : copyForLanguage(language, {
-        es: "Sumá fechas y viajeros para ver precio real y disponibilidad.",
-        en: "Add dates and guests to see live pricing and availability.",
-        pt: "Adicione datas e viajantes para ver preços reais e disponibilidade.",
-      });
+      : scopeWarningMode === "EXPANDED_WITH_NOTICE" || scopeConfidence === "LOW"
+        ? copyForLanguage(language, {
+            es: "Si querés, puedo afinar la zona o el estilo del hotel para acotar todavía más.",
+            en: "If you want, I can narrow the area or hotel style even further.",
+            pt: "Se quiser, posso refinar a área ou o estilo do hotel para filtrar ainda mais.",
+          })
+        : copyForLanguage(language, {
+            es: "Sumá fechas y viajeros para ver precio real y disponibilidad.",
+            en: "Add dates and guests to see live pricing and availability.",
+            pt: "Adicione datas e viajantes para ver preços reais e disponibilidade.",
+          });
 
   // Group consecutive picks by pickReason — insert textBlock separators between groups
   const grouped = [];
@@ -2380,7 +2481,9 @@ const buildStructuredSearchReply = ({
   const shouldExplainEachPick =
     !isLiveMode &&
     Boolean(plan?.assumptions?.showSemanticPickExplanations) &&
-    (semanticGeoActive || semanticTraitProfileActive || Boolean(plan?.viewIntent));
+    (semanticGeoActive ||
+      semanticTraitProfileActive ||
+      Boolean(plan?.viewIntent));
   const normalizedExplanationPlan = shouldExplainEachPick
     ? normalizeSemanticExplanationPlanForPicks({
         explanationPlan: inventory?.semanticExplanationPlan,
@@ -2395,7 +2498,10 @@ const buildStructuredSearchReply = ({
     : null;
   const explanationPlanByHotelId = new Map(
     Array.isArray(normalizedExplanationPlan?.items)
-      ? normalizedExplanationPlan.items.map((entry) => [String(entry.hotelId), entry])
+      ? normalizedExplanationPlan.items.map((entry) => [
+          String(entry.hotelId),
+          entry,
+        ])
       : [],
   );
   picks.forEach((pick) => {
@@ -2477,7 +2583,13 @@ const ensureRunSearchSectionsInvariant = ({
   };
 };
 
-const buildNoResultsSearchReply = ({ plan, language = "es", missing = [] }) => {
+const buildNoResultsSearchReply = ({
+  plan,
+  inventory,
+  language = "es",
+  missing = [],
+  seed = 0,
+}) => {
   const destination =
     plan?.location?.city ||
     plan?.location?.address ||
@@ -2491,10 +2603,151 @@ const buildNoResultsSearchReply = ({ plan, language = "es", missing = [] }) => {
       pt: "esse destino",
     });
   const isLiveMode = hasLiveSearchContext(plan);
-  const needsDates = missing.includes("DATES");
-  const needsGuests = missing.includes("GUESTS");
-  const canUnlockLive = !isLiveMode && (needsDates || needsGuests);
   const wantsMoreResults = plan?.assumptions?.wantsMoreResults === true;
+
+  {
+    const hotelSearchScope = inventory?.searchScope?.hotels || null;
+    const nearbyFallbackAttempted =
+      Array.isArray(hotelSearchScope?.nearbyFallbackRadiiTried) &&
+      hotelSearchScope.nearbyFallbackRadiiTried.length > 0 &&
+      hotelSearchScope?.nearbyFallbackApplied !== true;
+    const searchTargetLabel =
+      hotelSearchScope?.nearbyFallbackOriginalDestination || destinationLabel;
+
+    const introVariants = nearbyFallbackAttempted
+      ? copyForLanguage(language, {
+          es: [
+            `No encontre hoteles en ${searchTargetLabel} y tampoco aparecieron opciones cercanas en esta pasada.`,
+            `No vi hoteles en ${searchTargetLabel}, y el fallback cercano tampoco devolvio opciones esta vez.`,
+            `Para ${searchTargetLabel} no encontre hoteles ni alternativas cercanas para mostrarte ahora.`,
+          ],
+          en: [
+            `I did not find hotels in ${searchTargetLabel}, and the nearby fallback did not return options either.`,
+            `I did not see hotels in ${searchTargetLabel}, and the nearby pass also came back empty this time.`,
+            `For ${searchTargetLabel}, I could not find hotels or nearby alternatives to show right now.`,
+          ],
+          pt: [
+            `Nao encontrei hoteis em ${searchTargetLabel}, e o fallback proximo tambem nao trouxe opcoes.`,
+            `Nao vi hoteis em ${searchTargetLabel}, e a busca nas proximidades tambem voltou vazia desta vez.`,
+            `Para ${searchTargetLabel}, nao encontrei hoteis nem alternativas proximas para mostrar agora.`,
+          ],
+        })
+      : isLiveMode
+        ? copyForLanguage(language, {
+            es: [
+              `No veo disponibilidad real en ${destinationLabel} para esa busqueda.`,
+              `No aparecio disponibilidad real en ${destinationLabel} con esa combinacion.`,
+              `Con esa busqueda no veo inventario real disponible en ${destinationLabel}.`,
+            ],
+            en: [
+              `I do not see live availability in ${destinationLabel} for that search.`,
+              `No live availability showed up in ${destinationLabel} for that combination.`,
+              `For that search, I do not see real inventory available in ${destinationLabel}.`,
+            ],
+            pt: [
+              `Nao vejo disponibilidade real em ${destinationLabel} para essa busca.`,
+              `Nao apareceu disponibilidade real em ${destinationLabel} com essa combinacao.`,
+              `Para essa busca, nao vejo inventario real disponivel em ${destinationLabel}.`,
+            ],
+          })
+        : wantsMoreResults
+          ? copyForLanguage(language, {
+              es: [
+                `No encontre mas hoteles alineados con ese pedido en ${destinationLabel}.`,
+                `Ya no veo mas opciones en ${destinationLabel} que encajen con ese criterio.`,
+                `No aparecieron mas hoteles en ${destinationLabel} que sigan ese pedido.`,
+              ],
+              en: [
+                `I could not find more hotels aligned with that request in ${destinationLabel}.`,
+                `I do not see more options in ${destinationLabel} that fit that criteria.`,
+                `No additional hotels in ${destinationLabel} matched that request.`,
+              ],
+              pt: [
+                `Nao encontrei mais hoteis alinhados com esse pedido em ${destinationLabel}.`,
+                `Nao vejo mais opcoes em ${destinationLabel} que encaixem nesse criterio.`,
+                `Nao apareceram mais hoteis em ${destinationLabel} que sigam esse pedido.`,
+              ],
+            })
+          : copyForLanguage(language, {
+              es: [
+                `No encontre hoteles en ${destinationLabel} para mostrarte ahora.`,
+                `Por ahora no veo hoteles en ${destinationLabel} para ese pedido.`,
+                `En esta pasada no aparecieron hoteles en ${destinationLabel}.`,
+              ],
+              en: [
+                `I could not find hotels in ${destinationLabel} to show right now.`,
+                `For now, I do not see hotels in ${destinationLabel} for that request.`,
+                `No hotels showed up in ${destinationLabel} in this pass.`,
+              ],
+              pt: [
+                `Nao encontrei hoteis em ${destinationLabel} para te mostrar agora.`,
+                `Por enquanto nao vejo hoteis em ${destinationLabel} para esse pedido.`,
+                `Nesta busca, nao apareceram hoteis em ${destinationLabel}.`,
+              ],
+            });
+    const intro = pickVariant(introVariants, seed) || introVariants[0];
+
+    const guidanceVariants = nearbyFallbackAttempted
+      ? copyForLanguage(language, {
+          es: [
+            "Si queres, probamos otro destino cercano o cambiamos la zona base.",
+            "Puedo intentar con otra ciudad cercana o abrir la busqueda a otra area.",
+            "Si queres, cambiamos de zona o probamos un destino alternativo cercano.",
+          ],
+          en: [
+            "If you want, we can try another nearby destination or change the base area.",
+            "I can try a different nearby city or open the search to another area.",
+            "If you want, we can switch areas or try a nearby alternative destination.",
+          ],
+          pt: [
+            "Se quiser, podemos tentar outro destino proximo ou mudar a area base.",
+            "Posso tentar outra cidade proxima ou abrir a busca para outra area.",
+            "Se quiser, mudamos de area ou tentamos um destino alternativo proximo.",
+          ],
+        })
+      : copyForLanguage(language, {
+          es: wantsMoreResults
+            ? [
+                "Si queres, puedo abrir otra zona, otra vista o relajar un poco el criterio actual.",
+                "Puedo ampliar la zona, cambiar el enfoque o aflojar un poco el filtro actual.",
+                "Si queres, pruebo con otra area o relajo un poco el pedido para abrir mas opciones.",
+              ]
+            : [
+                "Podemos probar otra zona, ajustar fechas o afinar un poco mas la busqueda.",
+                "Si queres, cambiamos la zona, las fechas o el criterio para abrir mas opciones.",
+                "Puedo volver a buscar con otra zona o con un criterio mas amplio.",
+              ],
+          en: wantsMoreResults
+            ? [
+                "If you want, I can open the search to another area, another view, or relax the current criteria a bit.",
+                "I can widen the area, change the angle, or loosen the current filter a bit.",
+                "If you want, I can try another area or relax the request to open more options.",
+              ]
+            : [
+                "We can try another area, adjust dates, or narrow the search a bit more.",
+                "If you want, we can change the area, dates, or criteria to open more options.",
+                "I can search again with a different area or a broader criteria.",
+              ],
+          pt: wantsMoreResults
+            ? [
+                "Se quiser, posso abrir a busca para outra area, outra vista ou relaxar um pouco o criterio atual.",
+                "Posso ampliar a area, mudar o foco ou aliviar um pouco o filtro atual.",
+                "Se quiser, tento outra area ou relaxo o pedido para abrir mais opcoes.",
+              ]
+            : [
+                "Podemos tentar outra area, ajustar datas ou refinar um pouco mais a busca.",
+                "Se quiser, mudamos a area, as datas ou o criterio para abrir mais opcoes.",
+                "Posso buscar de novo com outra area ou com um criterio mais amplo.",
+              ],
+        });
+    const guidance =
+      pickVariant(guidanceVariants, seed + 17) || guidanceVariants[0];
+
+    return {
+      intro: `${intro} ${guidance}`.trim(),
+      sections: [],
+    };
+  }
 
   const intro = isLiveMode
     ? copyForLanguage(language, {
@@ -2508,68 +2761,34 @@ const buildNoResultsSearchReply = ({ plan, language = "es", missing = [] }) => {
           en: `I could not find more hotels aligned with that request in ${destinationLabel}.`,
           pt: `Não encontrei mais hotéis alinhados com esse pedido em ${destinationLabel}.`,
         })
+      : copyForLanguage(language, {
+          es: `No encontré hoteles para mostrarte ahora en ${destinationLabel}.`,
+          en: `I could not find hotels to show you right now in ${destinationLabel}.`,
+          pt: `Não encontrei hotéis para te mostrar agora em ${destinationLabel}.`,
+        });
+
+  const guidance = canUnlockLive
+    ? copyForLanguage(language, {
+        es: "Si me confirmás fechas y viajeros, hago una pasada más precisa con disponibilidad real.",
+        en: "If you confirm dates and guests, I can run a more precise pass with live availability.",
+        pt: "Se você confirmar datas e viajantes, eu faço uma busca mais precisa com disponibilidade real.",
+      })
     : copyForLanguage(language, {
-        es: `No encontré hoteles para mostrarte ahora en ${destinationLabel}.`,
-        en: `I could not find hotels to show you right now in ${destinationLabel}.`,
-        pt: `Não encontrei hotéis para te mostrar agora em ${destinationLabel}.`,
+        es: wantsMoreResults
+          ? "Si querés, puedo abrir otra zona, otra vista o relajar un poco el criterio actual."
+          : "Podemos probar otra zona, ajustar fechas o afinar un poco más la búsqueda.",
+        en: wantsMoreResults
+          ? "If you want, I can open the search to another area, another view, or relax the current criteria a bit."
+          : "We can try another area, adjust dates, or narrow the search a bit more.",
+        pt: wantsMoreResults
+          ? "Se quiser, posso abrir a busca para outra área, outra vista ou relaxar um pouco o critério atual."
+          : "Podemos tentar outra área, ajustar datas ou refinar um pouco mais a busca.",
       });
 
-  const sections = [
-    buildAdvisorTakeSection({
-      eyebrow: copyForLanguage(language, {
-        es: "Búsqueda rápida",
-        en: "Quick search",
-        pt: "Busca rápida",
-      }),
-      title: isLiveMode
-        ? copyForLanguage(language, {
-            es: "No apareció disponibilidad con esas fechas",
-            en: "No availability showed up for those dates",
-            pt: "Não apareceu disponibilidade para essas datas",
-          })
-        : copyForLanguage(language, {
-            es: wantsMoreResults
-              ? "No quedaron más opciones alineadas con ese pedido"
-              : "No apareció inventario para ese destino",
-            en: wantsMoreResults
-              ? "No more options matched that request"
-              : "No inventory showed up for that destination",
-            pt: wantsMoreResults
-              ? "Não restaram mais opções alinhadas com esse pedido"
-              : "Não apareceu inventário para esse destino",
-          }),
-      body: canUnlockLive
-        ? copyForLanguage(language, {
-            es: "Si me confirmás fechas y viajeros, hago una pasada más precisa con disponibilidad real.",
-            en: "If you confirm dates and guests, I can run a more precise pass with live availability.",
-            pt: "Se você confirmar datas e viajantes, eu faço uma busca mais precisa com disponibilidade real.",
-          })
-        : copyForLanguage(language, {
-            es: wantsMoreResults
-              ? "Si querés, puedo abrir otra zona, otra vista o relajar un poco el criterio actual."
-              : "Podemos probar otra zona, ajustar fechas o afinar un poco más la búsqueda.",
-            en: wantsMoreResults
-              ? "If you want, I can open the search to another area, another view, or relax the current criteria a bit."
-              : "We can try another area, adjust dates, or narrow the search a bit more.",
-            pt: wantsMoreResults
-              ? "Se quiser, posso abrir a busca para outra área, outra vista ou relaxar um pouco o critério atual."
-              : "Podemos tentar outra área, ajustar datas ou refinar um pouco mais a busca.",
-          }),
-      tone: "neutral",
-      tags: [destination || null],
-    }),
-    canUnlockLive
-      ? buildNextStepSection({
-          language,
-          isLiveMode: false,
-          destination,
-          filterContext: null,
-          assumedDefaultGuests: false,
-        })
-      : null,
-  ].filter(Boolean);
-
-  return { intro, sections };
+  return {
+    intro: `${intro} ${guidance}`.trim(),
+    sections: [],
+  };
 };
 
 export const renderAssistantPayload = async ({
@@ -2703,7 +2922,14 @@ export const renderAssistantPayload = async ({
       [...(messages || [])].reverse().find((m) => m?.role === "user")
         ?.content ?? "";
     const preStreamedRunSearchIntro =
+      normalizedPreparedReply?.stage !== "search_no_results_closing" &&
       normalizedPreparedReply?.mode !== "separate_message" &&
+      typeof normalizedPreparedReply?.text === "string" &&
+      normalizedPreparedReply.text.trim()
+        ? normalizedPreparedReply.text.trim()
+        : "";
+    const noResultsPreparedClosing =
+      normalizedPreparedReply?.stage === "search_no_results_closing" &&
       typeof normalizedPreparedReply?.text === "string" &&
       normalizedPreparedReply.text.trim()
         ? normalizedPreparedReply.text.trim()
@@ -2732,16 +2958,20 @@ export const renderAssistantPayload = async ({
           : []),
       ];
     } else {
-      const noResultsReply = buildNoResultsSearchReply({
-        plan,
-        language,
-        missing,
-      });
-      replyText = preStreamedRunSearchIntro
-        ? `${preStreamedRunSearchIntro} ${noResultsReply.intro}`.trim()
-        : noResultsReply.intro;
+      if (noResultsPreparedClosing) {
+        replyText = noResultsPreparedClosing;
+      } else {
+        const noResultsReply = buildNoResultsSearchReply({
+          plan,
+          inventory,
+          language,
+          missing,
+          seed,
+        });
+        replyText = noResultsReply.intro;
+        searchSections = noResultsReply.sections;
+      }
       followUps = [];
-      searchSections = noResultsReply.sections;
     }
   } else if (
     nextAction === NEXT_ACTIONS.RUN_PLANNING ||
@@ -2807,7 +3037,9 @@ export const renderAssistantPayload = async ({
       searchSections = Array.isArray(normalizedPreparedReply.sections)
         ? normalizedPreparedReply.sections
         : [];
-      followUps = [];
+      followUps = Array.isArray(normalizedPreparedReply.followUps)
+        ? normalizedPreparedReply.followUps
+        : [];
     } else {
       try {
         if (onTextChunk) {
@@ -2923,8 +3155,8 @@ export const renderAssistantPayload = async ({
   }
 
   const latestUserMessage =
-    [...(messages || [])].reverse().find((m) => m?.role === "user")
-      ?.content ?? "";
+    [...(messages || [])].reverse().find((m) => m?.role === "user")?.content ??
+    "";
   const userName = userContext?.userName || userContext?.name || null;
   const invariantSafeSearchUi = ensureRunSearchSectionsInvariant({
     nextAction,
@@ -2941,7 +3173,12 @@ export const renderAssistantPayload = async ({
   searchSections = invariantSafeSearchUi.searchSections;
 
   // Emit static reply text via SSE if streaming path wasn't used (e.g. ASK_FOR_*, RUN_SEARCH intro)
-  if (onTextChunk && replyText && !wasStreamed && !normalizedPreparedReply?.text) {
+  if (
+    onTextChunk &&
+    replyText &&
+    !wasStreamed &&
+    !normalizedPreparedReply?.text
+  ) {
     onTextChunk(replyText);
   }
 

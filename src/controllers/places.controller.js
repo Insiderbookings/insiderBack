@@ -279,6 +279,56 @@ export const nearbyPlaces = async (req, res) => {
   }
 };
 
+export const staticMap = async (req, res) => {
+  try {
+    const lat = parseFloat(req.query?.lat);
+    const lng = parseFloat(req.query?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "lat and lng required" });
+    }
+    const apiKey = getPlacesApiKey();
+    if (!apiKey) {
+      return res.status(500).json({ error: "Google Maps API key not configured" });
+    }
+    const zoom = Math.min(19, Math.max(1, parseInt(req.query?.zoom ?? "16", 10)));
+    const size = "400x200";
+    const markerColor = "0xF59E0B"; // amber to match POI pin color
+    const mapRes = await axios.get("https://maps.googleapis.com/maps/api/staticmap", {
+      params: {
+        center: `${lat},${lng}`,
+        zoom,
+        size,
+        scale: 2,
+        markers: `color:${markerColor}|${lat},${lng}`,
+        key: apiKey,
+      },
+      responseType: "arraybuffer",
+      timeout: 5000,
+      validateStatus: () => true,
+    });
+
+    if (mapRes.status !== 200) {
+      const body = Buffer.from(mapRes.data, "binary").toString("utf8").slice(0, 300);
+      console.error("[staticMap] Google error", mapRes.status, body);
+      return res.status(502).json({ error: "Google Static Maps error", status: mapRes.status });
+    }
+
+    const contentType = mapRes.headers["content-type"] || "image/png";
+    if (!contentType.startsWith("image/")) {
+      const body = Buffer.from(mapRes.data, "binary").toString("utf8").slice(0, 300);
+      console.error("[staticMap] unexpected content-type", contentType, body);
+      return res.status(502).json({ error: "Unexpected response from Google", contentType });
+    }
+
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "public, max-age=86400");
+    return res.send(Buffer.from(mapRes.data, "binary"));
+  } catch (err) {
+    console.error("[staticMap]", err?.message || err);
+    return res.status(500).json({ error: "Unable to load static map" });
+  }
+};
+
 export const placePhoto = async (req, res) => {
   try {
     const ref = typeof req.query?.ref === "string" ? req.query.ref.trim() : "";

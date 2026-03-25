@@ -6,6 +6,10 @@ import { getWeatherSummary } from "../modules/ai/tools/tool.weather.js";
 import { getNearbyPlaces } from "../modules/ai/tools/tool.places.js";
 import { getLocalNews } from "../modules/ai/tools/tool.news.js";
 import { enqueueTripHubEnsure } from "./tripHubPacksQueue.service.js";
+import {
+  resolveWebbedsClassificationLabel,
+  resolveWebbedsHotelStars,
+} from "../utils/webbedsStars.js";
 
 const DEFAULT_MODEL =
   process.env.AI_MODEL_LEGACY_ASSISTANT ||
@@ -1181,7 +1185,9 @@ export const generateAssistantReply = async ({
       name: hotel.name,
       city: hotel.city,
       preferred: hotel.preferred,
-      stars: hotel.classification?.name || "Not Rated",
+      stars: resolveWebbedsHotelStars(hotel),
+      classificationLabel:
+        resolveWebbedsClassificationLabel(hotel) || "Not Rated",
       description: hotel.shortDescription,
       amenities: (hotel.amenities || []).slice(0, 5).map(a => a.name).join(", "),
     })),
@@ -1718,7 +1724,9 @@ export const generateAssistantReplyStream = async ({
       id: hotel.id,
       name: hotel.name,
       city: hotel.city,
-      stars: hotel.classification?.name || "Not Rated",
+      stars: resolveWebbedsHotelStars(hotel),
+      classificationLabel:
+        resolveWebbedsClassificationLabel(hotel) || "Not Rated",
       description: hotel.shortDescription,
       amenities: (hotel.amenities || []).slice(0, 5).map((a) => a.name).join(", "),
     })),

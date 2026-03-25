@@ -17,8 +17,14 @@ export const AI_TOOLS = [
         properties: {
           city: { type: "string" },
           country: { type: ["string", "null"] },
-          checkIn: { type: ["string", "null"], description: "YYYY-MM-DD or null" },
-          checkOut: { type: ["string", "null"], description: "YYYY-MM-DD or null" },
+          checkIn: {
+            type: ["string", "null"],
+            description: "YYYY-MM-DD or null",
+          },
+          checkOut: {
+            type: ["string", "null"],
+            description: "YYYY-MM-DD or null",
+          },
           adults: { type: ["number", "null"] },
           children: { type: ["number", "null"] },
           sortBy: {
@@ -156,7 +162,14 @@ export const AI_TOOLS = [
           },
           areaPreference: {
             type: ["string", "null"],
-            enum: ["CITY_CENTER", "BEACH_COAST", "FAMILY_FRIENDLY", "LUXURY", "BUDGET", null],
+            enum: [
+              "CITY_CENTER",
+              "BEACH_COAST",
+              "FAMILY_FRIENDLY",
+              "LUXURY",
+              "BUDGET",
+              null,
+            ],
           },
           nearbyInterest: {
             type: ["string", "null"],
@@ -218,7 +231,13 @@ export const AI_TOOLS = [
           },
           intent_mode: {
             type: ["string", "null"],
-            enum: ["NEAR_PLACE", "IN_PLACE", "VISIT_PLACE", "STAY_IN_AREA", null],
+            enum: [
+              "NEAR_PLACE",
+              "IN_PLACE",
+              "VISIT_PLACE",
+              "STAY_IN_AREA",
+              null,
+            ],
           },
           language: { type: ["string", "null"] },
           max_candidates: { type: ["number", "null"] },
@@ -296,14 +315,21 @@ export const AI_TOOLS = [
       name: "get_destination_info",
       strict: true,
       description:
-        "Provide info about a destination: climate, things to do, best time to visit. Use when user asks about a city/country without requesting hotel search.",
+        "Provide info about a destination: climate, things to do, food, transport, or general travel guidance. Use when user asks about a city/country without requesting a hotel search.",
       parameters: {
         type: "object",
         properties: {
           destination: { type: "string" },
           aspect: {
             type: ["string", "null"],
-            enum: ["climate", "activities", "food", "general", null],
+            enum: [
+              "climate",
+              "activities",
+              "food",
+              "transport",
+              "general",
+              null,
+            ],
           },
         },
         required: ["destination", "aspect"],
@@ -349,9 +375,10 @@ export const buildPlanFromToolArgs = (args, language = "es") => ({
     children: args.children ?? null,
   },
   sortBy: args.sortBy || null,
-  starRatings: Array.isArray(args.starRatings) && args.starRatings.length
-    ? args.starRatings
-    : [],
+  starRatings:
+    Array.isArray(args.starRatings) && args.starRatings.length
+      ? args.starRatings
+      : [],
   viewIntent: args.viewIntent || null,
   geoIntent: args.geoIntent || null,
   placeTargets:
@@ -368,7 +395,9 @@ export const buildPlanFromToolArgs = (args, language = "es") => ({
             type: typeof target?.type === "string" ? target.type : null,
             city: typeof target?.city === "string" ? target.city.trim() : null,
             country:
-              typeof target?.country === "string" ? target.country.trim() : null,
+              typeof target?.country === "string"
+                ? target.country.trim()
+                : null,
             aliases: Array.isArray(target?.aliases)
               ? target.aliases
                   .map((entry) => String(entry || "").trim())
@@ -391,7 +420,11 @@ export const buildPlanFromToolArgs = (args, language = "es") => ({
       ? Array.from(
           new Set(
             args.areaTraits
-              .map((entry) => String(entry || "").trim().toUpperCase())
+              .map((entry) =>
+                String(entry || "")
+                  .trim()
+                  .toUpperCase(),
+              )
               .filter(Boolean),
           ),
         )

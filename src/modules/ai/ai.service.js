@@ -4,6 +4,10 @@ import models from "../../models/index.js";
 import { generateTripAddons } from "../../services/aiAssistant.service.js";
 import { createHash } from "node:crypto";
 import cache from "../../services/cache.js";
+import {
+  resolveWebbedsClassificationLabel,
+  resolveWebbedsHotelStars,
+} from "../../utils/webbedsStars.js";
 import { AI_FLAGS, AI_LIMITS } from "./ai.config.js";
 import { buildInventoryCarousels } from "./ai.carousels.js";
 import {
@@ -27,6 +31,7 @@ import {
   buildSystemPrompt,
   buildCall2SystemPrompt,
 } from "./ai.systemPrompt.js";
+import { buildPreparedReplyFromLastResults } from "./ai.lastResultsFacts.js";
 import {
   buildSemanticIntentProfile,
   resolveSemanticCatalogContext,
@@ -44,6 +49,7 @@ import {
 import {
   assessWebSearchResult,
   decideCall2WebSearch,
+  normalizeComparableText,
 } from "./ai.webSearchPolicy.js";
 import {
   geocodePlace,
@@ -313,7 +319,9 @@ const executeCall2WithPolicy = async ({
       messages: messagesOverride || messages,
       onTextChunk,
       useWebSearch,
-      modelOverride: useWebSearch ? CALL2_WEB_SEARCH_MODEL : selectedNonWebModel,
+      modelOverride: useWebSearch
+        ? CALL2_WEB_SEARCH_MODEL
+        : selectedNonWebModel,
       streamText,
       onWebSearchStart: (data) => {
         emitEvent?.("web_searching", data);
@@ -750,12 +758,12 @@ const defaultRadiusMetersForPlaceTarget = ({
 const inferSemanticPlaceTargetType = (value = "") => {
   const text = normalizeSemanticText(value);
   if (!text) return "AREA";
-  if (/\b(riverfront|waterfront|costanera|coast|shore|riverside)\b/.test(text)) {
+  if (
+    /\b(riverfront|waterfront|costanera|coast|shore|riverside)\b/.test(text)
+  ) {
     return "WATERFRONT";
   }
-  if (
-    /\b(airport|aeropuerto|aeroparque|ezeiza)\b/.test(text)
-  ) {
+  if (/\b(airport|aeropuerto|aeroparque|ezeiza)\b/.test(text)) {
     return "AIRPORT";
   }
   if (/\b(station|estacion|terminal|retiro)\b/.test(text)) {
@@ -864,10 +872,9 @@ const sanitizeSemanticPlaceTarget = (raw = {}, options = {}) => {
     typeof raw?.normalizedName === "string" && raw.normalizedName.trim()
       ? raw.normalizedName.trim()
       : rawText;
-  const type = normalizeSemanticEnum(
-    raw?.type,
-    SEMANTIC_PLACE_TARGET_TYPES,
-  ) || inferSemanticPlaceTargetType(rawText);
+  const type =
+    normalizeSemanticEnum(raw?.type, SEMANTIC_PLACE_TARGET_TYPES) ||
+    inferSemanticPlaceTargetType(rawText);
   let lat = normalizeSemanticNumber(raw?.lat);
   let lng = normalizeSemanticNumber(raw?.lng);
   if (lat === 0 && lng === 0) {
@@ -879,9 +886,7 @@ const sanitizeSemanticPlaceTarget = (raw = {}, options = {}) => {
     defaultRadiusMetersForPlaceTarget({ type, geoIntent });
   const confidenceRaw = normalizeSemanticNumber(raw?.confidence);
   const confidence =
-    confidenceRaw != null
-      ? Math.max(0, Math.min(1, confidenceRaw))
-      : null;
+    confidenceRaw != null ? Math.max(0, Math.min(1, confidenceRaw)) : null;
   return {
     rawText,
     normalizedName,
@@ -894,7 +899,9 @@ const sanitizeSemanticPlaceTarget = (raw = {}, options = {}) => {
     lng,
     radiusMeters,
     polygonRef:
-      typeof raw?.polygonRef === "string" ? raw.polygonRef.trim() || null : null,
+      typeof raw?.polygonRef === "string"
+        ? raw.polygonRef.trim() || null
+        : null,
     confidence,
   };
 };
@@ -1042,10 +1049,14 @@ const detectSemanticAreaIntent = (message = "") => {
   ) {
     return "GOOD_AREA";
   }
-  if (/\b(city center|downtown|centro|zona centrica|area centrica)\b/.test(text)) {
+  if (
+    /\b(city center|downtown|centro|zona centrica|area centrica)\b/.test(text)
+  ) {
     return "CITY_CENTER";
   }
-  if (/\b(quiet|tranquilo|tranquila|peaceful|silencioso|silenciosa)\b/.test(text)) {
+  if (
+    /\b(quiet|tranquilo|tranquila|peaceful|silencioso|silenciosa)\b/.test(text)
+  ) {
     return "QUIET";
   }
   if (/\b(nightlife|vida nocturna|party area)\b/.test(text)) {
@@ -1074,9 +1085,7 @@ const detectSemanticQualityIntent = (message = "") => {
   ) {
     return "VALUE";
   }
-  if (
-    /\b(luxury|lujo|lujoso|premium|upscale|high end|de lujo)\b/.test(text)
-  ) {
+  if (/\b(luxury|lujo|lujoso|premium|upscale|high end|de lujo)\b/.test(text)) {
     return "LUXURY";
   }
   return null;
@@ -1090,9 +1099,7 @@ const detectSemanticGeoIntent = (message = "", placeTargets = []) => {
     Array.isArray(placeTargets) &&
     placeTargets.length
   ) {
-    return placeTargets[0]?.type === "LANDMARK"
-      ? "NEAR_LANDMARK"
-      : "NEAR_AREA";
+    return placeTargets[0]?.type === "LANDMARK" ? "NEAR_LANDMARK" : "NEAR_AREA";
   }
   if (/\b(waterfront|riverfront|costanera|riverside)\b/.test(text)) {
     return "WATERFRONT";
@@ -1103,7 +1110,11 @@ const detectSemanticGeoIntent = (message = "", placeTargets = []) => {
   ) {
     return "VIEW_TO";
   }
-  if (/\b(en|in)\b/.test(text) && Array.isArray(placeTargets) && placeTargets.length) {
+  if (
+    /\b(en|in)\b/.test(text) &&
+    Array.isArray(placeTargets) &&
+    placeTargets.length
+  ) {
     return "IN_AREA";
   }
   return null;
@@ -1135,7 +1146,10 @@ const detectSemanticAreaTraits = (message = "") => {
         /\b(family friendly|familiar|family hotel|for families|para familias)\b/,
       value: "FAMILY",
     },
-    { pattern: /\b(luxury|lujo|lujoso|premium|upscale|high end)\b/, value: "LUXURY" },
+    {
+      pattern: /\b(luxury|lujo|lujoso|premium|upscale|high end)\b/,
+      value: "LUXURY",
+    },
   ];
   traitMatchers.forEach(({ pattern, value }) => {
     if (pattern.test(text)) traits.push(value);
@@ -1150,7 +1164,8 @@ const extractSemanticPreferenceNotes = (message = "") => {
   const noteMatchers = [
     { pattern: /\bromantic|romantico|romantica\b/, value: "romantic" },
     {
-      pattern: /\bfamily friendly|familiar|family hotel|for families|para familias\b/,
+      pattern:
+        /\bfamily friendly|familiar|family hotel|for families|para familias\b/,
       value: "family-friendly",
     },
     { pattern: /\bquiet|tranquilo|tranquila|peaceful\b/, value: "quiet" },
@@ -1182,7 +1197,10 @@ const hasExplicitSemanticGeoRequest = ({
   latestUserMessage = "",
   plan = {},
 } = {}) => {
-  const deterministic = buildDeterministicSemanticHints(latestUserMessage, plan);
+  const deterministic = buildDeterministicSemanticHints(
+    latestUserMessage,
+    plan,
+  );
   if (deterministic.placeTargets.length > 0) return true;
   if (
     Array.isArray(plan?.placeTargets) &&
@@ -1219,11 +1237,11 @@ const shouldRunSemanticSearchFallback = (message = "", plan = {}) => {
   }
   return Boolean(
     plan?.viewIntent ||
-      plan?.geoIntent ||
-      (Array.isArray(plan?.placeTargets) && plan.placeTargets.length) ||
-      plan?.areaIntent === "GOOD_AREA" ||
-      (Array.isArray(plan?.areaTraits) && plan.areaTraits.length) ||
-      (Array.isArray(plan?.preferenceNotes) && plan.preferenceNotes.length),
+    plan?.geoIntent ||
+    (Array.isArray(plan?.placeTargets) && plan.placeTargets.length) ||
+    plan?.areaIntent === "GOOD_AREA" ||
+    (Array.isArray(plan?.areaTraits) && plan.areaTraits.length) ||
+    (Array.isArray(plan?.preferenceNotes) && plan.preferenceNotes.length),
   );
 };
 
@@ -1358,10 +1376,7 @@ const normalizeSemanticGroundingResult = (raw = {}) => {
     raw.groundingStrategy,
     SEMANTIC_GROUNDING_STRATEGIES,
   );
-  const candidateAnchors = uniqueSemanticPlaceTargets(
-    raw.candidateAnchors,
-    6,
-  );
+  const candidateAnchors = uniqueSemanticPlaceTargets(raw.candidateAnchors, 6);
   const lifestylePreferences = Array.from(
     new Map(
       (Array.isArray(raw.lifestylePreferences) ? raw.lifestylePreferences : [])
@@ -1434,9 +1449,9 @@ const buildGroundingNearbyInterest = (grounding = {}) => {
 const hasCanonicalSemanticGrounding = (plan = {}) =>
   Boolean(
     plan?.semanticSearch?.grounding &&
-      typeof plan.semanticSearch.grounding === "object" &&
-      plan.semanticSearch.grounding.source === "planner" &&
-      plan.semanticSearch.grounding.groundingStrategy,
+    typeof plan.semanticSearch.grounding === "object" &&
+    plan.semanticSearch.grounding.source === "planner" &&
+    plan.semanticSearch.grounding.groundingStrategy,
   );
 
 const ensureSemanticSearchState = (plan) => {
@@ -1459,7 +1474,10 @@ const ensureSemanticSearchState = (plan) => {
   if (!Array.isArray(plan.semanticSearch.referenceHotelIds)) {
     plan.semanticSearch.referenceHotelIds = [];
   }
-  if (!plan.semanticSearch.grounding || typeof plan.semanticSearch.grounding !== "object") {
+  if (
+    !plan.semanticSearch.grounding ||
+    typeof plan.semanticSearch.grounding !== "object"
+  ) {
     plan.semanticSearch.grounding = {
       source: null,
       semanticMode: null,
@@ -1474,7 +1492,10 @@ const ensureSemanticSearchState = (plan) => {
       traceSummary: null,
     };
   }
-  if (!plan.semanticSearch.webContext || typeof plan.semanticSearch.webContext !== "object") {
+  if (
+    !plan.semanticSearch.webContext ||
+    typeof plan.semanticSearch.webContext !== "object"
+  ) {
     plan.semanticSearch.webContext = {
       enrichmentRan: false,
       webResolutionUsed: false,
@@ -1559,30 +1580,42 @@ const filterSemanticEnrichmentAgainstLockedIntent = ({
   if (!enrichment || typeof enrichment !== "object") return enrichment;
   const semanticState = ensureSemanticSearchState(plan);
   const lockedIntent =
-    semanticState?.userIntentLock && typeof semanticState.userIntentLock === "object"
+    semanticState?.userIntentLock &&
+    typeof semanticState.userIntentLock === "object"
       ? semanticState.userIntentLock
       : null;
-  const explicitHints = buildDeterministicSemanticHints(latestUserMessage, plan);
+  const explicitHints = buildDeterministicSemanticHints(
+    latestUserMessage,
+    plan,
+  );
   const allowedAreaTraits = new Set(
     normalizeSemanticAreaTraits([
       ...(Array.isArray(lockedIntent?.userRequestedAreaTraits)
         ? lockedIntent.userRequestedAreaTraits
         : []),
-      ...(Array.isArray(explicitHints.areaTraits) ? explicitHints.areaTraits : []),
+      ...(Array.isArray(explicitHints.areaTraits)
+        ? explicitHints.areaTraits
+        : []),
     ]),
   );
   const originalAreaTraits = normalizeSemanticAreaTraits(enrichment.areaTraits);
   const filteredAreaTraits = originalAreaTraits.filter((trait) =>
-    allowedAreaTraits.has(String(trait || "").trim().toUpperCase()),
+    allowedAreaTraits.has(
+      String(trait || "")
+        .trim()
+        .toUpperCase(),
+    ),
   );
   const droppedAreaTraits = originalAreaTraits.filter(
     (trait) => !filteredAreaTraits.includes(trait),
   );
 
-  const allowedAreaIntent = explicitHints.areaIntent || plan?.areaIntent || null;
+  const allowedAreaIntent =
+    explicitHints.areaIntent || plan?.areaIntent || null;
   const allowedQualityIntent =
     explicitHints.qualityIntent || plan?.qualityIntent || null;
-  const allowedViewIntent = explicitHints.viewIntent || plan?.viewIntent || null;
+  const allowedViewIntent =
+    explicitHints.viewIntent || plan?.viewIntent || null;
 
   const sanitizedEnrichment = {
     ...enrichment,
@@ -1592,7 +1625,8 @@ const filterSemanticEnrichmentAgainstLockedIntent = ({
         ? enrichment.areaIntent
         : null,
     qualityIntent:
-      enrichment.qualityIntent && enrichment.qualityIntent === allowedQualityIntent
+      enrichment.qualityIntent &&
+      enrichment.qualityIntent === allowedQualityIntent
         ? enrichment.qualityIntent
         : null,
     viewIntent:
@@ -1753,13 +1787,145 @@ const summarizePlanForDebug = (plan) => {
       ? plan.preferenceNotes
       : [],
     placeTargets: Array.isArray(plan?.placeTargets)
-      ? plan.placeTargets.map(summarizeSemanticPlaceTargetForDebug).filter(Boolean)
+      ? plan.placeTargets
+          .map(summarizeSemanticPlaceTargetForDebug)
+          .filter(Boolean)
       : [],
     referenceHotelIds: Array.isArray(plan?.semanticSearch?.referenceHotelIds)
       ? plan.semanticSearch.referenceHotelIds
       : [],
     grounding: summarizeSemanticGroundingForDebug(plan),
     intentProfile: summarizeSemanticIntentProfileForDebug(plan),
+    webContext:
+      plan?.semanticSearch?.webContext &&
+      typeof plan.semanticSearch.webContext === "object"
+        ? {
+            enrichmentRan:
+              plan.semanticSearch.webContext.enrichmentRan === true,
+            webResolutionUsed:
+              plan.semanticSearch.webContext.webResolutionUsed === true,
+            candidateGenerationUsed:
+              plan.semanticSearch.webContext.candidateGenerationUsed === true,
+            resolvedPlaces: Array.isArray(
+              plan.semanticSearch.webContext.resolvedPlaces,
+            )
+              ? plan.semanticSearch.webContext.resolvedPlaces
+                  .map(summarizeSemanticPlaceTargetForDebug)
+                  .filter(Boolean)
+              : [],
+            candidateHotelNames: Array.isArray(
+              plan.semanticSearch.webContext.candidateHotelNames,
+            )
+              ? plan.semanticSearch.webContext.candidateHotelNames
+              : [],
+            neighborhoodHints: Array.isArray(
+              plan.semanticSearch.webContext.neighborhoodHints,
+            )
+              ? plan.semanticSearch.webContext.neighborhoodHints
+              : [],
+            sourcePolicy: plan.semanticSearch.webContext.sourcePolicy ?? null,
+            traceSummary: plan.semanticSearch.webContext.traceSummary ?? null,
+          }
+        : null,
+  };
+};
+
+const summarizeSemanticScopeForDebug = (plan) => {
+  const summary = summarizePlanForDebug(plan);
+  if (!summary) return null;
+  return {
+    geoIntent: summary.geoIntent,
+    areaIntent: summary.areaIntent,
+    viewIntent: summary.viewIntent,
+    qualityIntent: summary.qualityIntent,
+    areaTraits: summary.areaTraits,
+    preferenceNotes: summary.preferenceNotes,
+    nearbyInterest: summary.nearbyInterest,
+    placeTargets: summary.placeTargets,
+    referenceHotelIds: summary.referenceHotelIds,
+    grounding: summary.grounding,
+    intentProfile: summary.intentProfile,
+    webResolvedPlaces: Array.isArray(summary?.webContext?.resolvedPlaces)
+      ? summary.webContext.resolvedPlaces
+      : [],
+    webCandidateHotelNames: Array.isArray(
+      summary?.webContext?.candidateHotelNames,
+    )
+      ? summary.webContext.candidateHotelNames
+      : [],
+    webNeighborhoodHints: Array.isArray(summary?.webContext?.neighborhoodHints)
+      ? summary.webContext.neighborhoodHints
+      : [],
+    webCandidateGenerationUsed:
+      summary?.webContext?.candidateGenerationUsed === true,
+    webResolutionUsed: summary?.webContext?.webResolutionUsed === true,
+  };
+};
+
+const hasActiveSemanticScopeForDebug = (snapshot) => {
+  if (!snapshot || typeof snapshot !== "object") return false;
+  return Boolean(
+    snapshot.geoIntent ||
+    snapshot.areaIntent ||
+    snapshot.viewIntent ||
+    snapshot.qualityIntent ||
+    snapshot.nearbyInterest ||
+    (Array.isArray(snapshot.areaTraits) && snapshot.areaTraits.length) ||
+    (Array.isArray(snapshot.preferenceNotes) &&
+      snapshot.preferenceNotes.length) ||
+    (Array.isArray(snapshot.placeTargets) && snapshot.placeTargets.length) ||
+    (Array.isArray(snapshot.referenceHotelIds) &&
+      snapshot.referenceHotelIds.length) ||
+    (snapshot.grounding &&
+      typeof snapshot.grounding === "object" &&
+      Object.values(snapshot.grounding).some((value) =>
+        Array.isArray(value) ? value.length > 0 : Boolean(value),
+      )) ||
+    (snapshot.intentProfile &&
+      typeof snapshot.intentProfile === "object" &&
+      Object.values(snapshot.intentProfile).some((value) =>
+        Array.isArray(value) ? value.length > 0 : Boolean(value),
+      )) ||
+    (Array.isArray(snapshot.webResolvedPlaces) &&
+      snapshot.webResolvedPlaces.length) ||
+    (Array.isArray(snapshot.webCandidateHotelNames) &&
+      snapshot.webCandidateHotelNames.length) ||
+    (Array.isArray(snapshot.webNeighborhoodHints) &&
+      snapshot.webNeighborhoodHints.length) ||
+    snapshot.webCandidateGenerationUsed === true ||
+    snapshot.webResolutionUsed === true,
+  );
+};
+
+const diffSemanticScopeSnapshotsForDebug = (before, after) => {
+  const beforeSnapshot = before && typeof before === "object" ? before : {};
+  const afterSnapshot = after && typeof after === "object" ? after : {};
+  const keys = Array.from(
+    new Set([...Object.keys(beforeSnapshot), ...Object.keys(afterSnapshot)]),
+  );
+  const changes = {};
+  const changedKeys = [];
+  keys.forEach((key) => {
+    const beforeValue = Object.prototype.hasOwnProperty.call(
+      beforeSnapshot,
+      key,
+    )
+      ? beforeSnapshot[key]
+      : null;
+    const afterValue = Object.prototype.hasOwnProperty.call(afterSnapshot, key)
+      ? afterSnapshot[key]
+      : null;
+    if (JSON.stringify(beforeValue) !== JSON.stringify(afterValue)) {
+      changedKeys.push(key);
+      changes[key] = {
+        before: beforeValue,
+        after: afterValue,
+      };
+    }
+  });
+  return {
+    changedKeys,
+    changes,
   };
 };
 
@@ -1841,7 +2007,9 @@ const summarizeHotelForDebug = (hotel, rank) => {
           matchedZoneId: hotel.semanticMatch.matchedZoneId || null,
           matchedLandmarkId: hotel.semanticMatch.matchedLandmarkId || null,
           scopeEligible: Boolean(hotel.semanticMatch.scopeEligible),
-          evidence: summarizeSemanticEvidenceForDebug(hotel.semanticMatch.evidence),
+          evidence: summarizeSemanticEvidenceForDebug(
+            hotel.semanticMatch.evidence,
+          ),
         }
       : null;
   return {
@@ -1849,14 +2017,17 @@ const summarizeHotelForDebug = (hotel, rank) => {
     id: hotel.id || null,
     name: hotel.name || null,
     city: hotel.city || null,
-    stars: hotel.stars ?? null,
+    stars: resolveWebbedsHotelStars(hotel),
     pricePerNight: hotel.pricePerNight ?? null,
     distanceMeters:
-      hotel.distanceMeters == null || !Number.isFinite(Number(hotel.distanceMeters))
+      hotel.distanceMeters == null ||
+      !Number.isFinite(Number(hotel.distanceMeters))
         ? null
         : Number(hotel.distanceMeters),
     matchedPlaceTarget: hotel.matchedPlaceTarget || null,
-    matchReasons: Array.isArray(hotel.matchReasons) ? hotel.matchReasons.slice(0, 5) : [],
+    matchReasons: Array.isArray(hotel.matchReasons)
+      ? hotel.matchReasons.slice(0, 5)
+      : [],
     semanticMatch,
   };
 };
@@ -1872,7 +2043,8 @@ const summarizeInventoryForDebug = (inventory) => {
       ? {
           candidateHotelCount:
             inventory.searchScope.hotels.candidateHotelCount ?? null,
-          strongHotelCount: inventory.searchScope.hotels.strongHotelCount ?? null,
+          strongHotelCount:
+            inventory.searchScope.hotels.strongHotelCount ?? null,
           relevantHotelCount:
             inventory.searchScope.hotels.relevantHotelCount ?? null,
           visibleHotelCount:
@@ -1880,10 +2052,31 @@ const summarizeInventoryForDebug = (inventory) => {
           scopeMode: inventory.searchScope.hotels.scopeMode ?? null,
           scopeReason: inventory.searchScope.hotels.scopeReason ?? null,
           warningMode: inventory.searchScope.hotels.warningMode ?? null,
-          scopeConfidence:
-            inventory.searchScope.hotels.scopeConfidence ?? null,
+          scopeConfidence: inventory.searchScope.hotels.scopeConfidence ?? null,
           scopeExpansionReason:
             inventory.searchScope.hotels.scopeExpansionReason ?? null,
+          nearbyFallbackApplied:
+            inventory.searchScope.hotels.nearbyFallbackApplied === true,
+          nearbyFallbackMode:
+            inventory.searchScope.hotels.nearbyFallbackMode ?? null,
+          nearbyFallbackAnchorLabel:
+            inventory.searchScope.hotels.nearbyFallbackAnchorLabel ?? null,
+          nearbyFallbackRadiiTried: Array.isArray(
+            inventory.searchScope.hotels.nearbyFallbackRadiiTried,
+          )
+            ? inventory.searchScope.hotels.nearbyFallbackRadiiTried
+            : [],
+          nearbyFallbackWinningRadiusMeters:
+            inventory.searchScope.hotels.nearbyFallbackWinningRadiusMeters ??
+            null,
+          nearbyFallbackCities: Array.isArray(
+            inventory.searchScope.hotels.nearbyFallbackCities,
+          )
+            ? inventory.searchScope.hotels.nearbyFallbackCities
+            : [],
+          nearbyFallbackOriginalDestination:
+            inventory.searchScope.hotels.nearbyFallbackOriginalDestination ??
+            null,
         }
       : null,
     topHotels: hotels
@@ -1895,7 +2088,8 @@ const summarizeInventoryForDebug = (inventory) => {
       typeof inventory.semanticExplanationPlan === "object"
         ? {
             source: inventory.semanticExplanationPlan.source || null,
-            fallbackUsed: inventory.semanticExplanationPlan.fallbackUsed === true,
+            fallbackUsed:
+              inventory.semanticExplanationPlan.fallbackUsed === true,
             itemCount: Array.isArray(inventory.semanticExplanationPlan.items)
               ? inventory.semanticExplanationPlan.items.length
               : 0,
@@ -1905,7 +2099,9 @@ const summarizeInventoryForDebug = (inventory) => {
 };
 
 const summarizeRenderedPayloadForDebug = (rendered, nextAction) => {
-  const sections = Array.isArray(rendered?.ui?.sections) ? rendered.ui.sections : [];
+  const sections = Array.isArray(rendered?.ui?.sections)
+    ? rendered.ui.sections
+    : [];
   return {
     nextAction: nextAction || null,
     replyPreview:
@@ -1929,9 +2125,7 @@ const normalizeSemanticExplanationText = (value = null) =>
     .trim();
 
 const countSemanticExplanationWords = (value = "") =>
-  normalizeSemanticExplanationText(value)
-    .split(/\s+/)
-    .filter(Boolean).length;
+  normalizeSemanticExplanationText(value).split(/\s+/).filter(Boolean).length;
 
 const normalizeSemanticPlannerLookup = (value = "") =>
   String(value || "")
@@ -1993,16 +2187,16 @@ const hasSemanticPlannerIntent = (plan = {}) => {
   const snapshot = buildSemanticPlannerIntentSnapshot(plan);
   return Boolean(
     snapshot.areaIntent ||
-      snapshot.qualityIntent ||
-      snapshot.viewIntent ||
-      snapshot.geoIntent ||
-      snapshot.userRequestedAreaTraits.length ||
-      snapshot.userRequestedZones.length ||
-      snapshot.userRequestedLandmarks.length ||
-      snapshot.requestedZones.length ||
-      snapshot.requestedLandmarks.length ||
-      snapshot.candidateZones.length ||
-      snapshot.candidateLandmarks.length,
+    snapshot.qualityIntent ||
+    snapshot.viewIntent ||
+    snapshot.geoIntent ||
+    snapshot.userRequestedAreaTraits.length ||
+    snapshot.userRequestedZones.length ||
+    snapshot.userRequestedLandmarks.length ||
+    snapshot.requestedZones.length ||
+    snapshot.requestedLandmarks.length ||
+    snapshot.candidateZones.length ||
+    snapshot.candidateLandmarks.length,
   );
 };
 
@@ -2017,16 +2211,19 @@ const buildSemanticPlannerHotelPayload = (pick = null) => {
     hotelId: String(item.id),
     name: item.name,
     zoneLabel:
-      explanation.canMentionZone === true ? explanation.mentionedZoneLabel || null : null,
+      explanation.canMentionZone === true
+        ? explanation.mentionedZoneLabel || null
+        : null,
     canMentionZone: explanation.canMentionZone === true,
     allowedAngles: Array.isArray(explanation.allowedAngles)
       ? explanation.allowedAngles.slice(0, 8)
       : [],
     primaryReasonText: explanation.primaryReasonText || null,
     secondaryReasonText: explanation.secondaryReasonText || null,
-    stars: item.stars ?? null,
+    stars: resolveWebbedsHotelStars(item),
     priceTier: resolveSemanticExplanationPriceTier(item.pricePerNight),
-    confidence: explanation.confidence || item?.semanticMatch?.confidence || null,
+    confidence:
+      explanation.confidence || item?.semanticMatch?.confidence || null,
     allowedSignals:
       explanation.signals && typeof explanation.signals === "object"
         ? { ...explanation.signals }
@@ -2107,7 +2304,8 @@ const SEMANTIC_EXPLANATION_SIGNAL_PATTERNS = {
   quiet_profile: /\b(tranquil|quiet|calm|descans|peaceful)\b/i,
   walkability: /\b(camin|walk|a pie|on foot|stroll)\b/i,
   value: /\b(valor|precio|price|value|afford|equilibr)\b/i,
-  premium_profile: /\b(premium|refinad|refined|upscale|luxur|polished|elegan)\b/i,
+  premium_profile:
+    /\b(premium|refinad|refined|upscale|luxur|polished|elegan)\b/i,
   stars_match: /\b(estrella|star)\b/i,
   view_match: /\b(vista|view|river|rio|río|water|sea|mar)\b/i,
 };
@@ -2120,18 +2318,23 @@ const validateSemanticExplanationSentenceSignals = ({
   knownZoneLabels = [],
 } = {}) => {
   const errors = [];
-  const mentionedZones = extractMentionedSemanticLabels(sentence, knownZoneLabels);
+  const mentionedZones = extractMentionedSemanticLabels(
+    sentence,
+    knownZoneLabels,
+  );
   if (!canMentionZone && mentionedZones.length) {
     errors.push("zone_not_allowed");
   }
   if (canMentionZone && mentionedZones.some((label) => label !== zoneLabel)) {
     errors.push("wrong_zone_mentioned");
   }
-  Object.entries(SEMANTIC_EXPLANATION_SIGNAL_PATTERNS).forEach(([signal, pattern]) => {
-    if (pattern.test(sentence) && allowedSignals?.[signal] !== true) {
-      errors.push(`signal_not_allowed:${signal}`);
-    }
-  });
+  Object.entries(SEMANTIC_EXPLANATION_SIGNAL_PATTERNS).forEach(
+    ([signal, pattern]) => {
+      if (pattern.test(sentence) && allowedSignals?.[signal] !== true) {
+        errors.push(`signal_not_allowed:${signal}`);
+      }
+    },
+  );
   return errors;
 };
 
@@ -2146,7 +2349,8 @@ export const validateSemanticExplanationPlanOutput = ({
         const item = entry?.item || null;
         if (!item?.id || !item?.name) return null;
         const explanation =
-          item?.decisionExplanation && typeof item.decisionExplanation === "object"
+          item?.decisionExplanation &&
+          typeof item.decisionExplanation === "object"
             ? item.decisionExplanation
             : {};
         return [
@@ -2181,7 +2385,9 @@ export const validateSemanticExplanationPlanOutput = ({
   const knownHotelNames = [...hotelMap.values()].map((entry) => entry.name);
   const itemErrorsByHotelId = new Map();
   const normalizedIntro =
-    typeof explanationPlan?.intro === "string" ? explanationPlan.intro.trim() : "";
+    typeof explanationPlan?.intro === "string"
+      ? explanationPlan.intro.trim()
+      : "";
   const introErrors = [];
   if (!normalizedIntro) {
     introErrors.push("missing_intro");
@@ -2194,16 +2400,24 @@ export const validateSemanticExplanationPlanOutput = ({
     }
     if (
       language === "es" &&
-      /\bquiet\b|\bwalkable\b|\bsafe area\b|\bgood area\b/i.test(normalizedIntro)
+      /\bquiet\b|\bwalkable\b|\bsafe area\b|\bgood area\b/i.test(
+        normalizedIntro,
+      )
     ) {
       introErrors.push("intro_mixed_language");
     }
-    if (SEMANTIC_EXPLANATION_BANNED_PATTERNS.some((pattern) => pattern.test(normalizedIntro))) {
+    if (
+      SEMANTIC_EXPLANATION_BANNED_PATTERNS.some((pattern) =>
+        pattern.test(normalizedIntro),
+      )
+    ) {
       introErrors.push("intro_banned_phrase");
     }
   }
 
-  const rawItems = Array.isArray(explanationPlan?.items) ? explanationPlan.items : [];
+  const rawItems = Array.isArray(explanationPlan?.items)
+    ? explanationPlan.items
+    : [];
   const normalizedItems = rawItems
     .map((item) => ({
       hotelId: String(item?.hotelId || "").trim(),
@@ -2227,12 +2441,18 @@ export const validateSemanticExplanationPlanOutput = ({
         const wordCount = countSemanticExplanationWords(item.sentence);
         if (wordCount < 14) errors.push("sentence_too_short");
         if (wordCount > 28) errors.push("sentence_too_long");
-        if (SEMANTIC_EXPLANATION_BANNED_PATTERNS.some((pattern) => pattern.test(item.sentence))) {
+        if (
+          SEMANTIC_EXPLANATION_BANNED_PATTERNS.some((pattern) =>
+            pattern.test(item.sentence),
+          )
+        ) {
           errors.push("banned_phrase");
         }
         if (
           language === "es" &&
-          /\bquiet\b|\bwalkable\b|\bsafe area\b|\bgood area\b/i.test(item.sentence)
+          /\bquiet\b|\bwalkable\b|\bsafe area\b|\bgood area\b/i.test(
+            item.sentence,
+          )
         ) {
           errors.push("mixed_language");
         }
@@ -2367,28 +2587,37 @@ const mergeSemanticExplanationPlanWithFallback = ({
 const buildSemanticOrientationProfileLabel = (plan = {}, language = "es") => {
   const profile = plan?.semanticSearch?.intentProfile || {};
   const traits = new Set(
-    (
-      Array.isArray(profile?.userRequestedAreaTraits)
-        ? profile.userRequestedAreaTraits
-        : Array.isArray(profile?.requestedAreaTraits)
-          ? profile.requestedAreaTraits
-          : Array.isArray(plan?.areaTraits)
-            ? plan.areaTraits
-            : []
+    (Array.isArray(profile?.userRequestedAreaTraits)
+      ? profile.userRequestedAreaTraits
+      : Array.isArray(profile?.requestedAreaTraits)
+        ? profile.requestedAreaTraits
+        : Array.isArray(plan?.areaTraits)
+          ? plan.areaTraits
+          : []
     )
-      .map((trait) => String(trait || "").trim().toUpperCase())
+      .map((trait) =>
+        String(trait || "")
+          .trim()
+          .toUpperCase(),
+      )
       .filter(Boolean),
   );
-  const areaIntent = String(plan?.areaIntent || "").trim().toUpperCase();
+  const areaIntent = String(plan?.areaIntent || "")
+    .trim()
+    .toUpperCase();
   if (language === "es") {
     if (
       areaIntent === "GOOD_AREA" ||
-      (traits.has("SAFE") && traits.has("WALKABLE") && traits.has("UPSCALE_AREA"))
+      (traits.has("SAFE") &&
+        traits.has("WALKABLE") &&
+        traits.has("UPSCALE_AREA"))
     ) {
       return "de buena zona y caminable";
     }
-    if (traits.has("QUIET") && traits.has("WALKABLE")) return "tranquilo y caminable";
-    if (traits.has("SAFE") && traits.has("WALKABLE")) return "seguro y caminable";
+    if (traits.has("QUIET") && traits.has("WALKABLE"))
+      return "tranquilo y caminable";
+    if (traits.has("SAFE") && traits.has("WALKABLE"))
+      return "seguro y caminable";
     if (traits.has("QUIET")) return "tranquilo";
     if (traits.has("WALKABLE")) return "caminable";
     if (traits.has("UPSCALE_AREA")) return "de entorno mas cuidado";
@@ -2399,12 +2628,16 @@ const buildSemanticOrientationProfileLabel = (plan = {}, language = "es") => {
   ) {
     return "in a good, walkable area";
   }
-  if (traits.has("QUIET") && traits.has("WALKABLE")) return "quiet and walkable";
-  if (traits.has("SAFE") && traits.has("WALKABLE")) return "comfortable and walkable";
+  if (traits.has("QUIET") && traits.has("WALKABLE"))
+    return "quiet and walkable";
+  if (traits.has("SAFE") && traits.has("WALKABLE"))
+    return "comfortable and walkable";
   if (traits.has("QUIET")) return "quiet";
   if (traits.has("WALKABLE")) return "walkable";
   if (traits.has("UPSCALE_AREA")) return "with a more polished setting";
-  return language === "es" ? "como el que pediste" : "like the one you asked for";
+  return language === "es"
+    ? "como el que pediste"
+    : "like the one you asked for";
 };
 
 const joinSemanticOrientationZones = (zones = [], language = "es") => {
@@ -2428,9 +2661,7 @@ const normalizeAssistantKickoffText = (text = "") =>
     .trim();
 
 const countAssistantKickoffWords = (text = "") =>
-  normalizeAssistantKickoffText(text)
-    .split(/\s+/)
-    .filter(Boolean).length;
+  normalizeAssistantKickoffText(text).split(/\s+/).filter(Boolean).length;
 
 const ASSISTANT_KICKOFF_BANNED_FRAGMENTS = [
   "voy a priorizar",
@@ -2447,38 +2678,81 @@ const ASSISTANT_KICKOFF_BANNED_FRAGMENTS = [
   "based on that",
   "these options were prioritized",
   "these options came first",
+  "la clave en ",
+  "no es abrir todo por igual",
+  "respira mejor ese perfil",
+  "the key here is not the whole city equally",
+  "useful first read",
+  "breathe that",
 ];
 
-const buildDeterministicAssistantKickoffReference = ({ plan = {}, language = "es" } = {}) => {
+const pickDeterministicAssistantKickoffVariant = (
+  variants = [],
+  seedPayload = null,
+) => {
+  const normalizedVariants = Array.isArray(variants)
+    ? variants
+        .map((variant) => normalizeAssistantKickoffText(variant))
+        .filter(Boolean)
+    : [];
+  if (!normalizedVariants.length) return "";
+  if (normalizedVariants.length === 1) return normalizedVariants[0];
+  const seedHash = createHash("sha1")
+    .update(JSON.stringify(seedPayload || normalizedVariants))
+    .digest("hex");
+  const index = parseInt(seedHash.slice(0, 8), 16) % normalizedVariants.length;
+  return normalizedVariants[index];
+};
+
+const buildDeterministicAssistantKickoffReference = ({
+  plan = {},
+  language = "es",
+} = {}) => {
   const destination =
     plan?.location?.city ||
     plan?.location?.country ||
     (language === "es" ? "la ciudad" : "the city");
   const profile = plan?.semanticSearch?.intentProfile || {};
-  const inferenceMode = String(profile?.inferenceMode || "").trim().toUpperCase();
-  const confidence = String(profile?.confidence || "LOW").trim().toUpperCase();
-  const viewIntent = String(plan?.viewIntent || "").trim().toUpperCase();
-  const qualityIntent = String(plan?.qualityIntent || "").trim().toUpperCase();
-  const areaIntent = String(plan?.areaIntent || "").trim().toUpperCase();
+  const inferenceMode = String(profile?.inferenceMode || "")
+    .trim()
+    .toUpperCase();
+  const confidence = String(profile?.confidence || "LOW")
+    .trim()
+    .toUpperCase();
+  const viewIntent = String(plan?.viewIntent || "")
+    .trim()
+    .toUpperCase();
+  const qualityIntent = String(plan?.qualityIntent || "")
+    .trim()
+    .toUpperCase();
+  const areaIntent = String(plan?.areaIntent || "")
+    .trim()
+    .toUpperCase();
   const explicitReferenceLabel =
     (Array.isArray(plan?.placeTargets)
       ? plan.placeTargets.find(
           (target) =>
             target &&
-            (String(target?.normalizedName || "").trim() || String(target?.rawText || "").trim()),
+            (String(target?.normalizedName || "").trim() ||
+              String(target?.rawText || "").trim()),
         )
-      : null)?.normalizedName ||
+      : null
+    )?.normalizedName ||
     (Array.isArray(plan?.placeTargets)
       ? plan.placeTargets.find(
           (target) =>
             target &&
-            (String(target?.normalizedName || "").trim() || String(target?.rawText || "").trim()),
+            (String(target?.normalizedName || "").trim() ||
+              String(target?.rawText || "").trim()),
         )
-      : null)?.rawText ||
+      : null
+    )?.rawText ||
     plan?.location?.landmark ||
     null;
   const nearbyInterest = String(
-    plan?.nearbyInterest || plan?.semanticSearch?.grounding?.nearbyInterest || "",
+    plan?.nearbyInterest ||
+      plan?.semanticSearch?.grounding?.nearbyInterest ||
+      "",
   ).trim();
   const requestedTraits = new Set(
     [
@@ -2486,9 +2760,15 @@ const buildDeterministicAssistantKickoffReference = ({ plan = {}, language = "es
       ...(Array.isArray(profile?.userRequestedAreaTraits)
         ? profile.userRequestedAreaTraits
         : []),
-      ...(Array.isArray(profile?.requestedAreaTraits) ? profile.requestedAreaTraits : []),
+      ...(Array.isArray(profile?.requestedAreaTraits)
+        ? profile.requestedAreaTraits
+        : []),
     ]
-      .map((trait) => String(trait || "").trim().toUpperCase())
+      .map((trait) =>
+        String(trait || "")
+          .trim()
+          .toUpperCase(),
+      )
       .filter(Boolean),
   );
   const nightlifeRequested =
@@ -2500,7 +2780,9 @@ const buildDeterministicAssistantKickoffReference = ({ plan = {}, language = "es
     requestedTraits.has("WATERFRONT_AREA");
   const budgetRequested =
     qualityIntent === "BUDGET" ||
-    String(plan?.areaPreference || "").trim().toUpperCase() === "BUDGET";
+    String(plan?.areaPreference || "")
+      .trim()
+      .toUpperCase() === "BUDGET";
   const catalogContext = resolveSemanticCatalogContext({ plan });
   const explicitZones = Array.isArray(catalogContext?.matchedZones)
     ? catalogContext.matchedZones
@@ -2513,165 +2795,255 @@ const buildDeterministicAssistantKickoffReference = ({ plan = {}, language = "es
         .filter(Boolean)
     : [];
   const allowedZones =
-    explicitZones.length > 0 ? explicitZones : confidence === "LOW" ? [] : candidateZones;
+    explicitZones.length > 0
+      ? explicitZones
+      : confidence === "LOW"
+        ? []
+        : candidateZones;
   const profileLabel = buildSemanticOrientationProfileLabel(plan, language);
   const zonesLabel = joinSemanticOrientationZones(allowedZones, language);
   const explicitGeo =
-    Array.isArray(profile?.userRequestedZones) && profile.userRequestedZones.length > 0;
+    Array.isArray(profile?.userRequestedZones) &&
+    profile.userRequestedZones.length > 0;
+  const mentionedZones = uniqueSemanticStringList(allowedZones, 3);
+  const pickReference = (variants = [], caseKey = "default") => ({
+    text: pickDeterministicAssistantKickoffVariant(variants, {
+      caseKey,
+      language,
+      destination,
+      explicitReferenceLabel,
+      nearbyInterest,
+      zonesLabel,
+      profileLabel,
+      inferenceMode,
+      confidence,
+      viewIntent,
+      qualityIntent,
+      areaIntent,
+    }),
+    mentionedZones,
+    confidence,
+  });
 
   if (language === "es") {
     if (explicitReferenceLabel) {
-      return {
-        text: `Si el punto clave es ${explicitReferenceLabel}, tiene sentido abrir la búsqueda desde lo que mejor resuelve esa ubicación sin perder contexto de ciudad.`,
-        mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-        confidence,
-      };
+      return pickReference(
+        [
+          `Con ${explicitReferenceLabel} como referencia, estoy arrancando por las partes de ${destination} que mejor resuelven ese punto sin abrir demasiado la busqueda.`,
+          `Como el pedido gira alrededor de ${explicitReferenceLabel}, primero estoy mirando las zonas de ${destination} que mejor encajan con esa referencia.`,
+          `Teniendo ${explicitReferenceLabel} como ancla, la primera pasada va por las areas de ${destination} que lo resuelven mejor antes de bajar a hoteles concretos.`,
+        ],
+        "explicit_reference_es",
+      );
     }
     if (nearbyInterest) {
-      return {
-        text: `Si el plan gira alrededor de ${nearbyInterest}, conviene leer la ciudad desde qué zonas quedan mejor paradas para eso y no solo desde distancia bruta.`,
-        mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-        confidence,
-      };
+      return pickReference(
+        [
+          `Como el pedido esta ligado a ${nearbyInterest}, primero estoy leyendo ${destination} por las zonas que realmente sirven para ese plan.`,
+          `Si lo importante es ${nearbyInterest}, tiene mas sentido arrancar por las areas de ${destination} que mejor sostienen ese plan.`,
+          `Con ${nearbyInterest} en el centro del pedido, la primera pasada va por las zonas de ${destination} que mejor lo resuelven.`,
+        ],
+        "nearby_interest_es",
+      );
     }
     if (waterfrontRequested && zonesLabel) {
-      return {
-        text: `Para una búsqueda de este tipo en ${destination}, ${zonesLabel} es donde primero tiene sentido mirar si de verdad importa la relación con el agua.`,
-        mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-        confidence,
-      };
+      return pickReference(
+        [
+          `Si la relacion con el agua pesa en el pedido, ${zonesLabel} es el punto mas logico para empezar a mirar en ${destination}.`,
+          `Para este tipo de pedido en ${destination}, la primera pasada tiene mas sentido alrededor de ${zonesLabel} si la vista o cercania al agua importa.`,
+          `Como el pedido pide esa relacion con el agua, estoy empezando por ${zonesLabel} dentro de ${destination}.`,
+        ],
+        "waterfront_zones_es",
+      );
     }
     if (waterfrontRequested) {
-      return {
-        text: `Acá el criterio fuerte no es solo la ciudad sino qué parte de la ciudad tiene una chance más creíble de dar una vista al agua que no suene forzada.`,
-        mentionedZones: [],
-        confidence,
-      };
+      return pickReference(
+        [
+          `En ${destination}, para este pedido importa mas detectar que partes tienen una relacion real con el agua que mirar toda la ciudad por igual.`,
+          `Si la vista o cercania al agua pesa, primero conviene ubicar que zonas de ${destination} pueden sostener eso de verdad.`,
+          `Para este pedido, estoy leyendo ${destination} por las partes que tienen mas chance real de dar esa conexion con el agua.`,
+        ],
+        "waterfront_es",
+      );
     }
     if (nightlifeRequested && zonesLabel) {
-      return {
-        text: `Si el viaje va por movimiento y plan con amigos, ${zonesLabel} ya marca bastante bien por dónde conviene empezar a mirar.`,
-        mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-        confidence,
-      };
+      return pickReference(
+        [
+          `Si el viaje va por movimiento y plan social, ${zonesLabel} es un punto razonable para arrancar en ${destination}.`,
+          `Para ese tipo de plan, ${zonesLabel} ya marca bien por donde empezar a mirar dentro de ${destination}.`,
+          `Como el pedido tiene un costado mas social, estoy arrancando por ${zonesLabel} para leer mejor ${destination}.`,
+        ],
+        "nightlife_zones_es",
+      );
     }
     if (nightlifeRequested) {
-      return {
-        text: `Lo importante acá es leer la ciudad por ambiente y no solo por mapa, porque no todos los barrios rinden igual para un plan social.`,
-        mentionedZones: [],
-        confidence,
-      };
+      return pickReference(
+        [
+          `Para este pedido, en ${destination} importa mas el ambiente de cada zona que el mapa en abstracto.`,
+          `Como el plan parece mas social, estoy leyendo ${destination} por atmosfera y no solo por ubicacion.`,
+          `En este caso conviene separar ${destination} por zonas con mas movimiento antes de bajar a hoteles concretos.`,
+        ],
+        "nightlife_es",
+      );
     }
     if (budgetRequested && zonesLabel) {
-      return {
-        text: `Si además de encajar con la idea buscas cuidar presupuesto, ${zonesLabel} sirve como punto de partida para separar rápido lo razonable de lo inflado.`,
-        mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-        confidence,
-      };
+      return pickReference(
+        [
+          `Si el presupuesto pesa junto con el encaje, ${zonesLabel} es una buena base para empezar a separar opciones razonables en ${destination}.`,
+          `Con un angulo de presupuesto, estoy arrancando por ${zonesLabel} para filtrar mejor lo que tiene sentido en ${destination}.`,
+          `Si ademas importa el precio, ${zonesLabel} sirve como primer corte para leer ${destination} con un poco mas de precision.`,
+        ],
+        "budget_zones_es",
+      );
     }
     if (budgetRequested) {
-      return {
-        text: `Cuando el ángulo es presupuesto en ${destination}, el valor real suele aparecer más en cómo cae cada zona que en la tarifa aislada.`,
-        mentionedZones: [],
-        confidence,
-      };
+      return pickReference(
+        [
+          `Con un pedido mas sensible a precio en ${destination}, primero conviene mirar que zonas dan mejor equilibrio general.`,
+          `Si el presupuesto pesa, estoy leyendo ${destination} por zonas para separar mejor valor real de precio aislado.`,
+          `Para este pedido en ${destination}, el valor suele definirse bastante por la zona, asi que arranco por ahi.`,
+        ],
+        "budget_es",
+      );
     }
     if (explicitGeo && zonesLabel) {
-      return {
-        text: `Como la geografía ya está bastante marcada, ${zonesLabel} funciona como punto claro para leer las opciones sin abrir demasiado el mapa.`,
-        mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-        confidence,
-      };
+      return pickReference(
+        [
+          `Como la geografia esta bastante marcada, ${zonesLabel} ya da un punto claro para empezar a leer las opciones en ${destination}.`,
+          `Con esa referencia geografica, estoy arrancando por ${zonesLabel} para no abrir demasiado el mapa desde el inicio.`,
+          `La ubicacion ya esta bastante definida, asi que primero estoy mirando ${zonesLabel} dentro de ${destination}.`,
+        ],
+        "explicit_geo_es",
+      );
     }
     if (inferenceMode === "TRAIT_PROFILE" && zonesLabel) {
-      return {
-        text: `Para un pedido ${profileLabel} en ${destination}, ${zonesLabel} es la lectura más natural del perfil antes de bajar a hoteles concretos.`,
-        mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-        confidence,
-      };
+      return pickReference(
+        [
+          `Para un pedido ${profileLabel} en ${destination}, ${zonesLabel} es el punto mas natural para hacer la primera lectura.`,
+          `Si el perfil buscado es ${profileLabel}, estoy arrancando por ${zonesLabel} antes de bajar a hoteles concretos en ${destination}.`,
+          `Para este perfil ${profileLabel}, ${zonesLabel} aparece como una base razonable para empezar a mirar ${destination}.`,
+        ],
+        "trait_profile_zones_es",
+      );
     }
-    return {
-      text: `La clave en ${destination} no es abrir todo por igual sino leer primero qué parte de la ciudad respira mejor ese perfil ${profileLabel}.`,
-      mentionedZones: [],
-      confidence,
-    };
+    return pickReference(
+      [
+        `Estoy haciendo una primera pasada por ${destination} para ver que partes encajan mejor con ese perfil ${profileLabel}.`,
+        `Primero estoy leyendo ${destination} por zonas para ubicar donde tiene mas sentido este pedido ${profileLabel}.`,
+        `Arranco separando ${destination} por areas para no mezclar opciones muy distintas y enfocar mejor este perfil ${profileLabel}.`,
+      ],
+      "default_es",
+    );
   }
 
   if (explicitReferenceLabel) {
-    return {
-      text: `If ${explicitReferenceLabel} is the anchor, the most useful first pass is around the parts of the city that genuinely work best for that location.`,
-      mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-      confidence,
-    };
+    return pickReference(
+      [
+        `With ${explicitReferenceLabel} as the anchor, I am starting from the parts of ${destination} that make the most sense for that point.`,
+        `Since the request revolves around ${explicitReferenceLabel}, I am first looking at the parts of ${destination} that best support that location.`,
+        `Using ${explicitReferenceLabel} as the reference point, the first pass is around the areas of ${destination} that resolve it best.`,
+      ],
+      "explicit_reference_en",
+    );
   }
   if (nearbyInterest) {
-    return {
-      text: `If the plan revolves around ${nearbyInterest}, the useful angle is to read the city through which areas actually support that plan well.`,
-      mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-      confidence,
-    };
+    return pickReference(
+      [
+        `Since the plan revolves around ${nearbyInterest}, I am first reading ${destination} through the areas that genuinely support that plan.`,
+        `If ${nearbyInterest} is central to the request, the first pass makes more sense through the parts of ${destination} that work best for it.`,
+        `With ${nearbyInterest} at the center of the request, I am starting from the areas of ${destination} that best fit that plan.`,
+      ],
+      "nearby_interest_en",
+    );
   }
   if (waterfrontRequested && zonesLabel) {
-    return {
-      text: `For this kind of stay in ${destination}, ${zonesLabel} is where it makes more sense to start if the water relationship really matters.`,
-      mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-      confidence,
-    };
+    return pickReference(
+      [
+        `If the water angle really matters, ${zonesLabel} is the most natural place to start in ${destination}.`,
+        `For this kind of stay in ${destination}, the first pass makes more sense around ${zonesLabel} if being near the water matters.`,
+        `Because the request leans on that water connection, I am starting from ${zonesLabel} within ${destination}.`,
+      ],
+      "waterfront_zones_en",
+    );
   }
   if (waterfrontRequested) {
-    return {
-      text: `The key here is not the whole city equally, but which parts of ${destination} have a more believable chance of a real water view.`,
-      mentionedZones: [],
-      confidence,
-    };
+    return pickReference(
+      [
+        `For this request in ${destination}, it makes more sense to identify the parts that have a real connection to the water first.`,
+        `If the water angle matters, the first pass in ${destination} should focus on the parts that can actually support it.`,
+        `I am reading ${destination} first through the areas that have the most credible chance of matching that water request.`,
+      ],
+      "waterfront_en",
+    );
   }
   if (nightlifeRequested && zonesLabel) {
-    return {
-      text: `For that kind of social plan, ${zonesLabel} already gives the strongest first read on where the city is likely to fit better.`,
-      mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-      confidence,
-    };
+    return pickReference(
+      [
+        `For that kind of social plan, ${zonesLabel} is a sensible starting point in ${destination}.`,
+        `If the trip leans more social, ${zonesLabel} already gives a good first read on where to start in ${destination}.`,
+        `Because the request has a social angle, I am starting from ${zonesLabel} to read ${destination} more cleanly.`,
+      ],
+      "nightlife_zones_en",
+    );
   }
   if (nightlifeRequested) {
-    return {
-      text: `The useful read here is by atmosphere rather than map alone, because not every part of the city works equally well for going out.`,
-      mentionedZones: [],
-      confidence,
-    };
+    return pickReference(
+      [
+        `For this request, atmosphere matters more than the map alone in ${destination}.`,
+        `Since the plan feels more social, I am reading ${destination} by atmosphere before narrowing to specific hotels.`,
+        `In this case, it helps to separate ${destination} by areas with more movement before dropping into specific hotels.`,
+      ],
+      "nightlife_en",
+    );
   }
   if (budgetRequested && zonesLabel) {
-    return {
-      text: `If budget matters as much as fit, ${zonesLabel} is a good starting point to separate genuinely reasonable options from inflated ones.`,
-      mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-      confidence,
-    };
+    return pickReference(
+      [
+        `If budget matters alongside fit, ${zonesLabel} is a good place to start in ${destination}.`,
+        `With a budget angle, I am starting from ${zonesLabel} to filter more realistically inside ${destination}.`,
+        `If price matters too, ${zonesLabel} gives a useful first cut for reading ${destination} with a bit more precision.`,
+      ],
+      "budget_zones_en",
+    );
   }
   if (budgetRequested) {
-    return {
-      text: `With a budget angle in ${destination}, the real value usually comes more from where each option sits than from price in isolation.`,
-      mentionedZones: [],
-      confidence,
-    };
+    return pickReference(
+      [
+        `With a budget angle in ${destination}, it helps to read the city by areas first.`,
+        `If price matters here, I am first separating ${destination} by areas to get a cleaner value read.`,
+        `For this request in ${destination}, value tends to show up more clearly once the areas are separated first.`,
+      ],
+      "budget_en",
+    );
   }
   if (explicitGeo && zonesLabel) {
-    return {
-      text: `Since the geography is already fairly clear, ${zonesLabel} gives a clean first frame to read the options without opening the map too wide.`,
-      mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-      confidence,
-    };
+    return pickReference(
+      [
+        `Since the geography is already fairly clear, ${zonesLabel} gives a clean place to start in ${destination}.`,
+        `With the location already fairly defined, I am starting from ${zonesLabel} so the first pass in ${destination} stays focused.`,
+        `The location is already quite specific, so I am first looking around ${zonesLabel} within ${destination}.`,
+      ],
+      "explicit_geo_en",
+    );
   }
   if (inferenceMode === "TRAIT_PROFILE" && zonesLabel) {
-    return {
-      text: `For a ${profileLabel} stay in ${destination}, ${zonesLabel} is the most natural first read of the request before dropping into specific hotels.`,
-      mentionedZones: uniqueSemanticStringList(allowedZones, 3),
-      confidence,
-    };
+    return pickReference(
+      [
+        `For a ${profileLabel} stay in ${destination}, ${zonesLabel} is the most natural place to start.`,
+        `If the request leans ${profileLabel}, I am starting from ${zonesLabel} before narrowing to specific hotels in ${destination}.`,
+        `For that ${profileLabel} profile, ${zonesLabel} looks like the cleanest first frame for reading ${destination}.`,
+      ],
+      "trait_profile_zones_en",
+    );
   }
-  return {
-    text: `In ${destination}, the useful first read is not the whole city at once but which parts actually breathe that ${profileLabel} profile.`,
-    mentionedZones: [],
-    confidence,
-  };
+  return pickReference(
+    [
+      `I am doing a first pass through ${destination} to see which parts fit that ${profileLabel} profile best.`,
+      `I am starting by reading ${destination} by area so this ${profileLabel} request stays focused from the beginning.`,
+      `First I am separating ${destination} by area to see where this ${profileLabel} request makes the most sense.`,
+    ],
+    "default_en",
+  );
 };
 
 const buildAssistantKickoffMessages = ({
@@ -2679,14 +3051,15 @@ const buildAssistantKickoffMessages = ({
   plan,
   language,
 } = {}) => {
-  const kickoffReference = buildDeterministicAssistantKickoffReference({
-    plan,
-    language,
-  });
-  const destinationParts = [plan?.location?.city, plan?.location?.country].filter(Boolean);
+  const destinationParts = [
+    plan?.location?.city,
+    plan?.location?.country,
+  ].filter(Boolean);
   const explicitPlaceTargets = uniqueSemanticStringList(
     Array.isArray(plan?.placeTargets)
-      ? plan.placeTargets.map((target) => target?.normalizedName || target?.rawText || null)
+      ? plan.placeTargets.map(
+          (target) => target?.normalizedName || target?.rawText || null,
+        )
       : [],
     4,
   );
@@ -2694,19 +3067,24 @@ const buildAssistantKickoffMessages = ({
   const areaTraits = uniqueSemanticStringList(plan?.areaTraits, 4);
   const contextLines = [
     `language: ${language || "es"}`,
-    latestUserMessage ? `latest user message: ${normalizeAssistantKickoffText(latestUserMessage)}` : null,
-    destinationParts.length ? `destination: ${destinationParts.join(", ")}` : null,
+    latestUserMessage
+      ? `latest user message: ${normalizeAssistantKickoffText(latestUserMessage)}`
+      : null,
+    destinationParts.length
+      ? `destination: ${destinationParts.join(", ")}`
+      : null,
     plan?.geoIntent ? `geo intent: ${plan.geoIntent}` : null,
     plan?.viewIntent ? `view intent: ${plan.viewIntent}` : null,
     plan?.areaIntent ? `area intent: ${plan.areaIntent}` : null,
     plan?.qualityIntent ? `quality intent: ${plan.qualityIntent}` : null,
     plan?.nearbyInterest ? `nearby interest: ${plan.nearbyInterest}` : null,
     plan?.location?.area ? `area hint: ${plan.location.area}` : null,
-    explicitPlaceTargets.length ? `place targets: ${explicitPlaceTargets.join(", ")}` : null,
+    explicitPlaceTargets.length
+      ? `place targets: ${explicitPlaceTargets.join(", ")}`
+      : null,
     areaTraits.length ? `area traits: ${areaTraits.join(", ")}` : null,
-    preferenceNotes.length ? `preference notes: ${preferenceNotes.join(" | ")}` : null,
-    kickoffReference?.text
-      ? `reference hint for tone only, do not copy literally: ${kickoffReference.text}`
+    preferenceNotes.length
+      ? `preference notes: ${preferenceNotes.join(" | ")}`
       : null,
   ].filter(Boolean);
 
@@ -2723,6 +3101,8 @@ const buildAssistantKickoffMessages = ({
         "- Interpret the request and frame the search angle in a natural way.\n" +
         "- Use only the context provided here.\n" +
         "- Mention neighborhoods only if they are already present in the provided context.\n" +
+        "- Prefer clear and direct language over editorial phrasing or city metaphors.\n" +
+        "- Avoid stock openings such as 'La clave en...' or 'the key here is...'.\n" +
         "- Do not narrate internal steps, ranking, tools, pipelines, or hidden reasoning.\n" +
         "- Do not say you are prioritizing, taking something as a reference, searching based on that, or that options were prioritized.\n" +
         "- Do not say you already found hotels.\n" +
@@ -2743,11 +3123,13 @@ const buildAssistantClosingMessages = ({
   language = "es",
   latestUserMessage = "",
 } = {}) => {
+  const hotelSearchScope = inventory?.searchScope?.hotels || null;
   const topHotels = (inventory?.hotels || [])
     .slice(0, 5)
     .map((h) => ({
       name: h.name || null,
-      stars: h.stars ?? null,
+      city: h.city || h.cityName || null,
+      stars: resolveWebbedsHotelStars(h),
       distanceMeters: Number.isFinite(Number(h.distanceMeters))
         ? Number(h.distanceMeters)
         : null,
@@ -2759,17 +3141,53 @@ const buildAssistantClosingMessages = ({
     .filter((h) => h.name);
 
   const totalFound = inventory?.hotels?.length || 0;
-  const destination =
-    plan?.location?.city || plan?.location?.country || null;
+  const destination = plan?.location?.city || plan?.location?.country || null;
+  const nearbyFallbackAttempted =
+    Array.isArray(hotelSearchScope?.nearbyFallbackRadiiTried) &&
+    hotelSearchScope.nearbyFallbackRadiiTried.length > 0;
+  const nearbyFallbackApplied =
+    hotelSearchScope?.nearbyFallbackApplied === true;
+  const nearbyFallbackOriginalDestination =
+    hotelSearchScope?.nearbyFallbackOriginalDestination || destination;
+  const nearbyFallbackCities = Array.isArray(
+    hotelSearchScope?.nearbyFallbackCities,
+  )
+    ? hotelSearchScope.nearbyFallbackCities.filter(Boolean).slice(0, 3)
+    : [];
+  const nearbyFallbackWinningRadiusMeters = Number.isFinite(
+    Number(hotelSearchScope?.nearbyFallbackWinningRadiusMeters),
+  )
+    ? Number(hotelSearchScope.nearbyFallbackWinningRadiusMeters)
+    : null;
+  const topResultCities = Array.from(
+    new Set(
+      topHotels
+        .map((hotel) => hotel?.city)
+        .filter(Boolean)
+        .slice(0, 5),
+    ),
+  ).slice(0, 3);
 
   const contextLines = [
     `language: ${language}`,
     latestUserMessage ? `user request: ${latestUserMessage}` : null,
     destination ? `destination: ${destination}` : null,
     `total hotels found: ${totalFound}`,
-    topHotels.length
-      ? `top results: ${JSON.stringify(topHotels)}`
+    `nearby fallback attempted: ${nearbyFallbackAttempted ? "yes" : "no"}`,
+    `nearby fallback applied: ${nearbyFallbackApplied ? "yes" : "no"}`,
+    nearbyFallbackApplied && nearbyFallbackOriginalDestination
+      ? `exact requested destination with zero direct matches: ${nearbyFallbackOriginalDestination}`
       : null,
+    nearbyFallbackCities.length
+      ? `nearby cities used for results: ${nearbyFallbackCities.join(", ")}`
+      : null,
+    nearbyFallbackWinningRadiusMeters
+      ? `nearby fallback winning radius meters: ${nearbyFallbackWinningRadiusMeters}`
+      : null,
+    topResultCities.length
+      ? `result cities shown: ${topResultCities.join(", ")}`
+      : null,
+    topHotels.length ? `top results: ${JSON.stringify(topHotels)}` : null,
     plan?.geoIntent ? `geo intent: ${plan.geoIntent}` : null,
     plan?.viewIntent ? `view intent: ${plan.viewIntent}` : null,
     plan?.areaIntent ? `area intent: ${plan.areaIntent}` : null,
@@ -2803,7 +3221,138 @@ const buildAssistantClosingMessages = ({
         "- Do not say 'here are the results' or anything that implies the results are coming — they are already shown.\n" +
         "- Do not use bullets, headers, or multiple paragraphs.\n" +
         "- Do not invent facts about the hotels.\n" +
+        "- If nearby fallback applied, say clearly that the exact requested destination had no direct matches and that these options come from a nearby area or city.\n" +
+        "- If nearby fallback applied, do not speak as if the shown hotels are in the original destination.\n" +
+        "- Mention the nearby city or area when it is available.\n" +
         "- Do not mention competitors, OTAs, or other booking platforms.\n" +
+        "- Write only in the requested language.",
+    },
+    {
+      role: "user",
+      content: contextLines.join("\n"),
+    },
+  ];
+};
+
+const buildNearbyFallbackClosingFallbackText = ({
+  language = "es",
+  originalDestination = null,
+  nearbyCities = [],
+} = {}) => {
+  const sourceLabel =
+    Array.isArray(nearbyCities) && nearbyCities.filter(Boolean).length
+      ? nearbyCities.filter(Boolean).slice(0, 3).join(", ")
+      : null;
+  const requestedLabel = originalDestination || "ese destino";
+
+  if (language === "en") {
+    return sourceLabel
+      ? `I did not find direct matches in ${requestedLabel}, so I kept these options because nearby inventory showed up in ${sourceLabel}, which is the closest area that still gives you workable hotel choices.`
+      : `I did not find direct matches in ${requestedLabel}, so I kept these nearby options because that is where the closest workable hotel inventory showed up for your request.`;
+  }
+
+  if (language === "pt") {
+    return sourceLabel
+      ? `Nao encontrei matches diretos em ${requestedLabel}, entao deixei estas opcoes porque o inventario proximo apareceu em ${sourceLabel}, que e a area mais proxima com hoteis viaveis para o seu pedido.`
+      : `Nao encontrei matches diretos em ${requestedLabel}, entao deixei estas opcoes proximas porque foi ali que apareceu o inventario mais viavel para o seu pedido.`;
+  }
+
+  return sourceLabel
+    ? `No encontre matches directos en ${requestedLabel}, asi que deje estas opciones porque el inventario cercano aparecio en ${sourceLabel}, que es la zona mas proxima con hoteles viables para tu pedido.`
+    : `No encontre matches directos en ${requestedLabel}, asi que deje estas opciones cercanas porque ahi aparecio el inventario mas viable para tu pedido.`;
+};
+
+const closingMentionsNearbyFallback = (text = "", nearbyCities = []) => {
+  const normalizedText = normalizeComparableText(text);
+  if (!normalizedText) return false;
+
+  const mentionsNearbyConcept =
+    /\b(cerca|cercan|cercano|cercana|proxim|nearby|near by|close by|surrounding|around|area cercana|zona cercana)\b/i.test(
+      normalizedText,
+    );
+  const mentionsNearbyCity = Array.isArray(nearbyCities)
+    ? nearbyCities.some((city) => {
+        const normalizedCity = normalizeComparableText(city);
+        return normalizedCity && normalizedText.includes(normalizedCity);
+      })
+    : false;
+
+  return mentionsNearbyConcept || mentionsNearbyCity;
+};
+
+const buildAssistantNoResultsClosingMessages = ({
+  plan = {},
+  inventory = null,
+  language = "es",
+  latestUserMessage = "",
+} = {}) => {
+  const hotelSearchScope = inventory?.searchScope?.hotels || null;
+  const destination = plan?.location?.city || plan?.location?.country || null;
+  const nearbyFallbackAttempted =
+    Array.isArray(hotelSearchScope?.nearbyFallbackRadiiTried) &&
+    hotelSearchScope.nearbyFallbackRadiiTried.length > 0;
+  const nearbyFallbackApplied =
+    hotelSearchScope?.nearbyFallbackApplied === true;
+  const nearbyCities = Array.isArray(hotelSearchScope?.nearbyFallbackCities)
+    ? hotelSearchScope.nearbyFallbackCities.filter(Boolean).slice(0, 3)
+    : [];
+  const nearbyRadii = nearbyFallbackAttempted
+    ? hotelSearchScope.nearbyFallbackRadiiTried.join(", ")
+    : null;
+  const isLiveInventoryMode =
+    plan?.searchExecutionMode === SEARCH_EXECUTION_MODES.LIVE_AVAILABILITY &&
+    hasSearchDates(plan) &&
+    hasSearchGuests(plan);
+
+  const contextLines = [
+    `language: ${language}`,
+    latestUserMessage ? `user request: ${latestUserMessage}` : null,
+    destination ? `destination: ${destination}` : null,
+    `search mode: ${isLiveInventoryMode ? "live_availability" : "catalog_discovery"}`,
+    "exact hotel results: 0",
+    `nearby fallback attempted: ${nearbyFallbackAttempted ? "yes" : "no"}`,
+    nearbyFallbackAttempted && nearbyRadii
+      ? `nearby fallback radii meters: ${nearbyRadii}`
+      : null,
+    nearbyFallbackApplied
+      ? `nearby fallback applied: yes`
+      : `nearby fallback applied: no`,
+    nearbyCities.length
+      ? `nearby cities found: ${nearbyCities.join(", ")}`
+      : "nearby cities found: none",
+    plan?.geoIntent ? `geo intent: ${plan.geoIntent}` : null,
+    plan?.viewIntent ? `view intent: ${plan.viewIntent}` : null,
+    plan?.areaIntent ? `area intent: ${plan.areaIntent}` : null,
+    plan?.qualityIntent ? `quality intent: ${plan.qualityIntent}` : null,
+    Array.isArray(plan?.areaTraits) && plan.areaTraits.length
+      ? `area traits: ${plan.areaTraits.join(", ")}`
+      : null,
+    Array.isArray(plan?.placeTargets) && plan.placeTargets.length
+      ? `place targets: ${plan.placeTargets
+          .map((target) => target?.normalizedName || target?.rawText)
+          .filter(Boolean)
+          .join(", ")}`
+      : null,
+  ].filter(Boolean);
+
+  return [
+    {
+      role: "system",
+      content:
+        "You write the final BookingGPT message when a hotel search returns zero results. " +
+        "Return plain text only.\n\n" +
+        "Rules:\n" +
+        "- Write exactly 1 paragraph.\n" +
+        "- Aim for 35 to 70 words.\n" +
+        "- Explain clearly what was checked and why there are no options right now, using only the provided facts.\n" +
+        "- If nearby fallback was attempted, mention that naturally.\n" +
+        "- Suggest 1 or 2 realistic next steps, such as trying another area, another nearby destination, or a different destination.\n" +
+        "- Never suggest changing dates, adding dates, or changing guests.\n" +
+        "- Do not ask for dates or guests.\n" +
+        "- Do not mention internal pipelines, tools, semantic scope, SQL, catalog, database, or model behavior.\n" +
+        "- Do not invent nearby cities or specific areas unless they appear in the provided facts.\n" +
+        "- Sound like a thoughtful human assistant, not a system message.\n" +
+        "- Do not use bullets, headers, or multiple paragraphs.\n" +
         "- Write only in the requested language.",
     },
     {
@@ -2847,8 +3396,8 @@ const assessAssistantKickoffText = (
 const shouldRunAssistantKickoffPlanner = (plan = {}) =>
   Boolean(
     plan?.location?.city ||
-      plan?.location?.country ||
-      (Array.isArray(plan?.placeTargets) && plan.placeTargets.length),
+    plan?.location?.country ||
+    (Array.isArray(plan?.placeTargets) && plan.placeTargets.length),
   );
 
 const diffAssistantKickoffText = (previous = "", next = "") => {
@@ -2860,7 +3409,10 @@ const diffAssistantKickoffText = (previous = "", next = "") => {
   return curr.slice(index);
 };
 
-const extractAssistantKickoffMentionedZones = (text = "", allowedZoneLabels = []) => {
+const extractAssistantKickoffMentionedZones = (
+  text = "",
+  allowedZoneLabels = [],
+) => {
   const normalizedText = normalizeSemanticText(text);
   return uniqueSemanticStringList(allowedZoneLabels, 3).filter((zone) =>
     normalizedText.includes(normalizeSemanticText(zone)),
@@ -2923,7 +3475,10 @@ const emitAssistantKickoffChunks = (text = "", onKickoffChunk = null) => {
   const normalizedText = normalizeAssistantKickoffText(text);
   if (!normalizedText) return;
   if (normalizedText.length <= 120) {
-    const midpoint = normalizedText.lastIndexOf(" ", Math.floor(normalizedText.length / 2));
+    const midpoint = normalizedText.lastIndexOf(
+      " ",
+      Math.floor(normalizedText.length / 2),
+    );
     if (midpoint > 24 && midpoint < normalizedText.length - 24) {
       onKickoffChunk(normalizedText.slice(0, midpoint + 1));
       onKickoffChunk(normalizedText.slice(midpoint + 1));
@@ -2962,7 +3517,10 @@ const buildAssistantKickoffFallbackResult = ({
   if (typeof isBlocked === "function" && isBlocked()) {
     return null;
   }
-  const mentionedZones = extractAssistantKickoffMentionedZones(text, allowedZoneLabels);
+  const mentionedZones = extractAssistantKickoffMentionedZones(
+    text,
+    allowedZoneLabels,
+  );
   const elapsedMs = Date.now() - streamStartedAt;
   emitTrace?.("ASSISTANT_KICKOFF_STREAM_FALLBACK", {
     destination: destinationLabel,
@@ -3061,7 +3619,9 @@ const streamAssistantKickoffMessage = async ({
             stream: true,
             messages: kickoffMessages,
           },
-          createController?.signal ? { signal: createController.signal } : undefined,
+          createController?.signal
+            ? { signal: createController.signal }
+            : undefined,
         ),
       ms: AI_ASSISTANT_KICKOFF_FIRST_TOKEN_TIMEOUT_MS,
       label: "assistantKickoffCreate",
@@ -3081,8 +3641,10 @@ const streamAssistantKickoffMessage = async ({
           break;
         }
         const elapsedMs = Date.now() - streamStartedAt;
-        const remainingFirstTokenMs = AI_ASSISTANT_KICKOFF_FIRST_TOKEN_TIMEOUT_MS - elapsedMs;
-        const remainingTotalMs = AI_ASSISTANT_KICKOFF_STREAM_TIMEOUT_MS - elapsedMs;
+        const remainingFirstTokenMs =
+          AI_ASSISTANT_KICKOFF_FIRST_TOKEN_TIMEOUT_MS - elapsedMs;
+        const remainingTotalMs =
+          AI_ASSISTANT_KICKOFF_STREAM_TIMEOUT_MS - elapsedMs;
         const nextTimeoutMs = accepted
           ? remainingTotalMs
           : Math.min(remainingFirstTokenMs, remainingTotalMs);
@@ -3170,7 +3732,10 @@ const streamAssistantKickoffMessage = async ({
         }
 
         const nextAcceptedText = normalizeAssistantKickoffText(rawText);
-        const deltaText = diffAssistantKickoffText(acceptedText, nextAcceptedText);
+        const deltaText = diffAssistantKickoffText(
+          acceptedText,
+          nextAcceptedText,
+        );
         acceptedText = nextAcceptedText;
         if (deltaText) {
           onKickoffChunk?.(deltaText);
@@ -3239,7 +3804,10 @@ const streamAssistantKickoffMessage = async ({
     const result = {
       text: finalText,
       source: abortedReason === "timeout" ? "model_partial" : "model",
-      mentionedZones: extractAssistantKickoffMentionedZones(finalText, allowedZoneLabels),
+      mentionedZones: extractAssistantKickoffMentionedZones(
+        finalText,
+        allowedZoneLabels,
+      ),
       confidence: kickoffReference.confidence || null,
     };
     emitTrace?.("ASSISTANT_KICKOFF_STREAM_COMPLETED", {
@@ -3303,13 +3871,24 @@ const streamAssistantClosingMessage = async ({
   const totalHotels = inventory?.hotels?.length || 0;
   if (!client || totalHotels === 0) return null;
 
-  const destination =
-    plan?.location?.city || plan?.location?.country || null;
+  const destination = plan?.location?.city || plan?.location?.country || null;
+  const hotelSearchScope = inventory?.searchScope?.hotels || null;
+  const nearbyFallbackApplied =
+    hotelSearchScope?.nearbyFallbackApplied === true;
+  const nearbyFallbackOriginalDestination =
+    hotelSearchScope?.nearbyFallbackOriginalDestination || destination;
+  const nearbyFallbackCities = Array.isArray(
+    hotelSearchScope?.nearbyFallbackCities,
+  )
+    ? hotelSearchScope.nearbyFallbackCities.filter(Boolean).slice(0, 3)
+    : [];
   const streamStartedAt = Date.now();
 
   emitTrace?.("ASSISTANT_CLOSING_STREAM_REQUESTED", {
     destination,
     totalHotels,
+    nearbyFallbackApplied,
+    nearbyFallbackCities,
   });
 
   try {
@@ -3320,13 +3899,11 @@ const streamAssistantClosingMessage = async ({
       latestUserMessage,
     });
 
-    const stream = await client.chat.completions.create(
-      {
-        model: AI_MODEL_ASSISTANT_CLOSING,
-        stream: true,
-        messages: closingMessages,
-      },
-    );
+    const stream = await client.chat.completions.create({
+      model: AI_MODEL_ASSISTANT_CLOSING,
+      stream: true,
+      messages: closingMessages,
+    });
 
     const iterator = stream[Symbol.asyncIterator]();
     let rawText = "";
@@ -3353,8 +3930,7 @@ const streamAssistantClosingMessage = async ({
         if (nextChunk?.done) break;
 
         const delta = nextChunk?.value?.choices?.[0]?.delta;
-        const content =
-          typeof delta?.content === "string" ? delta.content : "";
+        const content = typeof delta?.content === "string" ? delta.content : "";
         if (!content) continue;
 
         rawText += content;
@@ -3412,7 +3988,17 @@ const streamAssistantClosingMessage = async ({
       return null;
     }
 
-    const finalText = normalizeAssistantKickoffText(acceptedText || rawText);
+    let finalText = normalizeAssistantKickoffText(acceptedText || rawText);
+    if (
+      nearbyFallbackApplied &&
+      !closingMentionsNearbyFallback(finalText, nearbyFallbackCities)
+    ) {
+      finalText = buildNearbyFallbackClosingFallbackText({
+        language,
+        originalDestination: nearbyFallbackOriginalDestination,
+        nearbyCities: nearbyFallbackCities,
+      });
+    }
     const result = {
       text: finalText,
       source: "model",
@@ -3422,6 +4008,8 @@ const streamAssistantClosingMessage = async ({
       elapsedMs: Date.now() - streamStartedAt,
       chars: finalText.length,
       words: countAssistantKickoffWords(finalText),
+      nearbyFallbackApplied,
+      nearbyFallbackCities,
     });
     emitFileDebug?.("assistant_closing", result);
     return result;
@@ -3431,6 +4019,92 @@ const streamAssistantClosingMessage = async ({
       reason: err?.code || err?.message || "unknown",
     });
     emitFileDebug?.("assistant_closing", {
+      skipped: true,
+      reason: err?.code || err?.message || "unknown",
+    });
+    return null;
+  }
+};
+
+const generateAssistantNoResultsClosingMessage = async ({
+  client,
+  plan,
+  inventory,
+  language,
+  latestUserMessage,
+  emitTrace = null,
+  emitFileDebug = null,
+} = {}) => {
+  const totalHotels = inventory?.hotels?.length || 0;
+  const totalHomes = inventory?.homes?.length || 0;
+  if (!client || totalHotels + totalHomes > 0) return null;
+
+  const destination = plan?.location?.city || plan?.location?.country || null;
+
+  emitTrace?.("ASSISTANT_NO_RESULTS_CLOSING_REQUESTED", {
+    destination,
+    nearbyFallbackAttempted: Array.isArray(
+      inventory?.searchScope?.hotels?.nearbyFallbackRadiiTried,
+    )
+      ? inventory.searchScope.hotels.nearbyFallbackRadiiTried.length > 0
+      : false,
+  });
+
+  try {
+    const messages = buildAssistantNoResultsClosingMessages({
+      plan,
+      inventory,
+      language,
+      latestUserMessage,
+    });
+    const createController =
+      typeof AbortController === "function" ? new AbortController() : null;
+    const completion = await createOpenAIStreamWithTimeout({
+      createStream: () =>
+        client.chat.completions.create(
+          {
+            model: AI_MODEL_ASSISTANT_CLOSING,
+            messages,
+          },
+          createController?.signal
+            ? { signal: createController.signal }
+            : undefined,
+        ),
+      ms: AI_ASSISTANT_CLOSING_TIMEOUT_MS,
+      label: "assistantNoResultsClosingCreate",
+      abortController: createController,
+    });
+    const text = normalizeAssistantKickoffText(
+      completion?.choices?.[0]?.message?.content || "",
+    );
+    if (!text) {
+      emitTrace?.("ASSISTANT_NO_RESULTS_CLOSING_FAILED", {
+        destination,
+        reason: "empty_response",
+      });
+      emitFileDebug?.("assistant_no_results_closing", {
+        skipped: true,
+        reason: "empty_response",
+      });
+      return null;
+    }
+    const result = {
+      text,
+      source: "model",
+    };
+    emitTrace?.("ASSISTANT_NO_RESULTS_CLOSING_COMPLETED", {
+      destination,
+      chars: text.length,
+      words: countAssistantKickoffWords(text),
+    });
+    emitFileDebug?.("assistant_no_results_closing", result);
+    return result;
+  } catch (err) {
+    emitTrace?.("ASSISTANT_NO_RESULTS_CLOSING_FAILED", {
+      destination,
+      reason: err?.code || err?.message || "unknown",
+    });
+    emitFileDebug?.("assistant_no_results_closing", {
       skipped: true,
       reason: err?.code || err?.message || "unknown",
     });
@@ -3507,7 +4181,10 @@ const createAssistantKickoffEventGate = ({
   };
 };
 
-const shouldRunSemanticExplanationPlanner = ({ plan = {}, inventory = null } = {}) => {
+const shouldRunSemanticExplanationPlanner = ({
+  plan = {},
+  inventory = null,
+} = {}) => {
   const hotels = Array.isArray(inventory?.hotels) ? inventory.hotels : [];
   if (hotels.length < 2) return false;
   if (!hasSemanticPlannerIntent(plan)) return false;
@@ -3523,14 +4200,16 @@ const planSemanticTopPickExplanations = async ({
   emitTrace = null,
   emitFileDebug = null,
 } = {}) => {
-  if (
-    !client ||
-    !shouldRunSemanticExplanationPlanner({ plan, inventory })
-  ) {
+  if (!client || !shouldRunSemanticExplanationPlanner({ plan, inventory })) {
     return null;
   }
 
-  const picks = getTopInventoryPicksByCategory(inventory, plan, language, 0).slice(0, 5);
+  const picks = getTopInventoryPicksByCategory(
+    inventory,
+    plan,
+    language,
+    0,
+  ).slice(0, 5);
   if (picks.length < 2) return null;
 
   const fallbackPlan = buildDeterministicSemanticExplanationPlan({
@@ -3629,7 +4308,9 @@ const planSemanticTopPickExplanations = async ({
 
 const projectPrimarySemanticPlaceTargetToLocation = (plan) => {
   if (!plan || typeof plan !== "object") return;
-  const primaryTarget = Array.isArray(plan.placeTargets) ? plan.placeTargets[0] : null;
+  const primaryTarget = Array.isArray(plan.placeTargets)
+    ? plan.placeTargets[0]
+    : null;
   if (!primaryTarget) return;
   if (!plan.location || typeof plan.location !== "object") {
     plan.location = {};
@@ -3653,7 +4334,8 @@ const projectPrimarySemanticPlaceTargetToLocation = (plan) => {
     primaryTarget.type === "PORT" ||
     primaryTarget.type === "VENUE"
   ) {
-    plan.location.landmark = primaryTarget.normalizedName || primaryTarget.rawText;
+    plan.location.landmark =
+      primaryTarget.normalizedName || primaryTarget.rawText;
   }
   if (
     primaryTarget.lat != null &&
@@ -3673,10 +4355,7 @@ const projectPrimarySemanticPlaceTargetToLocation = (plan) => {
       type: primaryTarget.type || null,
     };
   }
-  if (
-    plan.geoIntent === "NEAR_LANDMARK" &&
-    !plan.preferences.nearbyInterest
-  ) {
+  if (plan.geoIntent === "NEAR_LANDMARK" && !plan.preferences.nearbyInterest) {
     plan.preferences.nearbyInterest =
       primaryTarget.normalizedName || primaryTarget.rawText;
   }
@@ -3701,8 +4380,10 @@ const mergeSemanticEnrichmentIntoPlan = (
     plan.hotelFilters.starRatings = mergedStarRatings;
     plan.hotelFilters.minRating = null;
   }
-  if (!plan.viewIntent && enrichment.viewIntent) plan.viewIntent = enrichment.viewIntent;
-  if (!plan.geoIntent && enrichment.geoIntent) plan.geoIntent = enrichment.geoIntent;
+  if (!plan.viewIntent && enrichment.viewIntent)
+    plan.viewIntent = enrichment.viewIntent;
+  if (!plan.geoIntent && enrichment.geoIntent)
+    plan.geoIntent = enrichment.geoIntent;
   const mergedPlaceTargets = uniqueSemanticPlaceTargets([
     ...(Array.isArray(plan.placeTargets) ? plan.placeTargets : []),
     ...(Array.isArray(enrichment.placeTargets) ? enrichment.placeTargets : []),
@@ -3710,7 +4391,8 @@ const mergeSemanticEnrichmentIntoPlan = (
   if (mergedPlaceTargets.length) {
     plan.placeTargets = mergedPlaceTargets;
   }
-  if (!plan.areaIntent && enrichment.areaIntent) plan.areaIntent = enrichment.areaIntent;
+  if (!plan.areaIntent && enrichment.areaIntent)
+    plan.areaIntent = enrichment.areaIntent;
   if (!plan.qualityIntent && enrichment.qualityIntent) {
     plan.qualityIntent = enrichment.qualityIntent;
   }
@@ -3743,7 +4425,11 @@ const mergeSemanticEnrichmentIntoPlan = (
       plan.areaIntent = "NIGHTLIFE";
     }
   }
-  if (!plan.qualityIntent && Array.isArray(plan.areaTraits) && plan.areaTraits.includes("LUXURY")) {
+  if (
+    !plan.qualityIntent &&
+    Array.isArray(plan.areaTraits) &&
+    plan.areaTraits.includes("LUXURY")
+  ) {
     plan.qualityIntent = "LUXURY";
   }
   if (
@@ -3798,15 +4484,21 @@ const mergeSemanticEnrichmentIntoPlan = (
   semanticState.modelCandidateGenerationUsed = Boolean(
     (Array.isArray(enrichment.candidateHotelNames) &&
       enrichment.candidateHotelNames.length) ||
-      (Array.isArray(enrichment.neighborhoodHints) &&
-        enrichment.neighborhoodHints.length),
+    (Array.isArray(enrichment.neighborhoodHints) &&
+      enrichment.neighborhoodHints.length),
   );
   semanticState.candidateHotelNames = uniqueSemanticStringList(
-    [...semanticState.candidateHotelNames, ...(enrichment.candidateHotelNames || [])],
+    [
+      ...semanticState.candidateHotelNames,
+      ...(enrichment.candidateHotelNames || []),
+    ],
     8,
   );
   semanticState.neighborhoodHints = uniqueSemanticStringList(
-    [...semanticState.neighborhoodHints, ...(enrichment.neighborhoodHints || [])],
+    [
+      ...semanticState.neighborhoodHints,
+      ...(enrichment.neighborhoodHints || []),
+    ],
     8,
   );
   projectPrimarySemanticPlaceTargetToLocation(plan);
@@ -3932,16 +4624,24 @@ const mergeSemanticGroundingPlanIntoPlan = (
   grounding = {},
   { latestUserMessage = "" } = {},
 ) => {
-  if (!plan || typeof plan !== "object" || !grounding || typeof grounding !== "object") {
+  if (
+    !plan ||
+    typeof plan !== "object" ||
+    !grounding ||
+    typeof grounding !== "object"
+  ) {
     return plan;
   }
 
   mergeSemanticEnrichmentIntoPlan(plan, grounding, { latestUserMessage });
   const semanticState = ensureSemanticSearchState(plan);
-  const candidateZones = uniqueSemanticStringList([
-    ...(grounding.candidateZones || []),
-    ...(grounding.neighborhoodHints || []),
-  ], 8);
+  const candidateZones = uniqueSemanticStringList(
+    [
+      ...(grounding.candidateZones || []),
+      ...(grounding.neighborhoodHints || []),
+    ],
+    8,
+  );
   const candidateAnchors = uniqueSemanticPlaceTargets(
     grounding.candidateAnchors,
     6,
@@ -3981,7 +4681,10 @@ const mergeSemanticGroundingPlanIntoPlan = (
       8,
     );
   }
-  if (Array.isArray(grounding.candidateHotelNames) && grounding.candidateHotelNames.length) {
+  if (
+    Array.isArray(grounding.candidateHotelNames) &&
+    grounding.candidateHotelNames.length
+  ) {
     semanticState.candidateHotelNames = uniqueSemanticStringList(
       [...semanticState.candidateHotelNames, ...grounding.candidateHotelNames],
       8,
@@ -3994,7 +4697,10 @@ const mergeSemanticGroundingPlanIntoPlan = (
     candidateAnchors.length
   ) {
     plan.placeTargets = uniqueSemanticPlaceTargets(
-      [...candidateAnchors, ...(Array.isArray(plan.placeTargets) ? plan.placeTargets : [])],
+      [
+        ...candidateAnchors,
+        ...(Array.isArray(plan.placeTargets) ? plan.placeTargets : []),
+      ],
       6,
     );
   }
@@ -4012,10 +4718,14 @@ const mergeSemanticGroundingPlanIntoPlan = (
 
 const shouldRunExplicitPlaceResolutionForPlan = (plan = {}) => {
   const grounding = plan?.semanticSearch?.grounding;
-  if (!grounding || typeof grounding !== "object" || !grounding.groundingStrategy) {
+  if (
+    !grounding ||
+    typeof grounding !== "object" ||
+    !grounding.groundingStrategy
+  ) {
     return Boolean(
       plan?.geoIntent ||
-        (Array.isArray(plan?.placeTargets) && plan.placeTargets.length > 0),
+      (Array.isArray(plan?.placeTargets) && plan.placeTargets.length > 0),
     );
   }
   return (
@@ -4030,7 +4740,11 @@ const shouldRunSemanticWebResolverForPlan = ({
   plan = {},
 } = {}) => {
   const grounding = plan?.semanticSearch?.grounding;
-  if (!grounding || typeof grounding !== "object" || !grounding.groundingStrategy) {
+  if (
+    !grounding ||
+    typeof grounding !== "object" ||
+    !grounding.groundingStrategy
+  ) {
     return shouldRunSemanticWebResolver(latestUserMessage, plan);
   }
   return (
@@ -4098,7 +4812,11 @@ const applyDeterministicSemanticHintsToPlan = (
       plan.areaIntent = "NIGHTLIFE";
     }
   }
-  if (!plan.qualityIntent && Array.isArray(plan.areaTraits) && plan.areaTraits.includes("LUXURY")) {
+  if (
+    !plan.qualityIntent &&
+    Array.isArray(plan.areaTraits) &&
+    plan.areaTraits.includes("LUXURY")
+  ) {
     plan.qualityIntent = "LUXURY";
   }
   if (plan.areaIntent === "CITY_CENTER") {
@@ -4181,10 +4899,10 @@ const shouldRunSemanticWebResolver = (message = "", plan = {}) => {
   }
   return Boolean(
     plan?.geoIntent ||
-      (Array.isArray(plan?.placeTargets) && plan.placeTargets.length) ||
-      plan?.viewIntent ||
-      plan?.areaIntent === "GOOD_AREA" ||
-      (Array.isArray(plan?.areaTraits) && plan.areaTraits.length),
+    (Array.isArray(plan?.placeTargets) && plan.placeTargets.length) ||
+    plan?.viewIntent ||
+    plan?.areaIntent === "GOOD_AREA" ||
+    (Array.isArray(plan?.areaTraits) && plan.areaTraits.length),
   );
 };
 
@@ -4284,7 +5002,9 @@ const sanitizeSemanticWebResolution = (raw) => {
     candidateHotelNames: uniqueSemanticStringList(raw.candidateHotelNames, 8),
     neighborhoodHints: uniqueSemanticStringList(raw.neighborhoodHints, 8),
     traceSummary:
-      typeof raw.traceSummary === "string" ? raw.traceSummary.trim() || null : null,
+      typeof raw.traceSummary === "string"
+        ? raw.traceSummary.trim() || null
+        : null,
   };
 };
 
@@ -4306,13 +5026,13 @@ const mergeSemanticWebResolutionIntoPlan = (plan, resolution = {}) => {
     enrichmentRan: true,
     webResolutionUsed: Boolean(
       Array.isArray(resolution.resolvedPlaces) &&
-        resolution.resolvedPlaces.length,
+      resolution.resolvedPlaces.length,
     ),
     candidateGenerationUsed: Boolean(
       (Array.isArray(resolution.candidateHotelNames) &&
         resolution.candidateHotelNames.length) ||
-        (Array.isArray(resolution.neighborhoodHints) &&
-          resolution.neighborhoodHints.length),
+      (Array.isArray(resolution.neighborhoodHints) &&
+        resolution.neighborhoodHints.length),
     ),
     resolvedPlaces: Array.isArray(resolution.resolvedPlaces)
       ? resolution.resolvedPlaces
@@ -4365,7 +5085,10 @@ const runSemanticWebResolver = async ({
       return cached.payload;
     }
   } catch (cacheErr) {
-    console.warn("[ai] semantic web resolver cache read failed", cacheErr?.message || cacheErr);
+    console.warn(
+      "[ai] semantic web resolver cache read failed",
+      cacheErr?.message || cacheErr,
+    );
   }
 
   emitTrace?.("SEMANTIC_PLACE_RESOLUTION_REQUESTED", {
@@ -4429,7 +5152,10 @@ const runSemanticWebResolver = async ({
         SEMANTIC_WEB_RESOLVER_CACHE_TTL_SECONDS,
       );
     } catch (cacheErr) {
-      console.warn("[ai] semantic web resolver cache write failed", cacheErr?.message || cacheErr);
+      console.warn(
+        "[ai] semantic web resolver cache write failed",
+        cacheErr?.message || cacheErr,
+      );
     }
 
     emitTrace?.("SEMANTIC_PLACE_RESOLUTION_APPLIED", {
@@ -4438,7 +5164,8 @@ const runSemanticWebResolver = async ({
       placeTargets: Array.isArray(sanitized.resolvedPlaces)
         ? sanitized.resolvedPlaces.map((place) => place.rawText)
         : [],
-      sourceCount: sourceAssessment.safeSources?.length || rawSources.length || 0,
+      sourceCount:
+        sourceAssessment.safeSources?.length || rawSources.length || 0,
       sourcePolicy: SEMANTIC_WEB_SOURCE_POLICY,
     });
     if (
@@ -4512,9 +5239,13 @@ const buildResolvedPlaceTarget = (place = {}, rawQuery = null) => {
   const lng = normalizeSemanticNumber(place?.lng);
   if (lat == null || lng == null || (lat === 0 && lng === 0)) return null;
   const confidenceValue =
-    String(place?.confidence || "").trim().toUpperCase() === "HIGH"
+    String(place?.confidence || "")
+      .trim()
+      .toUpperCase() === "HIGH"
       ? 0.95
-      : String(place?.confidence || "").trim().toUpperCase() === "MEDIUM"
+      : String(place?.confidence || "")
+            .trim()
+            .toUpperCase() === "MEDIUM"
         ? 0.8
         : 0.6;
   return sanitizeSemanticPlaceTarget({
@@ -4523,7 +5254,10 @@ const buildResolvedPlaceTarget = (place = {}, rawQuery = null) => {
         ? rawQuery.trim()
         : place?.normalizedName || place?.label || null,
     normalizedName: place?.normalizedName || place?.label || null,
-    type: normalizePlaceTypeHint(place?.placeType, place?.normalizedName || rawQuery),
+    type: normalizePlaceTypeHint(
+      place?.placeType,
+      place?.normalizedName || rawQuery,
+    ),
     city: place?.city || null,
     country: place?.country || null,
     aliases: Array.isArray(place?.aliases) ? place.aliases : [],
@@ -4580,7 +5314,9 @@ const buildExplicitPlaceWebResolverMessages = ({
 const buildPlaceResolutionCandidateId = (place = {}) =>
   [
     "web",
-    normalizeSemanticText(place?.normalizedName || place?.label || place?.rawText || ""),
+    normalizeSemanticText(
+      place?.normalizedName || place?.label || place?.rawText || "",
+    ),
     normalizeSemanticText(place?.city || ""),
     normalizeSemanticText(place?.country || ""),
   ].join(":");
@@ -4612,8 +5348,9 @@ const buildPlaceResolutionCandidate = (
         : resolvedTarget.normalizedName || resolvedTarget.rawText,
     normalizedName: resolvedTarget.normalizedName || resolvedTarget.rawText,
     subtitle:
-      [resolvedTarget.city, resolvedTarget.country].filter(Boolean).join(", ") ||
-      null,
+      [resolvedTarget.city, resolvedTarget.country]
+        .filter(Boolean)
+        .join(", ") || null,
     placeType:
       normalizePlaceTypeHint(
         place?.placeType || place?.type || resolvedTarget.type,
@@ -4629,7 +5366,9 @@ const buildPlaceResolutionCandidate = (
       12,
     ),
     confidence:
-      String(place?.confidence || "MEDIUM").trim().toUpperCase() || "MEDIUM",
+      String(place?.confidence || "MEDIUM")
+        .trim()
+        .toUpperCase() || "MEDIUM",
     source: "web_search",
   };
 };
@@ -4658,17 +5397,19 @@ const sanitizeExplicitPlaceWebResolution = ({
   );
 
   const candidateMap = new Map();
-  (Array.isArray(raw?.candidates) ? raw.candidates : []).forEach((candidate) => {
-    const normalizedCandidate = buildPlaceResolutionCandidate(
-      candidate,
-      query,
-      placeTypeHint,
-    );
-    if (!normalizedCandidate?.id) return;
-    if (!candidateMap.has(normalizedCandidate.id)) {
-      candidateMap.set(normalizedCandidate.id, normalizedCandidate);
-    }
-  });
+  (Array.isArray(raw?.candidates) ? raw.candidates : []).forEach(
+    (candidate) => {
+      const normalizedCandidate = buildPlaceResolutionCandidate(
+        candidate,
+        query,
+        placeTypeHint,
+      );
+      if (!normalizedCandidate?.id) return;
+      if (!candidateMap.has(normalizedCandidate.id)) {
+        candidateMap.set(normalizedCandidate.id, normalizedCandidate);
+      }
+    },
+  );
   const candidates = Array.from(candidateMap.values()).slice(0, 5);
 
   if (resolvedPlace) {
@@ -4723,7 +5464,9 @@ const sanitizeExplicitPlaceWebResolution = ({
     candidates: [],
     clarification_question: null,
     traceSummary:
-      typeof raw?.traceSummary === "string" ? raw.traceSummary.trim() || null : null,
+      typeof raw?.traceSummary === "string"
+        ? raw.traceSummary.trim() || null
+        : null,
   };
 };
 
@@ -4851,7 +5594,10 @@ const buildPlaceDisambiguationUiInput = (resolution = {}) => ({
     .map((candidate) => ({
       id: candidate?.id || null,
       label: candidate?.label || candidate?.normalizedName || null,
-      subtitle: candidate?.subtitle || [candidate?.city, candidate?.country].filter(Boolean).join(", ") || null,
+      subtitle:
+        candidate?.subtitle ||
+        [candidate?.city, candidate?.country].filter(Boolean).join(", ") ||
+        null,
       placeType: candidate?.placeType || "GENERIC",
       city: candidate?.city || null,
       country: candidate?.country || null,
@@ -4870,8 +5616,9 @@ const applyPlaceSelectionToToolArgs = ({
     ? pendingToolCall.clarificationOptions
     : [];
   const selectedCandidate =
-    options.find((candidate) => String(candidate?.id || "").trim() === selectedId) ||
-    null;
+    options.find(
+      (candidate) => String(candidate?.id || "").trim() === selectedId,
+    ) || null;
   if (!selectedCandidate) return args;
   const selectedTarget = buildResolvedPlaceTarget(
     selectedCandidate,
@@ -4887,7 +5634,10 @@ const applyPlaceSelectionToToolArgs = ({
     country: args?.country || selectedCandidate?.country || null,
     placeTargets: [selectedTarget],
     nearbyInterest:
-      selectedCandidate?.normalizedName || selectedCandidate?.label || args?.nearbyInterest || null,
+      selectedCandidate?.normalizedName ||
+      selectedCandidate?.label ||
+      args?.nearbyInterest ||
+      null,
   };
 };
 
@@ -4906,7 +5656,9 @@ const resolveExplicitPlaceReferenceForPlan = async ({
   if (!explicitGeoRequested) return null;
 
   const originalTargets = uniqueSemanticPlaceTargets(
-    Array.isArray(originalToolArgs?.placeTargets) ? originalToolArgs.placeTargets : [],
+    Array.isArray(originalToolArgs?.placeTargets)
+      ? originalToolArgs.placeTargets
+      : [],
     6,
   );
   const currentTargets = uniqueSemanticPlaceTargets(
@@ -4929,7 +5681,10 @@ const resolveExplicitPlaceReferenceForPlan = async ({
         id: "existing_plan_target",
         label: primaryTarget?.normalizedName || primaryTarget?.rawText,
         normalizedName: primaryTarget?.normalizedName || primaryTarget?.rawText,
-        subtitle: [primaryTarget?.city, primaryTarget?.country].filter(Boolean).join(", ") || null,
+        subtitle:
+          [primaryTarget?.city, primaryTarget?.country]
+            .filter(Boolean)
+            .join(", ") || null,
         placeType: normalizePlaceTypeHint(primaryTarget?.type, rawQuery),
         city: primaryTarget?.city || null,
         country: primaryTarget?.country || null,
@@ -4937,7 +5692,9 @@ const resolveExplicitPlaceReferenceForPlan = async ({
         lng: primaryTarget?.lng,
         radiusMeters: primaryTarget?.radiusMeters || null,
         source: "existing_plan",
-        aliases: Array.isArray(primaryTarget?.aliases) ? primaryTarget.aliases : [],
+        aliases: Array.isArray(primaryTarget?.aliases)
+          ? primaryTarget.aliases
+          : [],
       },
       candidates: [],
       clarification_question: null,
@@ -5029,7 +5786,10 @@ const applyResolvedPlaceReferenceToPlan = ({
   );
   if (!resolvedTarget) return plan;
   plan.placeTargets = uniqueSemanticPlaceTargets(
-    [resolvedTarget, ...(Array.isArray(plan.placeTargets) ? plan.placeTargets : [])],
+    [
+      resolvedTarget,
+      ...(Array.isArray(plan.placeTargets) ? plan.placeTargets : []),
+    ],
     6,
   );
   if (!plan.preferences || typeof plan.preferences !== "object") {
@@ -5162,8 +5922,7 @@ const buildLastSearchParams = (plan) => {
                 : [],
               inferenceMode:
                 plan.semanticSearch.intentProfile.inferenceMode ?? null,
-              confidence:
-                plan.semanticSearch.intentProfile.confidence ?? null,
+              confidence: plan.semanticSearch.intentProfile.confidence ?? null,
               fallbackMode:
                 plan.semanticSearch.intentProfile.fallbackMode ?? null,
               cityProfileVersion:
@@ -5195,10 +5954,8 @@ const buildLastSearchParams = (plan) => {
               )
                 ? plan.semanticSearch.webContext.neighborhoodHints
                 : [],
-              sourcePolicy:
-                plan.semanticSearch.webContext.sourcePolicy ?? null,
-              traceSummary:
-                plan.semanticSearch.webContext.traceSummary ?? null,
+              sourcePolicy: plan.semanticSearch.webContext.sourcePolicy ?? null,
+              traceSummary: plan.semanticSearch.webContext.traceSummary ?? null,
             }
           : null,
     },
@@ -5252,7 +6009,9 @@ const normalizeReferencedHotelIds = (value) =>
   );
 
 const buildReferencedHotelIdsFromState = (state = {}) => {
-  const explicitIds = normalizeReferencedHotelIds(state?.lastReferencedHotelIds);
+  const explicitIds = normalizeReferencedHotelIds(
+    state?.lastReferencedHotelIds,
+  );
   if (explicitIds.length) return explicitIds;
 
   const summaryHotels = Array.isArray(state?.lastShownInventorySummary?.hotels)
@@ -5274,63 +6033,72 @@ const buildLastShownInventorySummary = (
   if (!inventory || typeof inventory !== "object") return null;
   const hotels = (inventory.hotels || [])
     .slice(0, MAX_LAST_SHOWN_ITEMS)
-    .map((h, index) => ({
-      id: h.id != null ? String(h.id) : null,
-      name: h.name ?? h.title ?? "",
-      city: h.city ?? "",
-      stars: h.classification?.name ?? h.stars ?? null,
-      displayOrder: index + 1,
-      pricePerNight: h.pricePerNight ?? h.price_per_night ?? null,
-      currency: h.currency ?? "USD",
-      amenities: mergeHotelAmenities(h),
-      descriptions: collectDescriptionSnippets(h),
-      shortReason:
-        h.shortReason ??
-        h.pickReason ??
-        (Array.isArray(h.matchReasons) && h.matchReasons[0]) ??
-        null,
-      matchReasons: Array.isArray(h.matchReasons) ? h.matchReasons.slice(0, 5) : [],
-      semanticEvidence: Array.isArray(h.semanticEvidence)
-        ? h.semanticEvidence.slice(0, 5)
-        : [],
-      distanceMeters:
-        Number.isFinite(Number(h.distanceMeters)) && Number(h.distanceMeters) >= 0
-          ? Number(h.distanceMeters)
-          : null,
-      matchedPlaceTarget:
-        h.matchedPlaceTarget && typeof h.matchedPlaceTarget === "object"
-          ? {
-              rawText: h.matchedPlaceTarget.rawText ?? null,
-              normalizedName: h.matchedPlaceTarget.normalizedName ?? null,
-              type: h.matchedPlaceTarget.type ?? null,
-            }
-          : null,
-      semanticMatch:
-        h.semanticMatch && typeof h.semanticMatch === "object"
-          ? {
-              score:
-                Number.isFinite(Number(h.semanticMatch.score))
+    .map((h, index) => {
+      const stars = resolveWebbedsHotelStars(h);
+      const classificationLabel = resolveWebbedsClassificationLabel(h);
+      return {
+        id: h.id != null ? String(h.id) : null,
+        name: h.name ?? h.title ?? "",
+        city: h.city ?? "",
+        stars,
+        classificationLabel,
+        displayOrder: index + 1,
+        pricePerNight: h.pricePerNight ?? h.price_per_night ?? null,
+        currency: h.currency ?? "USD",
+        amenities: mergeHotelAmenities(h),
+        descriptions: collectDescriptionSnippets(h),
+        shortReason:
+          h.shortReason ??
+          h.pickReason ??
+          (Array.isArray(h.matchReasons) && h.matchReasons[0]) ??
+          null,
+        matchReasons: Array.isArray(h.matchReasons)
+          ? h.matchReasons.slice(0, 5)
+          : [],
+        semanticEvidence: Array.isArray(h.semanticEvidence)
+          ? h.semanticEvidence.slice(0, 5)
+          : [],
+        distanceMeters:
+          Number.isFinite(Number(h.distanceMeters)) &&
+          Number(h.distanceMeters) >= 0
+            ? Number(h.distanceMeters)
+            : null,
+        matchedPlaceTarget:
+          h.matchedPlaceTarget && typeof h.matchedPlaceTarget === "object"
+            ? {
+                rawText: h.matchedPlaceTarget.rawText ?? null,
+                normalizedName: h.matchedPlaceTarget.normalizedName ?? null,
+                type: h.matchedPlaceTarget.type ?? null,
+              }
+            : null,
+        semanticMatch:
+          h.semanticMatch && typeof h.semanticMatch === "object"
+            ? {
+                score: Number.isFinite(Number(h.semanticMatch.score))
                   ? Number(h.semanticMatch.score)
                   : null,
-              confidence: h.semanticMatch.confidence ?? null,
-              matchedZoneId: h.semanticMatch.matchedZoneId ?? null,
-              matchedLandmarkId: h.semanticMatch.matchedLandmarkId ?? null,
-              scopeEligible: h.semanticMatch.scopeEligible === true,
-              evidence: Array.isArray(h.semanticMatch.evidence)
-                ? h.semanticMatch.evidence.slice(0, 6)
-                : [],
-            }
-          : null,
-      isPick: picksIds.size > 0 ? picksIds.has(String(h.id)) : false,
-      images: Array.isArray(h.images)
-        ? h.images
-            .slice(0, 2)
-            .map((img) => (typeof img === "string" ? img : (img?.url ?? null)))
-            .filter(Boolean)
-        : h.coverImage
-          ? [h.coverImage]
-          : [],
-    }))
+                confidence: h.semanticMatch.confidence ?? null,
+                matchedZoneId: h.semanticMatch.matchedZoneId ?? null,
+                matchedLandmarkId: h.semanticMatch.matchedLandmarkId ?? null,
+                scopeEligible: h.semanticMatch.scopeEligible === true,
+                evidence: Array.isArray(h.semanticMatch.evidence)
+                  ? h.semanticMatch.evidence.slice(0, 6)
+                  : [],
+              }
+            : null,
+        isPick: picksIds.size > 0 ? picksIds.has(String(h.id)) : false,
+        images: Array.isArray(h.images)
+          ? h.images
+              .slice(0, 2)
+              .map((img) =>
+                typeof img === "string" ? img : (img?.url ?? null),
+              )
+              .filter(Boolean)
+          : h.coverImage
+            ? [h.coverImage]
+            : [],
+      };
+    })
     .filter((h) => h.id);
   const homes = (inventory.homes || [])
     .slice(0, MAX_LAST_SHOWN_ITEMS)
@@ -5362,62 +6130,71 @@ const buildLastShownInventorySummary = (
 /** Normalize raw inventory hotels into the same shape used by the summary/pre-filter, preserving full amenity data. */
 const normalizeRawInventoryHotels = (inventory, picksIds = new Set()) =>
   (inventory?.hotels || [])
-    .map((h) => ({
-      id: h.id != null ? String(h.id) : null,
-      name: h.name ?? h.title ?? "",
-      city: h.city ?? "",
-      stars: h.classification?.name ?? h.stars ?? null,
-      pricePerNight: h.pricePerNight ?? h.price_per_night ?? null,
-      currency: h.currency ?? "USD",
-      amenities: mergeHotelAmenities(h),
-      descriptions: collectDescriptionSnippets(h),
-      shortReason:
-        h.shortReason ??
-        h.pickReason ??
-        (Array.isArray(h.matchReasons) && h.matchReasons[0]) ??
-        null,
-      matchReasons: Array.isArray(h.matchReasons) ? h.matchReasons.slice(0, 5) : [],
-      semanticEvidence: Array.isArray(h.semanticEvidence)
-        ? h.semanticEvidence.slice(0, 5)
-        : [],
-      distanceMeters:
-        Number.isFinite(Number(h.distanceMeters)) && Number(h.distanceMeters) >= 0
-          ? Number(h.distanceMeters)
-          : null,
-      matchedPlaceTarget:
-        h.matchedPlaceTarget && typeof h.matchedPlaceTarget === "object"
-          ? {
-              rawText: h.matchedPlaceTarget.rawText ?? null,
-              normalizedName: h.matchedPlaceTarget.normalizedName ?? null,
-              type: h.matchedPlaceTarget.type ?? null,
-            }
-          : null,
-      semanticMatch:
-        h.semanticMatch && typeof h.semanticMatch === "object"
-          ? {
-              score:
-                Number.isFinite(Number(h.semanticMatch.score))
+    .map((h) => {
+      const stars = resolveWebbedsHotelStars(h);
+      const classificationLabel = resolveWebbedsClassificationLabel(h);
+      return {
+        id: h.id != null ? String(h.id) : null,
+        name: h.name ?? h.title ?? "",
+        city: h.city ?? "",
+        stars,
+        classificationLabel,
+        pricePerNight: h.pricePerNight ?? h.price_per_night ?? null,
+        currency: h.currency ?? "USD",
+        amenities: mergeHotelAmenities(h),
+        descriptions: collectDescriptionSnippets(h),
+        shortReason:
+          h.shortReason ??
+          h.pickReason ??
+          (Array.isArray(h.matchReasons) && h.matchReasons[0]) ??
+          null,
+        matchReasons: Array.isArray(h.matchReasons)
+          ? h.matchReasons.slice(0, 5)
+          : [],
+        semanticEvidence: Array.isArray(h.semanticEvidence)
+          ? h.semanticEvidence.slice(0, 5)
+          : [],
+        distanceMeters:
+          Number.isFinite(Number(h.distanceMeters)) &&
+          Number(h.distanceMeters) >= 0
+            ? Number(h.distanceMeters)
+            : null,
+        matchedPlaceTarget:
+          h.matchedPlaceTarget && typeof h.matchedPlaceTarget === "object"
+            ? {
+                rawText: h.matchedPlaceTarget.rawText ?? null,
+                normalizedName: h.matchedPlaceTarget.normalizedName ?? null,
+                type: h.matchedPlaceTarget.type ?? null,
+              }
+            : null,
+        semanticMatch:
+          h.semanticMatch && typeof h.semanticMatch === "object"
+            ? {
+                score: Number.isFinite(Number(h.semanticMatch.score))
                   ? Number(h.semanticMatch.score)
                   : null,
-              confidence: h.semanticMatch.confidence ?? null,
-              matchedZoneId: h.semanticMatch.matchedZoneId ?? null,
-              matchedLandmarkId: h.semanticMatch.matchedLandmarkId ?? null,
-              scopeEligible: h.semanticMatch.scopeEligible === true,
-              evidence: Array.isArray(h.semanticMatch.evidence)
-                ? h.semanticMatch.evidence.slice(0, 6)
-                : [],
-            }
-          : null,
-      isPick: picksIds.has(String(h.id)),
-      images: Array.isArray(h.images)
-        ? h.images
-            .slice(0, 3)
-            .map((img) => (typeof img === "string" ? img : (img?.url ?? null)))
-            .filter(Boolean)
-        : h.coverImage
-          ? [h.coverImage]
-          : [],
-    }))
+                confidence: h.semanticMatch.confidence ?? null,
+                matchedZoneId: h.semanticMatch.matchedZoneId ?? null,
+                matchedLandmarkId: h.semanticMatch.matchedLandmarkId ?? null,
+                scopeEligible: h.semanticMatch.scopeEligible === true,
+                evidence: Array.isArray(h.semanticMatch.evidence)
+                  ? h.semanticMatch.evidence.slice(0, 6)
+                  : [],
+              }
+            : null,
+        isPick: picksIds.has(String(h.id)),
+        images: Array.isArray(h.images)
+          ? h.images
+              .slice(0, 3)
+              .map((img) =>
+                typeof img === "string" ? img : (img?.url ?? null),
+              )
+              .filter(Boolean)
+          : h.coverImage
+            ? [h.coverImage]
+            : [],
+      };
+    })
     .filter((h) => h.id);
 
 const buildTripSearchContextText = (state, plan) => {
@@ -5874,13 +6651,18 @@ const getNationalityCodeFromUiEvent = (uiEvent) => {
 const getPlaceSelectionIdFromUiEvent = (uiEvent) => {
   const payload = getUiEventPayload(uiEvent);
   const selectionId = String(
-    payload?.optionId ?? payload?.placeSelectionId ?? payload?.selectionId ?? "",
+    payload?.optionId ??
+      payload?.placeSelectionId ??
+      payload?.selectionId ??
+      "",
   ).trim();
   return selectionId || null;
 };
 
 const normalizeSearchExecutionMode = (value) => {
-  const normalized = String(value || "").trim().toUpperCase();
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
   if (normalized === SEARCH_EXECUTION_MODES.LIVE_AVAILABILITY) {
     return SEARCH_EXECUTION_MODES.LIVE_AVAILABILITY;
   }
@@ -6223,9 +7005,8 @@ export const hasAuthoritativeSearchTurn = ({
     (inventory?.hotels?.length || 0) + (inventory?.homes?.length || 0);
   if (inventoryCount > 0) return true;
 
-  const hasStructuredSearchSignals = Boolean(
-    Array.isArray(plan?.starRatings) && plan.starRatings.length,
-  ) ||
+  const hasStructuredSearchSignals =
+    Boolean(Array.isArray(plan?.starRatings) && plan.starRatings.length) ||
     Boolean(plan?.viewIntent) ||
     Boolean(plan?.geoIntent) ||
     (Array.isArray(plan?.placeTargets) && plan.placeTargets.length > 0) ||
@@ -6527,6 +7308,27 @@ const MORE_OPTIONS_PATTERN =
 const wantsExplicitLiveAvailability = (text) =>
   typeof text === "string" && LIVE_AVAILABILITY_FOLLOW_UP_PATTERN.test(text);
 
+const DESTINATION_INFO_GENERAL_PATTERN =
+  /\b(estoy pensando en (hacer )?(un )?viaje|estoy pensando en ir|estoy evaluando|estoy considerando|que me recomiendas|qué me recomiendas|que recomendas|qué recomendás|what do you recommend|is it worth it|vale la pena|como es|cómo es|what'?s it like|what is it like|que onda|qué onda|me conviene|conviene)\b/i;
+
+const DESTINATION_INFO_ACTIVITIES_PATTERN =
+  /\b(que hay para hacer|qué hay para hacer|things to do|what to do|que visitar|qué visitar|lugares para ver|must see|imperdibles?)\b/i;
+
+const DESTINATION_INFO_CLIMATE_PATTERN =
+  /\b(clima|weather|temperatura|pronostico|pronóstico|best time to visit|when to go|mejor epoca|mejor época)\b/i;
+
+const DESTINATION_INFO_FOOD_PATTERN =
+  /\b(comida|food|donde comer|dónde comer|where to eat|restaurants?|restaurantes|gastronomia|gastronomía)\b/i;
+
+const DESTINATION_INFO_TRANSPORT_PATTERN =
+  /\b(medios de transporte|transporte|transport(?:ation)?|como moverme|cómo moverme|how to get around|como llegar|cómo llegar|how do i get|tren|colectivo|subte|metro|bus|train|taxi|remis)\b/i;
+
+const EXPLICIT_STAY_SEARCH_PATTERN =
+  /\b(hoteles?|alojamiento|alojamientos|hospedaje|hospedajes|estad[ií]a|estad[ií]as|habitaci[oó]n|habitaciones|room|rooms|accommodation)\b/i;
+
+const DIRECT_SEARCH_INTENT_PATTERN =
+  /\b(busca(?:me|r)?|mostra(?:me|r)?|muestra(?:me|r)?|show me|find me|quiero viajar a|voy a viajar a|quiero ir a|me voy a|quiero algo en|i want to travel to|i am traveling to|i'm traveling to|i want to go to)\b/i;
+
 const referencesShownHotels = (text) =>
   typeof text === "string" &&
   /\b(esos hoteles|estos hoteles|de esos|de estos|alguno de esos|alguna de esas|those hotels|these hotels|of those|of these|any of them|those ones)\b/i.test(
@@ -6535,6 +7337,259 @@ const referencesShownHotels = (text) =>
 
 const wantsAdditionalSearchResults = (text) =>
   typeof text === "string" && MORE_OPTIONS_PATTERN.test(text);
+
+const RESULTS_REFERENCE_PATTERN =
+  /\b(de esos|de estas|de ellos|de ellas|alguno de esos|alguno de ellos|alguna de esas|cual de ellos|cu[aá]l de ellos|those hotels|these hotels|of those|of these|any of them|which of them|that hotel|this hotel|ese hotel|esa opcion|esa opción|ese|esa)\b/i;
+
+const EXTERNAL_RESULTS_PATTERN =
+  /\b(reviews?|opiniones?|reputacion|reputaci[oó]n|ranking|que dicen|what do people say|google|booking(?:\.com)?|tripadvisor|fuentes?|links?|source(?:s)?|verificalo|verificala|verify|verified|online|actualmente|currently)\b/i;
+
+const ADVISORY_RESULTS_PATTERN =
+  /\b(cu[aá]l me recom(?:iendas?|endar[ií]as|end[aá]s)|cu[aá]l elegir[ií]as|no me puedo decidir|ay[uú]dame a decidir|ayudame a decidir|help me decide|i can'?t decide|recommend(?: me)?|which one would you pick|what would you pick|compar[a-záéíóú]*|compare|versus|vs\.?|trade[- ]?off|que te parece mejor|what do you think|mejor vista|best view|vibe|ambiente|mejor zona|best area|best fit|mejor fit)\b/i;
+
+const normalizeDestinationKey = (value = "") =>
+  normalizeComparableText(String(value || "").split(",")[0] || "");
+
+const destinationsEquivalent = (left = "", right = "") => {
+  const normalizedLeft = normalizeComparableText(left);
+  const normalizedRight = normalizeComparableText(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight) return true;
+
+  const leftKey = normalizeDestinationKey(left);
+  const rightKey = normalizeDestinationKey(right);
+  if (leftKey && rightKey && leftKey === rightKey) return true;
+
+  return (
+    normalizedLeft.startsWith(`${rightKey},`) ||
+    normalizedRight.startsWith(`${leftKey},`)
+  );
+};
+
+const detectDestinationInfoAspect = (message = "") => {
+  if (DESTINATION_INFO_TRANSPORT_PATTERN.test(message)) return "transport";
+  if (DESTINATION_INFO_CLIMATE_PATTERN.test(message)) return "climate";
+  if (DESTINATION_INFO_FOOD_PATTERN.test(message)) return "food";
+  if (DESTINATION_INFO_ACTIVITIES_PATTERN.test(message)) return "activities";
+  return "general";
+};
+
+const shouldOverrideSearchToDestinationInfo = ({
+  latestUserMessage = "",
+  toolCall = null,
+} = {}) => {
+  if (toolCall?.name !== "search_stays") return null;
+  const message = String(latestUserMessage || "").trim();
+  if (!message) return null;
+
+  const hasStrongStaySearchSignal =
+    EXPLICIT_STAY_SEARCH_PATTERN.test(message) ||
+    DIRECT_SEARCH_INTENT_PATTERN.test(message);
+  const hasDestinationInfoSignal =
+    DESTINATION_INFO_GENERAL_PATTERN.test(message) ||
+    DESTINATION_INFO_ACTIVITIES_PATTERN.test(message) ||
+    DESTINATION_INFO_CLIMATE_PATTERN.test(message) ||
+    DESTINATION_INFO_FOOD_PATTERN.test(message) ||
+    DESTINATION_INFO_TRANSPORT_PATTERN.test(message);
+
+  if (!hasDestinationInfoSignal || hasStrongStaySearchSignal) {
+    return null;
+  }
+
+  const destination =
+    toolCall?.args?.city || toolCall?.args?.destination || null;
+  if (!destination) return null;
+
+  return {
+    destination,
+    aspect: detectDestinationInfoAspect(message),
+  };
+};
+
+const extractSummaryItemsFromLastResults = (lastShownSummary = null) => {
+  const hotels = Array.isArray(lastShownSummary?.hotels)
+    ? lastShownSummary.hotels
+        .map((hotel) => ({
+          ...hotel,
+          inventoryType: "HOTEL",
+        }))
+        .filter(Boolean)
+    : [];
+  const homes = Array.isArray(lastShownSummary?.homes)
+    ? lastShownSummary.homes
+        .map((home) => ({
+          ...home,
+          inventoryType: "HOME",
+          name: home?.name || home?.title || "",
+        }))
+        .filter(Boolean)
+    : [];
+  return [...hotels, ...homes];
+};
+
+const extractMentionedSummaryItems = (
+  message = "",
+  lastShownSummary = null,
+) => {
+  const normalizedMessage = normalizeComparableText(message);
+  if (!normalizedMessage) return [];
+  return extractSummaryItemsFromLastResults(lastShownSummary).filter((item) => {
+    const normalizedName = normalizeComparableText(
+      item?.name || item?.title || "",
+    );
+    return normalizedName && normalizedMessage.includes(normalizedName);
+  });
+};
+
+const buildCompactFollowUpHotelScope = ({
+  hotels = [],
+  referencedHotelIds = [],
+  maxItems = 8,
+} = {}) => {
+  const normalizedReferencedIds =
+    normalizeReferencedHotelIds(referencedHotelIds);
+  const byId = new Map(
+    (Array.isArray(hotels) ? hotels : [])
+      .filter((hotel) => hotel?.id != null)
+      .map((hotel) => [String(hotel.id), hotel]),
+  );
+  const selected = [];
+  const selectedIds = new Set();
+  const pushHotel = (hotel) => {
+    const hotelId = hotel?.id != null ? String(hotel.id) : null;
+    if (
+      !hotel ||
+      !hotelId ||
+      selectedIds.has(hotelId) ||
+      selected.length >= maxItems
+    ) {
+      return;
+    }
+    selected.push(hotel);
+    selectedIds.add(hotelId);
+  };
+
+  normalizedReferencedIds.forEach((hotelId) => pushHotel(byId.get(hotelId)));
+  hotels.filter((hotel) => hotel?.isPick).forEach(pushHotel);
+
+  const pricedHotels = hotels
+    .filter((hotel) => Number.isFinite(Number(hotel?.pricePerNight)))
+    .sort(
+      (left, right) => Number(left.pricePerNight) - Number(right.pricePerNight),
+    );
+  if (pricedHotels.length) {
+    pushHotel(pricedHotels[0]);
+    pushHotel(pricedHotels[pricedHotels.length - 1]);
+  }
+
+  hotels.forEach(pushHotel);
+  return selected.slice(0, maxItems);
+};
+
+const classifyFollowUpFromLastResults = ({
+  latestUserMessage = "",
+  toolCall = null,
+  existingState = null,
+  requestedStay = null,
+  mentionedItems = [],
+  factualPreparedReply = null,
+  forceSearchForShownHotels = false,
+} = {}) => {
+  const lastShownSummary = existingState?.lastShownInventorySummary || null;
+  if (!lastShownSummary) return null;
+
+  const normalizedCurrentDestination = normalizeComparableText(
+    existingState?.destination?.name ||
+      existingState?.searchPlan?.location?.city ||
+      existingState?.lastSearchContext?.destination ||
+      "",
+  );
+  const normalizedRequestedDestination = normalizeComparableText(
+    toolCall?.args?.city || toolCall?.args?.destination || "",
+  );
+  const hasDestinationShift =
+    normalizedRequestedDestination &&
+    normalizedCurrentDestination &&
+    !destinationsEquivalent(
+      normalizedRequestedDestination,
+      normalizedCurrentDestination,
+    );
+  const hasResultReference =
+    referencesShownHotels(latestUserMessage) ||
+    RESULTS_REFERENCE_PATTERN.test(String(latestUserMessage || "")) ||
+    wantsAdditionalSearchResults(latestUserMessage) ||
+    ADVISORY_RESULTS_PATTERN.test(String(latestUserMessage || "")) ||
+    EXTERNAL_RESULTS_PATTERN.test(String(latestUserMessage || "")) ||
+    (Array.isArray(mentionedItems) && mentionedItems.length > 0) ||
+    Boolean(requestedStay) ||
+    Boolean(factualPreparedReply?.text) ||
+    toolCall?.name === "answer_from_results" ||
+    toolCall?.name === "get_stay_details";
+
+  if (forceSearchForShownHotels || hasDestinationShift) {
+    return {
+      kind: "new_search",
+      origin: "deterministic_classifier",
+      reason: forceSearchForShownHotels
+        ? "live_availability_for_shown_hotels"
+        : "destination_shift",
+    };
+  }
+
+  if (!hasResultReference) {
+    return toolCall?.name === "search_stays"
+      ? {
+          kind: "new_search",
+          origin: "tool_call",
+          reason: "search_tool_without_results_reference",
+        }
+      : null;
+  }
+
+  if (EXTERNAL_RESULTS_PATTERN.test(String(latestUserMessage || ""))) {
+    return {
+      kind: "external_results",
+      origin: "deterministic_classifier",
+      reason: "external_signal",
+    };
+  }
+
+  if (requestedStay) {
+    return {
+      kind: "result_detail",
+      origin: "deterministic_classifier",
+      reason: "specific_stay_reference",
+    };
+  }
+
+  if (ADVISORY_RESULTS_PATTERN.test(String(latestUserMessage || ""))) {
+    return {
+      kind: "advisory_results",
+      origin: "deterministic_classifier",
+      reason: "advisory_signal",
+    };
+  }
+
+  if (factualPreparedReply?.text) {
+    return {
+      kind: "factual_results",
+      origin: "deterministic_classifier",
+      reason: "factual_snapshot_match",
+    };
+  }
+
+  return {
+    kind: "advisory_results",
+    origin:
+      toolCall?.name === "answer_from_results"
+        ? "tool_call"
+        : "deterministic_classifier",
+    reason:
+      toolCall?.name === "answer_from_results"
+        ? "answer_from_results_tool"
+        : "anchored_follow_up_fallback",
+  };
+};
 
 const resolveSearchLimits = ({ plan, limits }) => {
   const isLiveInventoryMode = hasSearchDates(plan) && hasSearchGuests(plan);
@@ -6715,11 +7770,15 @@ export const runFunctionCallingTurn = async ({
     });
   const allowFreeTextPlaceDisambiguationResume = Boolean(
     pendingTc?.missingField === "placeDisambiguation" &&
-      !uiEventId &&
-      textMatchedPlaceSelectionId,
+    !uiEventId &&
+    textMatchedPlaceSelectionId,
   );
   const resumeOnlyFrom = Array.isArray(pendingTc?.resumeOnlyFrom)
-    ? pendingTc.resumeOnlyFrom.map((entry) => String(entry || "").trim().toUpperCase())
+    ? pendingTc.resumeOnlyFrom.map((entry) =>
+        String(entry || "")
+          .trim()
+          .toUpperCase(),
+      )
     : [];
   const uiEventMatchesPending =
     !resumeOnlyFrom.length ||
@@ -6727,13 +7786,13 @@ export const runFunctionCallingTurn = async ({
     allowFreeTextPlaceDisambiguationResume;
   const hasMatchingPlaceSelection = Boolean(
     pendingTc?.missingField === "placeDisambiguation" &&
-      textMatchedPlaceSelectionId &&
-      Array.isArray(pendingTc?.clarificationOptions) &&
-      pendingTc.clarificationOptions.some(
-        (candidate) =>
-          String(candidate?.id || "").trim() ===
-          String(textMatchedPlaceSelectionId || "").trim(),
-      ),
+    textMatchedPlaceSelectionId &&
+    Array.isArray(pendingTc?.clarificationOptions) &&
+    pendingTc.clarificationOptions.some(
+      (candidate) =>
+        String(candidate?.id || "").trim() ===
+        String(textMatchedPlaceSelectionId || "").trim(),
+    ),
   );
   const hasPendingToolCallResume = Boolean(
     !userContext?.skipDataCollection &&
@@ -6953,20 +8012,24 @@ export const runFunctionCallingTurn = async ({
           ? baseSearchPlan.hotelFilters.amenityCodes
           : [],
       minStars:
-        toolCall?.args?.minStars ?? baseSearchPlan?.hotelFilters?.minRating ?? null,
+        toolCall?.args?.minStars ??
+        baseSearchPlan?.hotelFilters?.minRating ??
+        null,
       starRatings: Array.isArray(toolCall?.args?.starRatings)
         ? toolCall.args.starRatings
         : Array.isArray(baseSearchPlan?.starRatings)
           ? baseSearchPlan.starRatings
           : [],
-      viewIntent: toolCall?.args?.viewIntent ?? baseSearchPlan?.viewIntent ?? null,
+      viewIntent:
+        toolCall?.args?.viewIntent ?? baseSearchPlan?.viewIntent ?? null,
       geoIntent: toolCall?.args?.geoIntent ?? baseSearchPlan?.geoIntent ?? null,
       placeTargets: Array.isArray(toolCall?.args?.placeTargets)
         ? toolCall.args.placeTargets
         : Array.isArray(baseSearchPlan?.placeTargets)
           ? baseSearchPlan.placeTargets
           : [],
-      areaIntent: toolCall?.args?.areaIntent ?? baseSearchPlan?.areaIntent ?? null,
+      areaIntent:
+        toolCall?.args?.areaIntent ?? baseSearchPlan?.areaIntent ?? null,
       qualityIntent:
         toolCall?.args?.qualityIntent ?? baseSearchPlan?.qualityIntent ?? null,
       areaTraits: Array.isArray(toolCall?.args?.areaTraits)
@@ -6980,7 +8043,7 @@ export const runFunctionCallingTurn = async ({
           ? baseSearchPlan.preferenceNotes
           : [],
       areaPreference: Array.isArray(baseSearchPlan?.preferences?.areaPreference)
-        ? baseSearchPlan.preferences.areaPreference[0] ?? null
+        ? (baseSearchPlan.preferences.areaPreference[0] ?? null)
         : null,
       nearbyInterest:
         toolCall?.args?.nearbyInterest ??
@@ -7006,6 +8069,32 @@ export const runFunctionCallingTurn = async ({
     });
   }
 
+  const destinationInfoOverride = shouldOverrideSearchToDestinationInfo({
+    latestUserMessage,
+    toolCall,
+  });
+
+  if (
+    destinationInfoOverride &&
+    !hasPendingToolCallResume &&
+    !shouldForceLiveAvailabilitySearch &&
+    !shouldForceAvailabilityForShownHotels
+  ) {
+    toolCall = {
+      id: toolCall?.id || "destination_info_override",
+      name: "get_destination_info",
+      args: {
+        destination: destinationInfoOverride.destination,
+        aspect: destinationInfoOverride.aspect || "general",
+      },
+    };
+    emitTrace("DESTINATION_INFO_OVERRIDE_APPLIED", {
+      destination: destinationInfoOverride.destination,
+      aspect: destinationInfoOverride.aspect || "general",
+      originalToolName: "search_stays",
+    });
+  }
+
   // 7b. bookingFlowLocked guard — force SMALL_TALK if locked
   if (
     existingState?.locks?.bookingFlowLocked &&
@@ -7023,6 +8112,118 @@ export const runFunctionCallingTurn = async ({
     forcedAvailabilityForShownHotels: shouldForceAvailabilityForShownHotels,
     toolCall: summarizeToolCallForDebug(toolCall),
   });
+
+  let followUpKind = null;
+  let followUpOrigin = null;
+  let followUpReason = null;
+  let followUpScopeSource = null;
+  let followUpReferencedHotelIds = [];
+  let followUpReplyMode = null;
+  let followUpWebSearchUsed = false;
+  let followUpTraceEmitted = false;
+  let preparedFollowUpReply = null;
+  let followUpRequestedStay = null;
+  const destinationInfoOverrideApplied = Boolean(
+    destinationInfoOverride && toolCall?.name === "get_destination_info",
+  );
+
+  if (
+    existingState?.lastShownInventorySummary &&
+    !hasPendingToolCallResume &&
+    !shouldForceLiveAvailabilitySearch &&
+    !existingState?.locks?.bookingFlowLocked &&
+    !destinationInfoOverrideApplied
+  ) {
+    const mentionedItems = extractMentionedSummaryItems(
+      latestUserMessage,
+      existingState.lastShownInventorySummary,
+    );
+    followUpRequestedStay = resolveRequestedStayFromMessage(
+      latestUserMessage,
+      existingState.lastShownInventorySummary,
+    );
+
+    const shouldInspectAsResultsFollowUp =
+      Boolean(followUpRequestedStay) ||
+      mentionedItems.length > 0 ||
+      referencesShownHotels(latestUserMessage) ||
+      RESULTS_REFERENCE_PATTERN.test(String(latestUserMessage || "")) ||
+      wantsAdditionalSearchResults(latestUserMessage) ||
+      ADVISORY_RESULTS_PATTERN.test(String(latestUserMessage || "")) ||
+      EXTERNAL_RESULTS_PATTERN.test(String(latestUserMessage || "")) ||
+      toolCall?.name === "answer_from_results" ||
+      toolCall?.name === "get_stay_details";
+
+    if (shouldInspectAsResultsFollowUp) {
+      preparedFollowUpReply = await buildPreparedReplyFromLastResults({
+        summary: existingState.lastShownInventorySummary,
+        latestUserMessage,
+        language,
+      });
+
+      const classifiedFollowUp = classifyFollowUpFromLastResults({
+        latestUserMessage,
+        toolCall,
+        existingState,
+        requestedStay: followUpRequestedStay,
+        mentionedItems,
+        factualPreparedReply: preparedFollowUpReply,
+        forceSearchForShownHotels: shouldForceAvailabilityForShownHotels,
+      });
+
+      if (classifiedFollowUp) {
+        followUpKind = classifiedFollowUp.kind || null;
+        followUpOrigin =
+          classifiedFollowUp.origin || "deterministic_classifier";
+        followUpReason = classifiedFollowUp.reason || null;
+        followUpReferencedHotelIds = normalizeReferencedHotelIds(
+          followUpRequestedStay?.stayId
+            ? [followUpRequestedStay.stayId]
+            : mentionedItems.map((item) => item?.id),
+        );
+
+        if (
+          followUpKind === "result_detail" &&
+          followUpRequestedStay?.stayId &&
+          followUpRequestedStay?.type
+        ) {
+          toolCall = {
+            id: toolCall?.id || "follow_up_result_detail",
+            name: "get_stay_details",
+            args: {
+              stayId: String(followUpRequestedStay.stayId),
+              type: String(followUpRequestedStay.type).toUpperCase(),
+            },
+          };
+        } else if (
+          ["factual_results", "advisory_results", "external_results"].includes(
+            followUpKind,
+          )
+        ) {
+          toolCall = {
+            id: toolCall?.id || "follow_up_answer_from_results",
+            name: "answer_from_results",
+            args: {
+              question:
+                typeof toolCall?.args?.question === "string" &&
+                toolCall.args.question.trim()
+                  ? toolCall.args.question.trim()
+                  : latestUserMessage,
+            },
+          };
+        }
+
+        debugCurrentToolName = toolCall?.name || null;
+        emitTrace("FOLLOW_UP_CLASSIFIED", {
+          followUpKind,
+          followUpOrigin,
+          reason: followUpReason || undefined,
+          referencedHotelIds: followUpReferencedHotelIds,
+          toolName: toolCall?.name || null,
+        });
+      }
+    }
+  }
 
   // 8. Handle tool cases
   let plan = null;
@@ -7051,10 +8252,10 @@ export const runFunctionCallingTurn = async ({
       uiEventId === SEARCH_UI_EVENTS.LIVE_AVAILABILITY_ENABLE;
     const hasExplicitAvailabilityInputs = Boolean(
       originalToolArgs?.checkIn ||
-        originalToolArgs?.checkOut ||
-        originalToolArgs?.adults != null ||
-        userContext?.confirmedSearch?.when ||
-        userContext?.confirmedSearch?.who,
+      originalToolArgs?.checkOut ||
+      originalToolArgs?.adults != null ||
+      userContext?.confirmedSearch?.when ||
+      userContext?.confirmedSearch?.who,
     );
     const searchExecutionMode =
       explicitLiveAvailabilityRequest ||
@@ -7091,8 +8292,62 @@ export const runFunctionCallingTurn = async ({
       "[DEBUG-2] plan.guests después de injectConfirmedSearchIntoPlan:",
       JSON.stringify(plan.guests),
     );
+    let lastSemanticScopeSnapshot = null;
+    let lastSemanticScopeStage = null;
+    const emitSemanticScopeTransition = (
+      stage,
+      targetPlan,
+      extraPayload = {},
+    ) => {
+      const snapshot = summarizeSemanticScopeForDebug(targetPlan);
+      const previousSnapshot = lastSemanticScopeSnapshot;
+      const previousStage = lastSemanticScopeStage;
+      const previousActive = hasActiveSemanticScopeForDebug(previousSnapshot);
+      const active = hasActiveSemanticScopeForDebug(snapshot);
+      const diff = diffSemanticScopeSnapshotsForDebug(
+        previousSnapshot,
+        snapshot,
+      );
+      emitFileDebug("semantic_scope_transition", {
+        stage,
+        previousStage,
+        active,
+        previousActive,
+        introducedSemanticScope: !previousActive && active,
+        clearedSemanticScope: previousActive && !active,
+        changed: diff.changedKeys.length > 0,
+        changedKeys: diff.changedKeys,
+        changes: diff.changes,
+        snapshot,
+        ...extraPayload,
+      });
+      lastSemanticScopeSnapshot = snapshot;
+      lastSemanticScopeStage = stage;
+      return snapshot;
+    };
+    emitSemanticScopeTransition(
+      "existing_state_search_plan",
+      existingState?.searchPlan,
+      {
+        source: "existing_state",
+        destination:
+          existingState?.destination?.name ||
+          existingState?.searchPlan?.location?.city ||
+          existingState?.searchPlan?.location?.country ||
+          null,
+        pendingToolCallMissingField: storedPending?.missingField || null,
+        searchContextKey:
+          existingState?.lastResultsContext?.searchContextKey || null,
+      },
+    );
     emitFileDebug("plan_after_tool", {
       plan: summarizePlanForDebug(plan),
+    });
+    emitSemanticScopeTransition("plan_after_tool", plan, {
+      source: "tool_args_and_confirmed_search",
+      resumedPendingToolCall: hasPendingToolCallResume,
+      forcedLiveAvailabilityRequest,
+      explicitLiveAvailabilityRequest,
     });
 
     // Helper: interrupt to collect a missing field, save pendingToolCall, stream question
@@ -7187,6 +8442,10 @@ export const runFunctionCallingTurn = async ({
     const planWithUi = applyUiEventToPlan(plan, uiEvent);
     let planWithDefaults = applyPlanDefaults(planWithUi, existingState);
     planWithDefaults.searchExecutionMode = searchExecutionMode;
+    emitSemanticScopeTransition("plan_after_defaults", planWithDefaults, {
+      source: "ui_defaults",
+      uiEventId: uiEventId || null,
+    });
     let assistantKickoff = null;
     let assistantKickoffDeliveredSeparately = false;
     let assistantKickoffBlocked = false;
@@ -7219,11 +8478,18 @@ export const runFunctionCallingTurn = async ({
     const isAssistantKickoffBlocked = () =>
       assistantKickoffBlocked || !assistantKickoffGate.canEmitKickoff();
     const applyAssistantKickoffToPlanTarget = (targetPlan, kickoffResult) => {
-      if (!targetPlan || typeof targetPlan !== "object" || !kickoffResult?.text) return;
-      if (!targetPlan.assumptions || typeof targetPlan.assumptions !== "object") {
+      if (!targetPlan || typeof targetPlan !== "object" || !kickoffResult?.text)
+        return;
+      if (
+        !targetPlan.assumptions ||
+        typeof targetPlan.assumptions !== "object"
+      ) {
         targetPlan.assumptions = {};
       }
-      if (!targetPlan.semanticSearch || typeof targetPlan.semanticSearch !== "object") {
+      if (
+        !targetPlan.semanticSearch ||
+        typeof targetPlan.semanticSearch !== "object"
+      ) {
         targetPlan.semanticSearch = {};
       }
       targetPlan.assumptions.separateSemanticOrientationMessage = true;
@@ -7257,7 +8523,9 @@ export const runFunctionCallingTurn = async ({
         stage: "kickoff",
         text: kickoffResult.text,
         destination:
-          planWithDefaults?.location?.city || planWithDefaults?.location?.country || null,
+          planWithDefaults?.location?.city ||
+          planWithDefaults?.location?.country ||
+          null,
         nextProgressType: nextKickoffProgressType,
       });
       assistantKickoffGate.markKickoffEmitted({
@@ -7316,12 +8584,27 @@ export const runFunctionCallingTurn = async ({
       emitFileDebug("plan_after_grounding_planner", {
         plan: summarizePlanForDebug(planWithDefaults),
       });
+      emitSemanticScopeTransition(
+        "plan_after_grounding_planner",
+        planWithDefaults,
+        {
+          skipped: false,
+        },
+      );
     } else {
       emitFileDebug("plan_after_grounding_planner", {
         skipped: true,
         reason: "planner_failed_or_empty",
         plan: summarizePlanForDebug(planWithDefaults),
       });
+      emitSemanticScopeTransition(
+        "plan_after_grounding_planner",
+        planWithDefaults,
+        {
+          skipped: true,
+          reason: "planner_failed_or_empty",
+        },
+      );
     }
 
     if (!hasCanonicalSemanticGrounding(planWithDefaults)) {
@@ -7338,7 +8621,8 @@ export const runFunctionCallingTurn = async ({
         reason: "canonical_grounding_present",
         destination: planWithDefaults?.location?.city || null,
         groundingStrategy:
-          planWithDefaults?.semanticSearch?.grounding?.groundingStrategy || null,
+          planWithDefaults?.semanticSearch?.grounding?.groundingStrategy ||
+          null,
       });
     }
     planWithDefaults = lockSemanticUserIntent({
@@ -7420,13 +8704,23 @@ export const runFunctionCallingTurn = async ({
     }
 
     // Live availability only blocks after the place is fully resolved.
-    if (shouldRequireBlockingSearchInputs && !hasSearchDates(planWithDefaults)) {
+    if (
+      shouldRequireBlockingSearchInputs &&
+      !hasSearchDates(planWithDefaults)
+    ) {
       blockAssistantKickoff("missing_dates");
       return await interruptForMissingData("dateRange", "ASK_FOR_DATES");
     }
     emitFileDebug("plan_after_deterministic_hints", {
       plan: summarizePlanForDebug(planWithDefaults),
     });
+    emitSemanticScopeTransition(
+      "plan_after_deterministic_hints",
+      planWithDefaults,
+      {
+        explicitPlaceResolutionStatus: explicitPlaceResolution?.status || null,
+      },
+    );
 
     if (
       !hasCanonicalSemanticGrounding(planWithDefaults) &&
@@ -7492,6 +8786,14 @@ export const runFunctionCallingTurn = async ({
         emitFileDebug("plan_after_semantic_enrichment", {
           plan: summarizePlanForDebug(planWithDefaults),
         });
+        emitSemanticScopeTransition(
+          "plan_after_semantic_enrichment",
+          planWithDefaults,
+          {
+            skipped: false,
+            explicitGeoRequested,
+          },
+        );
       } else {
         emitSearchTrace("SEMANTIC_ENRICHMENT_SKIPPED", {
           reason: "fallback_failed_or_empty",
@@ -7502,21 +8804,38 @@ export const runFunctionCallingTurn = async ({
           reason: "fallback_failed_or_empty",
           plan: summarizePlanForDebug(planWithDefaults),
         });
+        emitSemanticScopeTransition(
+          "plan_after_semantic_enrichment",
+          planWithDefaults,
+          {
+            skipped: true,
+            reason: "fallback_failed_or_empty",
+          },
+        );
       }
     } else {
+      const semanticEnrichmentSkipReason = hasCanonicalSemanticGrounding(
+        planWithDefaults,
+      )
+        ? "canonical_grounding_present"
+        : "no_soft_semantic_cue";
       emitSearchTrace("SEMANTIC_ENRICHMENT_SKIPPED", {
-        reason: hasCanonicalSemanticGrounding(planWithDefaults)
-          ? "canonical_grounding_present"
-          : "no_soft_semantic_cue",
+        reason: semanticEnrichmentSkipReason,
         destination: planWithDefaults?.location?.city || null,
       });
       emitFileDebug("plan_after_semantic_enrichment", {
         skipped: true,
-        reason: hasCanonicalSemanticGrounding(planWithDefaults)
-          ? "canonical_grounding_present"
-          : "no_soft_semantic_cue",
+        reason: semanticEnrichmentSkipReason,
         plan: summarizePlanForDebug(planWithDefaults),
       });
+      emitSemanticScopeTransition(
+        "plan_after_semantic_enrichment",
+        planWithDefaults,
+        {
+          skipped: true,
+          reason: semanticEnrichmentSkipReason,
+        },
+      );
     }
 
     const explicitPlaceAlreadyResolved =
@@ -7527,14 +8846,14 @@ export const runFunctionCallingTurn = async ({
         latestUserMessage,
         plan: planWithDefaults,
       })
-      ? null
-      : await runSemanticWebResolver({
-          client,
-          latestUserMessage,
-          plan: planWithDefaults,
-          language,
-          emitTrace: emitSearchTrace,
-        });
+        ? null
+        : await runSemanticWebResolver({
+            client,
+            latestUserMessage,
+            plan: planWithDefaults,
+            language,
+            emitTrace: emitSearchTrace,
+          });
     if (semanticWebResolution) {
       const explicitGeoRequested = hasExplicitSemanticGeoRequest({
         latestUserMessage,
@@ -7552,7 +8871,9 @@ export const runFunctionCallingTurn = async ({
         emitSearchTrace("SEMANTIC_ABSTRACT_TRAITS_NON_GEO", {
           destination: planWithDefaults?.location?.city || null,
           strippedGeoIntent: semanticWebResolution.geoIntent || null,
-          strippedPlaceTargets: Array.isArray(semanticWebResolution.resolvedPlaces)
+          strippedPlaceTargets: Array.isArray(
+            semanticWebResolution.resolvedPlaces,
+          )
             ? semanticWebResolution.resolvedPlaces.map(
                 (target) => target?.normalizedName || target?.rawText,
               )
@@ -7567,6 +8888,9 @@ export const runFunctionCallingTurn = async ({
     emitFileDebug("plan_after_web_resolution", {
       webResolutionApplied: Boolean(semanticWebResolution),
       plan: summarizePlanForDebug(planWithDefaults),
+    });
+    emitSemanticScopeTransition("plan_after_web_resolution", planWithDefaults, {
+      webResolutionApplied: Boolean(semanticWebResolution),
     });
 
     if (
@@ -7610,11 +8934,27 @@ export const runFunctionCallingTurn = async ({
       }
     }
 
+    emitSemanticScopeTransition(
+      "state_search_plan_before_apply",
+      baseStateForApply?.searchPlan,
+      {
+        source: shouldResetSearchContext ? "reset_state" : "existing_state",
+        searchContextResetApplied: shouldResetSearchContext,
+        destination:
+          baseStateForApply?.destination?.name ||
+          baseStateForApply?.searchPlan?.location?.city ||
+          baseStateForApply?.searchPlan?.location?.country ||
+          null,
+      },
+    );
+
     const { state: nextStateFromPlan, plan: mergedPlan } = applyPlanToState(
       baseStateForApply,
       planWithDefaults,
     );
-    if (Array.isArray(mergedPlan?.semanticSearch?.intentProfile?.candidateZones)) {
+    if (
+      Array.isArray(mergedPlan?.semanticSearch?.intentProfile?.candidateZones)
+    ) {
       emitSearchTrace("SEMANTIC_CANDIDATE_ZONES_INFERRED", {
         destination: mergedPlan?.location?.city || null,
         candidateZones: mergedPlan.semanticSearch.intentProfile.candidateZones,
@@ -7623,7 +8963,13 @@ export const runFunctionCallingTurn = async ({
       });
     }
     plan = mergedPlan;
+    emitSemanticScopeTransition("plan_after_apply_plan_to_state", plan, {
+      searchContextResetApplied: shouldResetSearchContext,
+    });
     refreshSemanticIntentProfile(plan, latestUserMessage);
+    emitSemanticScopeTransition("plan_after_refresh_semantic_profile", plan, {
+      source: "refresh_semantic_intent_profile",
+    });
     emitFileDebug("semantic_intent_profile", {
       intentProfile: summarizeSemanticIntentProfileForDebug(plan),
     });
@@ -7681,7 +9027,9 @@ export const runFunctionCallingTurn = async ({
     emitSearchEvent(expectsLive ? "searching_live" : "searching_catalog", {
       destination: searchDestination,
     });
-    emitSearchTrace("DESTINATION_RECOGNIZED", { destination: searchDestination });
+    emitSearchTrace("DESTINATION_RECOGNIZED", {
+      destination: searchDestination,
+    });
 
     const _t0 = Date.now();
     inventory = await searchStays(plan, {
@@ -7691,7 +9039,10 @@ export const runFunctionCallingTurn = async ({
       traceSink: emitSearchTrace,
     });
     console.log("[timing] searchStays:", Date.now() - _t0, "ms");
-    emitFileDebug("search_inventory_summary", summarizeInventoryForDebug(inventory));
+    emitFileDebug(
+      "search_inventory_summary",
+      summarizeInventoryForDebug(inventory),
+    );
 
     const counts = {
       homes: inventory?.homes?.length || 0,
@@ -7699,7 +9050,9 @@ export const runFunctionCallingTurn = async ({
     };
     if (
       counts.hotels > 0 &&
-      ((Array.isArray(plan?.semanticSearch?.intentProfile?.userRequestedAreaTraits) &&
+      ((Array.isArray(
+        plan?.semanticSearch?.intentProfile?.userRequestedAreaTraits,
+      ) &&
         plan.semanticSearch.intentProfile.userRequestedAreaTraits.length > 0) ||
         (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedZones) &&
           plan.semanticSearch.intentProfile.requestedZones.length > 0) ||
@@ -7731,7 +9084,10 @@ export const runFunctionCallingTurn = async ({
         });
       }
     }
-    emitSearchEvent("results_final", { counts, total: counts.homes + counts.hotels });
+    emitSearchEvent("results_final", {
+      counts,
+      total: counts.homes + counts.hotels,
+    });
     emitSearchTrace("RESULTS_FOUND", {
       ...counts,
       total: counts.homes + counts.hotels,
@@ -7765,6 +9121,26 @@ export const runFunctionCallingTurn = async ({
       new Promise((r) => setTimeout(r, AI_ASSISTANT_KICKOFF_STREAM_TIMEOUT_MS)),
     ]);
     assistantKickoffGate.finalize("response_ready");
+
+    if (counts.homes + counts.hotels === 0) {
+      const noResultsClosingResult =
+        await generateAssistantNoResultsClosingMessage({
+          client,
+          plan,
+          inventory,
+          language,
+          latestUserMessage,
+          emitTrace: emitSearchTrace,
+          emitFileDebug,
+        });
+      if (noResultsClosingResult?.text) {
+        preparedReply = {
+          text: noResultsClosingResult.text,
+          sections: [],
+          stage: "search_no_results_closing",
+        };
+      }
+    }
 
     nextAction = TOOL_TO_NEXT_ACTION.search_stays;
     debugCurrentNextAction = nextAction;
@@ -7813,12 +9189,18 @@ export const runFunctionCallingTurn = async ({
         match =
           text.match(/^queda bien ubicado para moverte por (.+)$/i) ||
           text.match(/^bien ubicado en (.+)$/i);
-        if (match?.[1]) return truncate(`Bien ubicado en ${String(match[1]).trim()}`);
+        if (match?.[1])
+          return truncate(`Bien ubicado en ${String(match[1]).trim()}`);
 
         match =
-          text.match(/^la zona de (.+?) suele funcionar bien si buscas algo .+$/i) ||
-          text.match(/^la zona de (.+?) le da mejor encaje que a otras alternativas cercanas$/i);
-        if (match?.[1]) return truncate(`Buen fit en ${String(match[1]).trim()}`);
+          text.match(
+            /^la zona de (.+?) suele funcionar bien si buscas algo .+$/i,
+          ) ||
+          text.match(
+            /^la zona de (.+?) le da mejor encaje que a otras alternativas cercanas$/i,
+          );
+        if (match?.[1])
+          return truncate(`Buen fit en ${String(match[1]).trim()}`);
 
         if (/^encaja mejor con un plan /i.test(text)) return "Buen fit";
         if (/moverte a pie|caminable/i.test(text)) return "Caminable";
@@ -7831,12 +9213,7 @@ export const runFunctionCallingTurn = async ({
       };
 
       const makeHotelCard = (h, rank) => {
-        const starsNum =
-          typeof h.stars === "number"
-            ? h.stars
-            : typeof h.stars === "string"
-              ? parseInt(h.stars, 10) || null
-              : null;
+        const starsNum = resolveWebbedsHotelStars(h);
         return {
           type: "hotelCard",
           id: String(h.id),
@@ -7853,7 +9230,9 @@ export const runFunctionCallingTurn = async ({
               : null,
           currency: h.currency || "USD",
           pickReason: compactHotelCardPickReason(
-            h.shortReason || (Array.isArray(h.matchReasons) && h.matchReasons[0]) || null,
+            h.shortReason ||
+              (Array.isArray(h.matchReasons) && h.matchReasons[0]) ||
+              null,
           ),
         };
       };
@@ -7914,6 +9293,22 @@ export const runFunctionCallingTurn = async ({
         return sections;
       };
 
+      const buildTextPlusCardsSections = (text, hotels) => {
+        const cards = hotels
+          .map((hotel, index) => makeHotelCard(hotel, index + 1))
+          .filter((card) => card.name);
+        const sections = [];
+        if (text) {
+          sections.push({ type: "textBlock", text });
+        }
+        cards.forEach((card, index) => {
+          sections.push({ type: "sectionDivider" });
+          sections.push(card);
+          if (index === cards.length - 1) return;
+        });
+        return sections;
+      };
+
       const buildLocalAnswerFromResultsFallback = ({
         hotels = [],
         webSearchRequested = false,
@@ -7967,9 +9362,348 @@ export const runFunctionCallingTurn = async ({
           : `Based on the context I already have, **${best.name}** is the strongest option from the ones I showed you.`;
       };
 
+      const selectHotelsForReplyCards = ({
+        text,
+        candidateHotels = [],
+        fallbackIds = [],
+        maxCards = 2,
+      } = {}) => {
+        const hotels = Array.isArray(candidateHotels)
+          ? candidateHotels.filter(Boolean)
+          : [];
+        if (!hotels.length) return [];
+        const byId = new Map(
+          hotels
+            .filter((hotel) => hotel?.id != null)
+            .map((hotel) => [String(hotel.id), hotel]),
+        );
+        const selected = [];
+        const selectedIds = new Set();
+        const pushHotel = (hotel, { bypassLimit = false } = {}) => {
+          const hotelId = hotel?.id != null ? String(hotel.id) : null;
+          if (
+            !hotel ||
+            !hotelId ||
+            selectedIds.has(hotelId) ||
+            (!bypassLimit && selected.length >= maxCards)
+          ) {
+            return;
+          }
+          selected.push(hotel);
+          selectedIds.add(hotelId);
+        };
+
+        const normalizedReplyText = normalizeComparableText(text);
+        const mentionedHotels = normalizedReplyText
+          ? hotels
+              .map((hotel) => {
+                const normalizedName = normalizeComparableText(
+                  hotel?.name || "",
+                );
+                const mentionIndex =
+                  normalizedName && normalizedReplyText
+                    ? normalizedReplyText.indexOf(normalizedName)
+                    : -1;
+                return mentionIndex >= 0 ? { hotel, mentionIndex } : null;
+              })
+              .filter(Boolean)
+              .sort((left, right) => left.mentionIndex - right.mentionIndex)
+              .map((entry) => entry.hotel)
+          : [];
+
+        if (mentionedHotels.length) {
+          mentionedHotels.forEach((hotel) =>
+            pushHotel(hotel, { bypassLimit: true }),
+          );
+          return selected;
+        }
+
+        normalizeReferencedHotelIds(fallbackIds).forEach((hotelId) =>
+          pushHotel(byId.get(hotelId)),
+        );
+        hotels.filter((hotel) => hotel?.isPick).forEach(pushHotel);
+        return selected.slice(0, maxCards);
+      };
+
+      const finalizeFollowUpReply = ({
+        reply,
+        kind,
+        replyModeOverride = null,
+        fallbackReferencedIds = [],
+        fallbackHotelsForCards = [],
+      } = {}) => {
+        const normalizedText =
+          typeof reply?.text === "string" ? reply.text.trim() : "";
+        const normalizedReferencedIds = normalizeReferencedHotelIds(
+          Array.isArray(reply?.referencedHotelIds) &&
+            reply.referencedHotelIds.length
+            ? reply.referencedHotelIds
+            : fallbackReferencedIds,
+        );
+        const fallbackSections =
+          Array.isArray(fallbackHotelsForCards) && fallbackHotelsForCards.length
+            ? buildSections(normalizedText, fallbackHotelsForCards)
+            : [];
+        const normalizedSections =
+          Array.isArray(reply?.sections) && reply.sections.length
+            ? reply.sections
+            : fallbackSections;
+        const replyMode =
+          replyModeOverride ||
+          reply?.replyMode ||
+          (normalizedSections.length
+            ? Array.isArray(reply?.sections) && reply.sections.length
+              ? "structured"
+              : "text_plus_cards"
+            : "text_only");
+        return {
+          text: normalizedText,
+          sections: normalizedSections,
+          followUps: Array.isArray(reply?.followUps)
+            ? reply.followUps.filter(Boolean)
+            : [],
+          followUpKind: kind || reply?.followUpKind || null,
+          replyMode,
+          referencedHotelIds: normalizedReferencedIds,
+        };
+      };
+
+      const summaryHotels = Array.isArray(
+        existingState?.lastShownInventorySummary?.hotels,
+      )
+        ? existingState.lastShownInventorySummary.hotels
+        : [];
+      followUpScopeSource = cachedRaw?.hotels?.length ? "rawCache" : "summary";
+
+      if (
+        ["factual_results", "advisory_results", "external_results"].includes(
+          followUpKind,
+        )
+      ) {
+        emitTrace("FOLLOW_UP_SCOPE_RESOLVED", {
+          followUpKind,
+          followUpOrigin: followUpOrigin || "deterministic_classifier",
+          reason: followUpReason || undefined,
+          scopeSource: followUpScopeSource,
+          webSearchUsed: false,
+        });
+      }
+
+      if (followUpKind === "factual_results" && preparedFollowUpReply?.text) {
+        const selectedCardHotels = selectHotelsForReplyCards({
+          text: preparedFollowUpReply.text,
+          candidateHotels: hotelsPool,
+          fallbackIds: followUpReferencedHotelIds,
+          maxCards: 2,
+        });
+        preparedReply = finalizeFollowUpReply({
+          reply: preparedFollowUpReply,
+          kind: "factual_results",
+          fallbackReferencedIds:
+            followUpReferencedHotelIds.length > 0
+              ? followUpReferencedHotelIds
+              : selectedCardHotels.map((hotel) => hotel?.id),
+          fallbackHotelsForCards:
+            Array.isArray(preparedFollowUpReply?.sections) &&
+            preparedFollowUpReply.sections.length
+              ? []
+              : selectedCardHotels,
+        });
+        followUpReferencedHotelIds = normalizeReferencedHotelIds(
+          preparedReply.referencedHotelIds,
+        );
+        followUpReplyMode = preparedReply.replyMode || "text_only";
+        existingState.lastReferencedHotelIds = followUpReferencedHotelIds;
+      } else if (
+        followUpKind === "advisory_results" ||
+        followUpKind === "external_results"
+      ) {
+        const scopeHotels =
+          followUpKind === "external_results"
+            ? buildCompactFollowUpHotelScope({
+                hotels: summaryHotels,
+                referencedHotelIds:
+                  followUpReferencedHotelIds.length > 0
+                    ? followUpReferencedHotelIds
+                    : buildReferencedHotelIdsFromState(existingState),
+                maxItems: 3,
+              })
+            : buildCompactFollowUpHotelScope({
+                hotels: hotelsPool,
+                referencedHotelIds:
+                  followUpReferencedHotelIds.length > 0
+                    ? followUpReferencedHotelIds
+                    : buildReferencedHotelIdsFromState(existingState),
+                maxItems: 8,
+              });
+
+        const scopeSummary = {
+          ...(existingState.lastShownInventorySummary || {}),
+          hotels: scopeHotels,
+        };
+        const summaryContext = buildLastShownResultsContextText(
+          scopeSummary,
+          latestUserMessage,
+        );
+        const baseWebSearchDecision = decideCall2WebSearch({
+          toolName: "answer_from_results",
+          latestUserMessage,
+          toolArgs: toolCall.args,
+          state: existingState,
+          userContext,
+        });
+        const webSearchDecision =
+          followUpKind === "external_results"
+            ? {
+                ...baseWebSearchDecision,
+                enabled: true,
+                reason: "external_results_follow_up",
+                trigger: "follow_up_kind",
+                toolName: "answer_from_results",
+                destination:
+                  existingState?.destination?.name ||
+                  existingState?.searchPlan?.location?.city ||
+                  null,
+              }
+            : baseWebSearchDecision;
+
+        const call2System = buildCall2SystemPrompt({
+          toolName: "answer_from_results",
+          toolArgs: toolCall.args,
+          userContext,
+          language,
+          summaryContext,
+          useWebSearch: webSearchDecision.enabled,
+          allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
+          preFiltered: false,
+          followUpKind,
+        });
+        const fallbackCall2System = buildCall2SystemPrompt({
+          toolName: "answer_from_results",
+          toolArgs: toolCall.args,
+          userContext,
+          language,
+          summaryContext,
+          useWebSearch: false,
+          allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
+          preFiltered: false,
+          followUpKind,
+        });
+        const call2Messages = [
+          { role: "system", content: call2System },
+          ...normalizedMessages,
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              {
+                id: toolCall.id || "call_0",
+                type: "function",
+                function: {
+                  name: "answer_from_results",
+                  arguments: JSON.stringify(toolCall.args),
+                },
+              },
+            ],
+          },
+          {
+            role: "tool",
+            tool_call_id: toolCall.id || "call_0",
+            content:
+              summaryContext ||
+              "No result data available in context. Ask the user to run a new search.",
+          },
+        ];
+        const fallbackCall2Messages = [
+          { ...call2Messages[0], content: fallbackCall2System },
+          ...call2Messages.slice(1),
+        ];
+
+        let accumulated = "";
+        try {
+          const call2Result = await executeCall2WithPolicy({
+            client,
+            messages: call2Messages,
+            fallbackMessages: fallbackCall2Messages,
+            onTextChunk,
+            emitEvent,
+            emitTrace,
+            webSearchDecision,
+            toolName: "answer_from_results",
+            toolArgs: toolCall.args,
+            latestUserMessage,
+          });
+          accumulated = call2Result.text;
+          webSources = call2Result.webSources;
+          allowCompetitorWebSources = Boolean(
+            call2Result.allowCompetitorWebSources,
+          );
+          followUpWebSearchUsed = Boolean(call2Result.usedWebSearch);
+        } catch (err) {
+          console.warn(
+            "[ai] answer_from_results rich follow-up failed",
+            err?.message || err,
+          );
+          accumulated = buildLocalAnswerFromResultsFallback({
+            hotels: scopeHotels,
+            webSearchRequested: followUpKind === "external_results",
+          });
+          onTextChunk?.(accumulated);
+          followUpWebSearchUsed = false;
+        }
+
+        if (!String(accumulated || "").trim()) {
+          accumulated = buildLocalAnswerFromResultsFallback({
+            hotels: scopeHotels,
+            webSearchRequested: followUpKind === "external_results",
+          });
+          onTextChunk?.(accumulated);
+          followUpWebSearchUsed = false;
+        }
+
+        const selectedCardHotels = selectHotelsForReplyCards({
+          text: accumulated,
+          candidateHotels: scopeHotels,
+          fallbackIds: followUpReferencedHotelIds,
+          maxCards: 2,
+        });
+
+        preparedReply = finalizeFollowUpReply({
+          reply: {
+            text: accumulated,
+            sections: selectedCardHotels.length
+              ? buildTextPlusCardsSections(accumulated, selectedCardHotels)
+              : [],
+          },
+          kind: followUpKind,
+          replyModeOverride: selectedCardHotels.length
+            ? "text_plus_cards"
+            : "text_only",
+          fallbackReferencedIds:
+            followUpReferencedHotelIds.length > 0
+              ? followUpReferencedHotelIds
+              : selectedCardHotels.map((hotel) => hotel?.id),
+        });
+        followUpReferencedHotelIds = normalizeReferencedHotelIds(
+          preparedReply.referencedHotelIds,
+        );
+        followUpReplyMode = preparedReply.replyMode || "text_only";
+        existingState.lastReferencedHotelIds = followUpReferencedHotelIds;
+        emitTrace("FOLLOW_UP_RESPONSE_READY", {
+          followUpKind,
+          followUpOrigin: followUpOrigin || "deterministic_classifier",
+          reason: followUpReason || undefined,
+          scopeSource: followUpScopeSource,
+          webSearchUsed: followUpWebSearchUsed,
+          referencedHotelIds: followUpReferencedHotelIds,
+          replyMode: followUpReplyMode,
+        });
+        followUpTraceEmitted = true;
+      }
+
       const featureRegex = getRequestedFeatureRegex(latestUserMessage);
 
-      if (featureRegex) {
+      if (!preparedReply && featureRegex) {
         // ---- FEATURE FILTER PATH: DB match (primary) + local match (fallback) ----
         const hotelIds = hotelsPool.map((h) => h.id).filter(Boolean);
         const dbMatchIds = await queryHotelAmenityFromDb(
@@ -8113,7 +9847,7 @@ export const runFunctionCallingTurn = async ({
             sections: buildSections(accumulated, preMatchedHotels),
           };
         }
-      } else {
+      } else if (!preparedReply) {
         // ---- OPEN QUESTION PATH: LLM selects hotels via |||IDS: ----
         const summaryHotels =
           existingState.lastShownInventorySummary?.hotels || [];
@@ -8217,6 +9951,7 @@ export const runFunctionCallingTurn = async ({
           allowCompetitorWebSources = Boolean(
             call2Result.allowCompetitorWebSources,
           );
+          followUpWebSearchUsed = Boolean(call2Result.usedWebSearch);
         } catch (err) {
           console.warn(
             "[ai] answer_from_results Call 2 failed",
@@ -8277,6 +10012,49 @@ export const runFunctionCallingTurn = async ({
           sections: buildSections(accumulated, hotelsToShow),
         };
       } // closes open question else
+
+      if (preparedReply && !preparedReply.followUpKind) {
+        const normalizedReferencedIds = normalizeReferencedHotelIds(
+          Array.isArray(preparedReply.referencedHotelIds) &&
+            preparedReply.referencedHotelIds.length
+            ? preparedReply.referencedHotelIds
+            : existingState.lastReferencedHotelIds,
+        );
+        const inferredFollowUpKind =
+          followUpKind ||
+          (featureRegex ? "factual_results" : "advisory_results");
+        preparedReply = {
+          ...preparedReply,
+          followUps: Array.isArray(preparedReply.followUps)
+            ? preparedReply.followUps.filter(Boolean)
+            : [],
+          followUpKind: inferredFollowUpKind,
+          replyMode:
+            preparedReply.replyMode ||
+            (Array.isArray(preparedReply.sections) &&
+            preparedReply.sections.length
+              ? "structured"
+              : "text_only"),
+          referencedHotelIds: normalizedReferencedIds,
+        };
+        followUpKind = inferredFollowUpKind;
+        followUpReferencedHotelIds = normalizedReferencedIds;
+        followUpReplyMode = preparedReply.replyMode;
+      }
+
+      if (preparedReply?.followUpKind && !followUpTraceEmitted) {
+        emitTrace("FOLLOW_UP_RESPONSE_READY", {
+          followUpKind: preparedReply.followUpKind,
+          followUpOrigin: followUpOrigin || "tool_call",
+          reason: followUpReason || undefined,
+          scopeSource: followUpScopeSource || undefined,
+          webSearchUsed: followUpWebSearchUsed,
+          referencedHotelIds: followUpReferencedHotelIds,
+          replyMode:
+            followUpReplyMode || preparedReply.replyMode || "text_only",
+        });
+        followUpTraceEmitted = true;
+      }
     } // closes outer else (has lastShownInventorySummary)
   } else if (
     toolCall?.name === "plan_trip" ||
@@ -8294,6 +10072,16 @@ export const runFunctionCallingTurn = async ({
     };
 
     if (toolCall.name === "get_stay_details") {
+      if (!followUpKind && followUpRequestedStay?.stayId) {
+        followUpKind = "result_detail";
+        followUpOrigin = followUpOrigin || "deterministic_classifier";
+        followUpReason = followUpReason || "specific_stay_reference";
+        followUpReferencedHotelIds = normalizeReferencedHotelIds([
+          followUpRequestedStay.stayId,
+        ]);
+        followUpReplyMode = "text_only";
+        existingState.lastReferencedHotelIds = followUpReferencedHotelIds;
+      }
       try {
         const details = await getStayDetails({
           stayId: toolCall.args.stayId,
@@ -8528,7 +10316,9 @@ export const runFunctionCallingTurn = async ({
       destination: plan?.location?.city || null,
       geoIntent: plan?.geoIntent || null,
       placeTargets: Array.isArray(plan?.placeTargets)
-        ? plan.placeTargets.map((target) => target?.normalizedName || target?.rawText)
+        ? plan.placeTargets.map(
+            (target) => target?.normalizedName || target?.rawText,
+          )
         : [],
     });
   }
@@ -8580,7 +10370,9 @@ export const runFunctionCallingTurn = async ({
         tool: toolCall?.name || "none",
         destination: plan?.location?.city || null,
         categories: Array.isArray(tripRequest?.categories)
-          ? tripRequest.categories.map((category) => category?.id || category?.type)
+          ? tripRequest.categories.map(
+              (category) => category?.id || category?.type,
+            )
           : [],
         wantsItinerary: Boolean(tripRequest?.wantsItinerary),
       });
@@ -8668,11 +10460,8 @@ export const runFunctionCallingTurn = async ({
   // Visual context
   let visualContext = null;
   const destinationName = plan?.location?.city || nextState?.destination?.name;
-  const hasNoResults = !inventory.homes?.length && !inventory.hotels?.length;
   const wantsDestinationPhotos =
-    nextAction === "RUN_LOCATION" ||
-    nextAction === "RUN_PLANNING" ||
-    hasNoResults;
+    nextAction === "RUN_LOCATION" || nextAction === "RUN_PLANNING";
   if (destinationName && wantsDestinationPhotos && !trip) {
     try {
       const images = await searchDestinationImages(destinationName, 3);
@@ -8734,6 +10523,39 @@ export const runFunctionCallingTurn = async ({
     // The final search reply stays neutral and lands with the final payload.
     onTextChunk: nextAction === NEXT_ACTIONS.RUN_SEARCH ? null : onTextChunk,
   });
+  const effectiveFollowUpKind =
+    followUpKind ||
+    preparedReply?.followUpKind ||
+    (toolCall?.name === "get_stay_details" && followUpRequestedStay
+      ? "result_detail"
+      : null);
+  const effectiveReplyMode =
+    followUpReplyMode ||
+    preparedReply?.replyMode ||
+    (Array.isArray(preparedReply?.sections) && preparedReply.sections.length
+      ? "structured"
+      : null);
+  const effectiveReferencedHotelIds = normalizeReferencedHotelIds(
+    followUpReferencedHotelIds.length > 0
+      ? followUpReferencedHotelIds
+      : preparedReply?.referencedHotelIds,
+  );
+  rendered.followUps =
+    Array.isArray(preparedReply?.followUps) && preparedReply.followUps.length
+      ? preparedReply.followUps
+      : Array.isArray(rendered?.followUps)
+        ? rendered.followUps
+        : [];
+  rendered.ui = {
+    ...(rendered?.ui || { chips: [], cards: [], inputs: [], sections: [] }),
+    meta: {
+      nextAction,
+      followUpKind: effectiveFollowUpKind,
+      replyMode: effectiveReplyMode,
+      referencedHotelIds: effectiveReferencedHotelIds,
+      webSearchUsed: followUpWebSearchUsed,
+    },
+  };
   emitFileDebug(
     "renderer_final_payload",
     summarizeRenderedPayloadForDebug(rendered, nextAction),
@@ -8750,19 +10572,21 @@ export const runFunctionCallingTurn = async ({
   ).length;
   const semanticRenderActive = Boolean(
     plan?.geoIntent ||
-      plan?.viewIntent ||
-      plan?.areaIntent ||
-      plan?.qualityIntent ||
-      (Array.isArray(plan?.areaTraits) && plan.areaTraits.length) ||
-      (Array.isArray(plan?.placeTargets) && plan.placeTargets.length) ||
-      (Array.isArray(plan?.semanticSearch?.intentProfile?.userRequestedAreaTraits) &&
-        plan.semanticSearch.intentProfile.userRequestedAreaTraits.length) ||
-      (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedAreaTraits) &&
-        plan.semanticSearch.intentProfile.requestedAreaTraits.length) ||
-      (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedZones) &&
-        plan.semanticSearch.intentProfile.requestedZones.length) ||
-      (Array.isArray(plan?.semanticSearch?.intentProfile?.candidateZones) &&
-        plan.semanticSearch.intentProfile.candidateZones.length),
+    plan?.viewIntent ||
+    plan?.areaIntent ||
+    plan?.qualityIntent ||
+    (Array.isArray(plan?.areaTraits) && plan.areaTraits.length) ||
+    (Array.isArray(plan?.placeTargets) && plan.placeTargets.length) ||
+    (Array.isArray(
+      plan?.semanticSearch?.intentProfile?.userRequestedAreaTraits,
+    ) &&
+      plan.semanticSearch.intentProfile.userRequestedAreaTraits.length) ||
+    (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedAreaTraits) &&
+      plan.semanticSearch.intentProfile.requestedAreaTraits.length) ||
+    (Array.isArray(plan?.semanticSearch?.intentProfile?.requestedZones) &&
+      plan.semanticSearch.intentProfile.requestedZones.length) ||
+    (Array.isArray(plan?.semanticSearch?.intentProfile?.candidateZones) &&
+      plan.semanticSearch.intentProfile.candidateZones.length),
   );
   if (
     nextAction === NEXT_ACTIONS.RUN_SEARCH &&
@@ -8795,6 +10619,16 @@ export const runFunctionCallingTurn = async ({
       homes: inventory.homes?.length || 0,
       hotels: inventory.hotels?.length || 0,
     },
+    followUp: effectiveFollowUpKind
+      ? {
+          kind: effectiveFollowUpKind,
+          origin: followUpOrigin || null,
+          replyMode: effectiveReplyMode || null,
+          referencedHotelIds: effectiveReferencedHotelIds,
+          scopeSource: followUpScopeSource || null,
+          webSearchUsed: followUpWebSearchUsed,
+        }
+      : null,
     hotelSearchScope: hotelSearchScope
       ? {
           candidateHotelCount: hotelSearchScope.candidateHotelCount ?? null,
@@ -8805,8 +10639,26 @@ export const runFunctionCallingTurn = async ({
           scopeReason: hotelSearchScope.scopeReason ?? null,
           warningMode: hotelSearchScope.warningMode ?? null,
           scopeConfidence: hotelSearchScope.scopeConfidence ?? null,
-          scopeExpansionReason:
-            hotelSearchScope.scopeExpansionReason ?? null,
+          scopeExpansionReason: hotelSearchScope.scopeExpansionReason ?? null,
+          nearbyFallbackApplied:
+            hotelSearchScope.nearbyFallbackApplied === true,
+          nearbyFallbackMode: hotelSearchScope.nearbyFallbackMode ?? null,
+          nearbyFallbackAnchorLabel:
+            hotelSearchScope.nearbyFallbackAnchorLabel ?? null,
+          nearbyFallbackRadiiTried: Array.isArray(
+            hotelSearchScope.nearbyFallbackRadiiTried,
+          )
+            ? hotelSearchScope.nearbyFallbackRadiiTried
+            : [],
+          nearbyFallbackWinningRadiusMeters:
+            hotelSearchScope.nearbyFallbackWinningRadiusMeters ?? null,
+          nearbyFallbackCities: Array.isArray(
+            hotelSearchScope.nearbyFallbackCities,
+          )
+            ? hotelSearchScope.nearbyFallbackCities
+            : [],
+          nearbyFallbackOriginalDestination:
+            hotelSearchScope.nearbyFallbackOriginalDestination ?? null,
         }
       : null,
     sectionsCount: renderedSections.length,
@@ -8823,6 +10675,16 @@ export const runFunctionCallingTurn = async ({
       homes: inventory.homes?.length || 0,
       hotels: inventory.hotels?.length || 0,
     },
+    followUp: effectiveFollowUpKind
+      ? {
+          kind: effectiveFollowUpKind,
+          origin: followUpOrigin || null,
+          replyMode: effectiveReplyMode || null,
+          referencedHotelIds: effectiveReferencedHotelIds,
+          scopeSource: followUpScopeSource || null,
+          webSearchUsed: followUpWebSearchUsed,
+        }
+      : null,
     hotelSearchScope: hotelSearchScope
       ? {
           candidateHotelCount: hotelSearchScope.candidateHotelCount ?? null,
@@ -8833,8 +10695,26 @@ export const runFunctionCallingTurn = async ({
           scopeReason: hotelSearchScope.scopeReason ?? null,
           warningMode: hotelSearchScope.warningMode ?? null,
           scopeConfidence: hotelSearchScope.scopeConfidence ?? null,
-          scopeExpansionReason:
-            hotelSearchScope.scopeExpansionReason ?? null,
+          scopeExpansionReason: hotelSearchScope.scopeExpansionReason ?? null,
+          nearbyFallbackApplied:
+            hotelSearchScope.nearbyFallbackApplied === true,
+          nearbyFallbackMode: hotelSearchScope.nearbyFallbackMode ?? null,
+          nearbyFallbackAnchorLabel:
+            hotelSearchScope.nearbyFallbackAnchorLabel ?? null,
+          nearbyFallbackRadiiTried: Array.isArray(
+            hotelSearchScope.nearbyFallbackRadiiTried,
+          )
+            ? hotelSearchScope.nearbyFallbackRadiiTried
+            : [],
+          nearbyFallbackWinningRadiusMeters:
+            hotelSearchScope.nearbyFallbackWinningRadiusMeters ?? null,
+          nearbyFallbackCities: Array.isArray(
+            hotelSearchScope.nearbyFallbackCities,
+          )
+            ? hotelSearchScope.nearbyFallbackCities
+            : [],
+          nearbyFallbackOriginalDestination:
+            hotelSearchScope.nearbyFallbackOriginalDestination ?? null,
         }
       : null,
     sectionsCount: renderedSections.length,
@@ -8874,12 +10754,16 @@ export const runFunctionCallingTurn = async ({
     });
 
     if (closingResult?.text) {
+      const hotelSearchScope = inventory?.searchScope?.hotels || null;
       emitEvent("assistant_closing", {
         text: closingResult.text,
-        destination:
-          plan?.location?.city ||
-          plan?.location?.country ||
-          null,
+        destination: plan?.location?.city || plan?.location?.country || null,
+        nearbyFallbackApplied: hotelSearchScope?.nearbyFallbackApplied === true,
+        nearbyFallbackCities: Array.isArray(
+          hotelSearchScope?.nearbyFallbackCities,
+        )
+          ? hotelSearchScope.nearbyFallbackCities.filter(Boolean).slice(0, 3)
+          : [],
       });
     }
   }
@@ -8904,6 +10788,10 @@ export const runFunctionCallingTurn = async ({
     state: updatedState,
     intent: resolvedIntent,
     nextAction,
+    followUpKind: effectiveFollowUpKind,
+    replyMode: effectiveReplyMode,
+    referencedHotelIds: effectiveReferencedHotelIds,
+    webSearchUsed: followUpWebSearchUsed,
     safeMode: Boolean(existingState?.locks?.bookingFlowLocked),
     orientationMessage:
       plan?.assumptions?.separateSemanticOrientationMessage === true &&

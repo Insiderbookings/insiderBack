@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { autocompletePlaces, geocodePlace, nearbyPlaces, placePhoto } from "../controllers/places.controller.js";
+import { autocompletePlaces, geocodePlace, nearbyPlaces, placePhoto, staticMap } from "../controllers/places.controller.js";
 
 const router = Router();
 console.log("[places.routes] loaded");
@@ -8,6 +8,7 @@ router.get("/autocomplete", autocompletePlaces);
 router.get("/geocode", geocodePlace);
 router.get("/nearby", nearbyPlaces);
 router.get("/photo", placePhoto);
+router.get("/static-map", staticMap);
 
 router.use((req, res) => {
   console.warn("[places.routes] unhandled", req.method, req.originalUrl);
