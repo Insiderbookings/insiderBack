@@ -459,54 +459,6 @@ export const finalizeBookingAfterPayment = async ({ bookingId }) => {
   try {
     const home = booking.homeStay?.home || null;
     const hotel = booking.hotelStay?.hotel || null;
-    const stayName =
-      booking.hotel_name ||
-      home?.title ||
-      hotel?.name ||
-      booking.meta?.snapshot?.hotelName ||
-      "Your Stay";
-    const locationText =
-      booking.location ||
-      hotel?.city ||
-      home?.address?.city ||
-      booking.meta?.snapshot?.city ||
-      "Destination";
-    const city =
-      hotel?.city ||
-      home?.address?.city ||
-      booking.meta?.snapshot?.city ||
-      null;
-    const country =
-      hotel?.country ||
-      home?.address?.country ||
-      booking.meta?.snapshot?.country ||
-      null;
-    const amenities = hotel?.amenities || home?.amenities || [];
-    const houseRules = home?.house_rules || "";
-    const inventoryType =
-      booking.inventory_type || (hotel ? "HOTEL" : "HOME");
-
-    generateAndSaveTripIntelligence({
-      stayId: booking.id,
-      tripContext: {
-        stayName,
-        locationText,
-        location: { city, country },
-        amenities,
-        houseRules,
-        inventoryType,
-      },
-      lang: "en",
-    }).catch((err) => {
-      console.warn("[payments] trip intelligence failed:", err?.message || err);
-    });
-  } catch (err) {
-    console.warn("[payments] trip intelligence failed:", err?.message || err);
-  }
-
-  try {
-    const home = booking.homeStay?.home || null;
-    const hotel = booking.hotelStay?.hotel || null;
     const tripContext = {
       inventoryType: booking.inventory_type || (home ? "HOME" : "HOTEL"),
       location: {

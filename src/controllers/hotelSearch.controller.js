@@ -14,8 +14,12 @@ const MOBILE_RESULT_LIMIT = Math.max(
   1,
   Number(process.env.WEBBEDS_MOBILE_RESULT_LIMIT || 30),
 )
+const MOBILE_SNAPSHOT_RESULT_LIMIT = Math.max(
+  MOBILE_RESULT_LIMIT,
+  Number(process.env.WEBBEDS_MOBILE_SNAPSHOT_RESULT_LIMIT || 100),
+)
 const DEFAULT_CACHE_TTL = 120
-const SEARCH_CACHE_VERSION = "hotel-intent-v2"
+const SEARCH_CACHE_VERSION = "hotel-intent-v3"
 const FULL_CACHE_TTL_SECONDS = Math.max(
   60,
   Number(process.env.WEBBEDS_SEARCH_FULL_CACHE_TTL_SECONDS || DEFAULT_CACHE_TTL),
@@ -33,6 +37,11 @@ const CITY_AVAILABILITY_FILL_ENABLED =
 const CITY_AVAILABILITY_FILL_MAX_WINDOWS = Math.max(
   1,
   Number(process.env.WEBBEDS_CITY_AVAILABILITY_FILL_MAX_WINDOWS || 8),
+)
+const HOTEL_UNAVAILABLE_ANCHOR_LIMIT = 1
+const HOTEL_UNAVAILABLE_ALTERNATIVE_WINDOW = Math.max(
+  24,
+  Number(process.env.WEBBEDS_HOTEL_UNAVAILABLE_ALTERNATIVE_WINDOW || 48),
 )
 
 const iLikeOp = getCaseInsensitiveLikeOp()
@@ -819,6 +828,24 @@ const pickCatalogCoverImage = (row = {}) => {
   return list.find((img) => img?.url)?.url ?? null
 }
 
+const fetchCatalogHotelRowsByIds = async (hotelIds = [], attributes = []) => {
+  const targetIds = hotelIds.map((id) => String(id)).filter(Boolean)
+  if (!targetIds.length) return []
+
+  const attributeList = Array.from(
+    new Set([
+      "hotel_id",
+      ...(Array.isArray(attributes) ? attributes : []),
+    ]),
+  )
+
+  return models.WebbedsHotel.findAll({
+    where: { hotel_id: { [Op.in]: targetIds } },
+    attributes: attributeList,
+    raw: true,
+  })
+}
+
 const buildCatalogHotelItems = async ({
   hotelIds = [],
   distanceMap = new Map(),
@@ -828,9 +855,7 @@ const buildCatalogHotelItems = async ({
   const targetIds = hotelIds.map((id) => String(id)).filter(Boolean)
   if (!targetIds.length) return []
 
-  const staticRows = await models.WebbedsHotel.findAll({
-    where: { hotel_id: { [Op.in]: targetIds } },
-    attributes: [
+  const staticRows = await fetchCatalogHotelRowsByIds(targetIds, [
       "hotel_id",
       "name",
       "rating",
@@ -843,9 +868,7 @@ const buildCatalogHotelItems = async ({
       "preferred",
       "exclusive",
       "images",
-    ],
-    raw: true,
-  })
+    ])
 
   const rowMap = new Map(staticRows.map((row) => [String(row.hotel_id), row]))
 
@@ -1064,6 +1087,7 @@ const fetchNearbyHotelRows = async ({
       "priority",
       "name",
       "rating",
+      "chain_code",
       "preferred",
       "exclusive",
       [distanceLiteral, "distance_km"],
@@ -1124,6 +1148,56 @@ const findNearbyHotelCandidates = async ({
     winningRadiusKm,
   }
 }
+
+const compareNearbyAlternativeRows = (anchorRow = null) => (a, b) => {
+  const distanceA = Number(a?.distanceKm)
+  const distanceB = Number(b?.distanceKm)
+  const hasDistanceA = Number.isFinite(distanceA)
+  const hasDistanceB = Number.isFinite(distanceB)
+  if (hasDistanceA && hasDistanceB && distanceA !== distanceB) return distanceA - distanceB
+  if (hasDistanceA !== hasDistanceB) return hasDistanceA ? -1 : 1
+
+  const anchorChainCode = String(anchorRow?.chain_code || "").trim().toUpperCase()
+  const sameChainA =
+    anchorChainCode && String(a?.chain_code || "").trim().toUpperCase() === anchorChainCode ? 1 : 0
+  const sameChainB =
+    anchorChainCode && String(b?.chain_code || "").trim().toUpperCase() === anchorChainCode ? 1 : 0
+  if (sameChainA !== sameChainB) return sameChainB - sameChainA
+
+  const anchorRating = parseStarValue(anchorRow?.rating)
+  const ratingA = parseStarValue(a?.rating)
+  const ratingB = parseStarValue(b?.rating)
+  const ratingDiffA =
+    Number.isFinite(anchorRating) && Number.isFinite(ratingA)
+      ? Math.abs(ratingA - anchorRating)
+      : Number.MAX_SAFE_INTEGER
+  const ratingDiffB =
+    Number.isFinite(anchorRating) && Number.isFinite(ratingB)
+      ? Math.abs(ratingB - anchorRating)
+      : Number.MAX_SAFE_INTEGER
+  if (ratingDiffA !== ratingDiffB) return ratingDiffA - ratingDiffB
+
+  const preferredDiff =
+    Number(Boolean(b?.preferred || b?.exclusive)) - Number(Boolean(a?.preferred || a?.exclusive))
+  if (preferredDiff !== 0) return preferredDiff
+
+  const priorityA = Number(a?.priority)
+  const priorityB = Number(b?.priority)
+  const hasPriorityA = Number.isFinite(priorityA)
+  const hasPriorityB = Number.isFinite(priorityB)
+  if (hasPriorityA && hasPriorityB && priorityA !== priorityB) return priorityB - priorityA
+  if (hasPriorityA !== hasPriorityB) return hasPriorityA ? -1 : 1
+
+  const hasRatingA = Number.isFinite(ratingA)
+  const hasRatingB = Number.isFinite(ratingB)
+  if (hasRatingA && hasRatingB && ratingA !== ratingB) return ratingB - ratingA
+  if (hasRatingA !== hasRatingB) return hasRatingA ? -1 : 1
+
+  return String(a?.name || a?.hotel_id || "").localeCompare(String(b?.name || b?.hotel_id || ""))
+}
+
+const rankNearbyAlternativeRows = (rows = [], anchorRow = null) =>
+  [...(Array.isArray(rows) ? rows : [])].sort(compareNearbyAlternativeRows(anchorRow))
 
 const hasStrongHotelNameSignal = async ({ query, cityCode = null, filters = {} }) => {
   const trimmed = String(query || "").trim()
@@ -1484,8 +1558,19 @@ export const searchHotels = async (req, res, next) => {
     })
 
     const requestedLimit = resolveSafeLimit(limit)
+    const allowExpandedMobileSnapshot =
+      clientIsMobile &&
+      useLite &&
+      !useFetchAll &&
+      resolveSafeOffset(offset) === 0 &&
+      requestedLimit > MOBILE_RESULT_LIMIT
     const safeLimit = clientIsMobile
-      ? Math.min(requestedLimit, MOBILE_RESULT_LIMIT)
+      ? Math.min(
+          requestedLimit,
+          allowExpandedMobileSnapshot
+            ? MOBILE_SNAPSHOT_RESULT_LIMIT
+            : MOBILE_RESULT_LIMIT,
+        )
       : requestedLimit
     const safeOffset = resolveSafeOffset(offset)
     const resolvedCityCode = resolvedCity?.code ? String(resolvedCity.code) : null
@@ -1755,6 +1840,10 @@ export const searchHotels = async (req, res, next) => {
     let nearbyRadiiTried = []
     let availabilityFallbackApplied = false
     let availabilityFallbackReason = null
+    let nearbyAlternativesApplied = false
+    let nearbyAlternativesRadiusKm = null
+    let nearbyAlternativesRadiiTried = []
+    let exactHotelUnavailable = false
     let hotelOrderMap = null
     let hotelDistanceMap = new Map()
     let hasCustomHotelOrdering = false
@@ -1928,6 +2017,10 @@ export const searchHotels = async (req, res, next) => {
           nearbyRadiiTried,
           availabilityFallbackApplied: false,
           availabilityFallbackReason: null,
+          nearbyAlternativesApplied: false,
+          nearbyAlternativesRadiusKm: null,
+          nearbyAlternativesRadiiTried: [],
+          exactHotelUnavailable: false,
           anchorLabel: searchQuery || null,
           total: 0,
         },
@@ -2187,17 +2280,130 @@ export const searchHotels = async (req, res, next) => {
         hotelIds.length &&
         (!Array.isArray(items) || items.length === 0)
       ) {
+        const anchorHotelIds = hotelIds.slice(0, HOTEL_UNAVAILABLE_ANCHOR_LIMIT)
+        const anchorRows = await fetchCatalogHotelRowsByIds(anchorHotelIds, [
+          "name",
+          "rating",
+          "city_code",
+          "city_name",
+          "country_name",
+          "address",
+          "lat",
+          "lng",
+          "priority",
+          "preferred",
+          "exclusive",
+          "images",
+          "chain_code",
+        ])
+        const anchorRowMap = new Map(
+          anchorRows.map((row) => [String(row.hotel_id), row]),
+        )
+        const orderedAnchorRows = anchorHotelIds
+          .map((id) => anchorRowMap.get(String(id)))
+          .filter(Boolean)
+        const primaryAnchorRow = orderedAnchorRows[0] ?? null
+
         items = await buildCatalogHotelItems({
-          hotelIds,
+          hotelIds: anchorHotelIds,
           distanceMap: hotelDistanceMap,
           unavailable: true,
           unavailableReason: "no-availability",
         })
+
+        let nearbyLat = parseCoordinateValue(primaryAnchorRow?.lat)
+        let nearbyLng = parseCoordinateValue(primaryAnchorRow?.lng)
+        if ((nearbyLat == null || nearbyLng == null) && requestedLat != null && requestedLng != null) {
+          nearbyLat = requestedLat
+          nearbyLng = requestedLng
+        }
+        if ((nearbyLat == null || nearbyLng == null) && placeId) {
+          const placeGeo = await fetchPlaceGeoFromGoogle(placeId)
+          if (placeGeo?.lat != null && placeGeo?.lng != null) {
+            nearbyLat = placeGeo.lat
+            nearbyLng = placeGeo.lng
+          }
+        }
+
+        const alternativeBaseFilters = { ...baseDbFilters }
+        delete alternativeBaseFilters.hotelName
+        let nearbyAlternativeRows = []
+        if (nearbyLat != null && nearbyLng != null) {
+          const nearbyAlternatives = await findNearbyHotelCandidates({
+            lat: nearbyLat,
+            lng: nearbyLng,
+            cityCode:
+              String(primaryAnchorRow?.city_code || "").trim() || resolvedCityCode || null,
+            filters: alternativeBaseFilters,
+            safeLimit,
+          })
+          nearbyAlternativesRadiiTried = nearbyAlternatives.radiiTried
+          nearbyAlternativesRadiusKm = nearbyAlternatives.winningRadiusKm
+          nearbyAlternativeRows = rankNearbyAlternativeRows(
+            nearbyAlternatives.rows.filter(
+              (row) => !anchorHotelIds.includes(String(row?.hotel_id)),
+            ),
+            primaryAnchorRow,
+          )
+        }
+
         if (items.length) {
-          isStaticResult = true
-          responseHasMore = false
-          availabilityFallbackApplied = true
-          availabilityFallbackReason = "catalog-no-availability"
+          const nearbyAlternativeHotelIds = nearbyAlternativeRows
+            .slice(0, HOTEL_UNAVAILABLE_ALTERNATIVE_WINDOW)
+            .map((row) => String(row?.hotel_id))
+            .filter(Boolean)
+
+          if (nearbyAlternativeHotelIds.length) {
+            const nearbyAlternativesQuery = {
+              ...providerQuery,
+              mode: "hotelids",
+              hotelIds: nearbyAlternativeHotelIds.join(","),
+              limit: undefined,
+              offset: 0,
+            }
+            delete nearbyAlternativesQuery.cityCode
+            delete nearbyAlternativesQuery.countryCode
+
+            const nearbyAlternativeItems = await callWebbeds({
+              query: nearbyAlternativesQuery,
+              reason: "search-nearby-alternatives",
+            })
+            if (Array.isArray(nearbyAlternativeItems) && nearbyAlternativeItems.length) {
+              const combinedRows = [
+                ...orderedAnchorRows.map((row, index) => ({
+                  ...row,
+                  distanceKm:
+                    Number(hotelDistanceMap.get(String(row.hotel_id))) ||
+                    (index === 0 ? 0 : null),
+                })),
+                ...nearbyAlternativeRows,
+              ]
+              setCustomHotelOrdering(combinedRows)
+              items = [...items, ...nearbyAlternativeItems]
+              isStaticResult = false
+              responseHasMore = false
+              availabilityFallbackApplied = true
+              availabilityFallbackReason = "catalog-no-availability-with-nearby"
+              nearbyAlternativesApplied = true
+            } else {
+              responseHasMore = false
+              availabilityFallbackApplied = true
+              availabilityFallbackReason = "catalog-no-availability"
+            }
+          } else {
+            responseHasMore = false
+            availabilityFallbackApplied = true
+            availabilityFallbackReason = "catalog-no-availability"
+          }
+
+          exactHotelUnavailable = true
+          if (!nearbyAlternativesApplied) {
+            nearbyAlternativesRadiusKm = null
+            nearbyAlternativesRadiiTried = []
+          }
+          if (!nearbyAlternativesApplied) {
+            isStaticResult = true
+          }
         }
       }
     } else {
@@ -2264,6 +2470,10 @@ export const searchHotels = async (req, res, next) => {
         nearbyRadiiTried,
         availabilityFallbackApplied,
         availabilityFallbackReason,
+        nearbyAlternativesApplied,
+        nearbyAlternativesRadiusKm,
+        nearbyAlternativesRadiiTried,
+        exactHotelUnavailable,
         anchorLabel: searchQuery || null,
         timing: {
           totalMs: durationMs,
@@ -2381,6 +2591,10 @@ export const searchHotels = async (req, res, next) => {
               fetchAll: true,
               availabilityFallbackApplied: false,
               availabilityFallbackReason: null,
+              nearbyAlternativesApplied: false,
+              nearbyAlternativesRadiusKm: null,
+              nearbyAlternativesRadiiTried: [],
+              exactHotelUnavailable: false,
             },
           }
 
