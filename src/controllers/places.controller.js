@@ -68,6 +68,8 @@ export const autocompletePlaces = async (req, res) => {
           placeId: pred.place_id || null,
           title: pred.structured_formatting?.main_text || pred.description || "Location",
           subtitle: pred.structured_formatting?.secondary_text || pred.description || "Google Places",
+          types: normalizePlaceTypes(pred.types),
+          kind: resolvePlaceKind(pred.types),
         }))
       : [];
 
@@ -88,6 +90,49 @@ const pickAddressComponent = (components, type) => {
   return match?.long_name || null;
 };
 
+const normalizePlaceTypes = (types) =>
+  Array.isArray(types)
+    ? types.map((type) => String(type ?? "").trim()).filter(Boolean)
+    : [];
+
+const resolvePlaceKind = (types) => {
+  const normalized = normalizePlaceTypes(types);
+  if (normalized.includes("lodging")) return "hotel";
+  if (
+    normalized.includes("tourist_attraction") ||
+    normalized.includes("point_of_interest")
+  ) {
+    return "landmark";
+  }
+  if (
+    normalized.includes("locality") ||
+    normalized.some((type) => type.startsWith("administrative_area_level_"))
+  ) {
+    return "city";
+  }
+  return normalized.length ? "unknown" : null;
+};
+
+const buildPlaceResult = (source, fallbackLabel = null) => {
+  if (!source) return null;
+  const location = source.geometry?.location || {};
+  const components = source.address_components || [];
+  const lat = Number(location.lat);
+  const lng = Number(location.lng);
+  const types = normalizePlaceTypes(source.types);
+  return {
+    lat: Number.isFinite(lat) ? lat : null,
+    lng: Number.isFinite(lng) ? lng : null,
+    placeId: source.place_id || null,
+    label: source.formatted_address || fallbackLabel || null,
+    city: pickAddressComponent(components, "locality"),
+    state: pickAddressComponent(components, "administrative_area_level_1"),
+    country: pickAddressComponent(components, "country"),
+    types,
+    kind: resolvePlaceKind(types),
+  };
+};
+
 export const geocodePlace = async (req, res) => {
   try {
     const placeId = typeof req.query?.placeId === "string" ? req.query.placeId.trim() : "";
@@ -106,7 +151,7 @@ export const geocodePlace = async (req, res) => {
       typeof req.query?.language === "string" && req.query.language.trim()
         ? req.query.language.trim()
         : null;
-    const fields = "geometry,formatted_address,place_id,address_component";
+    const fields = "geometry,formatted_address,place_id,address_component,type";
     let resolvedPlaceId = placeId;
 
     if (!resolvedPlaceId) {
@@ -165,19 +210,15 @@ export const geocodePlace = async (req, res) => {
     console.log("[places.geocode] details status", detailsData?.status || "NO_STATUS");
 
     if (detailsData?.status === "OK" && detailsData?.result) {
-      const result = detailsData.result || {};
-      const location = result.geometry?.location || {};
-      const components = result.address_components || [];
+      const result = buildPlaceResult(detailsData.result || {}, query);
       return res.json({
-        result: {
-          lat: Number(location.lat) || null,
-          lng: Number(location.lng) || null,
-          placeId: result.place_id || resolvedPlaceId || null,
-          label: result.formatted_address || query || null,
-          city: pickAddressComponent(components, "locality"),
-          state: pickAddressComponent(components, "administrative_area_level_1"),
-          country: pickAddressComponent(components, "country"),
-        },
+        result: result
+          ? {
+              ...result,
+              placeId: result.placeId || resolvedPlaceId || null,
+              label: result.label || query || null,
+            }
+          : null,
         status: detailsData?.status || "OK",
       });
     }
@@ -211,19 +252,15 @@ export const geocodePlace = async (req, res) => {
     if (geocodeData?.status !== "OK" || !Array.isArray(geocodeData.results) || !geocodeData.results.length) {
       return res.json({ result: null, status: geocodeData?.status || detailsData?.status || "NO_RESULTS" });
     }
-    const geoResult = geocodeData.results[0] || {};
-    const geoLocation = geoResult.geometry?.location || {};
-    const geoComponents = geoResult.address_components || [];
+    const geoResult = buildPlaceResult(geocodeData.results[0] || {}, query);
     return res.json({
-      result: {
-        lat: Number(geoLocation.lat) || null,
-        lng: Number(geoLocation.lng) || null,
-        placeId: geoResult.place_id || resolvedPlaceId || null,
-        label: geoResult.formatted_address || query || null,
-        city: pickAddressComponent(geoComponents, "locality"),
-        state: pickAddressComponent(geoComponents, "administrative_area_level_1"),
-        country: pickAddressComponent(geoComponents, "country"),
-      },
+      result: geoResult
+        ? {
+            ...geoResult,
+            placeId: geoResult.placeId || resolvedPlaceId || null,
+            label: geoResult.label || query || null,
+          }
+        : null,
       status: geocodeData?.status || "OK",
     });
   } catch (err) {

@@ -123,6 +123,16 @@ const normalizeCityQueryInput = (value) => {
   return { raw, cityToken, stateHint };
 };
 
+const looksLikeSpecificPlaceQuery = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return false;
+  return /\b(hotel|hostel|airport|aeropuerto|tower|torre|mall|museum|museo|station|estacion|estação|plaza|square|obelisco)\b/i.test(
+    normalized,
+  );
+};
+
 const extractCityHotelCount = (city) => {
   const direct = Number(city?.hotel_count ?? city?.hotelCount);
   return Number.isFinite(direct) ? direct : 0;
@@ -436,22 +446,32 @@ const resolveCityFromPlace = async ({
   const providedLat = parseCoordinateValue(lat);
   const providedLng = parseCoordinateValue(lng);
   let placeGeo = null;
+  let googlePlaceGeo = null;
+  if (normalizedPlaceId) {
+    googlePlaceGeo = await fetchPlaceGeoFromGoogle(normalizedPlaceId);
+  }
   if (providedLat != null && providedLng != null) {
     placeGeo = {
       lat: providedLat,
       lng: providedLng,
       source: "request",
-      city: cityToken || null,
-      country: countryName || null,
+      city: googlePlaceGeo?.city ?? cityToken ?? null,
+      state: googlePlaceGeo?.state ?? stateHint ?? null,
+      country: googlePlaceGeo?.country ?? countryName ?? null,
+      label: googlePlaceGeo?.label ?? null,
     };
   } else {
-    placeGeo = await fetchPlaceGeoFromGoogle(normalizedPlaceId);
+    placeGeo = googlePlaceGeo;
   }
 
-  const textQuery = cityToken || String(query || "").trim();
+  const effectiveCityToken =
+    placeGeo?.city ||
+    (looksLikeSpecificPlaceQuery(query) ? null : cityToken) ||
+    null;
+  const textQuery = effectiveCityToken || String(query || "").trim();
   const textCandidates = textQuery
     ? await findCityCandidates({
-      query: textQuery,
+        query: textQuery,
       countryCode,
       countryName: countryName ?? placeGeo?.country ?? null,
       limit: 40,
@@ -461,10 +481,10 @@ const resolveCityFromPlace = async ({
   const coordinateCandidates =
     placeGeo?.lat != null && placeGeo?.lng != null
       ? await findCoordinateCandidates({
-        query: textQuery || null,
-        countryCode,
-        countryName: countryName ?? placeGeo?.country ?? null,
-        limit: 150,
+          query: effectiveCityToken || null,
+          countryCode,
+          countryName: countryName ?? placeGeo?.country ?? null,
+          limit: 150,
       })
       : [];
 
@@ -477,7 +497,7 @@ const resolveCityFromPlace = async ({
 
   const best = pickBestCityCandidate({
     candidates: dedupedCandidates,
-    cityToken,
+    cityToken: effectiveCityToken || cityToken,
     stateHint,
     targetLat: placeGeo?.lat ?? null,
     targetLng: placeGeo?.lng ?? null,

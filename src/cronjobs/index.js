@@ -11,6 +11,7 @@ import webbedsHotelsUpdatedSyncJob from "./webbedsHotelsUpdatedSync.job.js";
 import webbedsHotelsNewSyncJob from "./webbedsHotelsNewSync.job.js";
 import webbedsHotelsFullSyncJob from "./webbedsHotelsFullSync.job.js";
 import reviewReminderPushJob from "./reviewReminderPush.job.js";
+import bookingAbandonmentReminderJob from "./bookingAbandonmentReminder.job.js";
 import guestWalletRewardReleaseJob from "./guestWalletRewardRelease.job.js";
 
 const registry = [
@@ -27,6 +28,7 @@ const registry = [
   webbedsHotelsNewSyncJob,
   webbedsHotelsFullSyncJob,
   reviewReminderPushJob,
+  bookingAbandonmentReminderJob,
   guestWalletRewardReleaseJob,
 ];
 

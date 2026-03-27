@@ -16,10 +16,16 @@ const FLOW_CLIENT_TYPES = {
   MOBILE: "MOBILE",
   UNKNOWN: "UNKNOWN",
 };
+const REMINDER_LOG_TABLE = "booking_abandonment_reminder_log";
+const REMINDER_LOG_STATUSES = {
+  PENDING: "PENDING",
+  SENT: "SENT",
+};
 const CHANNELS = {
   PUSH: "PUSH",
   EMAIL: "EMAIL",
 };
+const REMINDER_SWEEP_QUERY_LIMIT = 500;
 const toDelayMinutes = (value, fallbackMinutes) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMinutes;
@@ -99,9 +105,35 @@ const resolveHotelId = (flow) => {
   return hotelId == null ? null : String(hotelId).trim() || null;
 };
 
+const resolveSearchRooms = (flow) =>
+  Array.isArray(flow?.search_context?.rooms) ? flow.search_context.rooms : [];
+
+const normalizeChildAge = (value) => {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const parsed = Number(text);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+};
+
+const resolveChildrenAges = (flow) => {
+  const childrenAges = [];
+  resolveSearchRooms(flow).forEach((room) => {
+    const rawChildren = room?.childrenAges ?? room?.children ?? room?.kids ?? [];
+    if (!Array.isArray(rawChildren)) return;
+    rawChildren.forEach((value) => {
+      const normalized = normalizeChildAge(value);
+      if (normalized != null) childrenAges.push(normalized);
+    });
+  });
+  return childrenAges;
+};
+
 const resolveGuests = (flow) => {
-  const rooms = Array.isArray(flow?.search_context?.rooms) ? flow.search_context.rooms : [];
-  if (!rooms.length) return { adults: null, children: null };
+  const rooms = resolveSearchRooms(flow);
+  const childrenAges = resolveChildrenAges(flow);
+  if (!rooms.length) return { adults: null, children: null, childrenAges };
   let adults = 0;
   let children = 0;
   rooms.forEach((room) => {
@@ -115,7 +147,8 @@ const resolveGuests = (flow) => {
     const parsed = Number(roomChildren);
     if (Number.isFinite(parsed) && parsed > 0) children += parsed;
   });
-  return { adults: adults || null, children: children || null };
+  if (childrenAges.length > children) children = childrenAges.length;
+  return { adults: adults || null, children: children || null, childrenAges };
 };
 
 const buildReminderPayload = ({ flow, reminderKey, hotelName, hotelId, guests }) => ({
@@ -128,6 +161,7 @@ const buildReminderPayload = ({ flow, reminderKey, hotelName, hotelId, guests })
   checkOut: flow?.search_context?.toDate || null,
   adults: guests.adults,
   children: guests.children,
+  childrenAges: guests.childrenAges,
   passengerNationality: flow?.search_context?.passengerNationality || null,
   passengerCountryOfResidence: flow?.search_context?.passengerCountryOfResidence || null,
 });
@@ -137,16 +171,12 @@ const buildHotelDetailUrl = ({ flow, hotelId }) => {
   if (!hotelId) return `${baseUrl}/explore`;
   const params = new URLSearchParams();
   const searchContext = flow?.search_context || {};
-  const rooms = Array.isArray(searchContext.rooms) ? searchContext.rooms : [];
+  const rooms = resolveSearchRooms(flow);
   const adults = rooms.reduce((sum, room) => {
     const parsed = Number(room?.adults ?? room?.adult ?? 0);
     return Number.isFinite(parsed) && parsed > 0 ? sum + parsed : sum;
   }, 0);
-  const childrenAges = rooms.flatMap((room) => {
-    const raw = room?.children ?? room?.childrenAges ?? room?.kids ?? [];
-    if (Array.isArray(raw)) return raw;
-    return [];
-  });
+  const childrenAges = resolveChildrenAges(flow);
   if (searchContext.fromDate) params.set("checkIn", String(searchContext.fromDate));
   if (searchContext.toDate) params.set("checkOut", String(searchContext.toDate));
   if (adults > 0) params.set("adults", String(adults));
@@ -161,17 +191,51 @@ const buildHotelDetailUrl = ({ flow, hotelId }) => {
   return `${baseUrl}/hotels/${encodeURIComponent(String(hotelId))}?${params.toString()}`;
 };
 
-export const runBookingAbandonmentReminderSweep = async () => {
-  const now = new Date();
-  const minDelayMs = Math.min(...REMINDER_SLOTS.map((slot) => slot.delayMs));
-  const candidateThreshold = new Date(now.getTime() - minDelayMs);
+const buildReminderDeliveryKey = ({ flowId, userId, reminderKey, channel }) =>
+  `${String(flowId || "").trim()}:${Number(userId || 0)}:${String(reminderKey || "").trim()}:${String(channel || "").trim().toUpperCase()}`;
 
-  const candidateFlows = await models.BookingFlow.findAll({
-    where: {
-      user_id: { [Op.ne]: null },
-      status: { [Op.in]: Array.from(FLOW_ACTIVE_STATUSES) },
-      updatedAt: { [Op.lte]: candidateThreshold },
-    },
+const buildSentReminderFlowSubquery = ({ reminderKey, sentBefore = null }) => {
+  const escape = (value) => models.sequelize.escape(value);
+  const whereParts = [
+    `reminder_key = ${escape(String(reminderKey || ""))}`,
+    `status = ${escape(REMINDER_LOG_STATUSES.SENT)}`,
+  ];
+  if (sentBefore instanceof Date && !Number.isNaN(sentBefore.getTime())) {
+    whereParts.push(`sent_at <= ${escape(sentBefore)}`);
+  }
+  return models.sequelize.literal(
+    `(SELECT flow_id FROM ${REMINDER_LOG_TABLE} WHERE ${whereParts.join(" AND ")})`,
+  );
+};
+
+const buildReminderSlotWhere = ({ slot, slotIndex, sweepStartedAt }) => {
+  const where = {
+    user_id: { [Op.ne]: null },
+    status: { [Op.in]: Array.from(FLOW_ACTIVE_STATUSES) },
+    updatedAt: { [Op.lte]: new Date(sweepStartedAt.getTime() - slot.delayMs) },
+  };
+
+  if (slotIndex === 0) {
+    where.id = {
+      [Op.notIn]: buildSentReminderFlowSubquery({ reminderKey: slot.key }),
+    };
+    return where;
+  }
+
+  const previousSlot = REMINDER_SLOTS[slotIndex - 1];
+  where.id = {
+    [Op.in]: buildSentReminderFlowSubquery({
+      reminderKey: previousSlot.key,
+      sentBefore: sweepStartedAt,
+    }),
+    [Op.notIn]: buildSentReminderFlowSubquery({ reminderKey: slot.key }),
+  };
+  return where;
+};
+
+const fetchCandidateFlowsForSlot = async ({ slot, slotIndex, sweepStartedAt }) =>
+  models.BookingFlow.findAll({
+    where: buildReminderSlotWhere({ slot, slotIndex, sweepStartedAt }),
     include: [
       {
         model: models.User,
@@ -181,11 +245,13 @@ export const runBookingAbandonmentReminderSweep = async () => {
       },
     ],
     order: [["updatedAt", "ASC"]],
-    limit: 500,
+    limit: REMINDER_SWEEP_QUERY_LIMIT,
   });
 
+export const runBookingAbandonmentReminderSweep = async () => {
+  const sweepStartedAt = new Date();
   const stats = {
-    scanned: candidateFlows.length,
+    scanned: 0,
     due: 0,
     sent: 0,
     skipped: 0,
@@ -195,76 +261,72 @@ export const runBookingAbandonmentReminderSweep = async () => {
     failed: 0,
   };
 
-  if (!candidateFlows.length) return stats;
-
-  const flowIds = candidateFlows.map((flow) => flow.id);
-  const completedBookings = await models.Booking.findAll({
-    where: {
-      flow_id: { [Op.in]: flowIds },
-      status: { [Op.in]: Array.from(BOOKING_FINAL_STATUSES) },
-    },
-    attributes: ["flow_id"],
-  });
-  const completedFlowIds = new Set(
-    completedBookings
-      .map((booking) => String(booking.flow_id || "").trim())
-      .filter(Boolean),
-  );
-
-  const existingLogs = await models.BookingAbandonmentReminderLog.findAll({
-    where: {
-      flow_id: { [Op.in]: flowIds },
-      status: "SENT",
-    },
-    attributes: ["flow_id", "user_id", "reminder_key", "channel"],
-  });
-  const sentLogMap = new Set(
-    existingLogs.map(
-      (log) =>
-        `${String(log.flow_id || "").trim()}:${Number(log.user_id || 0)}:${String(log.reminder_key || "").trim()}:${String(log.channel || "").trim().toUpperCase()}`,
-    ),
-  );
-
-  for (const flow of candidateFlows) {
-    const flowId = String(flow.id || "").trim();
-    const userId = Number(flow.user_id || 0);
-    if (!flowId || !userId) {
-      stats.skipped += 1;
-      continue;
-    }
-    if (completedFlowIds.has(flowId)) {
-      stats.skippedCompleted += 1;
-      continue;
-    }
-
-    const lastActivityAt = flow.updatedAt instanceof Date ? flow.updatedAt : new Date(flow.updatedAt);
-    if (!(lastActivityAt instanceof Date) || Number.isNaN(lastActivityAt.getTime())) {
-      stats.skipped += 1;
-      continue;
-    }
-
-    const hotelName = resolveHotelName(flow);
-    const hotelId = resolveHotelId(flow);
-    const clientType = normalizeClientType(flow?.search_context?.clientType);
-    const channel = resolveReminderChannel(clientType);
-    const guests = resolveGuests(flow);
-    const payloadBase = buildReminderPayload({
-      flow,
-      reminderKey: null,
-      hotelName,
-      hotelId,
-      guests,
+  for (const [slotIndex, slot] of REMINDER_SLOTS.entries()) {
+    const candidateFlows = await fetchCandidateFlowsForSlot({
+      slot,
+      slotIndex,
+      sweepStartedAt,
     });
+    stats.scanned += candidateFlows.length;
+    if (!candidateFlows.length) continue;
 
-    for (const slot of REMINDER_SLOTS) {
-      const dueAt = new Date(lastActivityAt.getTime() + slot.delayMs);
-      if (now < dueAt) continue;
+    const flowIds = candidateFlows.map((flow) => flow.id);
+    const completedBookings = await models.Booking.findAll({
+      where: {
+        flow_id: { [Op.in]: flowIds },
+        status: { [Op.in]: Array.from(BOOKING_FINAL_STATUSES) },
+      },
+      attributes: ["flow_id"],
+    });
+    const completedFlowIds = new Set(
+      completedBookings
+        .map((booking) => String(booking.flow_id || "").trim())
+        .filter(Boolean),
+    );
 
-      const deliveryKey = `${flowId}:${userId}:${slot.key}:${channel}`;
-      if (sentLogMap.has(deliveryKey)) {
-        stats.skippedAlreadySent += 1;
+    for (const flow of candidateFlows) {
+      const flowId = String(flow.id || "").trim();
+      const userId = Number(flow.user_id || 0);
+      if (!flowId || !userId) {
+        stats.skipped += 1;
         continue;
       }
+      if (completedFlowIds.has(flowId)) {
+        stats.skippedCompleted += 1;
+        continue;
+      }
+
+      const lastActivityAt =
+        flow.updatedAt instanceof Date ? flow.updatedAt : new Date(flow.updatedAt);
+      if (!(lastActivityAt instanceof Date) || Number.isNaN(lastActivityAt.getTime())) {
+        stats.skipped += 1;
+        continue;
+      }
+
+      const dueAt = new Date(lastActivityAt.getTime() + slot.delayMs);
+      if (sweepStartedAt < dueAt) {
+        stats.skipped += 1;
+        continue;
+      }
+
+      const hotelName = resolveHotelName(flow);
+      const hotelId = resolveHotelId(flow);
+      const clientType = normalizeClientType(flow?.search_context?.clientType);
+      const channel = resolveReminderChannel(clientType);
+      const deliveryKey = buildReminderDeliveryKey({
+        flowId,
+        userId,
+        reminderKey: slot.key,
+        channel,
+      });
+      const guests = resolveGuests(flow);
+      const payload = buildReminderPayload({
+        flow,
+        reminderKey: slot.key,
+        hotelName,
+        hotelId,
+        guests,
+      });
 
       stats.due += 1;
       let claim = null;
@@ -274,18 +336,16 @@ export const runBookingAbandonmentReminderSweep = async () => {
           user_id: userId,
           reminder_key: slot.key,
           channel,
-          status: "PENDING",
+          status: REMINDER_LOG_STATUSES.PENDING,
         });
       } catch (error) {
         if (isUniqueConstraintError(error)) {
           stats.skippedAlreadySent += 1;
-          sentLogMap.add(deliveryKey);
           continue;
         }
         throw error;
       }
 
-      const payload = { ...payloadBase, reminderKey: slot.key };
       try {
         if (channel === CHANNELS.EMAIL) {
           const email = String(flow?.user?.email || "").trim();
@@ -323,12 +383,11 @@ export const runBookingAbandonmentReminderSweep = async () => {
         }
 
         await claim.update({
-          status: "SENT",
+          status: REMINDER_LOG_STATUSES.SENT,
           sent_at: new Date(),
           payload,
           error_message: null,
         });
-        sentLogMap.add(deliveryKey);
         stats.sent += 1;
       } catch (error) {
         await claim.destroy().catch(() => {});
@@ -338,6 +397,7 @@ export const runBookingAbandonmentReminderSweep = async () => {
           userId,
           reminderKey: slot.key,
           channel,
+          deliveryKey,
           error: String(error?.message || error),
         });
       }
