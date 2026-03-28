@@ -113,6 +113,53 @@ const resolvePlaceKind = (types) => {
   return normalized.length ? "unknown" : null;
 };
 
+const PLACE_TYPE_PRIORITY = [
+  "cafe",
+  "restaurant",
+  "bar",
+  "bakery",
+  "tourist_attraction",
+  "museum",
+  "art_gallery",
+  "shopping_mall",
+  "store",
+  "park",
+  "subway_station",
+  "train_station",
+  "bus_station",
+  "lodging",
+];
+
+const PLACE_TYPE_IGNORED = new Set([
+  "establishment",
+  "point_of_interest",
+  "food",
+  "store",
+  "premise",
+  "street_address",
+  "route",
+  "plus_code",
+  "political",
+]);
+
+const pickPrimaryPlaceType = (types) => {
+  const normalized = normalizePlaceTypes(types);
+  if (!normalized.length) return null;
+  const priorityHit = PLACE_TYPE_PRIORITY.find((type) => normalized.includes(type));
+  if (priorityHit) return priorityHit;
+  return normalized.find((type) => !PLACE_TYPE_IGNORED.has(type)) || normalized[0];
+};
+
+const humanizePlaceType = (type) => {
+  const raw = String(type || "").trim();
+  if (!raw) return null;
+  return raw
+    .split("_")
+    .filter(Boolean)
+    .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+    .join(" ");
+};
+
 const buildPlaceResult = (source, fallbackLabel = null) => {
   if (!source) return null;
   const location = source.geometry?.location || {};
@@ -303,10 +350,15 @@ export const nearbyPlaces = async (req, res) => {
     const results = Array.isArray(data?.results) ? data.results.slice(0, limit) : [];
     const places = results.map((place, index) => ({
       id: place.place_id || `${lat}-${lng}-${index}`,
+      placeId: place.place_id || null,
       name: place.name || "Point of interest",
       lat: place?.geometry?.location?.lat ?? null,
       lng: place?.geometry?.location?.lng ?? null,
       photoRef: place?.photos?.[0]?.photo_reference || null,
+      types: normalizePlaceTypes(place?.types),
+      type: humanizePlaceType(pickPrimaryPlaceType(place?.types)),
+      vicinity: place?.vicinity || place?.formatted_address || null,
+      address: place?.vicinity || place?.formatted_address || null,
     }));
 
     return res.json({ places });
