@@ -932,6 +932,31 @@ const STAY_BASE_INCLUDE = [
   },
 ]
 
+const HIDDEN_BOOKING_LIST_STATUSES = ["DRAFT", "PENDING"]
+
+const parseBooleanQueryFlag = (value) => String(value || "").toLowerCase() === "true"
+
+const buildBookingListStatusFilter = ({ status, includeCancelled, includePending } = {}) => {
+  const normalizedStatus = typeof status === "string" ? status.trim().toUpperCase() : ""
+  if (normalizedStatus) {
+    return { status: normalizedStatus }
+  }
+
+  const excludedStatuses = []
+  if (!parseBooleanQueryFlag(includeCancelled)) excludedStatuses.push("CANCELLED")
+  if (!parseBooleanQueryFlag(includePending)) excludedStatuses.push(...HIDDEN_BOOKING_LIST_STATUSES)
+
+  const uniqueExcludedStatuses = Array.from(new Set(excludedStatuses))
+  if (!uniqueExcludedStatuses.length) return {}
+
+  return {
+    status:
+      uniqueExcludedStatuses.length === 1
+        ? { [Op.ne]: uniqueExcludedStatuses[0] }
+        : { [Op.notIn]: uniqueExcludedStatuses },
+  }
+}
+
 
 /* ────────────────────────────────────────────────────────────
    POST  /api/bookings
@@ -2024,14 +2049,26 @@ export const createHomeBooking = async (req, res) => {
 
 export const getBookingsUnified = async (req, res) => {
   try {
-    const { latest, status, includeCancelled, syncSupplier, limit = 50, offset = 0 } = req.query
+    const {
+      latest,
+      status,
+      includeCancelled,
+      includePending,
+      syncSupplier,
+      limit = 50,
+      offset = 0,
+    } = req.query
     const inventoryQuery = typeof req.query.inventory === "string"
       ? req.query.inventory.trim().toUpperCase()
       : null
 
     const userId = req.user.id
-    const includeCancelledFlag = String(includeCancelled || "").toLowerCase() === "true"
-    const shouldSyncSupplier = String(syncSupplier || "").toLowerCase() === "true"
+    const shouldSyncSupplier = parseBooleanQueryFlag(syncSupplier)
+    const listStatusFilter = buildBookingListStatusFilter({
+      status,
+      includeCancelled,
+      includePending,
+    })
 
     // 1. Buscar usuario
     const user = await models.User.findByPk(userId)
@@ -2058,10 +2095,7 @@ export const getBookingsUnified = async (req, res) => {
 
       const rows = await models.Booking.findAll({
         where: {
-          ...(!includeCancelledFlag && !status
-            ? { status: { [Op.ne]: "CANCELLED" } }
-            : {}),
-          ...(status && { status }),
+          ...listStatusFilter,
           ...inventoryFilter,
           [Op.or]: [
             { user_id: userId },
@@ -2242,16 +2276,18 @@ export const verifyGuestAccess = async (req, res) => {
 ---------------------------------------------------------------- */
 export const listGuestBookings = async (req, res) => {
   try {
-    const { latest, includeCancelled } = req.query
+    const { latest, status, includeCancelled, includePending } = req.query
     const email = req.guest?.email
     if (!email) return res.status(401).json({ error: "Unauthorized" })
 
     const rows = await models.Booking.findAll({
       where: {
         guest_email: email,
-        ...(String(includeCancelled || "").toLowerCase() === "true"
-          ? {}
-          : { status: { [Op.ne]: "CANCELLED" } }),
+        ...buildBookingListStatusFilter({
+          status,
+          includeCancelled,
+          includePending,
+        }),
       },
       order: [["check_in", "DESC"]],
       limit: latest ? 1 : 50,
@@ -2312,14 +2348,15 @@ export const linkGuestBookingsToUser = async (req, res) => {
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const getBookingsForUser = async (req, res) => {
   try {
-    const { status, includeCancelled, limit = 50, offset = 0 } = req.query
+    const { status, includeCancelled, includePending, limit = 50, offset = 0 } = req.query
     const where = {
       user_id: req.user.id,
       outside: false,
-      ...(status && { status }),
-      ...(!status && String(includeCancelled || "").toLowerCase() !== "true"
-        ? { status: { [Op.ne]: "CANCELLED" } }
-        : {}),
+      ...buildBookingListStatusFilter({
+        status,
+        includeCancelled,
+        includePending,
+      }),
     }
 
     const rows = await models.Booking.findAll({

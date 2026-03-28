@@ -19,6 +19,15 @@ export const LEDGER_TYPES = {
   ADJUSTMENT: "ADJUSTMENT",
 };
 
+const VISIBLE_LEDGER_TYPES = [
+  LEDGER_TYPES.EARN_PENDING,
+  LEDGER_TYPES.EARN_RELEASE,
+  LEDGER_TYPES.EARN_REVERSE,
+  LEDGER_TYPES.USE_CAPTURE,
+  LEDGER_TYPES.USE_REFUND,
+  LEDGER_TYPES.ADJUSTMENT,
+];
+
 export const LEDGER_STATUS = {
   PENDING: "PENDING",
   POSTED: "POSTED",
@@ -180,6 +189,18 @@ const sumLinkedLedgerMinor = async ({ linkedEntryId, type, transaction }) => {
   return Math.max(0, Math.round(toNumber(value, 0)));
 };
 
+const sumLedgerMinorByType = async ({ userId, type, transaction }) => {
+  const value = await models.GuestWalletLedger.sum("amount_minor", {
+    where: {
+      user_id: userId,
+      type,
+      status: { [Op.ne]: LEDGER_STATUS.VOIDED },
+    },
+    transaction,
+  });
+  return Math.max(0, Math.round(toNumber(value, 0)));
+};
+
 export const computeWalletPreview = ({
   availableMinor = 0,
   publicTotalUsd = 0,
@@ -318,9 +339,20 @@ export const resolveRewardReleaseAt = ({ flow = null, bookedAt = new Date() }) =
   return candidates.sort((left, right) => left - right).pop() || now;
 };
 
-const buildSummaryEnvelope = ({ account, nextReleaseAt = null, enabled = true }) => ({
+const buildSummaryEnvelope = ({
+  account,
+  nextReleaseAt = null,
+  enabled = true,
+  lifetimeRefundedMinor = 0,
+  lifetimeRewardReversedMinor = 0,
+} = {}) => ({
   enabled,
   ...toSummaryPayload(account),
+  lifetimeRefundedMinor: Math.max(0, Math.round(toNumber(lifetimeRefundedMinor, 0))),
+  lifetimeRewardReversedMinor: Math.max(
+    0,
+    Math.round(toNumber(lifetimeRewardReversedMinor, 0))
+  ),
   nextReleaseAt,
 });
 
@@ -460,6 +492,10 @@ export const getSummary = async ({ userId, releaseDue = true } = {}) => {
   }
 
   const account = await getOrCreateAccount({ userId });
+  const [lifetimeRefundedMinor, lifetimeRewardReversedMinor] = await Promise.all([
+    sumLedgerMinorByType({ userId, type: LEDGER_TYPES.USE_REFUND }),
+    sumLedgerMinorByType({ userId, type: LEDGER_TYPES.EARN_REVERSE }),
+  ]);
   const nextPending = await models.GuestWalletLedger.findOne({
     where: {
       user_id: userId,
@@ -473,6 +509,8 @@ export const getSummary = async ({ userId, releaseDue = true } = {}) => {
     account,
     nextReleaseAt: nextPending?.release_at || null,
     enabled: true,
+    lifetimeRefundedMinor,
+    lifetimeRewardReversedMinor,
   });
 };
 
@@ -491,6 +529,8 @@ export const listTransactions = async ({
   const where = {
     user_id: userId,
     account_id: account.id,
+    type: { [Op.in]: VISIBLE_LEDGER_TYPES },
+    status: { [Op.ne]: LEDGER_STATUS.VOIDED },
     amount_minor: { [Op.gte]: 0 },
   };
   if (cursor) {
@@ -544,6 +584,7 @@ export const previewHotelUse = async ({
       flowId: flowId || null,
       availableUsd: 0,
       availableMinor: 0,
+      availableDisplay: formatCurrencyLabel(0, displayCurrency),
       appliedUsd: 0,
       appliedMinor: 0,
       appliedDisplay: formatCurrencyLabel(0, displayCurrency),
@@ -551,6 +592,7 @@ export const previewHotelUse = async ({
       minimumSellingDisplay: formatCurrencyLabel(minimumSellingUsd || 0, displayCurrency),
       blockedByMinimumSelling: true,
       pendingRewardUsd: 0,
+      pendingRewardDisplay: formatCurrencyLabel(0, displayCurrency),
       rewardReleaseAt: releaseAt || null,
     };
   }
@@ -572,12 +614,15 @@ export const previewHotelUse = async ({
     displayCurrency
   );
   const pendingRewardMinor = computeRewardMinor(publicTotalUsd);
+  const availableDisplay = await convertUsdForDisplay(preview.availableUsd, displayCurrency);
+  const pendingRewardDisplay = await convertUsdForDisplay(fromMinor(pendingRewardMinor), displayCurrency);
 
   return {
     enabled: true,
     flowId: flowId || null,
     availableUsd: preview.availableUsd,
     availableMinor: preview.availableMinor,
+    availableDisplay: availableDisplay.label,
     appliedUsd: preview.appliedUsd,
     appliedMinor: preview.appliedMinor,
     appliedDisplay: appliedDisplay.label,
@@ -585,6 +630,7 @@ export const previewHotelUse = async ({
     minimumSellingDisplay: minimumSellingDisplay.label,
     blockedByMinimumSelling: preview.blockedByMinimumSelling,
     pendingRewardUsd: fromMinor(pendingRewardMinor),
+    pendingRewardDisplay: pendingRewardDisplay.label,
     rewardReleaseAt: releaseAt || null,
   };
 };

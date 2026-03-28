@@ -38,6 +38,7 @@ import {
   resolveRewardReleaseAt,
   scheduleEarn,
 } from "../services/guestWallet.service.js"
+import { runWalletBookingMutation } from "../services/guestWalletSync.service.js"
 
 
 const provider = new WebbedsProvider()
@@ -1342,11 +1343,21 @@ export const createPaymentIntent = async (req, res, next) => {
       )
     } catch (paymentIntentCreateError) {
       if (walletRequested) {
-        await releaseHold({
-          userId,
-          stayId: localBooking.id,
-          paymentScopeKey,
-          reason: "payment_intent_create_failed",
+        await runWalletBookingMutation({
+          booking: localBooking,
+          action: "release_hold",
+          context: {
+            source: "create_payment_intent",
+            reason: "payment_intent_create_failed",
+            paymentScopeKey,
+          },
+          mutation: () =>
+            releaseHold({
+              userId,
+              stayId: localBooking.id,
+              paymentScopeKey,
+              reason: "payment_intent_create_failed",
+            }),
         }).catch(() => {})
       }
       throw paymentIntentCreateError
@@ -1441,25 +1452,44 @@ export const capturePaymentIntent = async (req, res, next) => {
       }
       await booking.update(updates)
       try {
-        await captureHold({
-          userId: booking.user_id,
-          stayId: booking.id,
-          paymentIntentId: intentId,
+        await runWalletBookingMutation({
+          booking,
+          action: "capture_hold",
+          context: {
+            source: "capture_payment_intent",
+            paymentIntentId: intentId,
+          },
+          mutation: () =>
+            captureHold({
+              userId: booking.user_id,
+              stayId: booking.id,
+              paymentIntentId: intentId,
+            }),
         })
-        await scheduleEarn({
-          userId: booking.user_id,
-          stayId: booking.id,
-          publicTotalUsd:
-            Number(booking.pricing_snapshot?.totalBeforeWalletUsd) ||
-            Number(booking.meta?.wallet?.chargeAfterWalletUsd) + Number(booking.meta?.wallet?.appliedUsd) ||
-            Number(booking.pricing_snapshot?.effectivePublicAmount) ||
-            Number(booking.gross_price) ||
-            0,
-          releaseAt:
-            booking.pricing_snapshot?.wallet?.rewardReleaseAt ||
-            booking.meta?.wallet?.rewardReleaseAt ||
-            null,
-          bookingRef: booking.booking_ref || null,
+        await runWalletBookingMutation({
+          booking,
+          action: "schedule_earn",
+          context: {
+            source: "capture_payment_intent",
+            paymentIntentId: intentId,
+          },
+          mutation: () =>
+            scheduleEarn({
+              userId: booking.user_id,
+              stayId: booking.id,
+              publicTotalUsd:
+                Number(booking.pricing_snapshot?.totalBeforeWalletUsd) ||
+                Number(booking.meta?.wallet?.chargeAfterWalletUsd) +
+                  Number(booking.meta?.wallet?.appliedUsd) ||
+                Number(booking.pricing_snapshot?.effectivePublicAmount) ||
+                Number(booking.gross_price) ||
+                0,
+              releaseAt:
+                booking.pricing_snapshot?.wallet?.rewardReleaseAt ||
+                booking.meta?.wallet?.rewardReleaseAt ||
+                null,
+              bookingRef: booking.booking_ref || null,
+            }),
         })
       } catch (walletCaptureError) {
         console.error("[webbeds] capturePaymentIntent wallet hooks failed", {
@@ -1623,12 +1653,22 @@ export const cancelPaymentIntent = async (req, res, next) => {
       }
       await booking.update(updates)
       try {
-        await releaseHold({
-          userId: booking.user_id,
-          stayId: booking.id,
-          paymentScopeKey: booking.meta?.paymentScopeKey || null,
-          paymentIntentId: intentId,
-          reason: reason || "payment_intent_cancelled",
+        await runWalletBookingMutation({
+          booking,
+          action: "release_hold",
+          context: {
+            source: "cancel_payment_intent",
+            paymentIntentId: intentId,
+            reason: reason || "payment_intent_cancelled",
+          },
+          mutation: () =>
+            releaseHold({
+              userId: booking.user_id,
+              stayId: booking.id,
+              paymentScopeKey: booking.meta?.paymentScopeKey || null,
+              paymentIntentId: intentId,
+              reason: reason || "payment_intent_cancelled",
+            }),
         })
       } catch (walletReleaseError) {
         console.error("[webbeds] cancelPaymentIntent wallet release failed", {
