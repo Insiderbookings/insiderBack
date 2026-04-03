@@ -6,6 +6,7 @@ import models from "../models/index.js"
 import cache from "../services/cache.js"
 import { WebbedsProvider } from "../providers/webbeds/provider.js"
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
+import { resolveEffectiveSearchIntent } from "../utils/hotelSearchIntent.js"
 import { resolveWebbedsCityMatch as sharedResolveWebbedsCityMatch } from "../services/webbedsCityResolver.service.js"
 
 const provider = new WebbedsProvider()
@@ -19,7 +20,7 @@ const MOBILE_SNAPSHOT_RESULT_LIMIT = Math.max(
   Number(process.env.WEBBEDS_MOBILE_SNAPSHOT_RESULT_LIMIT || 100),
 )
 const DEFAULT_CACHE_TTL = 120
-const SEARCH_CACHE_VERSION = "hotel-intent-v3"
+const SEARCH_CACHE_VERSION = "hotel-intent-v5"
 const FULL_CACHE_TTL_SECONDS = Math.max(
   60,
   Number(process.env.WEBBEDS_SEARCH_FULL_CACHE_TTL_SECONDS || DEFAULT_CACHE_TTL),
@@ -1199,7 +1200,7 @@ const compareNearbyAlternativeRows = (anchorRow = null) => (a, b) => {
 const rankNearbyAlternativeRows = (rows = [], anchorRow = null) =>
   [...(Array.isArray(rows) ? rows : [])].sort(compareNearbyAlternativeRows(anchorRow))
 
-const hasStrongHotelNameSignal = async ({ query, cityCode = null, filters = {} }) => {
+const hasStrongHotelNameSignal = async ({ query, cityCode = null }) => {
   const trimmed = String(query || "").trim()
   if (!trimmed) return false
 
@@ -1207,12 +1208,6 @@ const hasStrongHotelNameSignal = async ({ query, cityCode = null, filters = {} }
   applyHotelNameCandidateFilter(where, trimmed)
   if (cityCode) {
     where.city_code = String(cityCode).trim()
-  }
-  if (filters.ratingCodes?.length) {
-    where.rating = { [Op.in]: filters.ratingCodes }
-  }
-  if (filters.chain?.length) {
-    where.chain_code = { [Op.in]: filters.chain }
   }
 
   const rows = await models.WebbedsHotel.findAll({
@@ -1820,21 +1815,25 @@ export const searchHotels = async (req, res, next) => {
       }
     }
 
-    const effectiveMixedIntent =
+    const hasStrongHotelSignal =
       requestedIntent === "mixed"
-        ? (await hasStrongHotelNameSignal({
+        ? await hasStrongHotelNameSignal({
             query: searchQuery,
             cityCode: resolvedCityCode,
-            filters: baseDbFilters,
-          }))
-          ? "hotel"
-          : "city"
-        : requestedIntent
+          })
+        : false
+    const effectiveSearchIntent = resolveEffectiveSearchIntent({
+      requestedIntent,
+      rawSearchMode,
+      resolvedCityCode,
+      manualHotelName,
+      hasStrongHotelNameSignal: hasStrongHotelSignal,
+    })
 
     let hotelIds = []
     let fallback = null
     let intentResolved =
-      effectiveMixedIntent || requestedIntent || (resolvedSearchMode === "city" ? "city" : null)
+      effectiveSearchIntent || requestedIntent || (resolvedSearchMode === "city" ? "city" : null)
     let nearbyRadiusKm = null
     let nearbyFallbackApplied = false
     let nearbyRadiiTried = []
@@ -1868,7 +1867,7 @@ export const searchHotels = async (req, res, next) => {
       ? { ...baseDbFilters, hotelName: manualHotelName }
       : baseDbFilters
 
-    if (effectiveMixedIntent === "landmark") {
+    if (effectiveSearchIntent === "landmark") {
       let landmarkGeo =
         requestedLat != null && requestedLng != null
           ? { lat: requestedLat, lng: requestedLng }
@@ -1908,7 +1907,7 @@ export const searchHotels = async (req, res, next) => {
           intentResolved = "city"
         }
       }
-    } else if (effectiveMixedIntent === "hotel") {
+    } else if (effectiveSearchIntent === "hotel") {
       const hotelIntentName = manualHotelName || searchQuery || null
       const hotelIntentFilters = hotelIntentName
         ? { ...baseDbFilters, hotelName: hotelIntentName }
@@ -2027,6 +2026,16 @@ export const searchHotels = async (req, res, next) => {
       })
     }
 
+    const hasCatalogScopedHotelFilters = Boolean(
+      (Array.isArray(cityScopedFilters?.ratingCodes) && cityScopedFilters.ratingCodes.length > 0) ||
+        (Array.isArray(cityScopedFilters?.chain) && cityScopedFilters.chain.length > 0) ||
+        cityScopedFilters?.hotelName,
+    )
+    const providerSearchMode =
+      resolvedSearchMode === "city" && hotelIds.length > 0 && hasCatalogScopedHotelFilters
+        ? "hotelids"
+        : resolvedSearchMode
+
     const normalizedQuery = {
       checkIn,
       checkOut,
@@ -2046,7 +2055,7 @@ export const searchHotels = async (req, res, next) => {
       hotelIds: hotelIds.length ? hotelIds.join(",") : undefined,
       hotelName:
         manualHotelName ||
-        (effectiveMixedIntent === "hotel" ? searchQuery || undefined : undefined),
+        (effectiveSearchIntent === "hotel" ? searchQuery || undefined : undefined),
       passengerNationality,
       passengerCountryOfResidence,
       priceMin,
@@ -2062,13 +2071,14 @@ export const searchHotels = async (req, res, next) => {
     }
 
     const providerQuery = { ...normalizedQuery }
+    providerQuery.mode = providerSearchMode
     if (hasCustomHotelOrdering && hasRatesParams) {
       providerQuery.limit = undefined
       providerQuery.offset = 0
     }
     delete providerQuery.intent
     delete providerQuery.hotelName
-    if (resolvedSearchMode === "hotelids") {
+    if (providerSearchMode === "hotelids") {
       if (providerQuery.hotelIds) {
         delete providerQuery.cityCode
         delete providerQuery.countryCode
@@ -2164,7 +2174,7 @@ export const searchHotels = async (req, res, next) => {
           const shouldFillAvailability =
             CITY_AVAILABILITY_FILL_ENABLED &&
             clientIsMobile &&
-            resolvedSearchMode === "hotelids" &&
+            providerSearchMode === "hotelids" &&
             resolvedCityCode &&
             !hasCustomHotelOrdering &&
             !effectiveFetchAll &&
@@ -2230,7 +2240,7 @@ export const searchHotels = async (req, res, next) => {
           } else {
             const shouldUseUnpagedCitySearch =
               clientIsMobile &&
-              resolvedSearchMode === "city" &&
+              providerSearchMode === "city" &&
               !effectiveFetchAll
 
             if (shouldUseUnpagedCitySearch) {
