@@ -180,6 +180,84 @@ const buildPlaceResult = (source, fallbackLabel = null) => {
   };
 };
 
+const fetchPlacePhotoLookup = async ({
+  placeId = "",
+  query = "",
+  language = null,
+  lat = null,
+  lng = null,
+} = {}) => {
+  const apiKey = getPlacesApiKey();
+  if (!apiKey) {
+    throw new Error("Google Places API key not configured");
+  }
+
+  const trimmedPlaceId = String(placeId || "").trim();
+  const trimmedQuery = String(query || "").trim();
+  const latNum = Number(lat);
+  const lngNum = Number(lng);
+  const hasLocationBias = Number.isFinite(latNum) && Number.isFinite(lngNum);
+
+  if (trimmedPlaceId) {
+    const detailsParams = {
+      place_id: trimmedPlaceId,
+      fields: "photos,place_id,name,formatted_address",
+      key: apiKey,
+    };
+    if (language) detailsParams.language = language;
+    const { data } = await axios.get(
+      "https://maps.googleapis.com/maps/api/place/details/json",
+      {
+        params: detailsParams,
+        timeout: 4000,
+      },
+    );
+    const photoRef = data?.result?.photos?.[0]?.photo_reference || null;
+    if (photoRef) {
+      return {
+        photoRef,
+        placeId: data?.result?.place_id || trimmedPlaceId,
+        name: data?.result?.name || null,
+        address: data?.result?.formatted_address || null,
+      };
+    }
+  }
+
+  if (!trimmedQuery) {
+    return {
+      photoRef: null,
+      placeId: trimmedPlaceId || null,
+      name: null,
+      address: null,
+    };
+  }
+
+  const textSearchParams = {
+    query: trimmedQuery,
+    key: apiKey,
+  };
+  if (language) textSearchParams.language = language;
+  if (hasLocationBias) {
+    textSearchParams.location = `${latNum},${lngNum}`;
+    textSearchParams.radius = 1200;
+  }
+
+  const { data } = await axios.get(
+    "https://maps.googleapis.com/maps/api/place/textsearch/json",
+    {
+      params: textSearchParams,
+      timeout: 4000,
+    },
+  );
+  const first = Array.isArray(data?.results) ? data.results[0] : null;
+  return {
+    photoRef: first?.photos?.[0]?.photo_reference || null,
+    placeId: first?.place_id || trimmedPlaceId || null,
+    name: first?.name || null,
+    address: first?.formatted_address || null,
+  };
+};
+
 export const geocodePlace = async (req, res) => {
   try {
     const placeId = typeof req.query?.placeId === "string" ? req.query.placeId.trim() : "";
@@ -365,6 +443,47 @@ export const nearbyPlaces = async (req, res) => {
   } catch (err) {
     console.error("[nearbyPlaces]", err?.message || err);
     return res.status(500).json({ error: "Unable to load places" });
+  }
+};
+
+export const placePhotoLookup = async (req, res) => {
+  try {
+    const placeId =
+      typeof req.query?.placeId === "string" ? req.query.placeId.trim() : "";
+    const query =
+      typeof req.query?.query === "string" ? req.query.query.trim() : "";
+    const language =
+      typeof req.query?.language === "string" && req.query.language.trim()
+        ? req.query.language.trim()
+        : null;
+    const lat = req.query?.lat ?? null;
+    const lng = req.query?.lng ?? null;
+
+    if (!placeId && !query) {
+      return res.status(400).json({ error: "placeId or query required" });
+    }
+
+    const result = await fetchPlacePhotoLookup({
+      placeId,
+      query,
+      language,
+      lat,
+      lng,
+    });
+
+    return res.json({
+      photoRef: result?.photoRef || null,
+      placeId: result?.placeId || placeId || null,
+      name: result?.name || null,
+      address: result?.address || null,
+    });
+  } catch (err) {
+    console.error("[placePhotoLookup]", {
+      message: err?.message || err,
+      status: err?.response?.status || null,
+      errorMessage: err?.response?.data?.error_message || err?.response?.data?.error || null,
+    });
+    return res.status(500).json({ error: "Unable to resolve place photo" });
   }
 };
 
