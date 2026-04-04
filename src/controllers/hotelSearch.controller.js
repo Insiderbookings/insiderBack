@@ -7,6 +7,10 @@ import cache from "../services/cache.js"
 import { WebbedsProvider } from "../providers/webbeds/provider.js"
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
 import { resolveWebbedsCityMatch as sharedResolveWebbedsCityMatch } from "../services/webbedsCityResolver.service.js"
+import {
+  attachPartnerProgramToHotelItems,
+  comparePartnerAwareHotelItems,
+} from "../services/partnerLifecycle.service.js"
 
 const provider = new WebbedsProvider()
 const DEFAULT_LIMIT = 50
@@ -1325,6 +1329,9 @@ const resolvePreferredScore = (item) => {
 }
 
 const compareAvailabilityItems = (a, b) => {
+  const partnerDiff = comparePartnerAwareHotelItems(a, b)
+  if (partnerDiff !== 0) return partnerDiff
+
   const preferredDiff = resolvePreferredScore(b) - resolvePreferredScore(a)
   if (preferredDiff !== 0) return preferredDiff
 
@@ -1347,6 +1354,17 @@ const compareAvailabilityItems = (a, b) => {
 
 const rankAvailabilityItems = (items = []) =>
   [...(Array.isArray(items) ? items : [])].sort(compareAvailabilityItems)
+
+const finalizePartnerHotelItems = async (items = []) => {
+  const enriched = await attachPartnerProgramToHotelItems(items)
+  return enriched
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) =>
+      comparePartnerAwareHotelItems(left.item, right.item, compareAvailabilityItems) ||
+      left.index - right.index,
+    )
+    .map(({ item }) => item)
+}
 
 const applyNearbyContextToItems = ({
   items = [],
@@ -1696,7 +1714,9 @@ export const searchHotels = async (req, res, next) => {
           cityCode: resolvedCityCode,
           query: searchQuery || null,
         })
-        const pagedItems = sanitizedItems.slice(safeOffset, safeOffset + safeLimit)
+        const pagedItems = await finalizePartnerHotelItems(
+          sanitizedItems.slice(safeOffset, safeOffset + safeLimit),
+        )
         const hasMore = sanitizedItems.length > safeOffset + safeLimit
 
         return res.json({
@@ -2400,6 +2420,7 @@ export const searchHotels = async (req, res, next) => {
       }, 0)
     }
 
+    responsePayload.items = await finalizePartnerHotelItems(responsePayload.items || [])
     return res.json(responsePayload)
   } catch (error) {
     console.error("[hotels.search] failed", {

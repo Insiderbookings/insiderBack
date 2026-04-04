@@ -21,6 +21,7 @@ import {
 } from "../services/referralRewards.service.js";
 import { buildHostOnboardingState } from "../utils/hostOnboarding.js";
 import { ensureInfluencerOnboardingMetadata } from "../utils/influencerOnboarding.js";
+import { handlePartnerStripeEvent } from "../services/partnerLifecycle.service.js";
 
 dotenv.config()
 
@@ -753,6 +754,20 @@ export const handleWebhook = async (req, res) => {
     id: event.id,
     type: event.type,
   });
+  try {
+    const partnerResult = await handlePartnerStripeEvent({
+      eventType: event.type,
+      object: event.data?.object || null,
+    });
+    if (partnerResult?.handled) {
+      console.log("[payments] partner webhook synced", {
+        type: event.type,
+        claimId: partnerResult.claimId || null,
+      });
+    }
+  } catch (partnerError) {
+    console.error("[payments] partner webhook sync error:", partnerError?.message || partnerError);
+  }
 
   /* ─── Helpers ─── */
   const touchBookingPayment = async (bookingId, updater) => {

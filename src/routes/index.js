@@ -29,6 +29,7 @@ import pushRoutes from "./push.routes.js"
 import errorRoutes from "./error.routes.js";
 import currencyRoutes from "./currency.routes.js";
 import configRoutes from "./config.routes.js";
+import partnerRoutes from "./partner.routes.js";
 
 const router = Router()
 
@@ -64,5 +65,6 @@ router.use("/places", placesRoutes)
 router.use("/push", pushRoutes)
 router.use("/currency", currencyRoutes)
 router.use("/config", configRoutes)
+router.use("/partners", partnerRoutes)
 
 export default router

@@ -103,6 +103,13 @@ export default (sequelize) => {
         as: "recentViews",
       })
     }
+    if (models.PartnerHotelClaim) {
+      WebbedsHotel.hasOne(models.PartnerHotelClaim, {
+        foreignKey: "hotel_id",
+        sourceKey: "hotel_id",
+        as: "partnerClaim",
+      })
+    }
   }
 
   return WebbedsHotel

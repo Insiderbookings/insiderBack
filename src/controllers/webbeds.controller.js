@@ -26,6 +26,10 @@ import {
   rankHotelSectionsForExplore,
   resolveExploreRankingVariant,
 } from "../services/exploreRanking.service.js"
+import {
+  attachPartnerProgramToHotelItems,
+  comparePartnerAwareHotelItems,
+} from "../services/partnerLifecycle.service.js"
 
 
 import { planReferralFirstBookingDiscount } from "../services/referralRewards.service.js"
@@ -462,6 +466,20 @@ const getStaticHotelIncludes = () => [
     attributes: ["code", "name"],
   },
 ]
+
+const sortPartnerFirstWithFallback = (items = [], fallbackCompare = null) =>
+  items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) =>
+      comparePartnerAwareHotelItems(left.item, right.item, (a, b) => {
+        if (typeof fallbackCompare === "function") {
+          const compared = fallbackCompare(a, b)
+          if (compared !== 0) return compared
+        }
+        return left.index - right.index
+      }),
+    )
+    .map(({ item }) => item)
 
 export const search = (req, res, next) => provider.search(req, res, next)
 export const getRooms = (req, res, next) => provider.getRooms(req, res, next)
@@ -1790,8 +1808,17 @@ export const listStaticHotels = async (req, res, next) => {
       offset: safeOffset,
     })
 
+    let items = rows.map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit }))
+    items = await attachPartnerProgramToHotelItems(items)
+    items = sortPartnerFirstWithFallback(
+      items,
+      (a, b) =>
+        Number(b?.priority ?? 0) - Number(a?.priority ?? 0) ||
+        String(a?.name || "").localeCompare(String(b?.name || "")),
+    )
+
     const responsePayload = {
-      items: rows.map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit })),
+      items,
       pagination: {
         total: count,
         limit: safeLimit,
@@ -2048,6 +2075,9 @@ export const listExploreHotels = async (req, res, next) => {
       }
     }
 
+    items = await attachPartnerProgramToHotelItems(items)
+    items = sortPartnerFirstWithFallback(items)
+
     const responsePayload = {
       items,
       pagination: {
@@ -2207,9 +2237,16 @@ export const listExploreCollections = async (req, res, next) => {
         order: [["priority", "DESC"], ["rating", "DESC"], ["name", "ASC"]],
         limit: perSection,
       })
-      const items = rows
+      let items = rows
         .map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit }))
         .filter(Boolean)
+      items = await attachPartnerProgramToHotelItems(items)
+      items = sortPartnerFirstWithFallback(
+        items,
+        (a, b) =>
+          Number(b?.priority ?? 0) - Number(a?.priority ?? 0) ||
+          String(a?.name || "").localeCompare(String(b?.name || "")),
+      )
       if (!items.length) continue
       const cityLabel = entry.cityName || entry.countryName || "Explore"
       sectionsPayload.push({
