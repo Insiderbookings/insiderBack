@@ -256,6 +256,13 @@ export default (sequelize) => {
         onDelete: "SET NULL",
       });
     }
+    if (models.PartnerHotelClaim) {
+      User.hasMany(models.PartnerHotelClaim, {
+        foreignKey: "user_id",
+        as: "partnerClaims",
+        onDelete: "CASCADE",
+      });
+    }
     if (models.SupportTicketAssignee && models.SupportTicket) {
       User.hasMany(models.SupportTicketAssignee, {
         foreignKey: "user_id",
