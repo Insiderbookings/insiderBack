@@ -31,7 +31,8 @@ const QUICK_START_PROMPTS = [
 ];
 
 const SESSION_TURN_TTL_MS = 90_000; // 90s hard cap — any AI turn exceeding this is considered stale
-const activeSessionTurns = new Map(); // sessionId → acquiredAt (ms timestamp)
+const activeSessionTurns = new Map(); // sessionId → { acquiredAt, token }
+const activeSessionTurnControllers = new Map(); // sessionId → AbortController
 
 const buildAiError = (message, code, status = 400) => {
   const error = new Error(message);
@@ -425,24 +426,64 @@ const normalizeAiRequest = (body) => {
 };
 
 const tryAcquireSessionTurn = (sessionId) => {
-  if (!sessionId) return true;
+  if (!sessionId) return null;
   const existing = activeSessionTurns.get(sessionId);
   if (existing) {
-    if (Date.now() - existing < SESSION_TURN_TTL_MS) return false;
+    if (Date.now() - existing.acquiredAt < SESSION_TURN_TTL_MS) return null;
     // Stale lock expired — release and allow new turn
     console.warn("[ai] releasing stale session lock", {
       sessionId,
-      ageMs: Date.now() - existing,
+      ageMs: Date.now() - existing.acquiredAt,
     });
+    const staleController = activeSessionTurnControllers.get(sessionId) || null;
+    if (staleController) {
+      try {
+        staleController.abort();
+      } catch (_) {}
+    }
     activeSessionTurns.delete(sessionId);
+    activeSessionTurnControllers.delete(sessionId);
   }
-  activeSessionTurns.set(sessionId, Date.now());
-  return true;
+  const token = {};
+  activeSessionTurns.set(sessionId, {
+    acquiredAt: Date.now(),
+    token,
+  });
+  return token;
 };
 
-const releaseSessionTurn = (sessionId) => {
-  if (!sessionId) return;
+const releaseSessionTurn = (sessionId, turnToken = null) => {
+  if (!sessionId || !turnToken) return;
+  const currentTurn = activeSessionTurns.get(sessionId) || null;
+  if (!currentTurn || currentTurn.token !== turnToken) return;
   activeSessionTurns.delete(sessionId);
+  activeSessionTurnControllers.delete(sessionId);
+};
+
+const registerSessionTurnController = (sessionId, turnToken, controller) => {
+  if (!sessionId || !turnToken || !controller) return;
+  const currentTurn = activeSessionTurns.get(sessionId) || null;
+  if (!currentTurn || currentTurn.token !== turnToken) {
+    try {
+      controller.abort();
+    } catch (_) {}
+    return;
+  }
+  activeSessionTurnControllers.set(sessionId, controller);
+};
+
+const cancelSessionTurn = (sessionId) => {
+  if (!sessionId) return false;
+  const controller = activeSessionTurnControllers.get(sessionId) || null;
+  const hadTurn = activeSessionTurns.has(sessionId) || Boolean(controller);
+  if (controller) {
+    try {
+      controller.abort();
+    } catch (_) {}
+  }
+  activeSessionTurns.delete(sessionId);
+  activeSessionTurnControllers.delete(sessionId);
+  return hadTurn;
 };
 
 /**
@@ -654,7 +695,8 @@ export const handleAiChat = async (req, res) => {
     return res.status(500).json({ error: "Unable to create chat session" });
   }
 
-  if (!tryAcquireSessionTurn(conversationId)) {
+  const turnToken = tryAcquireSessionTurn(conversationId);
+  if (!turnToken) {
     return trySendKnownAiError(res, buildTurnInProgressError());
   }
 
@@ -695,13 +737,23 @@ export const handleAiChat = async (req, res) => {
     }));
 
     const turnController = new AbortController();
+    registerSessionTurnController(conversationId, turnToken, turnController);
+    let turnReleased = false;
+    const releaseTurn = () => {
+      if (turnReleased) return;
+      turnReleased = true;
+      releaseSessionTurn(conversationId, turnToken);
+    };
     const onClientClose = () => {
+      if (turnReleased) return;
       console.warn("[ai] client disconnected mid-turn, aborting", {
         sessionId: conversationId,
         userId,
       });
       turnController.abort();
+      releaseTurn();
     };
+    req.on("aborted", onClientClose);
     res.on("close", onClientClose);
 
     try {
@@ -860,7 +912,7 @@ export const handleAiChat = async (req, res) => {
         .json({ error: "Unable to process assistant query right now" });
     }
   } finally {
-    releaseSessionTurn(conversationId);
+    releaseTurn();
   }
 };
 
@@ -935,13 +987,34 @@ export const handleAiChatStream = async (req, res) => {
     return res.end();
   }
 
-  if (!tryAcquireSessionTurn(conversationId)) {
+  const turnToken = tryAcquireSessionTurn(conversationId);
+  if (!turnToken) {
     sendEvent("error", {
       message: "This chat is already processing another request. Please wait.",
       code: "AI_CHAT_TURN_IN_PROGRESS",
     });
     return res.end();
   }
+
+  const turnController = new AbortController();
+  registerSessionTurnController(conversationId, turnToken, turnController);
+  let turnReleased = false;
+  const releaseTurn = () => {
+    if (turnReleased) return;
+    turnReleased = true;
+    releaseSessionTurn(conversationId, turnToken);
+  };
+  const onClientClose = () => {
+    if (turnReleased) return;
+    console.warn("[ai] stream client disconnected mid-turn, aborting", {
+      sessionId: conversationId,
+      userId,
+    });
+    turnController.abort();
+    releaseTurn();
+  };
+  req.on("aborted", onClientClose);
+  res.on("close", onClientClose);
 
   try {
     if (incomingMessage) {
@@ -992,6 +1065,7 @@ export const handleAiChatStream = async (req, res) => {
       limits,
       uiEvent,
       context,
+      signal: turnController.signal,
       onEvent: (event) => {
         if (!event?.type) return;
         if (event.type === "assistant_message") {
@@ -1169,7 +1243,7 @@ export const handleAiChatStream = async (req, res) => {
       message: "Unable to process assistant query right now",
     });
   } finally {
-    releaseSessionTurn(conversationId);
+    releaseTurn();
     res.end();
   }
 };
@@ -1249,6 +1323,28 @@ export const deleteAiChat = async (req, res) => {
     console.error("[ai] failed to delete session", err);
     return res.status(500).json({ error: "Unable to delete chat session" });
   }
+};
+
+export const cancelAiChatTurn = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  let sessionId = null;
+  try {
+    sessionId = normalizeConversationId(req.body || {});
+  } catch (err) {
+    if (trySendKnownAiError(res, err)) return;
+    return res.status(400).json({ error: "sessionId is required" });
+  }
+
+  if (!sessionId) {
+    return res.status(400).json({ error: "sessionId is required" });
+  }
+
+  const cancelled = cancelSessionTurn(sessionId);
+  return res.json({ ok: true, cancelled });
 };
 
 /**

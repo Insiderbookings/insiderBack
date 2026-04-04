@@ -10,7 +10,10 @@ import { buildBookingEmailPayload } from "../helpers/bookingEmailPayload.js"
 import { triggerBookingAutoPrompts, PROMPT_TRIGGERS } from "../services/chat.service.js"
 import { dispatchBookingConfirmation } from "./payment.controller.js"
 import { convertCurrency } from "../services/currency.service.js"
-import { getMarkup } from "../utils/markup.js"
+import {
+  resolveHotelCanonicalPricing,
+  resolveHotelPricingRole,
+} from "../utils/hotelPricing.js"
 import sharp from "sharp"
 import { createHash } from "node:crypto"
 
@@ -106,10 +109,7 @@ const isPrivilegedUser = (user) => {
   return role === 1 || role === 100
 }
 
-const resolveHotelBookingPricingRole = (user) => {
-  const role = Number(user?.role)
-  return role === 100 ? 100 : 0
-}
+const resolveHotelBookingPricingRole = (user) => resolveHotelPricingRole(user)
 
 const resolveReferralContext = async (tokenUser) => {
   const userId = Number(tokenUser?.id) || null
@@ -248,8 +248,6 @@ const buildPaymentIntentResponse = ({ booking, paymentIntent, flowId, pricingSna
 })
 
 const resolveCanonicalPublicBookingAmount = ({ flow, providerAmount, pricingRole }) => {
-  const providerBase = roundCurrency(providerAmount)
-  const publicMarkedAmount = applyMarkupToAmount(providerBase, pricingRole)
   const snapshotMinimumSellingRaw = Number(flow?.pricing_snapshot_priced?.minimumSelling)
   const selectedMinimumSellingRaw = Number(flow?.selected_offer?.minimumSelling)
   const minimumSellingRaw = Number.isFinite(snapshotMinimumSellingRaw)
@@ -257,27 +255,11 @@ const resolveCanonicalPublicBookingAmount = ({ flow, providerAmount, pricingRole
     : Number.isFinite(selectedMinimumSellingRaw)
       ? selectedMinimumSellingRaw
       : null
-  const minimumSelling = Number.isFinite(minimumSellingRaw) && minimumSellingRaw > 0
-    ? roundCurrency(minimumSellingRaw)
-    : null
-  const effectiveAmount =
-    minimumSelling != null
-      ? roundCurrency(Math.max(Number(publicMarkedAmount) || 0, minimumSelling))
-      : publicMarkedAmount
-  return {
-    publicMarkedAmount,
-    minimumSelling,
-    effectiveAmount,
-  }
-}
-
-const applyMarkupToAmount = (amount, role) => {
-  const numericAmount = Number(amount)
-  if (!Number.isFinite(numericAmount)) return null
-  if (numericAmount <= 0) return roundCurrency(numericAmount)
-  const markup = Number(getMarkup(role, numericAmount))
-  if (!Number.isFinite(markup) || markup <= 0) return roundCurrency(numericAmount)
-  return roundCurrency(numericAmount * (1 + markup))
+  return resolveHotelCanonicalPricing({
+    providerAmount,
+    minimumSelling: minimumSellingRaw,
+    pricingRole,
+  })
 }
 
 const parseCsvList = (value) => {
@@ -584,18 +566,18 @@ export const createPaymentIntent = async (req, res, next) => {
     const requestUserRoleRaw = Number(req.user?.role)
     const requestUserRole = Number.isFinite(requestUserRoleRaw) ? requestUserRoleRaw : 0
     const publicPricingRole = resolveHotelBookingPricingRole(req.user)
-    const markupRateRaw = Number(getMarkup(publicPricingRole, pricedAmount))
-    const markupRate = Number.isFinite(markupRateRaw) && markupRateRaw > 0 ? markupRateRaw : 0
     const providerAmountUsd = roundCurrency(pricedAmount)
-    const {
-      publicMarkedAmount,
-      minimumSelling,
-      effectiveAmount: amountUsd,
-    } = resolveCanonicalPublicBookingAmount({
+    const canonicalPricing = resolveCanonicalPublicBookingAmount({
       flow,
       providerAmount: providerAmountUsd,
       pricingRole: publicPricingRole,
     })
+    const {
+      publicMarkedAmount,
+      minimumSelling,
+      effectiveAmount: amountUsd,
+      publicMarkupRate: markupRate,
+    } = canonicalPricing
     if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
       console.warn(`${logPrefix} invalid marked amount`, {
         flowId,
@@ -622,6 +604,12 @@ export const createPaymentIntent = async (req, res, next) => {
         })
       }
     }
+
+    console.info(
+      `${logPrefix} ###netprice: ${roundCurrency(providerAmountUsd)}###markup applied: ${roundCurrency(
+        canonicalPricing.publicMarkupAmount || 0,
+      )}### final price: ${roundCurrency(amountUsd)}###`,
+    )
 
     const stripe = await getStripeClient()
     const stripeFxEnabled =
@@ -1019,10 +1007,13 @@ export const createPaymentIntent = async (req, res, next) => {
         }
         : {}),
       basePriceUsd: providerAmountUsd,
+      providerAmountUsd,
       chargedBasePriceUsd: amountUsd,
       publicMarkedAmount,
       minimumSelling,
+      publicMarkupAmount: canonicalPricing.publicMarkupAmount,
       publicMarkupRate: markupRate,
+      effectiveAmount: amountUsd,
       pricingRole: publicPricingRole,
       requestUserRole,
       exchangeRate: appliedRate,
@@ -1055,8 +1046,11 @@ export const createPaymentIntent = async (req, res, next) => {
       total: grossTotal,
       totalUsd: grossTotalUsd,
       currency: finalCurrency,
+      providerAmountUsd,
       publicMarkedAmount,
       minimumSelling,
+      publicMarkupAmount: canonicalPricing.publicMarkupAmount,
+      effectiveAmount: amountUsd,
       effectivePublicAmount: amountUsd,
     }
 

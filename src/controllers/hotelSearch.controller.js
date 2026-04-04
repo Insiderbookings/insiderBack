@@ -6,6 +6,10 @@ import models from "../models/index.js"
 import cache from "../services/cache.js"
 import { WebbedsProvider } from "../providers/webbeds/provider.js"
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
+import {
+  resolveHotelCanonicalPricing,
+  resolveHotelPricingRole,
+} from "../utils/hotelPricing.js"
 import { resolveEffectiveSearchIntent } from "../utils/hotelSearchIntent.js"
 import { resolveWebbedsCityMatch as sharedResolveWebbedsCityMatch } from "../services/webbedsCityResolver.service.js"
 
@@ -113,7 +117,18 @@ const resolveItemRating = (item) =>
   )
 
 const resolveItemPrice = (item) => {
-  const direct = Number(item?.bestPrice ?? item?.price ?? item?.minPrice)
+  const direct = Number(
+    item?.effectiveAmount ??
+    item?.publicMarkedAmount ??
+    item?.bestPrice ??
+    item?.price ??
+    item?.minPrice ??
+    item?.hotelDetails?.effectiveAmount ??
+    item?.hotelDetails?.publicMarkedAmount ??
+    item?.hotelDetails?.bestPrice ??
+    item?.hotelDetails?.price ??
+    item?.hotelDetails?.minPrice,
+  )
   if (Number.isFinite(direct)) return direct
   const options = Array.isArray(item?.options) ? item.options : []
   const best = options.reduce((picked, option) => {
@@ -124,6 +139,52 @@ const resolveItemPrice = (item) => {
   }, null)
   return Number.isFinite(best) ? best : null
 }
+
+const decorateHotelSearchPricing = (item, pricingRole = 0) => {
+  if (!item || typeof item !== "object") return item
+  const canonicalPricing = resolveHotelCanonicalPricing({
+    providerAmount: item,
+    minimumSelling: item,
+    pricingRole,
+  })
+  if (
+    canonicalPricing.providerAmount == null &&
+    canonicalPricing.publicMarkedAmount == null &&
+    canonicalPricing.minimumSelling == null &&
+    canonicalPricing.effectiveAmount == null
+  ) {
+    return item
+  }
+
+  const hotelDetails =
+    item.hotelDetails && typeof item.hotelDetails === "object"
+      ? {
+          ...item.hotelDetails,
+          providerAmount: canonicalPricing.providerAmount,
+          publicMarkupRate: canonicalPricing.publicMarkupRate,
+          publicMarkupAmount: canonicalPricing.publicMarkupAmount,
+          publicMarkedAmount: canonicalPricing.publicMarkedAmount,
+          minimumSelling: canonicalPricing.minimumSelling,
+          effectiveAmount: canonicalPricing.effectiveAmount,
+          pricingRole: canonicalPricing.pricingRole,
+        }
+      : item.hotelDetails
+
+  return {
+    ...item,
+    providerAmount: canonicalPricing.providerAmount,
+    publicMarkupRate: canonicalPricing.publicMarkupRate,
+    publicMarkupAmount: canonicalPricing.publicMarkupAmount,
+    publicMarkedAmount: canonicalPricing.publicMarkedAmount,
+    minimumSelling: canonicalPricing.minimumSelling,
+    effectiveAmount: canonicalPricing.effectiveAmount,
+    pricingRole: canonicalPricing.pricingRole,
+    hotelDetails,
+  }
+}
+
+const decorateHotelSearchPricingList = (items = [], pricingRole = 0) =>
+  (Array.isArray(items) ? items : []).map((item) => decorateHotelSearchPricing(item, pricingRole))
 
 const filterCachedItems = (items, filters = {}) => {
   const priceMin = Number(filters.priceMin)
@@ -1481,6 +1542,7 @@ export const searchHotels = async (req, res, next) => {
     lng,
   } = req.query
   const clientIsMobile = isMobileClient(req)
+  const hotelPricingRole = resolveHotelPricingRole(req.user)
 
   try {
     const searchRequestId = `srch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -2451,6 +2513,7 @@ export const searchHotels = async (req, res, next) => {
         items = items.slice(safeOffset, safeOffset + safeLimit)
       }
     }
+    items = decorateHotelSearchPricingList(items, hotelPricingRole)
     const durationMs = Date.now() - startTime
     const searchDurationMs = Date.now() - searchStart
     const hasMore = effectiveFetchAll
@@ -2582,6 +2645,7 @@ export const searchHotels = async (req, res, next) => {
             cityCode: resolvedCityCode,
             query: searchQuery || null,
           })
+          fullItems = decorateHotelSearchPricingList(fullItems, hotelPricingRole)
           const fullPayload = {
             items: fullItems,
             meta: {

@@ -54,6 +54,7 @@ Hotel bookings are **stateful** and managed by `FlowOrchestratorService`.
 WebBeds API separates **Static Content** (Hotel details, images, descriptions) from **Dynamic Availability** (Rates, Rooms).
 - **Static Content**: We maintain a local copy in the `WebbedsHotel` table (synced periodically). This is used for fast searching and rendering hotel details (images, amenities).
 - **Availability**: We query WebBeds live info via `src/providers/webbeds`.
+- **Hotel pricing**: Hotel markup must be resolved through `src/utils/hotelPricing.js`; hotel controllers/services should not call `getMarkup()` directly for hotel search, block, or checkout flows.
 
 ### Search Strategy (By Name/Location)
 To implement robust search (e.g., "Search by Hotel Name"):

@@ -1,5 +1,8 @@
 import models from "../models/index.js";
-import { getMarkup } from "../utils/markup.js";
+import {
+  resolveHotelCanonicalPricing,
+  resolveHotelPricingRole,
+} from "../utils/hotelPricing.js";
 import { planReferralFirstBookingDiscount } from "../services/referralRewards.service.js";
 import {
   getSummary,
@@ -19,23 +22,10 @@ const isPrivilegedUser = (user) => {
   return role === 1 || role === 100;
 };
 
-const resolveHotelBookingPricingRole = (user) => {
-  const role = Number(user?.role);
-  return role === 100 ? 100 : 0;
-};
-
-const applyMarkupToAmount = (amount, role) => {
-  const numericAmount = Number(amount);
-  if (!Number.isFinite(numericAmount)) return null;
-  if (numericAmount <= 0) return roundCurrency(numericAmount);
-  const markup = Number(getMarkup(role, numericAmount));
-  if (!Number.isFinite(markup) || markup <= 0) return roundCurrency(numericAmount);
-  return roundCurrency(numericAmount * (1 + markup));
-};
+const resolveHotelBookingPricingRole = (user) => resolveHotelPricingRole(user);
 
 const resolveCanonicalPublicBookingAmount = ({ flow, providerAmount, pricingRole }) => {
   const providerBase = roundCurrency(providerAmount);
-  const publicMarkedAmount = applyMarkupToAmount(providerBase, pricingRole);
   const snapshotMinimumSellingRaw = Number(flow?.pricing_snapshot_priced?.minimumSelling);
   const selectedMinimumSellingRaw = Number(flow?.selected_offer?.minimumSelling);
   const minimumSellingRaw = Number.isFinite(snapshotMinimumSellingRaw)
@@ -43,18 +33,11 @@ const resolveCanonicalPublicBookingAmount = ({ flow, providerAmount, pricingRole
     : Number.isFinite(selectedMinimumSellingRaw)
       ? selectedMinimumSellingRaw
       : null;
-  const minimumSelling = Number.isFinite(minimumSellingRaw) && minimumSellingRaw > 0
-    ? roundCurrency(minimumSellingRaw)
-    : null;
-  const effectiveAmount =
-    minimumSelling != null
-      ? roundCurrency(Math.max(Number(publicMarkedAmount) || 0, minimumSelling))
-      : publicMarkedAmount;
-  return {
-    publicMarkedAmount,
-    minimumSelling,
-    effectiveAmount,
-  };
+  return resolveHotelCanonicalPricing({
+    providerAmount: providerBase,
+    minimumSelling: minimumSellingRaw,
+    pricingRole,
+  });
 };
 
 const resolveHotelWalletPricing = async ({ flow, user }) => {

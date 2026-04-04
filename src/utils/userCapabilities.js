@@ -31,8 +31,22 @@ export const ROLE_CODES = Object.freeze({
   AGENCY: 4,
   OPERATOR: 5,
   HOST: 6,
+  SUPPORT_AGENT: 7,
+  SUPPORT_MANAGER: 8,
   ADMIN: 100,
 });
+
+export const SUPPORT_AGENT_ROLE_CODES = Object.freeze([
+  ROLE_CODES.STAFF,
+  ROLE_CODES.SUPPORT_AGENT,
+  ROLE_CODES.SUPPORT_MANAGER,
+  ROLE_CODES.ADMIN,
+]);
+
+export const SUPPORT_MANAGER_ROLE_CODES = Object.freeze([
+  ROLE_CODES.SUPPORT_MANAGER,
+  ROLE_CODES.ADMIN,
+]);
 
 export const deriveRoleCodes = (user) => {
   const roleSet = new Set(normalizeRoleCodes(user?.roleCodes ?? user?.role_codes ?? []));

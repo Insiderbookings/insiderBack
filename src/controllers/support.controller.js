@@ -5,6 +5,11 @@ import { Op } from "sequelize";
 import transporter from "../services/transporter.js";
 import { postMessage } from "../services/chat.service.js";
 import { processBookingCancellation, processRefund } from "../services/booking.service.js";
+import {
+    ROLE_CODES,
+    SUPPORT_AGENT_ROLE_CODES,
+    SUPPORT_MANAGER_ROLE_CODES,
+} from "../utils/userCapabilities.js";
 
 // Helper to broadcast support events
 const emitSupportEvent = (event, payload) => {
@@ -30,13 +35,13 @@ const resolveSupportBotUser = async () => {
 };
 
 const normalizeRole = (value) => Number(value || 0);
-const SUPPORT_AGENT_ROLES = new Set([1, 7, 8, 100]);
-const SUPPORT_MANAGER_ROLES = new Set([8, 100]);
-const SUPPORT_ASSIGNABLE_ROLES = new Set([1, 7, 8, 100]);
+const SUPPORT_AGENT_ROLES = new Set(SUPPORT_AGENT_ROLE_CODES);
+const SUPPORT_MANAGER_ROLES = new Set(SUPPORT_MANAGER_ROLE_CODES);
+const SUPPORT_ASSIGNABLE_ROLES = new Set(SUPPORT_AGENT_ROLE_CODES);
 const QUICK_REPLY_DEFAULT_CATEGORY = "GENERAL";
 const QUICK_REPLY_DEFAULT_LANGUAGE = "es";
 const QUICK_REPLY_MAX_LIMIT = 200;
-const isAdminUser = (user) => normalizeRole(user?.role) === 100;
+const isAdminUser = (user) => normalizeRole(user?.role) === ROLE_CODES.ADMIN;
 const isSupportAgent = (user) => SUPPORT_AGENT_ROLES.has(normalizeRole(user?.role));
 const isSupportManager = (user) => SUPPORT_MANAGER_ROLES.has(normalizeRole(user?.role));
 const isAssignableSupportRole = (role) => SUPPORT_ASSIGNABLE_ROLES.has(normalizeRole(role));
