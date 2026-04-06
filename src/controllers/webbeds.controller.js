@@ -1027,6 +1027,42 @@ export const createPaymentIntent = async (req, res, next) => {
       children,
     }
 
+    const walletFeatureEnabled = isGuestWalletHotelsEnabled()
+    const walletRequested = walletFeatureEnabled && Boolean(useWallet)
+    const walletRewardReleaseAt = resolveRewardReleaseAt({ flow, bookedAt: new Date() })
+    const walletRewardReleaseAtIso = walletRewardReleaseAt?.toISOString?.() || null
+
+    const paymentScopeKey = buildPaymentScopeKey({
+      flow,
+      bookingId,
+      hotelId: resolvedHotelId,
+      checkIn: resolvedCheckIn,
+      checkOut: resolvedCheckOut,
+      guests: { adults, children },
+      userId,
+    })
+    localBooking = await findPendingBookingByPaymentScope({
+      userId,
+      flowId: flow.id,
+      bookingId,
+      paymentScopeKey,
+    })
+    if (localBooking) {
+      booking_ref = localBooking.booking_ref
+      const existingReferralStatus = String(
+        localBooking?.pricing_snapshot?.referralCredit?.status ||
+          localBooking?.pricing_snapshot?.referral_credit?.status ||
+          localBooking?.meta?.referralCredit?.status ||
+          localBooking?.meta?.referral_credit?.status ||
+          "",
+      )
+        .trim()
+        .toLowerCase()
+      if (existingReferralStatus === "reserved") {
+        await restoreReferralCreditForBooking({ booking: localBooking }).catch(() => {})
+      }
+    }
+
     const pricingConversionRate = amountUsd > 0 ? roundCurrency(finalAmount / amountUsd) : 1
     const providerAmountDisplay = roundCurrency(providerAmountUsd * pricingConversionRate)
     const publicAmountDisplay = roundCurrency(amountUsd * pricingConversionRate)
@@ -1035,7 +1071,7 @@ export const createPaymentIntent = async (req, res, next) => {
     let referralCreditPreview = null
     let totalDiscountAmount = 0
     let totalDiscountAmountUsd = 0
-    if (req.user?.id && publicPricingRole === 20) {
+    if (req.user?.id && publicPricingRole === 20 && walletRequested) {
       referralCreditPreview = await previewReferralCreditForBooking({
         userId: req.user.id,
         providerTotalAmount: providerAmountDisplay,
@@ -1078,26 +1114,6 @@ export const createPaymentIntent = async (req, res, next) => {
         referralCreditActive: Boolean(referralCreditPreview?.apply),
       },
     )
-    const walletFeatureEnabled = isGuestWalletHotelsEnabled()
-    const walletRequested = walletFeatureEnabled && Boolean(useWallet)
-    const walletRewardReleaseAt = resolveRewardReleaseAt({ flow, bookedAt: new Date() })
-    const walletRewardReleaseAtIso = walletRewardReleaseAt?.toISOString?.() || null
-
-    const paymentScopeKey = buildPaymentScopeKey({
-      flow,
-      bookingId,
-      hotelId: resolvedHotelId,
-      checkIn: resolvedCheckIn,
-      checkOut: resolvedCheckOut,
-      guests: { adults, children },
-      userId,
-    })
-    localBooking = await findPendingBookingByPaymentScope({
-      userId,
-      flowId: flow.id,
-      bookingId,
-      paymentScopeKey,
-    })
 
     const baseMeta = {
       hotelId: resolvedHotelId,

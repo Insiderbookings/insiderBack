@@ -680,13 +680,13 @@ const pickAllocationFromResult = (result) => {
 };
 
 const resolveRateBasisPrice = (rateBasis) =>
-  toNumberSafe(rateBasis?.total) ??
   toNumberSafe(rateBasis?.totalInRequestedCurrency) ??
+  toNumberSafe(rateBasis?.total) ??
   toNumberSafe(rateBasis?.totalMinimumSelling) ??
   toNumberSafe(rateBasis?.minimumSelling) ??
   toNumberSafe(
-    rateBasis?.totalFormatted ??
-      rateBasis?.totalInRequestedCurrencyFormatted ??
+    rateBasis?.totalInRequestedCurrencyFormatted ??
+      rateBasis?.totalFormatted ??
       rateBasis?.totalMinimumSellingFormatted ??
       rateBasis?.minimumSellingFormatted,
   ) ??
@@ -1550,6 +1550,8 @@ export class FlowOrchestratorService {
     const blockedRate = rateBasis
       ? {
           ...rateBasis,
+          currency: mapped?.currency ?? mapped?.currencyShort ?? context.currency ?? null,
+          currencyShort: mapped?.currencyShort ?? mapped?.currency ?? context.currency ?? null,
           providerAmount: canonicalPricing.providerAmount ?? null,
           publicMarkupRate: canonicalPricing.publicMarkupRate ?? null,
           publicMarkupAmount: canonicalPricing.publicMarkupAmount ?? null,

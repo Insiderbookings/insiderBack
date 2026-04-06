@@ -356,6 +356,8 @@ export const reserveReferralCreditForBooking = async ({
   const appliedUsdMinor = Math.max(0, Math.round(Number(preview.appliedMinor || 0)));
   const nextAvailable = Math.max(0, currentAvailable - appliedUsdMinor);
   const nextUsed = currentUsed + appliedUsdMinor;
+  const nextAvailableUsd = fromMinor(nextAvailable);
+  const nextAvailableDisplayAmount = await toCurrencyFromUsd(nextAvailableUsd, currency);
 
   await user.update(
     {
@@ -370,6 +372,10 @@ export const reserveReferralCreditForBooking = async ({
     reserved: true,
     bookingId: bookingId || null,
     bookingRef: bookingRef || null,
+    availableMinor: nextAvailable,
+    availableUsd: nextAvailableUsd,
+    availableDisplay: formatCurrencyLabel(nextAvailableDisplayAmount, normalizeCurrency(currency)),
+    usedMinor: nextUsed,
     appliedMinor: appliedUsdMinor,
     appliedUsd: fromMinor(appliedUsdMinor),
   };
