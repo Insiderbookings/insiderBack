@@ -6,25 +6,38 @@ import {
   resolveHotelCanonicalPricingFromObject,
   resolveHotelMarkupRate,
   resolveHotelPricingRole,
+  resolveHotelPricingTier,
 } from "./hotelPricing.js";
 
 const tests = [
   {
-    name: "hotel pricing role only bypasses net rate for admin",
+    name: "hotel pricing tier resolves from user entitlement",
     run: () => {
+      assert.equal(resolveHotelPricingTier({ role: 100 }), "ADMIN");
+      assert.equal(resolveHotelPricingTier({ role: "100" }), "ADMIN");
+      assert.equal(resolveHotelPricingTier({ role: 10 }), "TRAVEL_AGENT");
+      assert.equal(resolveHotelPricingTier({ role: "10" }), "TRAVEL_AGENT");
+      assert.equal(resolveHotelPricingTier({ hotel_pricing_tier: "TRAVEL_AGENT" }), "TRAVEL_AGENT");
       assert.equal(resolveHotelPricingRole({ role: 100 }), 100);
-      assert.equal(resolveHotelPricingRole({ role: "100" }), 100);
-      assert.equal(resolveHotelPricingRole({ role: 5 }), 0);
-      assert.equal(resolveHotelPricingRole(null), 0);
+      assert.equal(resolveHotelPricingRole({ role: 10 }), 10);
+      assert.equal(resolveHotelPricingRole({ hotel_pricing_tier: "TRAVEL_AGENT" }), 10);
+      assert.equal(resolveHotelPricingRole({ role: 5 }), 20);
+      assert.equal(resolveHotelPricingRole(null), 20);
     },
   },
   {
-    name: "hotel markup tiers stay stable",
+    name: "hotel markup is fixed for standard and travel agent users",
     run: () => {
-      assert.equal(resolveHotelMarkupRate({ providerAmount: 99.99 }), 0.5);
-      assert.equal(resolveHotelMarkupRate({ providerAmount: 100 }), 0.4);
-      assert.equal(resolveHotelMarkupRate({ providerAmount: 300 }), 0.4);
-      assert.equal(resolveHotelMarkupRate({ providerAmount: 300.01 }), 0.3);
+      assert.equal(resolveHotelMarkupRate({ providerAmount: 99.99 }), 0.2);
+      assert.equal(resolveHotelMarkupRate({ providerAmount: 100 }), 0.2);
+      assert.equal(resolveHotelMarkupRate({ providerAmount: 300 }), 0.2);
+      assert.equal(resolveHotelMarkupRate({ providerAmount: 300.01 }), 0.2);
+      assert.equal(resolveHotelMarkupRate({ providerAmount: 300.01, user: { role: 10 } }), 0.1);
+      assert.equal(
+        resolveHotelMarkupRate({ providerAmount: 300.01, user: { hotel_pricing_tier: "TRAVEL_AGENT" } }),
+        0.1,
+      );
+      assert.equal(resolveHotelMarkupRate({ providerAmount: 300.01, user: { role: 100 } }), 0);
     },
   },
   {
@@ -37,11 +50,27 @@ const tests = [
       });
 
       assert.equal(pricing.providerAmount, 80);
-      assert.equal(pricing.publicMarkupRate, 0.5);
-      assert.equal(pricing.publicMarkupAmount, 40);
-      assert.equal(pricing.publicMarkedAmount, 120);
+      assert.equal(pricing.publicMarkupRate, 0.2);
+      assert.equal(pricing.publicMarkupAmount, 16);
+      assert.equal(pricing.publicMarkedAmount, 96);
       assert.equal(pricing.minimumSelling, 150);
       assert.equal(pricing.effectiveAmount, 150);
+    },
+  },
+  {
+    name: "travel agents see the fixed 10 percent markup",
+    run: () => {
+      const pricing = resolveHotelCanonicalPricing({
+        providerAmount: 200,
+        minimumSelling: 0,
+        user: { hotel_pricing_tier: "TRAVEL_AGENT" },
+      });
+
+      assert.equal(pricing.providerAmount, 200);
+      assert.equal(pricing.publicMarkupRate, 0.1);
+      assert.equal(pricing.publicMarkupAmount, 20);
+      assert.equal(pricing.publicMarkedAmount, 220);
+      assert.equal(pricing.effectiveAmount, 220);
     },
   },
   {
@@ -69,15 +98,15 @@ const tests = [
       });
 
       assert.equal(pricing.providerAmount, 90);
-      assert.equal(pricing.publicMarkedAmount, 135);
+      assert.equal(pricing.publicMarkedAmount, 108);
       assert.equal(pricing.minimumSelling, 120);
-      assert.equal(pricing.effectiveAmount, 135);
+      assert.equal(pricing.effectiveAmount, 120);
       assert.equal(
         resolveHotelCanonicalDisplayAmount({
-          publicMarkedAmount: 135,
+          publicMarkedAmount: 108,
           minimumSelling: 120,
         }),
-        135
+        120
       );
     },
   },

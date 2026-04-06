@@ -33,6 +33,7 @@ export const ROLE_CODES = Object.freeze({
   HOST: 6,
   SUPPORT_AGENT: 7,
   SUPPORT_MANAGER: 8,
+  TRAVEL_AGENT: 10,
   ADMIN: 100,
 });
 

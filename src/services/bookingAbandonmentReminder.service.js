@@ -1,5 +1,5 @@
 import { Op } from "sequelize";
-import models from "../models/index.js";
+import models, { sequelize } from "../models/index.js";
 import { sendMail } from "../helpers/mailer.js";
 import { sendPushToUser } from "./pushNotifications.service.js";
 import { getBookingAbandonmentEmailTemplate } from "../emailTemplates/booking-abandonment-email.js";
@@ -195,7 +195,7 @@ const buildReminderDeliveryKey = ({ flowId, userId, reminderKey, channel }) =>
   `${String(flowId || "").trim()}:${Number(userId || 0)}:${String(reminderKey || "").trim()}:${String(channel || "").trim().toUpperCase()}`;
 
 const buildSentReminderFlowSubquery = ({ reminderKey, sentBefore = null }) => {
-  const escape = (value) => models.sequelize.escape(value);
+  const escape = (value) => sequelize.escape(value);
   const whereParts = [
     `reminder_key = ${escape(String(reminderKey || ""))}`,
     `status = ${escape(REMINDER_LOG_STATUSES.SENT)}`,
@@ -203,7 +203,7 @@ const buildSentReminderFlowSubquery = ({ reminderKey, sentBefore = null }) => {
   if (sentBefore instanceof Date && !Number.isNaN(sentBefore.getTime())) {
     whereParts.push(`sent_at <= ${escape(sentBefore)}`);
   }
-  return models.sequelize.literal(
+  return sequelize.literal(
     `(SELECT flow_id FROM ${REMINDER_LOG_TABLE} WHERE ${whereParts.join(" AND ")})`,
   );
 };

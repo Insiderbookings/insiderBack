@@ -29,6 +29,10 @@ import {
   reverseReferralRedemption,
   planReferralFirstBookingDiscount,
 } from "../services/referralRewards.service.js"
+import {
+  previewReferralCreditForBooking,
+  reserveReferralCreditForBooking,
+} from "../services/referralCredit.service.js"
 import { emitAdminActivity } from "../websocket/emitter.js"
 import { finalizeBookingAfterPayment } from "./payment.controller.js"
 import {
@@ -37,6 +41,10 @@ import {
   resolveHomePricingConfig,
   roundCurrency,
 } from "../utils/homePricing.js"
+import {
+  resolveHotelCanonicalPricing,
+  resolveHotelPricingRole,
+} from "../utils/hotelPricing.js"
 /* ──────────────── Helper – count nights ───────────── */
 const diffDays = (from, to) =>
     Math.ceil((new Date(to) - new Date(from)) / 86_400_000)
@@ -56,6 +64,15 @@ const toDateOnlyString = (date) => {
   const month = String(date.getMonth() + 1).padStart(2, "0")
   const day = String(date.getDate()).padStart(2, "0")
   return `${year}-${month}-${day}`
+}
+
+const parseCurrencyDisplayAmount = (value) => {
+  if (value === null || value === undefined) return null
+  const numeric =
+    typeof value === "number"
+      ? value
+      : Number(String(value).replace(/[^0-9.\-]/g, ""))
+  return Number.isFinite(numeric) ? roundCurrency(numeric) : null
 }
 
 const enumerateStayDates = (from, to) => {
@@ -767,11 +784,35 @@ const mapStay = (row, source) => {
 
   const image = isHomeStay ? homePayload?.coverImage ?? null : mergedHotel?.image ?? null
   const listingName = isHomeStay ? homePayload?.title ?? null : mergedHotel?.name ?? null
+  const referralCreditRaw =
+    row.pricing_snapshot?.referralCredit ??
+    row.pricing_snapshot?.referral_credit ??
+    row.meta?.referralCredit ??
+    row.meta?.referral_credit ??
+    null
   const referralCouponRaw =
     row.pricing_snapshot?.referralCoupon ??
     row.pricing_snapshot?.referral_coupon ??
     row.meta?.referralCoupon ??
     null
+  const referralCredit =
+    referralCreditRaw && typeof referralCreditRaw === "object"
+      ? {
+        totalMinor: Number(referralCreditRaw.totalMinor ?? 0),
+        availableMinor: Number(referralCreditRaw.availableMinor ?? 0),
+        usedMinor: Number(referralCreditRaw.usedMinor ?? 0),
+        appliedUsd: Number(referralCreditRaw.appliedUsd ?? referralCreditRaw.amount ?? 0),
+        appliedMinor: Number(referralCreditRaw.appliedMinor ?? 0),
+        availableUsd: Number(referralCreditRaw.availableUsd ?? 0),
+        remainingChargeUsd: Number(referralCreditRaw.remainingChargeUsd ?? 0),
+        currency: referralCreditRaw.currency ?? row.currency ?? null,
+        status: referralCreditRaw.status ?? null,
+        expiresAt: referralCreditRaw.expiresAt ?? null,
+        grantedAt: referralCreditRaw.grantedAt ?? null,
+        sourceInfluencerId: referralCreditRaw.sourceInfluencerId ?? null,
+        sourceCode: referralCreditRaw.sourceCode ?? null,
+      }
+      : null
   const referralCoupon =
     referralCouponRaw && typeof referralCouponRaw === "object"
       ? {
@@ -817,6 +858,7 @@ const mapStay = (row, source) => {
 
     guests: (row.adults ?? 0) + (row.children ?? 0),
     total: Number.parseFloat(row.gross_price ?? row.total ?? 0),
+    referralCredit,
     referralCoupon,
 
     guestName: row.guest_name ?? row.guestName ?? null,
@@ -1038,11 +1080,44 @@ export const createBooking = async (req, res) => {
     if (!Number.isFinite(nightlyRate))
       return res.status(400).json({ error: "Room price is invalid" })
 
-    const totalBeforeDiscount = nightlyRate * nights * normalizedRooms
+    const user = req.user || {}
+    const guestNameFinal = (guestName ?? user.name ?? "").trim()
+    const guestEmailFinal = (guestEmail ?? user.email ?? "").trim().toLowerCase()
+    if (!guestNameFinal || !guestEmailFinal)
+      return res.status(400).json({ error: "Guest name and email are required" })
+    const guestPhoneFinal = (guestPhone ?? user.phone ?? "").trim() || null
+
+    const currencyCode = String(
+      currencyInput ?? hotel?.currency ?? process.env.DEFAULT_CURRENCY ?? "USD"
+    )
+      .trim()
+      .toUpperCase()
+
+    const paymentProviderValue = String(paymentProvider ?? "NONE").trim().toUpperCase()
+    const source = outside ? "OUTSIDE" : "PARTNER"
+    const providerTotalAmount = nightlyRate * nights * normalizedRooms
+    const publicPricingRole = resolveHotelPricingRole(user)
+    const canonicalPricing = resolveHotelCanonicalPricing({
+      providerAmount: providerTotalAmount,
+      minimumSelling: null,
+      pricingRole: publicPricingRole,
+    })
+    const publicTotalAmount = roundCurrency(canonicalPricing.effectiveAmount ?? providerTotalAmount)
+    const referralCreditPreview =
+      publicPricingRole === 20 && user?.id
+        ? await previewReferralCreditForBooking({
+          userId: user.id,
+          providerTotalAmount,
+          publicTotalAmount,
+          minimumSellingAmount: 0,
+          currency: currencyCode,
+        })
+        : null
+    const shouldEvaluateDiscountCode = !referralCreditPreview?.apply && publicPricingRole === 20 && Boolean(discountCode)
 
     let discountRecord = null
     let discountPct = 0
-    if (discountCode) {
+    if (shouldEvaluateDiscountCode) {
       discountRecord = await models.DiscountCode.findOne({
         where: { code: discountCode },
         include: ["staff"],
@@ -1064,68 +1139,73 @@ export const createBooking = async (req, res) => {
       discountPct = Number(discountRecord.percentage) || 0
     }
 
-    const discountAmount = discountPct ? (totalBeforeDiscount * discountPct) / 100 : 0
-    let referralCouponPlan = null
-    let referralDiscountAmount = 0
-    let referralCouponApplied = false
-    let referralFirstBookingPlan = null
-    let referralFirstBookingDiscount = 0
-
-    const user = req.user || {}
-    const guestNameFinal = (guestName ?? user.name ?? "").trim()
-    const guestEmailFinal = (guestEmail ?? user.email ?? "").trim().toLowerCase()
-    if (!guestNameFinal || !guestEmailFinal)
-      return res.status(400).json({ error: "Guest name and email are required" })
-    const guestPhoneFinal = (guestPhone ?? user.phone ?? "").trim() || null
-
-    const currencyCode = String(
-      currencyInput ?? hotel?.currency ?? process.env.DEFAULT_CURRENCY ?? "USD"
+    const discountAmount = discountPct ? (publicTotalAmount * discountPct) / 100 : 0
+    const referralCreditAmount = roundCurrency(
+      referralCreditPreview?.apply
+        ? parseCurrencyDisplayAmount(referralCreditPreview.appliedDisplay) ??
+            Number(referralCreditPreview.appliedUsd || 0)
+        : 0
     )
-      .trim()
-      .toUpperCase()
-
-    const paymentProviderValue = String(paymentProvider ?? "NONE").trim().toUpperCase()
-    const source = outside ? "OUTSIDE" : "PARTNER"
+    let referralCreditReservation = null
 
     const booking = await sequelize.transaction(async (tx) => {
-      if (discountRecord) {
+      const selectedBenefit = referralCreditPreview?.apply
+        ? "REFERRAL_CREDIT"
+        : discountRecord
+          ? "DISCOUNT_CODE"
+          : "NONE"
+
+      if (selectedBenefit === "REFERRAL_CREDIT") {
+        referralCreditReservation = await reserveReferralCreditForBooking({
+          userId,
+          providerTotalAmount,
+          publicTotalAmount,
+          minimumSellingAmount: 0,
+          currency: currencyCode,
+          bookingId: null,
+          bookingRef: null,
+          transaction: tx,
+        })
+      } else if (discountRecord) {
         await discountRecord.increment("times_used", { by: 1, transaction: tx })
       }
 
-      if (referral.influencerId && !discountRecord) {
-        referralFirstBookingPlan = await planReferralFirstBookingDiscount({
-          influencerUserId: referral.influencerId,
-          userId,
-          totalBeforeDiscount,
+      const totalDiscountAmount =
+        selectedBenefit === "REFERRAL_CREDIT"
+          ? roundCurrency(
+              parseCurrencyDisplayAmount(referralCreditReservation?.appliedDisplay) ??
+                referralCreditReservation?.amount ??
+                referralCreditReservation?.discountAmount ??
+                referralCreditReservation?.appliedUsd ??
+                referralCreditAmount ??
+                0
+            )
+          : selectedBenefit === "DISCOUNT_CODE"
+            ? roundCurrency(discountAmount)
+            : 0
+      const grossTotal = Number.parseFloat(
+        Math.max(0, publicTotalAmount - totalDiscountAmount).toFixed(2),
+      )
+      console.info(
+        `[booking] ###netprice: ${roundCurrency(providerTotalAmount)}###markup applied: ${roundCurrency(
+          canonicalPricing.publicMarkupAmount || 0,
+        )}###benefit applied: ${roundCurrency(totalDiscountAmount)}###final price: ${roundCurrency(
+          grossTotal,
+        )}###`,
+        {
+          hotelId: hotelIdValue,
+          roomId: roomIdValue,
           currency: currencyCode,
-          transaction: tx,
-        })
-        referralFirstBookingDiscount = referralFirstBookingPlan?.apply
-          ? referralFirstBookingPlan.discountAmount
-          : 0
-      }
-
-      if (!discountRecord && referral.influencerId && !referralFirstBookingPlan?.apply) {
-        referralCouponPlan = await planReferralCoupon({
-          influencerUserId: referral.influencerId,
-          userId,
-          totalBeforeDiscount,
-          currency: currencyCode,
-          transaction: tx,
-        })
-        referralDiscountAmount = referralCouponPlan?.apply ? referralCouponPlan.discountAmount : 0
-        referralCouponApplied = referralCouponPlan?.apply || false
-      }
-
-      const totalDiscountAmount = discountAmount + referralDiscountAmount + referralFirstBookingDiscount
-      const grossTotal = Number.parseFloat(Math.max(0, totalBeforeDiscount - totalDiscountAmount).toFixed(2))
+          benefitType: selectedBenefit,
+        },
+      )
 
       const stay = await models.Booking.create(
         {
           user_id: userId,
           hotel_id: hotelIdValue,
           room_id: roomIdValue,
-          discount_code_id: discountRecord ? discountRecord.id : null,
+          discount_code_id: selectedBenefit === "DISCOUNT_CODE" && discountRecord ? discountRecord.id : null,
           source,
           check_in: normalizedCheckIn,
           check_out: normalizedCheckOut,
@@ -1151,27 +1231,35 @@ export const createBooking = async (req, res) => {
             nightlyRate,
             rooms: normalizedRooms,
             nights,
-            discountPct,
-            discountAmount: Number.parseFloat(discountAmount.toFixed(2)),
-            referralFirstBooking: referralFirstBookingPlan?.apply
+            publicPricingRole,
+            providerTotalAmount: Number.parseFloat(providerTotalAmount.toFixed(2)),
+            publicTotalAmount: Number.parseFloat(publicTotalAmount.toFixed(2)),
+            discountPct: selectedBenefit === "DISCOUNT_CODE" ? discountPct : 0,
+            discountAmount: selectedBenefit === "DISCOUNT_CODE" ? Number.parseFloat(discountAmount.toFixed(2)) : 0,
+            referralCredit: referralCreditReservation?.apply
               ? {
-                pct: referralFirstBookingPlan.pct,
-                amount: Number.parseFloat(referralFirstBookingDiscount.toFixed(2)),
-                currency: referralFirstBookingPlan.currency,
-                applied: true,
+                totalMinor: Math.max(0, Math.round(Number(referralCreditReservation.totalMinor || 0))),
+                availableMinor: Math.max(0, Math.round(Number(referralCreditReservation.availableMinor || 0))),
+                usedMinor: Math.max(0, Math.round(Number(referralCreditReservation.usedMinor || 0))),
+                appliedUsd: roundCurrency(referralCreditReservation.appliedUsd || 0),
+                appliedDisplay: referralCreditReservation.appliedDisplay || null,
+                appliedMinor: Math.max(0, Math.round(Number(referralCreditReservation.appliedMinor || 0))),
+                availableUsd: roundCurrency(referralCreditReservation.availableUsd || 0),
+                availableDisplay: referralCreditReservation.availableDisplay || null,
+                remainingChargeUsd: roundCurrency(referralCreditReservation.remainingChargeUsd || 0),
+                remainingChargeDisplay: referralCreditReservation.remainingChargeDisplay || null,
+                minimumSellingDisplay: referralCreditReservation.minimumSellingDisplay || null,
+                currency: referralCreditReservation.currency || currencyCode,
+                expiresAt: referralCreditReservation.expiresAt || null,
+                grantedAt: referralCreditReservation.grantedAt || null,
+                sourceInfluencerId: referralCreditReservation.sourceInfluencerId || null,
+                sourceCode: referralCreditReservation.sourceCode || null,
+                status: referralCreditReservation.reserved ? "reserved" : "preview",
               }
               : null,
-            referralCoupon: referralCouponPlan?.apply
-              ? {
-                amount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
-                currency: referralCouponPlan.currency,
-                walletId: referralCouponPlan.wallet?.id ?? null,
-                status: "pending",
-                applied: referralCouponApplied,
-              }
-              : null,
-            referralDiscountAmount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
-            totalBeforeDiscount: Number.parseFloat(totalBeforeDiscount.toFixed(2)),
+            referralCoupon: null,
+            referralDiscountAmount: selectedBenefit === "DISCOUNT_CODE" ? Number.parseFloat(discountAmount.toFixed(2)) : 0,
+            totalBeforeDiscount: Number.parseFloat(publicTotalAmount.toFixed(2)),
             totalDiscountAmount: Number.parseFloat(totalDiscountAmount.toFixed(2)),
             total: grossTotal,
           },
@@ -1193,23 +1281,36 @@ export const createBooking = async (req, res) => {
                 },
               }
               : {}),
-            ...(referralCouponPlan?.apply
+            ...(selectedBenefit === "REFERRAL_CREDIT" && referralCreditReservation?.apply
               ? {
-                referralCoupon: {
-                  amount: Number.parseFloat(referralDiscountAmount.toFixed(2)),
-                  currency: referralCouponPlan.currency,
-                  walletId: referralCouponPlan.wallet?.id ?? null,
-                  status: "pending",
+                referralCredit: {
+                  totalMinor: Math.max(0, Math.round(Number(referralCreditReservation.totalMinor || 0))),
+                  availableMinor: Math.max(0, Math.round(Number(referralCreditReservation.availableMinor || 0))),
+                  usedMinor: Math.max(0, Math.round(Number(referralCreditReservation.usedMinor || 0))),
+                  appliedUsd: roundCurrency(referralCreditReservation.appliedUsd || 0),
+                  appliedDisplay: referralCreditReservation.appliedDisplay || null,
+                  appliedMinor: Math.max(0, Math.round(Number(referralCreditReservation.appliedMinor || 0))),
+                  availableUsd: roundCurrency(referralCreditReservation.availableUsd || 0),
+                  availableDisplay: referralCreditReservation.availableDisplay || null,
+                  remainingChargeUsd: roundCurrency(referralCreditReservation.remainingChargeUsd || 0),
+                  remainingChargeDisplay: referralCreditReservation.remainingChargeDisplay || null,
+                  minimumSellingDisplay: referralCreditReservation.minimumSellingDisplay || null,
+                  currency: referralCreditReservation.currency || currencyCode,
+                  expiresAt: referralCreditReservation.expiresAt || null,
+                  grantedAt: referralCreditReservation.grantedAt || null,
+                  sourceInfluencerId: referralCreditReservation.sourceInfluencerId || null,
+                  sourceCode: referralCreditReservation.sourceCode || null,
+                  status: referralCreditReservation.reserved ? "reserved" : "preview",
                 },
               }
               : {}),
-            ...(referralFirstBookingPlan?.apply
+            ...(selectedBenefit === "DISCOUNT_CODE" && discountRecord
               ? {
-                referralFirstBooking: {
-                  pct: referralFirstBookingPlan.pct,
-                  amount: Number.parseFloat(referralFirstBookingDiscount.toFixed(2)),
-                  currency: referralFirstBookingPlan.currency,
-                  applied: true,
+                discountCode: {
+                  id: discountRecord.id,
+                  code: discountRecord.code,
+                  percentage: discountPct,
+                  amount: Number.parseFloat(discountAmount.toFixed(2)),
                 },
               }
               : {}),
@@ -1261,10 +1362,6 @@ export const createBooking = async (req, res) => {
 
       if (discountRecord) {
         await discountRecord.update({ booking_id: stay.id }, { transaction: tx })
-      }
-
-      if (referralCouponPlan?.apply) {
-        await createPendingRedemption({ plan: referralCouponPlan, stayId: stay.id, transaction: tx })
       }
 
       return stay

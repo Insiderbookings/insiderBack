@@ -615,6 +615,49 @@ const toBoolean = (value) => {
   return false;
 };
 
+const resolveHotelBenchmarkAmount = (flow, selectedOffer) => {
+  const candidates = [
+    selectedOffer?.benchmarkAmount,
+    selectedOffer?.competitorAmount,
+    selectedOffer?.competitorPrice,
+    selectedOffer?.priceBenchmark,
+    selectedOffer?.referencePrice,
+    selectedOffer?.benchmark?.amount,
+    flow?.pricing_snapshot_priced?.benchmarkAmount,
+    flow?.pricing_snapshot_priced?.competitorAmount,
+    flow?.pricing_snapshot_priced?.competitorPrice,
+    flow?.pricing_snapshot_priced?.priceBenchmark,
+    flow?.pricing_snapshot_priced?.referencePrice,
+    flow?.meta?.benchmarkAmount,
+    flow?.meta?.competitorAmount,
+    flow?.meta?.competitorPrice,
+  ];
+  for (const candidate of candidates) {
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric) && numeric > 0) return roundCurrency(numeric);
+  }
+  return null;
+};
+
+const captureHotelBenchmarkAlert = ({ flow, selectedOffer, canonicalPricing, context = "flow" }) => {
+  const benchmarkAmount = resolveHotelBenchmarkAmount(flow, selectedOffer);
+  const publicMarkedAmount = Number(canonicalPricing?.publicMarkedAmount);
+  if (!Number.isFinite(benchmarkAmount) || !Number.isFinite(publicMarkedAmount)) return null;
+  if (publicMarkedAmount <= benchmarkAmount) return null;
+
+  const alert = {
+    flowId: flow?.id ?? null,
+    benchmarkAmount,
+    publicMarkedAmount: roundCurrency(publicMarkedAmount),
+    providerAmount: roundCurrency(canonicalPricing?.providerAmount ?? 0),
+    markupRate: roundCurrency(canonicalPricing?.publicMarkupRate ?? 0),
+    context,
+    createdAt: new Date().toISOString(),
+  };
+  console.warn("[flow-orchestrator] hotel benchmark alert", alert);
+  return alert;
+};
+
 const pickAllocationFromResult = (result) => {
   const products = ensureArray(result?.product ?? result?.products?.product);
   for (const product of products) {
@@ -1152,6 +1195,8 @@ export class FlowOrchestratorService {
           : null,
       });
     }
+    const flowId = randomUUID();
+    const flowBenchmarkContext = { id: flowId };
     const offers = [];
     roomsList.forEach((room) => {
       ensureArray(room.roomTypes).forEach((roomType) => {
@@ -1189,6 +1234,12 @@ export class FlowOrchestratorService {
             minimumSelling: minSellingNumeric,
             pricingRole: hotelPricingRole,
           });
+          const benchmarkAlert = captureHotelBenchmarkAlert({
+            flow: flowBenchmarkContext,
+            selectedOffer: rateBasis,
+            canonicalPricing,
+            context: "block",
+          });
           const nonRefundable = toBoolean(rateBasis?.rateType?.nonRefundable);
           const cancelRestricted = rateBasis?.cancellationRules?.some((r) => r?.cancelRestricted) ?? false;
           const amendRestricted = rateBasis?.cancellationRules?.some((r) => r?.amendRestricted) ?? false;
@@ -1223,6 +1274,7 @@ export class FlowOrchestratorService {
             publicMarkedAmount: canonicalPricing.publicMarkedAmount,
             effectiveAmount: canonicalPricing.effectiveAmount,
             pricingRole: canonicalPricing.pricingRole,
+            benchmarkAlert,
             cancellationRules: rateBasis.cancellationRules ?? [],
             withinCancellationDeadline: rateBasis.withinCancellationDeadline ?? null,
             refundable: !nonRefundable,
@@ -1254,7 +1306,6 @@ export class FlowOrchestratorService {
       });
     });
 
-    const flowId = randomUUID();
     const flow = await models.BookingFlow.create({
       id: flowId,
       user_id: userId,
@@ -1428,6 +1479,12 @@ export class FlowOrchestratorService {
       minimumSelling: matchedMinimumSelling,
       pricingRole: resolveHotelPricingRole(req?.user),
     });
+    const benchmarkAlert = captureHotelBenchmarkAlert({
+      flow,
+      selectedOffer: rateBasis,
+      canonicalPricing,
+      context: "save",
+    });
     const updatedOffer = {
       ...flow.selected_offer,
       allocationDetails: newAllocation,
@@ -1448,6 +1505,7 @@ export class FlowOrchestratorService {
       effectiveAmount:
         canonicalPricing.effectiveAmount ?? flow.selected_offer?.effectiveAmount ?? null,
       pricingRole: canonicalPricing.pricingRole ?? flow.selected_offer?.pricingRole ?? null,
+      benchmarkAlert: benchmarkAlert ?? flow.selected_offer?.benchmarkAlert ?? null,
       mealPlan: matchedMealPlan ?? flow.selected_offer?.mealPlan ?? null,
       nonRefundable:
         matchedNonRefundable != null
@@ -1839,6 +1897,12 @@ export class FlowOrchestratorService {
       minimumSelling: flow.selected_offer?.minimumSelling,
       pricingRole: resolveHotelPricingRole(req?.user),
     });
+    const benchmarkAlert = captureHotelBenchmarkAlert({
+      flow,
+      selectedOffer: flow.selected_offer,
+      canonicalPricing,
+      context: "price",
+    });
 
     flow.allocation_current = newAllocation;
     const baseCurrency =
@@ -1856,6 +1920,7 @@ export class FlowOrchestratorService {
       allocationDetails: newAllocation,
       cancellationRules: productNode?.cancellationRules ?? null,
       withinCancellationDeadline,
+      benchmarkAlert: benchmarkAlert ?? flow.pricing_snapshot_priced?.benchmarkAlert ?? null,
       raw: {
         withinCancellationDeadline,
         priceFormatted: getText(productNode?.servicePrice?.formatted ?? productNode?.price?.formatted),

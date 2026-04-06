@@ -2,6 +2,7 @@
 import { Op } from "sequelize"
 import models, { sequelize } from "../models/index.js"
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
+import { grantReferralCreditForUser } from "./referralCredit.service.js"
 
 const allowedEvents = new Set(["signup", "booking"])
 const iLikeOp = getCaseInsensitiveLikeOp()
@@ -400,6 +401,13 @@ export const linkReferralCodeForUser = async ({ userId, referralCode, transactio
     influencerUserId: influencer.id,
     signupUserId: user.id,
     currency: "USD",
+    transaction,
+  })
+
+  await grantReferralCreditForUser({
+    userId: user.id,
+    influencerUserId: influencer.id,
+    referralCode: code,
     transaction,
   })
 

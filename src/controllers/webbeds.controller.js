@@ -34,8 +34,11 @@ import {
   comparePartnerAwareHotelItems,
 } from "../services/partnerLifecycle.service.js"
 
-
-import { planReferralFirstBookingDiscount } from "../services/referralRewards.service.js"
+import {
+  previewReferralCreditForBooking,
+  reserveReferralCreditForBooking,
+  restoreReferralCreditForBooking,
+} from "../services/referralCredit.service.js"
 import { FlowOrchestratorService } from "../services/flowOrchestrator.service.js"
 import {
   captureHold,
@@ -163,6 +166,63 @@ const roundCurrency = (value) => {
   const numeric = Number(value || 0)
   if (!Number.isFinite(numeric)) return 0
   return Number.parseFloat(numeric.toFixed(2))
+}
+
+const parseCurrencyDisplayAmount = (value) => {
+  if (value === null || value === undefined) return null
+  if (typeof value === "number") return Number.isFinite(value) ? roundCurrency(value) : null
+  const parsed = Number(String(value).replace(/[^0-9.\-]/g, ""))
+  return Number.isFinite(parsed) ? roundCurrency(parsed) : null
+}
+
+const convertAmountForCurrency = async (amountUsd, currency) => {
+  const normalizedCurrency = String(currency || "USD").trim().toUpperCase() || "USD"
+  const safeAmount = roundCurrency(amountUsd)
+  if (normalizedCurrency === "USD") return safeAmount
+  const converted = await convertCurrency(safeAmount, normalizedCurrency)
+  return roundCurrency(converted?.amount)
+}
+
+const resolveHotelBenchmarkAmount = (flow, selectedOffer) => {
+  const candidates = [
+    selectedOffer?.benchmarkAmount,
+    selectedOffer?.competitorAmount,
+    selectedOffer?.competitorPrice,
+    selectedOffer?.priceBenchmark,
+    selectedOffer?.referencePrice,
+    selectedOffer?.benchmark?.amount,
+    flow?.pricing_snapshot_priced?.benchmarkAmount,
+    flow?.pricing_snapshot_priced?.competitorAmount,
+    flow?.pricing_snapshot_priced?.competitorPrice,
+    flow?.pricing_snapshot_priced?.priceBenchmark,
+    flow?.pricing_snapshot_priced?.referencePrice,
+    flow?.meta?.benchmarkAmount,
+    flow?.meta?.competitorAmount,
+    flow?.meta?.competitorPrice,
+  ]
+  for (const candidate of candidates) {
+    const numeric = Number(candidate)
+    if (Number.isFinite(numeric) && numeric > 0) return roundCurrency(numeric)
+  }
+  return null
+}
+
+const logHotelBenchmarkAlert = ({ flow, selectedOffer, canonicalPricing, context = "flow" }) => {
+  const benchmarkAmount = resolveHotelBenchmarkAmount(flow, selectedOffer)
+  const publicMarkedAmount = Number(canonicalPricing?.publicMarkedAmount)
+  if (!Number.isFinite(benchmarkAmount) || !Number.isFinite(publicMarkedAmount)) return null
+  if (publicMarkedAmount <= benchmarkAmount) return null
+
+  const alert = {
+    flowId: flow?.id ?? null,
+    benchmarkAmount,
+    publicMarkedAmount: roundCurrency(publicMarkedAmount),
+    providerAmount: roundCurrency(canonicalPricing?.providerAmount ?? 0),
+    markupRate: roundCurrency(canonicalPricing?.publicMarkupRate ?? 0),
+    context,
+  }
+  console.warn("[hotel-pricing] benchmark alert", alert)
+  return alert
 }
 
 const PAYMENT_INTENT_REUSABLE_STATUSES = new Set([
@@ -596,6 +656,12 @@ export const createPaymentIntent = async (req, res, next) => {
       effectiveAmount: amountUsd,
       publicMarkupRate: markupRate,
     } = canonicalPricing
+    const benchmarkAlert = logHotelBenchmarkAlert({
+      flow,
+      selectedOffer: flow.selected_offer,
+      canonicalPricing,
+      context: "createPaymentIntent",
+    })
     if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
       console.warn(`${logPrefix} invalid marked amount`, {
         flowId,
@@ -607,6 +673,9 @@ export const createPaymentIntent = async (req, res, next) => {
         markupRate,
       })
       return res.status(409).json({ error: "Flow pricing unavailable" })
+    }
+    if (benchmarkAlert) {
+      console.warn(`${logPrefix} benchmark alert`, benchmarkAlert)
     }
     if (amount != null) {
       const clientAmount = Number(amount)
@@ -687,6 +756,8 @@ export const createPaymentIntent = async (req, res, next) => {
     let stripeFxFeeRate = null
     let stripeFxReferenceRate = null
     let stripeFxReferenceProvider = null
+    let localBooking = null
+    let referralCreditReservation = null
     // flow resolved above
 
     const extractSupportedLockDurations = (message) => {
@@ -956,26 +1027,57 @@ export const createPaymentIntent = async (req, res, next) => {
       children,
     }
 
+    const pricingConversionRate = amountUsd > 0 ? roundCurrency(finalAmount / amountUsd) : 1
+    const providerAmountDisplay = roundCurrency(providerAmountUsd * pricingConversionRate)
+    const publicAmountDisplay = roundCurrency(amountUsd * pricingConversionRate)
+    const minimumSellingDisplay = roundCurrency((minimumSelling ?? 0) * pricingConversionRate)
     const totalBeforeDiscount = roundCurrency(finalAmount)
-    let referralFirstBookingPlan = null
-    let referralFirstBookingDiscount = 0
-    if (referral.influencerId && req.user?.id) {
-      referralFirstBookingPlan = await planReferralFirstBookingDiscount({
-        influencerUserId: referral.influencerId,
+    let referralCreditPreview = null
+    let totalDiscountAmount = 0
+    let totalDiscountAmountUsd = 0
+    if (req.user?.id && publicPricingRole === 20) {
+      referralCreditPreview = await previewReferralCreditForBooking({
         userId: req.user.id,
-        totalBeforeDiscount,
+        providerTotalAmount: providerAmountDisplay,
+        publicTotalAmount: publicAmountDisplay,
+        minimumSellingAmount: minimumSellingDisplay,
         currency: finalCurrency,
       })
-      referralFirstBookingDiscount = referralFirstBookingPlan?.apply
-        ? referralFirstBookingPlan.discountAmount
-        : 0
+      if (Number(referralCreditPreview?.appliedMinor || 0) > 0) {
+        referralCreditReservation = await reserveReferralCreditForBooking({
+          userId: req.user.id,
+          providerTotalAmount: providerAmountDisplay,
+          publicTotalAmount: publicAmountDisplay,
+          minimumSellingAmount: minimumSellingDisplay,
+          currency: finalCurrency,
+          bookingId: bookingId || null,
+          bookingRef: booking_ref || null,
+        })
+        referralCreditPreview = referralCreditReservation
+      }
+      totalDiscountAmount = roundCurrency(
+        parseCurrencyDisplayAmount(referralCreditPreview?.appliedDisplay) ??
+          Number(referralCreditPreview?.appliedUsd || 0),
+      )
+      totalDiscountAmountUsd = roundCurrency(Number(referralCreditPreview?.appliedUsd || 0))
     }
-    const totalDiscountAmount = roundCurrency(referralFirstBookingDiscount)
     const grossTotal = roundCurrency(Math.max(0, totalBeforeDiscount - totalDiscountAmount))
-    const grossTotalUsd =
-      totalBeforeDiscount > 0
-        ? roundCurrency(amountUsd * (grossTotal / totalBeforeDiscount))
-        : roundCurrency(amountUsd)
+    const grossTotalUsd = roundCurrency(Math.max(0, amountUsd - totalDiscountAmountUsd))
+    console.info(
+      `${logPrefix} ###netprice: ${roundCurrency(providerAmountUsd)}###markup applied: ${roundCurrency(
+        canonicalPricing.publicMarkupAmount || 0,
+      )}###benefit applied: ${roundCurrency(totalDiscountAmount)}###final price: ${roundCurrency(
+        grossTotal,
+      )}###`,
+      {
+        flowId,
+        bookingId,
+        currency: finalCurrency,
+        referralCreditApplied: roundCurrency(totalDiscountAmount),
+        referralCreditAppliedUsd: roundCurrency(totalDiscountAmountUsd),
+        referralCreditActive: Boolean(referralCreditPreview?.apply),
+      },
+    )
     const walletFeatureEnabled = isGuestWalletHotelsEnabled()
     const walletRequested = walletFeatureEnabled && Boolean(useWallet)
     const walletRewardReleaseAt = resolveRewardReleaseAt({ flow, bookedAt: new Date() })
@@ -990,7 +1092,7 @@ export const createPaymentIntent = async (req, res, next) => {
       guests: { adults, children },
       userId,
     })
-    let localBooking = await findPendingBookingByPaymentScope({
+    localBooking = await findPendingBookingByPaymentScope({
       userId,
       flowId: flow.id,
       bookingId,
@@ -1014,13 +1116,26 @@ export const createPaymentIntent = async (req, res, next) => {
           },
         }
         : {}),
-      ...(referralFirstBookingPlan?.apply
+      ...(referralCreditPreview?.apply
         ? {
-          referralFirstBooking: {
-            pct: referralFirstBookingPlan.pct,
-            amount: roundCurrency(referralFirstBookingDiscount),
-            currency: referralFirstBookingPlan.currency,
-            applied: true,
+          referralCredit: {
+            totalMinor: Math.max(0, Math.round(Number(referralCreditPreview.totalMinor || 0))),
+            availableMinor: Math.max(0, Math.round(Number(referralCreditPreview.availableMinor || 0))),
+            usedMinor: Math.max(0, Math.round(Number(referralCreditPreview.usedMinor || 0))),
+            appliedUsd: roundCurrency(referralCreditPreview.appliedUsd || 0),
+            appliedDisplay: referralCreditPreview.appliedDisplay || null,
+            appliedMinor: Math.max(0, Math.round(Number(referralCreditPreview.appliedMinor || 0))),
+            availableUsd: roundCurrency(referralCreditPreview.availableUsd || 0),
+            availableDisplay: referralCreditPreview.availableDisplay || null,
+            remainingChargeUsd: roundCurrency(referralCreditPreview.remainingChargeUsd || 0),
+            remainingChargeDisplay: referralCreditPreview.remainingChargeDisplay || null,
+            minimumSellingDisplay: referralCreditPreview.minimumSellingDisplay || null,
+            currency: referralCreditPreview.currency || finalCurrency,
+            expiresAt: referralCreditPreview.expiresAt || null,
+            grantedAt: referralCreditPreview.grantedAt || null,
+            sourceInfluencerId: referralCreditPreview.sourceInfluencerId || null,
+            sourceCode: referralCreditPreview.sourceCode || null,
+            status: referralCreditPreview.reserved ? "reserved" : "preview",
           },
         }
         : {}),
@@ -1045,20 +1160,42 @@ export const createPaymentIntent = async (req, res, next) => {
       stripeFxReferenceRate,
       stripeFxReferenceProvider,
       stripeFxExpiresAt,
+      benefit: referralCreditPreview?.apply
+        ? {
+          type: "REFERRAL_CREDIT",
+          amountUsd: roundCurrency(totalDiscountAmountUsd),
+          amount: roundCurrency(totalDiscountAmount),
+          currency: finalCurrency,
+        }
+        : null,
     }
 
     const basePricingSnapshotPayload = {
       flowId: flow.id,
       totalBeforeDiscount,
-      referralFirstBooking: referralFirstBookingPlan?.apply
+      referralCredit: referralCreditPreview?.apply
         ? {
-          pct: referralFirstBookingPlan.pct,
-          amount: roundCurrency(referralFirstBookingDiscount),
-          currency: referralFirstBookingPlan.currency,
-          applied: true,
+          totalMinor: Math.max(0, Math.round(Number(referralCreditPreview.totalMinor || 0))),
+          availableMinor: Math.max(0, Math.round(Number(referralCreditPreview.availableMinor || 0))),
+          usedMinor: Math.max(0, Math.round(Number(referralCreditPreview.usedMinor || 0))),
+          appliedUsd: roundCurrency(referralCreditPreview.appliedUsd || 0),
+          appliedDisplay: referralCreditPreview.appliedDisplay || null,
+          appliedMinor: Math.max(0, Math.round(Number(referralCreditPreview.appliedMinor || 0))),
+          availableUsd: roundCurrency(referralCreditPreview.availableUsd || 0),
+          availableDisplay: referralCreditPreview.availableDisplay || null,
+          remainingChargeUsd: roundCurrency(referralCreditPreview.remainingChargeUsd || 0),
+          remainingChargeDisplay: referralCreditPreview.remainingChargeDisplay || null,
+          minimumSellingDisplay: referralCreditPreview.minimumSellingDisplay || null,
+          currency: referralCreditPreview.currency || finalCurrency,
+          expiresAt: referralCreditPreview.expiresAt || null,
+          grantedAt: referralCreditPreview.grantedAt || null,
+          sourceInfluencerId: referralCreditPreview.sourceInfluencerId || null,
+          sourceCode: referralCreditPreview.sourceCode || null,
+          status: referralCreditPreview.reserved ? "reserved" : "preview",
         }
         : null,
       totalDiscountAmount,
+      totalDiscountAmountUsd,
       totalBeforeWallet: grossTotal,
       totalBeforeWalletUsd: grossTotalUsd,
       total: grossTotal,
@@ -1070,6 +1207,14 @@ export const createPaymentIntent = async (req, res, next) => {
       publicMarkupAmount: canonicalPricing.publicMarkupAmount,
       effectiveAmount: amountUsd,
       effectivePublicAmount: amountUsd,
+      benefit: referralCreditPreview?.apply
+        ? {
+          type: "REFERRAL_CREDIT",
+          amountUsd: roundCurrency(totalDiscountAmountUsd),
+          amount: roundCurrency(totalDiscountAmount),
+          currency: finalCurrency,
+        }
+        : null,
     }
 
     const baseBookingPayload = {
@@ -1372,6 +1517,10 @@ export const createPaymentIntent = async (req, res, next) => {
             }),
         }).catch(() => {})
       }
+      if (referralCreditReservation?.reserved) {
+        await restoreReferralCreditForBooking({ booking: localBooking }).catch(() => {})
+        referralCreditReservation = null
+      }
       throw paymentIntentCreateError
     }
     logStripeFxDebug("paymentIntent.created", {
@@ -1408,6 +1557,10 @@ export const createPaymentIntent = async (req, res, next) => {
     )
 
   } catch (error) {
+    if (referralCreditReservation?.reserved && localBooking) {
+      await restoreReferralCreditForBooking({ booking: localBooking }).catch(() => {})
+      referralCreditReservation = null
+    }
     console.error("[webbeds] createPaymentIntent error", error)
     next(error)
   }

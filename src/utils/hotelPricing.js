@@ -1,5 +1,3 @@
-import { getMarkup } from "./markup.js";
-
 const HOTEL_PRICE_PROVIDER_KEYS = [
   "providerAmount",
   "baseAmount",
@@ -34,6 +32,18 @@ const HOTEL_CANONICAL_MARKED_KEYS = [
   "publicPrice",
   "displayPrice",
 ];
+
+export const HOTEL_PRICING_TIERS = Object.freeze({
+  STANDARD: "STANDARD",
+  TRAVEL_AGENT: "TRAVEL_AGENT",
+  ADMIN: "ADMIN",
+});
+
+export const HOTEL_PRICING_MARKUP_RATES = Object.freeze({
+  STANDARD: 0.2,
+  TRAVEL_AGENT: 0.1,
+  ADMIN: 0,
+});
 
 export const roundCurrency = (value) => {
   if (value === undefined || value === null || value === "") return null;
@@ -88,28 +98,65 @@ const resolveAmountFromSource = (source, keys) => {
   return null;
 };
 
-const resolvePricingRole = ({ pricingRole = null, user = null } = {}) => {
-  if (pricingRole !== null && pricingRole !== undefined && pricingRole !== "") {
-    const parsed = Number(pricingRole);
-    if (Number.isFinite(parsed)) return parsed;
+const normalizePricingTier = (value) => {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (
+    normalized === HOTEL_PRICING_TIERS.TRAVEL_AGENT ||
+    normalized === "TRAVEL AGENT" ||
+    normalized === "TRAVEL_AGENT" ||
+    normalized === "TRAVEL-AGENT"
+  ) {
+    return HOTEL_PRICING_TIERS.TRAVEL_AGENT;
   }
-  return resolveHotelPricingRole(user);
+  if (normalized === HOTEL_PRICING_TIERS.ADMIN || normalized === "NET" || normalized === "NET_RATE") {
+    return HOTEL_PRICING_TIERS.ADMIN;
+  }
+  return HOTEL_PRICING_TIERS.STANDARD;
+};
+
+const resolvePricingTier = ({ pricingRole = null, user = null } = {}) => {
+  if (pricingRole !== null && pricingRole !== undefined && pricingRole !== "") {
+    const normalized = normalizePricingTier(pricingRole);
+    if (normalized !== HOTEL_PRICING_TIERS.STANDARD || String(pricingRole).trim().toUpperCase() === HOTEL_PRICING_TIERS.STANDARD) {
+      return normalized;
+    }
+    const parsed = Number(pricingRole);
+    if (Number.isFinite(parsed)) {
+      if (parsed === 100) return HOTEL_PRICING_TIERS.ADMIN;
+      if (parsed === 10) return HOTEL_PRICING_TIERS.TRAVEL_AGENT;
+      return HOTEL_PRICING_TIERS.STANDARD;
+    }
+  }
+
+  const role = Number(user?.role);
+  if (role === 100) return HOTEL_PRICING_TIERS.ADMIN;
+  if (role === 10) return HOTEL_PRICING_TIERS.TRAVEL_AGENT;
+
+  const tier = normalizePricingTier(user?.hotel_pricing_tier ?? user?.hotelPricingTier ?? user?.pricing_tier);
+  if (tier === HOTEL_PRICING_TIERS.TRAVEL_AGENT) return HOTEL_PRICING_TIERS.TRAVEL_AGENT;
+  return HOTEL_PRICING_TIERS.STANDARD;
 };
 
 export const resolveHotelPricingRole = (user) => {
-  const role = Number(user?.role);
-  return role === 100 ? 100 : 0;
+  const tier = resolvePricingTier({ user });
+  if (tier === HOTEL_PRICING_TIERS.ADMIN) return 100;
+  if (tier === HOTEL_PRICING_TIERS.TRAVEL_AGENT) return 10;
+  return 20;
 };
+
+export const resolveHotelPricingTier = (user) => resolvePricingTier({ user });
 
 export const resolveHotelMarkupRate = ({
   providerAmount,
   pricingRole = null,
   user = null,
 } = {}) => {
-  const role = resolvePricingRole({ pricingRole, user });
+  const tier = resolvePricingTier({ pricingRole, user });
   const amount = resolveAmountFromSource(providerAmount, HOTEL_PRICE_PROVIDER_KEYS);
   if (!Number.isFinite(amount) || amount <= 0) return 0;
-  return Number(getMarkup(role, amount)) || 0;
+  if (tier === HOTEL_PRICING_TIERS.ADMIN) return HOTEL_PRICING_MARKUP_RATES.ADMIN;
+  if (tier === HOTEL_PRICING_TIERS.TRAVEL_AGENT) return HOTEL_PRICING_MARKUP_RATES.TRAVEL_AGENT;
+  return HOTEL_PRICING_MARKUP_RATES.STANDARD;
 };
 
 export const resolveHotelCanonicalPricing = ({
@@ -118,7 +165,13 @@ export const resolveHotelCanonicalPricing = ({
   pricingRole = null,
   user = null,
 } = {}) => {
-  const role = resolvePricingRole({ pricingRole, user });
+  const tier = resolvePricingTier({ pricingRole, user });
+  const publicPricingRole =
+    tier === HOTEL_PRICING_TIERS.ADMIN
+      ? 100
+      : tier === HOTEL_PRICING_TIERS.TRAVEL_AGENT
+        ? 10
+        : 20;
   const providerBaseRaw = resolveAmountFromSource(providerAmount, HOTEL_PRICE_PROVIDER_KEYS);
   const providerBase = roundCurrency(providerBaseRaw);
   const minimumSellingRaw = resolveAmountFromSource(minimumSelling, HOTEL_MINIMUM_SELLING_KEYS);
@@ -129,7 +182,8 @@ export const resolveHotelCanonicalPricing = ({
 
   if (!Number.isFinite(providerBase) || providerBase == null) {
     return {
-      pricingRole: role,
+      pricingTier: tier,
+      pricingRole: publicPricingRole,
       providerAmount: null,
       publicMarkupRate: 0,
       publicMarkupAmount: null,
@@ -139,10 +193,11 @@ export const resolveHotelCanonicalPricing = ({
     };
   }
 
-  const publicMarkupRateRaw = Number(getMarkup(role, providerBase));
-  const publicMarkupRate = Number.isFinite(publicMarkupRateRaw) && publicMarkupRateRaw > 0
-    ? publicMarkupRateRaw
-    : 0;
+  const publicMarkupRate = resolveHotelMarkupRate({
+    providerAmount: providerBase,
+    pricingRole: tier,
+    user,
+  });
   const publicMarkupAmount = publicMarkupRate > 0
     ? roundCurrency(providerBase * publicMarkupRate)
     : 0;
@@ -153,7 +208,8 @@ export const resolveHotelCanonicalPricing = ({
       : publicMarkedAmount;
 
   return {
-    pricingRole: role,
+    pricingTier: tier,
+    pricingRole: publicPricingRole,
     providerAmount: providerBase,
     publicMarkupRate,
     publicMarkupAmount,
@@ -193,10 +249,13 @@ export const resolveHotelCanonicalDisplayAmount = (value, options = {}) => {
 };
 
 export default {
+  HOTEL_PRICING_MARKUP_RATES,
+  HOTEL_PRICING_TIERS,
   roundCurrency,
   resolveHotelCanonicalDisplayAmount,
   resolveHotelCanonicalPricing,
   resolveHotelCanonicalPricingFromObject,
   resolveHotelMarkupRate,
   resolveHotelPricingRole,
+  resolveHotelPricingTier,
 };

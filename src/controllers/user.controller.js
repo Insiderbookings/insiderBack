@@ -207,6 +207,29 @@ const normalizeInfluencerIdentityReturnUrl = (value) => {
   }
 }
 
+const normalizeHotelPricingRequestData = (body = {}) => {
+  const fullName = normalizeFullName(body?.fullName ?? body?.name ?? body?.contactName)
+  const agencyCompanyName = normalizeNamePart(
+    body?.agencyCompanyName ?? body?.companyName ?? body?.agencyName ?? body?.businessName
+  )
+  const phone = normalizeNamePart(body?.phone ?? body?.phoneNumber ?? body?.contactPhone)
+  const monthlyBookingsRaw = Number(
+    body?.expectedMonthlyBookings ?? body?.monthlyBookings ?? body?.bookingsPerMonth ?? body?.volume
+  )
+  const expectedMonthlyBookings =
+    Number.isFinite(monthlyBookingsRaw) && monthlyBookingsRaw > 0
+      ? Math.round(monthlyBookingsRaw)
+      : null
+  const notes = normalizeNamePart(body?.notes ?? body?.message ?? body?.comment)
+  return {
+    fullName,
+    agencyCompanyName,
+    phone,
+    expectedMonthlyBookings,
+    notes,
+  }
+}
+
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ GET /api/users/me â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const getCurrentUser = async (req, res) => {
   try {
@@ -233,6 +256,20 @@ export const getCurrentUser = async (req, res) => {
         ["discount_code_reminder_at", "discountCodeReminderAt"],
         ["discount_code_locked_at", "discountCodeLockedAt"],
         ["discount_code_entered_at", "discountCodeEnteredAt"],
+        ["hotel_pricing_tier", "hotelPricingTier"],
+        ["hotel_pricing_request_status", "hotelPricingRequestStatus"],
+        ["hotel_pricing_request_data", "hotelPricingRequestData"],
+        ["hotel_pricing_requested_at", "hotelPricingRequestedAt"],
+        ["hotel_pricing_reviewed_at", "hotelPricingReviewedAt"],
+        ["hotel_pricing_reviewed_by_user_id", "hotelPricingReviewedByUserId"],
+        ["hotel_pricing_note", "hotelPricingNote"],
+        ["referral_credit_total_minor", "referralCreditTotalMinor"],
+        ["referral_credit_available_minor", "referralCreditAvailableMinor"],
+        ["referral_credit_used_minor", "referralCreditUsedMinor"],
+        ["referral_credit_granted_at", "referralCreditGrantedAt"],
+        ["referral_credit_expires_at", "referralCreditExpiresAt"],
+        ["referral_credit_source_influencer_id", "referralCreditSourceInfluencerId"],
+        ["referral_credit_source_code", "referralCreditSourceCode"],
         "user_code",
       ],
       include: [
@@ -255,6 +292,14 @@ export const getCurrentUser = async (req, res) => {
     if (!plain.lastName && derivedName.lastName) plain.lastName = derivedName.lastName
     if (!plain.name && derivedName.fullName) plain.name = derivedName.fullName
     plain.roleCodes = deriveRoleCodes(plain)
+    plain.hotelPricingTier = plain.hotelPricingTier ?? plain.hotel_pricing_tier ?? null
+    plain.hotelPricingRequestStatus = plain.hotelPricingRequestStatus ?? plain.hotel_pricing_request_status ?? null
+    plain.hotelPricingRequestData = plain.hotelPricingRequestData ?? plain.hotel_pricing_request_data ?? null
+    plain.hotelPricingRequestedAt = plain.hotelPricingRequestedAt ?? plain.hotel_pricing_requested_at ?? null
+    plain.hotelPricingReviewedAt = plain.hotelPricingReviewedAt ?? plain.hotel_pricing_reviewed_at ?? null
+    plain.hotelPricingReviewedByUserId =
+      plain.hotelPricingReviewedByUserId ?? plain.hotel_pricing_reviewed_by_user_id ?? null
+    plain.hotelPricingNote = plain.hotelPricingNote ?? plain.hotel_pricing_note ?? null
 
     const referralLinked = Boolean(
       plain.referredByInfluencerId ??
@@ -284,6 +329,161 @@ export const getCurrentUser = async (req, res) => {
   } catch (err) {
     console.error("Error getting current user:", err)
     return res.status(500).json({ error: "Server error" })
+  }
+}
+
+export const requestHotelPricingTier = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id)
+    if (!userId) return res.status(401).json({ error: "Unauthorized" })
+
+    const payload = normalizeHotelPricingRequestData(req.body || {})
+    if (!payload.fullName || !payload.agencyCompanyName || !payload.phone || !payload.expectedMonthlyBookings) {
+      return res.status(400).json({
+        error:
+          "Full name, agency/company name, phone and expected monthly bookings are required.",
+      })
+    }
+
+    const result = await sequelize.transaction(async (transaction) => {
+      const user = await models.User.findByPk(userId, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      })
+      if (!user) throw new Error("User not found")
+      if (Number(user.role) === 10 || String(user.hotel_pricing_tier || "").toUpperCase() === "TRAVEL_AGENT") {
+        const err = new Error("Travel agent pricing is already active.")
+        err.status = 409
+        throw err
+      }
+
+      await user.update(
+        {
+          hotel_pricing_request_status: "pending",
+          hotel_pricing_request_data: {
+            fullName: payload.fullName,
+            agencyCompanyName: payload.agencyCompanyName,
+            phone: payload.phone,
+            expectedMonthlyBookings: payload.expectedMonthlyBookings,
+            notes: payload.notes || null,
+          },
+          hotel_pricing_requested_at: new Date(),
+          hotel_pricing_note: null,
+        },
+        { transaction }
+      )
+
+      return user.reload({ transaction })
+    })
+
+    return res.json({
+      message: "Travel agent pricing request submitted",
+      user: result,
+    })
+  } catch (err) {
+    if (err.message === "User not found") {
+      return res.status(404).json({ error: "User not found" })
+    }
+    if (err.status === 409) {
+      return res.status(409).json({ error: err.message })
+    }
+    console.error("requestHotelPricingTier error:", err)
+    return res.status(500).json({ error: "Unable to submit travel agent pricing request" })
+  }
+}
+
+export const approveHotelPricingTier = async (req, res) => {
+  try {
+    const adminUserId = Number(req.user?.id)
+    if (!adminUserId) return res.status(401).json({ error: "Unauthorized" })
+
+    const targetUserId = Number(req.params?.userId || req.params?.id || 0)
+    if (!targetUserId) return res.status(400).json({ error: "Missing userId" })
+
+    const note = normalizeNamePart(req.body?.note ?? req.body?.reason ?? null)
+
+    const result = await sequelize.transaction(async (transaction) => {
+      const user = await models.User.findByPk(targetUserId, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      })
+      if (!user) throw new Error("User not found")
+
+      await user.update(
+        {
+          hotel_pricing_tier: "TRAVEL_AGENT",
+          hotel_pricing_request_status: "approved",
+          hotel_pricing_reviewed_at: new Date(),
+          hotel_pricing_reviewed_by_user_id: adminUserId,
+          hotel_pricing_note: note || null,
+        },
+        { transaction }
+      )
+
+      return user.reload({ transaction })
+    })
+
+    return res.json({
+      message: "Travel agent pricing approved",
+      user: result,
+    })
+  } catch (err) {
+    if (err.message === "User not found") {
+      return res.status(404).json({ error: "User not found" })
+    }
+    console.error("approveHotelPricingTier error:", err)
+    return res.status(500).json({ error: "Unable to approve travel agent pricing" })
+  }
+}
+
+export const rejectHotelPricingTier = async (req, res) => {
+  try {
+    const adminUserId = Number(req.user?.id)
+    if (!adminUserId) return res.status(401).json({ error: "Unauthorized" })
+
+    const targetUserId = Number(req.params?.userId || req.params?.id || 0)
+    if (!targetUserId) return res.status(400).json({ error: "Missing userId" })
+
+    const note = normalizeNamePart(req.body?.note ?? req.body?.reason ?? null)
+
+    const result = await sequelize.transaction(async (transaction) => {
+      const user = await models.User.findByPk(targetUserId, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      })
+      if (!user) throw new Error("User not found")
+      if (Number(user.role) === 10 || String(user.hotel_pricing_tier || "").toUpperCase() === "TRAVEL_AGENT") {
+        const err = new Error("Travel agent pricing is already active.")
+        err.status = 409
+        throw err
+      }
+
+      await user.update(
+        {
+          hotel_pricing_request_status: "rejected",
+          hotel_pricing_reviewed_at: new Date(),
+          hotel_pricing_reviewed_by_user_id: adminUserId,
+          hotel_pricing_note: note || null,
+        },
+        { transaction }
+      )
+
+      return user.reload({ transaction })
+    })
+
+    return res.json({
+      message: "Travel agent pricing rejected",
+      user: result,
+    })
+  } catch (err) {
+    if (err.message === "User not found") {
+      return res.status(404).json({ error: "User not found" })
+    }
+    if (err.status === 409) {
+      return res.status(409).json({ error: err.message })
+    }
+    console.error("rejectHotelPricingTier error:", err)
+    return res.status(500).json({ error: "Unable to reject travel agent pricing" })
   }
 }
 

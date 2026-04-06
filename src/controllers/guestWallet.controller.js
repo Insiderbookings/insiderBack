@@ -1,9 +1,10 @@
 import models from "../models/index.js";
+import { convertCurrency } from "../services/currency.service.js";
 import {
   resolveHotelCanonicalPricing,
   resolveHotelPricingRole,
 } from "../utils/hotelPricing.js";
-import { planReferralFirstBookingDiscount } from "../services/referralRewards.service.js";
+import { previewReferralCreditForBooking } from "../services/referralCredit.service.js";
 import {
   getSummary,
   isGuestWalletHotelsEnabled,
@@ -40,7 +41,15 @@ const resolveCanonicalPublicBookingAmount = ({ flow, providerAmount, pricingRole
   });
 };
 
-const resolveHotelWalletPricing = async ({ flow, user }) => {
+const convertAmountForCurrency = async (amount, currency) => {
+  const normalizedCurrency = String(currency || "USD").trim().toUpperCase() || "USD";
+  const safeAmount = roundCurrency(amount);
+  if (normalizedCurrency === "USD") return safeAmount;
+  const converted = await convertCurrency(safeAmount, normalizedCurrency);
+  return roundCurrency(converted?.amount);
+};
+
+const resolveHotelWalletPricing = async ({ flow, user, displayCurrency = "USD" }) => {
   const pricedAmount =
     Number(flow?.pricing_snapshot_priced?.price) ||
     Number(flow?.pricing_snapshot_preauth?.price) ||
@@ -61,27 +70,31 @@ const resolveHotelWalletPricing = async ({ flow, user }) => {
     pricingRole: publicPricingRole,
   });
 
-  const referralUserId = Number(user?.referredByInfluencerId) || null;
-  let totalBeforeWalletUsd = effectiveAmount;
-  if (referralUserId && user?.id) {
-    const plan = await planReferralFirstBookingDiscount({
-      influencerUserId: referralUserId,
-      userId: user.id,
-      totalBeforeDiscount: effectiveAmount,
-      currency: "USD",
-    });
-    if (plan?.apply) {
-      totalBeforeWalletUsd = roundCurrency(
-        Math.max(0, effectiveAmount - Number(plan.discountAmount || 0))
-      );
-    }
-  }
+  const publicAmountUsd = roundCurrency(effectiveAmount ?? publicMarkedAmount ?? providerAmountUsd);
+  const minimumSellingUsd = roundCurrency(minimumSelling ?? 0);
+  const providerAmountDisplay = await convertAmountForCurrency(providerAmountUsd, displayCurrency);
+  const publicAmountDisplay = await convertAmountForCurrency(publicAmountUsd, displayCurrency);
+  const minimumSellingDisplay = await convertAmountForCurrency(minimumSellingUsd, displayCurrency);
+  const referralCredit = await previewReferralCreditForBooking({
+    userId: user?.id,
+    providerTotalAmount: providerAmountDisplay,
+    publicTotalAmount: publicAmountDisplay,
+    minimumSellingAmount: minimumSellingDisplay,
+    currency: displayCurrency,
+  });
+  const totalBeforeWalletUsd = roundCurrency(
+    Math.max(0, publicAmountUsd - Number(referralCredit?.appliedUsd || 0))
+  );
 
   return {
-    publicMarkedAmount,
-    minimumSelling: minimumSelling ?? 0,
-    effectiveAmount,
+    providerAmountUsd,
+    publicAmountUsd,
+    publicMarkedAmount: publicAmountDisplay,
+    minimumSelling: minimumSellingUsd,
+    minimumSellingDisplay: minimumSellingDisplay ?? 0,
+    effectiveAmount: publicAmountDisplay,
     totalBeforeWalletUsd,
+    referralCredit,
   };
 };
 
@@ -143,11 +156,15 @@ export const previewGuestWalletForHotel = async (req, res, next) => {
     }
 
     const flow = await requireFlowAccess({ flowId, user: req.user });
-    const pricing = await resolveHotelWalletPricing({ flow, user: req.user });
     const displayCurrency =
       String(req.body?.currency || flow?.pricing_snapshot_priced?.currency || "USD")
         .trim()
         .toUpperCase() || "USD";
+    const pricing = await resolveHotelWalletPricing({
+      flow,
+      user: req.user,
+      displayCurrency,
+    });
     const preview = await previewHotelUse({
       userId: req.user.id,
       publicTotalUsd: pricing.totalBeforeWalletUsd,
@@ -155,7 +172,10 @@ export const previewGuestWalletForHotel = async (req, res, next) => {
       displayCurrency,
       flowId,
     });
-    return res.json(preview);
+    return res.json({
+      ...preview,
+      referralCredit: pricing.referralCredit,
+    });
   } catch (error) {
     next(error);
   }
