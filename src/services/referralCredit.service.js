@@ -224,7 +224,7 @@ export const grantReferralCreditForUser = async ({
 
   const amountMinor = toMinor(amountUsd);
   const now = new Date();
-  await user.update(
+  const [updatedCount] = await models.User.update(
     {
       referral_credit_total_minor: amountMinor,
       referral_credit_available_minor: amountMinor,
@@ -234,15 +234,36 @@ export const grantReferralCreditForUser = async ({
       referral_credit_source_influencer_id: influencerUserId || null,
       referral_credit_source_code: normalizeCode(referralCode) || null,
     },
-    { transaction }
+    {
+      where: { id: user.id },
+      transaction,
+    }
   );
+
+  if (!updatedCount) {
+    return {
+      granted: false,
+      alreadyGranted: false,
+      amountMinor: 0,
+      state,
+      user,
+    };
+  }
+
+  const refreshedUser = await loadReferralCreditUser({
+    userId,
+    transaction,
+    lock: Boolean(transaction),
+  });
 
   return {
     granted: true,
     alreadyGranted: false,
     amountMinor,
-    state: getReferralCreditState(user.get ? user.get({ plain: true }) : user),
-    user,
+    state: getReferralCreditState(
+      refreshedUser?.get ? refreshedUser.get({ plain: true }) : refreshedUser || user
+    ),
+    user: refreshedUser || user,
   };
 };
 
