@@ -397,6 +397,159 @@ const releaseHeldAmount = async ({ account, hold, reason, transaction }) => {
   return hold;
 };
 
+// Converts an amount in fromCurrency to USD using the stored FX rates.
+// convertCurrency(x, Y) goes USD→Y, so to invert: USD = amount / rate(Y).
+const convertToUsd = async (amount, fromCurrency) => {
+  const upper = String(fromCurrency || "USD").trim().toUpperCase();
+  if (upper === "USD" || upper === WALLET_CURRENCY) return toNumber(amount, 0);
+  try {
+    const meta = await convertCurrency(1, upper); // 1 USD → X fromCurrency
+    const rate = toNumber(meta?.rate, 0);
+    return rate > 0 ? toNumber(amount, 0) / rate : toNumber(amount, 0);
+  } catch {
+    return toNumber(amount, 0); // fallback: assume 1:1 (safe to under-reward)
+  }
+};
+
+export const releaseStaleHolds = async ({
+  staleAfterHours = 24,
+  limit = 50,
+} = {}) => {
+  if (!isGuestWalletHotelsEnabled()) return { enabled: false, released: 0 };
+
+  const cutoff = new Date(Date.now() - staleAfterHours * 60 * 60 * 1000);
+  const staleHolds = await models.GuestWalletHold.findAll({
+    where: {
+      status: HOLD_STATUS.HELD,
+      created_at: { [Op.lt]: cutoff },
+    },
+    order: [["id", "ASC"]],
+    limit: Math.max(1, Math.min(200, Number(limit) || 50)),
+  });
+
+  let released = 0;
+  for (const hold of staleHolds) {
+    try {
+      await withTransaction(null, async (transaction) => {
+        const lockedHold = await models.GuestWalletHold.findByPk(hold.id, {
+          transaction,
+          lock: transaction.LOCK.UPDATE,
+        });
+        if (!lockedHold || lockedHold.status !== HOLD_STATUS.HELD) return;
+
+        const account = await getLockedAccount({ userId: lockedHold.user_id, transaction });
+        await releaseHeldAmount({
+          account,
+          hold: lockedHold,
+          reason: "stale_hold_cleanup",
+          transaction,
+        });
+      });
+      released += 1;
+      console.warn("[wallet] releaseStaleHolds: released stale hold", {
+        holdId: hold.id,
+        userId: hold.user_id,
+        stayId: hold.stay_id,
+        amountMinor: hold.amount_minor,
+        createdAt: hold.created_at,
+      });
+    } catch (err) {
+      console.error("[wallet] releaseStaleHolds: failed to release hold", {
+        holdId: hold.id,
+        error: err?.message || err,
+      });
+    }
+  }
+
+  return { enabled: true, released };
+};
+
+export const reconcileLockedBalance = async ({ limit = 100 } = {}) => {
+  if (!isGuestWalletHotelsEnabled()) return { enabled: false, checked: 0, discrepancies: 0 };
+
+  // Find accounts with locked_minor > 0 — these are the ones that could drift
+  const accounts = await models.GuestWalletAccount.findAll({
+    where: { locked_minor: { [Op.gt]: 0 } },
+    order: [["id", "ASC"]],
+    limit: Math.max(1, Math.min(500, Number(limit) || 100)),
+  });
+
+  let checked = 0;
+  let discrepancies = 0;
+
+  for (const account of accounts) {
+    try {
+      const actualLocked = await models.GuestWalletHold.sum("amount_minor", {
+        where: { user_id: account.user_id, status: HOLD_STATUS.HELD },
+      });
+      const expectedLocked = Math.max(0, Math.round(toNumber(actualLocked, 0)));
+      const storedLocked = Math.max(0, Math.round(toNumber(account.locked_minor, 0)));
+      checked += 1;
+
+      if (storedLocked !== expectedLocked) {
+        discrepancies += 1;
+        const drift = storedLocked - expectedLocked;
+        console.warn("[wallet] reconcileLockedBalance: drift detected", {
+          accountId: account.id,
+          userId: account.user_id,
+          storedLockedMinor: storedLocked,
+          expectedLockedMinor: expectedLocked,
+          driftMinor: drift,
+        });
+
+        // Auto-correct only when locked_minor > actual held (funds stuck locked with no hold)
+        // This is the safe direction: returning funds to available cannot overdraw anything.
+        if (drift > 0 && expectedLocked === 0) {
+          await withTransaction(null, async (transaction) => {
+            const lockedAccount = await models.GuestWalletAccount.findByPk(account.id, {
+              transaction,
+              lock: transaction.LOCK.UPDATE,
+            });
+            // Re-check under lock before mutating
+            const recheck = await models.GuestWalletHold.sum("amount_minor", {
+              where: { user_id: lockedAccount.user_id, status: HOLD_STATUS.HELD },
+              transaction,
+            });
+            if (Math.round(toNumber(recheck, 0)) !== 0) return; // race: hold appeared
+            const correctedLocked = Math.max(0, Math.round(toNumber(lockedAccount.locked_minor, 0)));
+            if (correctedLocked <= 0) return;
+            await lockedAccount.update(
+              {
+                locked_minor: 0,
+                available_minor: Math.round(toNumber(lockedAccount.available_minor, 0)) + correctedLocked,
+              },
+              { transaction }
+            );
+            await createLedgerEntry({
+              accountId: lockedAccount.id,
+              userId: lockedAccount.user_id,
+              type: LEDGER_TYPES.ADJUSTMENT,
+              status: LEDGER_STATUS.POSTED,
+              amountMinor: correctedLocked,
+              referenceKey: `guest-wallet:reconcile-locked:${lockedAccount.id}:${Date.now()}`,
+              effectiveAt: new Date(),
+              meta: { reason: "locked_balance_reconcile", correctedMinor: correctedLocked },
+              transaction,
+            });
+          });
+          console.warn("[wallet] reconcileLockedBalance: auto-corrected orphaned locked balance", {
+            accountId: account.id,
+            userId: account.user_id,
+            correctedMinor: drift,
+          });
+        }
+      }
+    } catch (err) {
+      console.error("[wallet] reconcileLockedBalance: error checking account", {
+        accountId: account.id,
+        error: err?.message || err,
+      });
+    }
+  }
+
+  return { enabled: true, checked, discrepancies };
+};
+
 export const releaseDueRewards = async ({ userId = null, limit = RELEASE_SWEEP_LIMIT } = {}) => {
   if (!isGuestWalletHotelsEnabled()) return { enabled: false, processed: 0 };
 
@@ -856,14 +1009,24 @@ export const captureHold = async ({ userId, stayId = null, paymentIntentId = nul
 export const scheduleEarn = async ({
   userId,
   stayId,
-  publicTotalUsd,
+  publicTotalUsd = 0,
+  // Fallback for multi-currency bookings where publicTotalUsd is unavailable.
+  // If publicTotalUsd is 0 and grossAmount + grossCurrency are provided,
+  // grossAmount is converted to USD before computing the reward.
+  grossAmount = null,
+  grossCurrency = "USD",
   releaseAt = null,
   bookingRef = null,
   flow = null,
 } = {}) => {
   if (!isGuestWalletHotelsEnabled()) return null;
 
-  const rewardMinor = computeRewardMinor(publicTotalUsd);
+  let resolvedPublicTotalUsd = toNumber(publicTotalUsd, 0);
+  if (resolvedPublicTotalUsd <= 0 && grossAmount != null && toNumber(grossAmount, 0) > 0) {
+    resolvedPublicTotalUsd = await convertToUsd(toNumber(grossAmount, 0), grossCurrency);
+  }
+
+  const rewardMinor = computeRewardMinor(resolvedPublicTotalUsd);
   if (rewardMinor <= 0) return null;
 
   return withTransaction(null, async (transaction) => {
@@ -1111,9 +1274,11 @@ export default {
   isGuestWalletHotelsEnabled,
   listTransactions,
   previewHotelUse,
+  reconcileLockedBalance,
   refundUsedAmount,
   releaseDueRewards,
   releaseHold,
+  releaseStaleHolds,
   scheduleEarn,
   reverseEarn,
   toMinor,

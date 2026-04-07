@@ -1663,8 +1663,10 @@ export const capturePaymentIntent = async (req, res, next) => {
                 Number(booking.meta?.wallet?.chargeAfterWalletUsd) +
                   Number(booking.meta?.wallet?.appliedUsd) ||
                 Number(booking.pricing_snapshot?.effectivePublicAmount) ||
-                Number(booking.gross_price) ||
                 0,
+              // Fallback for multi-currency: gross_price may be in non-USD
+              grossAmount: Number(booking.gross_price) || null,
+              grossCurrency: booking.currency || "USD",
               releaseAt:
                 booking.pricing_snapshot?.wallet?.rewardReleaseAt ||
                 booking.meta?.wallet?.rewardReleaseAt ||
