@@ -1,6 +1,10 @@
 import models from "../models/index.js";
-import { getMarkup } from "../utils/markup.js";
-import { planReferralFirstBookingDiscount } from "../services/referralRewards.service.js";
+import { convertCurrency } from "../services/currency.service.js";
+import {
+  resolveHotelCanonicalPricing,
+  resolveHotelPricingRole,
+} from "../utils/hotelPricing.js";
+import { previewReferralCreditForBooking } from "../services/referralCredit.service.js";
 import {
   getSummary,
   isGuestWalletHotelsEnabled,
@@ -19,23 +23,10 @@ const isPrivilegedUser = (user) => {
   return role === 1 || role === 100;
 };
 
-const resolveHotelBookingPricingRole = (user) => {
-  const role = Number(user?.role);
-  return role === 100 ? 100 : 0;
-};
-
-const applyMarkupToAmount = (amount, role) => {
-  const numericAmount = Number(amount);
-  if (!Number.isFinite(numericAmount)) return null;
-  if (numericAmount <= 0) return roundCurrency(numericAmount);
-  const markup = Number(getMarkup(role, numericAmount));
-  if (!Number.isFinite(markup) || markup <= 0) return roundCurrency(numericAmount);
-  return roundCurrency(numericAmount * (1 + markup));
-};
+const resolveHotelBookingPricingRole = (user) => resolveHotelPricingRole(user);
 
 const resolveCanonicalPublicBookingAmount = ({ flow, providerAmount, pricingRole }) => {
   const providerBase = roundCurrency(providerAmount);
-  const publicMarkedAmount = applyMarkupToAmount(providerBase, pricingRole);
   const snapshotMinimumSellingRaw = Number(flow?.pricing_snapshot_priced?.minimumSelling);
   const selectedMinimumSellingRaw = Number(flow?.selected_offer?.minimumSelling);
   const minimumSellingRaw = Number.isFinite(snapshotMinimumSellingRaw)
@@ -43,21 +34,22 @@ const resolveCanonicalPublicBookingAmount = ({ flow, providerAmount, pricingRole
     : Number.isFinite(selectedMinimumSellingRaw)
       ? selectedMinimumSellingRaw
       : null;
-  const minimumSelling = Number.isFinite(minimumSellingRaw) && minimumSellingRaw > 0
-    ? roundCurrency(minimumSellingRaw)
-    : null;
-  const effectiveAmount =
-    minimumSelling != null
-      ? roundCurrency(Math.max(Number(publicMarkedAmount) || 0, minimumSelling))
-      : publicMarkedAmount;
-  return {
-    publicMarkedAmount,
-    minimumSelling,
-    effectiveAmount,
-  };
+  return resolveHotelCanonicalPricing({
+    providerAmount: providerBase,
+    minimumSelling: minimumSellingRaw,
+    pricingRole,
+  });
 };
 
-const resolveHotelWalletPricing = async ({ flow, user }) => {
+const convertAmountForCurrency = async (amount, currency) => {
+  const normalizedCurrency = String(currency || "USD").trim().toUpperCase() || "USD";
+  const safeAmount = roundCurrency(amount);
+  if (normalizedCurrency === "USD") return safeAmount;
+  const converted = await convertCurrency(safeAmount, normalizedCurrency);
+  return roundCurrency(converted?.amount);
+};
+
+const resolveHotelWalletPricing = async ({ flow, user, displayCurrency = "USD" }) => {
   const pricedAmount =
     Number(flow?.pricing_snapshot_priced?.price) ||
     Number(flow?.pricing_snapshot_preauth?.price) ||
@@ -78,27 +70,31 @@ const resolveHotelWalletPricing = async ({ flow, user }) => {
     pricingRole: publicPricingRole,
   });
 
-  const referralUserId = Number(user?.referredByInfluencerId) || null;
-  let totalBeforeWalletUsd = effectiveAmount;
-  if (referralUserId && user?.id) {
-    const plan = await planReferralFirstBookingDiscount({
-      influencerUserId: referralUserId,
-      userId: user.id,
-      totalBeforeDiscount: effectiveAmount,
-      currency: "USD",
-    });
-    if (plan?.apply) {
-      totalBeforeWalletUsd = roundCurrency(
-        Math.max(0, effectiveAmount - Number(plan.discountAmount || 0))
-      );
-    }
-  }
+  const publicAmountUsd = roundCurrency(effectiveAmount ?? publicMarkedAmount ?? providerAmountUsd);
+  const minimumSellingUsd = roundCurrency(minimumSelling ?? 0);
+  const providerAmountDisplay = await convertAmountForCurrency(providerAmountUsd, displayCurrency);
+  const publicAmountDisplay = await convertAmountForCurrency(publicAmountUsd, displayCurrency);
+  const minimumSellingDisplay = await convertAmountForCurrency(minimumSellingUsd, displayCurrency);
+  const referralCredit = await previewReferralCreditForBooking({
+    userId: user?.id,
+    providerTotalAmount: providerAmountDisplay,
+    publicTotalAmount: publicAmountDisplay,
+    minimumSellingAmount: minimumSellingDisplay,
+    currency: displayCurrency,
+  });
+  const totalBeforeWalletUsd = roundCurrency(
+    Math.max(0, publicAmountUsd - Number(referralCredit?.appliedUsd || 0))
+  );
 
   return {
-    publicMarkedAmount,
-    minimumSelling: minimumSelling ?? 0,
-    effectiveAmount,
+    providerAmountUsd,
+    publicAmountUsd,
+    publicMarkedAmount: publicAmountDisplay,
+    minimumSelling: minimumSellingUsd,
+    minimumSellingDisplay: minimumSellingDisplay ?? 0,
+    effectiveAmount: publicAmountDisplay,
     totalBeforeWalletUsd,
+    referralCredit,
   };
 };
 
@@ -160,11 +156,15 @@ export const previewGuestWalletForHotel = async (req, res, next) => {
     }
 
     const flow = await requireFlowAccess({ flowId, user: req.user });
-    const pricing = await resolveHotelWalletPricing({ flow, user: req.user });
     const displayCurrency =
       String(req.body?.currency || flow?.pricing_snapshot_priced?.currency || "USD")
         .trim()
         .toUpperCase() || "USD";
+    const pricing = await resolveHotelWalletPricing({
+      flow,
+      user: req.user,
+      displayCurrency,
+    });
     const preview = await previewHotelUse({
       userId: req.user.id,
       publicTotalUsd: pricing.totalBeforeWalletUsd,
@@ -172,7 +172,10 @@ export const previewGuestWalletForHotel = async (req, res, next) => {
       displayCurrency,
       flowId,
     });
-    return res.json(preview);
+    return res.json({
+      ...preview,
+      referralCredit: pricing.referralCredit,
+    });
   } catch (error) {
     next(error);
   }

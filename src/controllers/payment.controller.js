@@ -21,6 +21,12 @@ import {
 } from "../services/referralRewards.service.js";
 import { buildHostOnboardingState } from "../utils/hostOnboarding.js";
 import { ensureInfluencerOnboardingMetadata } from "../utils/influencerOnboarding.js";
+import { handlePartnerStripeEvent } from "../services/partnerLifecycle.service.js";
+import {
+  captureHold,
+  releaseHold,
+  scheduleEarn,
+} from "../services/guestWallet.service.js";
 
 dotenv.config()
 
@@ -705,6 +711,20 @@ export const handleWebhook = async (req, res) => {
     id: event.id,
     type: event.type,
   });
+  try {
+    const partnerResult = await handlePartnerStripeEvent({
+      eventType: event.type,
+      object: event.data?.object || null,
+    });
+    if (partnerResult?.handled) {
+      console.log("[payments] partner webhook synced", {
+        type: event.type,
+        claimId: partnerResult.claimId || null,
+      });
+    }
+  } catch (partnerError) {
+    console.error("[payments] partner webhook sync error:", partnerError?.message || partnerError);
+  }
 
   /* ─── Helpers ─── */
   const touchBookingPayment = async (bookingId, updater) => {
@@ -1309,6 +1329,48 @@ export const handleWebhook = async (req, res) => {
         amountMinor: pi.amount_received ?? pi.amount ?? null,
         currency: pi.currency ?? null,
       });
+      // Wallet safety net: both functions are idempotent.
+      // captureHold: no-op if hold already captured or no hold exists.
+      // scheduleEarn: no-op if earn entry already exists for this stayId.
+      // Normally both are called by capturePaymentIntent (webbeds flow), but
+      // if wallet mutations failed after Stripe capture this acts as the fallback.
+      try {
+        const bookingForWallet = await models.Booking.findByPk(bookingId);
+        if (bookingForWallet?.user_id && bookingForWallet.inventory_type === "WEBBEDS_HOTEL") {
+          // captureHold: no-op if hold not in HELD state
+          await captureHold({
+            userId: bookingForWallet.user_id,
+            stayId: bookingId,
+            paymentIntentId: pi.id,
+          });
+          // scheduleEarn: called for all webbeds bookings regardless of wallet usage
+          // (earning rewards is independent of using wallet balance)
+          const publicTotalUsd =
+            Number(bookingForWallet.pricing_snapshot?.totalBeforeWalletUsd) ||
+            Number(bookingForWallet.pricing_snapshot?.effectivePublicAmount) ||
+            0;
+          const releaseAt =
+            bookingForWallet.pricing_snapshot?.wallet?.rewardReleaseAt ||
+            bookingForWallet.meta?.wallet?.rewardReleaseAt ||
+            null;
+          await scheduleEarn({
+            userId: bookingForWallet.user_id,
+            stayId: bookingId,
+            publicTotalUsd,
+            // Fallback for multi-currency: gross_price may be in non-USD
+            grossAmount: Number(bookingForWallet.gross_price) || null,
+            grossCurrency: bookingForWallet.currency || "USD",
+            releaseAt,
+            bookingRef: bookingForWallet.booking_ref || null,
+          });
+        }
+      } catch (walletWebhookErr) {
+        console.error("[payments] webhook pi.succeeded: wallet safety net failed", {
+          bookingId,
+          piId: pi.id,
+          error: walletWebhookErr?.message || walletWebhookErr,
+        });
+      }
     }
     if (upsellCodeId) await markUpsellAsPaid({ upsellCodeId, paymentId: pi.id })
     if (outsideBooking) await markBookingAddOnsAsPaid({ bookingId: outsideBooking })
@@ -1356,7 +1418,27 @@ export const handleWebhook = async (req, res) => {
       intentId: pi.id,
       bookingId,
     });
-    if (bookingId) await markBookingPaymentFailed({ bookingId });
+    if (bookingId) {
+      await markBookingPaymentFailed({ bookingId });
+      // Release any locked wallet hold (idempotent — no-op if already released)
+      try {
+        const bookingForWallet = await models.Booking.findByPk(bookingId);
+        if (bookingForWallet?.user_id) {
+          await releaseHold({
+            userId: bookingForWallet.user_id,
+            stayId: bookingId,
+            paymentIntentId: pi.id,
+            reason: "payment_intent_canceled_webhook",
+          });
+        }
+      } catch (walletWebhookErr) {
+        console.error("[payments] webhook pi.canceled: wallet release failed", {
+          bookingId,
+          piId: pi.id,
+          error: walletWebhookErr?.message || walletWebhookErr,
+        });
+      }
+    }
   }
 
   if (event.type === "payment_intent.payment_failed") {
@@ -1366,7 +1448,27 @@ export const handleWebhook = async (req, res) => {
       intentId: pi.id,
       bookingId,
     });
-    if (bookingId) await markBookingPaymentFailed({ bookingId });
+    if (bookingId) {
+      await markBookingPaymentFailed({ bookingId });
+      // Release any locked wallet hold (idempotent — no-op if already released)
+      try {
+        const bookingForWallet = await models.Booking.findByPk(bookingId);
+        if (bookingForWallet?.user_id) {
+          await releaseHold({
+            userId: bookingForWallet.user_id,
+            stayId: bookingId,
+            paymentIntentId: pi.id,
+            reason: "payment_intent_failed_webhook",
+          });
+        }
+      } catch (walletWebhookErr) {
+        console.error("[payments] webhook pi.payment_failed: wallet release failed", {
+          bookingId,
+          piId: pi.id,
+          error: walletWebhookErr?.message || walletWebhookErr,
+        });
+      }
+    }
   }
 
   if (event.type === "account.updated") {

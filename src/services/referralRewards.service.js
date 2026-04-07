@@ -2,6 +2,7 @@
 import { Op } from "sequelize"
 import models, { sequelize } from "../models/index.js"
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
+import { grantReferralCreditForUser } from "./referralCredit.service.js"
 
 const allowedEvents = new Set(["signup", "booking"])
 const iLikeOp = getCaseInsensitiveLikeOp()
@@ -39,11 +40,6 @@ const referralCouponPct = () => {
 const referralCouponCapUsd = () => {
   const capEnv = Number(process.env.REFERRAL_COUPON_MAX_USD)
   return Number.isFinite(capEnv) && capEnv > 0 ? capEnv : null
-}
-
-const referralFirstBookingPct = () => {
-  const pctEnv = Number(process.env.REFERRAL_FIRST_BOOKING_PCT)
-  return Number.isFinite(pctEnv) && pctEnv > 0 ? pctEnv : 15
 }
 
 const signupBonusAmount = (upgraded = false) => {
@@ -403,6 +399,13 @@ export const linkReferralCodeForUser = async ({ userId, referralCode, transactio
     transaction,
   })
 
+  await grantReferralCreditForUser({
+    userId: user.id,
+    influencerUserId: influencer.id,
+    referralCode: code,
+    transaction,
+  })
+
   return { user, influencerId: influencer.id, alreadyLinked: false }
 }
 
@@ -439,48 +442,9 @@ export const planReferralFirstBookingDiscount = async ({
   currency = "USD",
   transaction,
 }) => {
-  if (!influencerUserId || !userId || !models.User || !models.Booking) {
-    return { apply: false, reason: "missing_context" }
-  }
-  const user = await models.User.findByPk(userId, {
-    attributes: ["id", "referred_by_influencer_id"],
-    transaction,
-  })
-  if (!user) return { apply: false, reason: "user_missing" }
-  if (Number(user.referred_by_influencer_id) !== Number(influencerUserId)) {
-    return { apply: false, reason: "not_referred" }
-  }
-
-  const total = Number(totalBeforeDiscount)
-  if (!Number.isFinite(total) || total <= 0) {
-    return { apply: false, reason: "invalid_total" }
-  }
-
-  const existingCount = await models.Booking.count({
-    where: {
-      user_id: userId,
-      // First-booking discount should depend on successful paid bookings,
-      // not on failed/pending attempts created during checkout retries.
-      payment_status: { [Op.in]: ["PAID", "REFUNDED"] },
-    },
-    transaction,
-  })
-  if (existingCount > 0) {
-    return { apply: false, reason: "not_first_booking" }
-  }
-
-  const pct = referralFirstBookingPct()
-  if (!pct) return { apply: false, reason: "pct_zero" }
-  const discountAmount = roundCurrency((total * pct) / 100)
-  if (!discountAmount) return { apply: false, reason: "discount_zero" }
-
   return {
-    apply: true,
-    pct,
-    discountAmount,
-    currency: (currency || "USD").toUpperCase(),
-    influencerUserId,
-    userId,
+    apply: false,
+    reason: "disabled",
   }
 }
 

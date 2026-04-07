@@ -17,6 +17,10 @@ import { convertCurrency } from "./currency.service.js";
 import { runJobFromApi } from "./jobScheduler.service.js";
 import { resolveEnabledCurrency } from "./currencySettings.service.js";
 import cache from "./cache.js";
+import {
+  resolveHotelCanonicalPricing,
+  resolveHotelPricingRole,
+} from "../utils/hotelPricing.js";
 
 const FLOW_STATUSES = {
   STARTED: "STARTED",
@@ -69,7 +73,13 @@ const summarizeOfferForDebug = (offer = {}, { includeToken = false } = {}) => {
     rateBasisName: offer?.rateBasisName ?? null,
     allocationDetails: offer?.allocationDetails ?? null,
     price: toNumberSafe(offer?.price),
+    providerAmount: toNumberSafe(offer?.providerAmount),
+    publicMarkupRate: toNumberSafe(offer?.publicMarkupRate),
+    publicMarkupAmount: toNumberSafe(offer?.publicMarkupAmount),
+    publicMarkedAmount: toNumberSafe(offer?.publicMarkedAmount),
     minimumSelling: toNumberSafe(offer?.minimumSelling),
+    effectiveAmount: toNumberSafe(offer?.effectiveAmount),
+    pricingRole: toNumberSafe(offer?.pricingRole),
     mealPlan: offer?.mealPlan ?? null,
     nonRefundable:
       offer?.nonRefundable != null ? toBoolean(offer?.nonRefundable) : null,
@@ -111,8 +121,12 @@ const summarizeRateBasisForDebug = (rateBasis = {}) => {
 const summarizeFlowPricingForDebug = (flow) => ({
   priced: flow?.pricing_snapshot_priced
     ? {
+      providerAmount: flow.pricing_snapshot_priced.providerAmount ?? null,
       price: flow.pricing_snapshot_priced.price ?? null,
       currency: flow.pricing_snapshot_priced.currency ?? null,
+      publicMarkedAmount: flow.pricing_snapshot_priced.publicMarkedAmount ?? null,
+      minimumSelling: flow.pricing_snapshot_priced.minimumSelling ?? null,
+      effectiveAmount: flow.pricing_snapshot_priced.effectiveAmount ?? null,
       allocationDetails: flow.pricing_snapshot_priced.allocationDetails ?? null,
       withinCancellationDeadline:
         flow.pricing_snapshot_priced.withinCancellationDeadline ?? null,
@@ -601,6 +615,49 @@ const toBoolean = (value) => {
   return false;
 };
 
+const resolveHotelBenchmarkAmount = (flow, selectedOffer) => {
+  const candidates = [
+    selectedOffer?.benchmarkAmount,
+    selectedOffer?.competitorAmount,
+    selectedOffer?.competitorPrice,
+    selectedOffer?.priceBenchmark,
+    selectedOffer?.referencePrice,
+    selectedOffer?.benchmark?.amount,
+    flow?.pricing_snapshot_priced?.benchmarkAmount,
+    flow?.pricing_snapshot_priced?.competitorAmount,
+    flow?.pricing_snapshot_priced?.competitorPrice,
+    flow?.pricing_snapshot_priced?.priceBenchmark,
+    flow?.pricing_snapshot_priced?.referencePrice,
+    flow?.meta?.benchmarkAmount,
+    flow?.meta?.competitorAmount,
+    flow?.meta?.competitorPrice,
+  ];
+  for (const candidate of candidates) {
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric) && numeric > 0) return roundCurrency(numeric);
+  }
+  return null;
+};
+
+const captureHotelBenchmarkAlert = ({ flow, selectedOffer, canonicalPricing, context = "flow" }) => {
+  const benchmarkAmount = resolveHotelBenchmarkAmount(flow, selectedOffer);
+  const publicMarkedAmount = Number(canonicalPricing?.publicMarkedAmount);
+  if (!Number.isFinite(benchmarkAmount) || !Number.isFinite(publicMarkedAmount)) return null;
+  if (publicMarkedAmount <= benchmarkAmount) return null;
+
+  const alert = {
+    flowId: flow?.id ?? null,
+    benchmarkAmount,
+    publicMarkedAmount: roundCurrency(publicMarkedAmount),
+    providerAmount: roundCurrency(canonicalPricing?.providerAmount ?? 0),
+    markupRate: roundCurrency(canonicalPricing?.publicMarkupRate ?? 0),
+    context,
+    createdAt: new Date().toISOString(),
+  };
+  console.warn("[flow-orchestrator] hotel benchmark alert", alert);
+  return alert;
+};
+
 const pickAllocationFromResult = (result) => {
   const products = ensureArray(result?.product ?? result?.products?.product);
   for (const product of products) {
@@ -623,13 +680,13 @@ const pickAllocationFromResult = (result) => {
 };
 
 const resolveRateBasisPrice = (rateBasis) =>
-  toNumberSafe(rateBasis?.total) ??
   toNumberSafe(rateBasis?.totalInRequestedCurrency) ??
+  toNumberSafe(rateBasis?.total) ??
   toNumberSafe(rateBasis?.totalMinimumSelling) ??
   toNumberSafe(rateBasis?.minimumSelling) ??
   toNumberSafe(
-    rateBasis?.totalFormatted ??
-      rateBasis?.totalInRequestedCurrencyFormatted ??
+    rateBasis?.totalInRequestedCurrencyFormatted ??
+      rateBasis?.totalFormatted ??
       rateBasis?.totalMinimumSellingFormatted ??
       rateBasis?.minimumSellingFormatted,
   ) ??
@@ -838,7 +895,23 @@ const attachOfferTokensToRooms = (mapped, offers = []) => {
         if (queue.length) {
           const selected = queue.shift();
           offerToken = selected?.offerToken ?? null;
+          const canonicalPricing = selected
+            ? {
+                providerAmount: selected.providerAmount ?? selected.price ?? null,
+                publicMarkupRate: selected.publicMarkupRate ?? null,
+                publicMarkupAmount: selected.publicMarkupAmount ?? null,
+                publicMarkedAmount: selected.publicMarkedAmount ?? null,
+                minimumSelling: selected.minimumSelling ?? null,
+                effectiveAmount: selected.effectiveAmount ?? null,
+                pricingRole: selected.pricingRole ?? null,
+              }
+            : null;
           offerMap.set(key, queue);
+          return {
+            ...rateBasis,
+            offerToken,
+            ...(canonicalPricing || {}),
+          };
         }
         return {
           ...rateBasis,
@@ -1062,6 +1135,7 @@ export class FlowOrchestratorService {
       sampleRateCurrency,
     });
     const hotel = mapped?.hotel || {};
+    const hotelPricingRole = resolveHotelPricingRole(req?.user);
     const roomsList = ensureArray(hotel.rooms);
     if (FLOW_VERBOSE_LOGS) {
       const roomTypes = roomsList.flatMap((room) => ensureArray(room?.roomTypes));
@@ -1121,6 +1195,8 @@ export class FlowOrchestratorService {
           : null,
       });
     }
+    const flowId = randomUUID();
+    const flowBenchmarkContext = { id: flowId };
     const offers = [];
     roomsList.forEach((room) => {
       ensureArray(room.roomTypes).forEach((roomType) => {
@@ -1153,6 +1229,17 @@ export class FlowOrchestratorService {
               rateBasis?.minimumSellingFormatted ??
               rateBasis?.totalMinimumSellingFormatted,
             );
+          const canonicalPricing = resolveHotelCanonicalPricing({
+            providerAmount: priceNumeric,
+            minimumSelling: minSellingNumeric,
+            pricingRole: hotelPricingRole,
+          });
+          const benchmarkAlert = captureHotelBenchmarkAlert({
+            flow: flowBenchmarkContext,
+            selectedOffer: rateBasis,
+            canonicalPricing,
+            context: "block",
+          });
           const nonRefundable = toBoolean(rateBasis?.rateType?.nonRefundable);
           const cancelRestricted = rateBasis?.cancellationRules?.some((r) => r?.cancelRestricted) ?? false;
           const amendRestricted = rateBasis?.cancellationRules?.some((r) => r?.amendRestricted) ?? false;
@@ -1167,12 +1254,14 @@ export class FlowOrchestratorService {
             rateDescription: rateBasis.description,
             allocationDetails: rateBasis.allocationDetails,
             price: priceNumeric,
+            providerAmount: canonicalPricing.providerAmount,
             priceFormatted:
               rateBasis.totalFormatted ??
               rateBasis.totalMinimumSellingFormatted ??
               rateBasis.totalInRequestedCurrencyFormatted ??
               null,
             minimumSelling:
+              canonicalPricing.minimumSelling ??
               minSellingNumeric ??
               rateBasis.minimumSelling ??
               rateBasis.totalMinimumSelling ??
@@ -1180,6 +1269,12 @@ export class FlowOrchestratorService {
             minimumSellingFormatted:
               rateBasis.minimumSellingFormatted ?? rateBasis.totalMinimumSellingFormatted ?? null,
             currency: mapped.currency ?? currency,
+            publicMarkupRate: canonicalPricing.publicMarkupRate,
+            publicMarkupAmount: canonicalPricing.publicMarkupAmount,
+            publicMarkedAmount: canonicalPricing.publicMarkedAmount,
+            effectiveAmount: canonicalPricing.effectiveAmount,
+            pricingRole: canonicalPricing.pricingRole,
+            benchmarkAlert,
             cancellationRules: rateBasis.cancellationRules ?? [],
             withinCancellationDeadline: rateBasis.withinCancellationDeadline ?? null,
             refundable: !nonRefundable,
@@ -1211,7 +1306,6 @@ export class FlowOrchestratorService {
       });
     });
 
-    const flowId = randomUUID();
     const flow = await models.BookingFlow.create({
       id: flowId,
       user_id: userId,
@@ -1380,6 +1474,17 @@ export class FlowOrchestratorService {
     const matchedCancelRestricted = resolveRateBasisCancelRestricted(rateBasis);
     const matchedAmendRestricted = resolveRateBasisAmendRestricted(rateBasis);
     const matchedRateBasisName = getText(rateBasis?.description) ?? null;
+    const canonicalPricing = resolveHotelCanonicalPricing({
+      providerAmount: matchedPrice,
+      minimumSelling: matchedMinimumSelling,
+      pricingRole: resolveHotelPricingRole(req?.user),
+    });
+    const benchmarkAlert = captureHotelBenchmarkAlert({
+      flow,
+      selectedOffer: rateBasis,
+      canonicalPricing,
+      context: "save",
+    });
     const updatedOffer = {
       ...flow.selected_offer,
       allocationDetails: newAllocation,
@@ -1389,7 +1494,18 @@ export class FlowOrchestratorService {
         flow.selected_offer?.rateDescription ??
         null,
       price: matchedPrice ?? flow.selected_offer?.price ?? null,
-      minimumSelling: matchedMinimumSelling ?? flow.selected_offer?.minimumSelling ?? null,
+      providerAmount: canonicalPricing.providerAmount ?? flow.selected_offer?.providerAmount ?? null,
+      publicMarkupRate: canonicalPricing.publicMarkupRate ?? flow.selected_offer?.publicMarkupRate ?? null,
+      publicMarkupAmount:
+        canonicalPricing.publicMarkupAmount ?? flow.selected_offer?.publicMarkupAmount ?? null,
+      publicMarkedAmount:
+        canonicalPricing.publicMarkedAmount ?? flow.selected_offer?.publicMarkedAmount ?? null,
+      minimumSelling:
+        canonicalPricing.minimumSelling ?? matchedMinimumSelling ?? flow.selected_offer?.minimumSelling ?? null,
+      effectiveAmount:
+        canonicalPricing.effectiveAmount ?? flow.selected_offer?.effectiveAmount ?? null,
+      pricingRole: canonicalPricing.pricingRole ?? flow.selected_offer?.pricingRole ?? null,
+      benchmarkAlert: benchmarkAlert ?? flow.selected_offer?.benchmarkAlert ?? null,
       mealPlan: matchedMealPlan ?? flow.selected_offer?.mealPlan ?? null,
       nonRefundable:
         matchedNonRefundable != null
@@ -1431,7 +1547,20 @@ export class FlowOrchestratorService {
       idempotencyKey,
     });
 
-    const blockedRate = rateBasis ? { ...rateBasis } : null;
+    const blockedRate = rateBasis
+      ? {
+          ...rateBasis,
+          currency: mapped?.currency ?? mapped?.currencyShort ?? context.currency ?? null,
+          currencyShort: mapped?.currencyShort ?? mapped?.currency ?? context.currency ?? null,
+          providerAmount: canonicalPricing.providerAmount ?? null,
+          publicMarkupRate: canonicalPricing.publicMarkupRate ?? null,
+          publicMarkupAmount: canonicalPricing.publicMarkupAmount ?? null,
+          publicMarkedAmount: canonicalPricing.publicMarkedAmount ?? null,
+          minimumSelling: canonicalPricing.minimumSelling ?? null,
+          effectiveAmount: canonicalPricing.effectiveAmount ?? null,
+          pricingRole: canonicalPricing.pricingRole ?? null,
+        }
+      : null;
     logFlowRateDebug("block.response", {
       traceId: debugTraceId ?? null,
       flowId,
@@ -1765,18 +1894,35 @@ export class FlowOrchestratorService {
       getText(productNode?.price) ??
       mapped.services?.[0]?.servicePrice ??
       null;
+    const canonicalPricing = resolveHotelCanonicalPricing({
+      providerAmount: priceValue,
+      minimumSelling: flow.selected_offer?.minimumSelling,
+      pricingRole: resolveHotelPricingRole(req?.user),
+    });
+    const benchmarkAlert = captureHotelBenchmarkAlert({
+      flow,
+      selectedOffer: flow.selected_offer,
+      canonicalPricing,
+      context: "price",
+    });
 
     flow.allocation_current = newAllocation;
     const baseCurrency =
       mapped.currencyShort ?? flow.search_context?.currency ?? flow.pricing_snapshot_priced?.currency ?? null;
     flow.pricing_snapshot_priced = {
       currency: baseCurrency,
+      providerAmount: canonicalPricing.providerAmount,
       price: priceValue != null ? Number(priceValue) : null,
-      minimumSelling: toNumberSafe(flow.selected_offer?.minimumSelling),
+      publicMarkupRate: canonicalPricing.publicMarkupRate,
+      publicMarkupAmount: canonicalPricing.publicMarkupAmount,
+      publicMarkedAmount: canonicalPricing.publicMarkedAmount,
+      minimumSelling: canonicalPricing.minimumSelling,
+      effectiveAmount: canonicalPricing.effectiveAmount,
       serviceCode: flow.service_reference_number ?? mapped.services?.[0]?.returnedServiceCode ?? null,
       allocationDetails: newAllocation,
       cancellationRules: productNode?.cancellationRules ?? null,
       withinCancellationDeadline,
+      benchmarkAlert: benchmarkAlert ?? flow.pricing_snapshot_priced?.benchmarkAlert ?? null,
       raw: {
         withinCancellationDeadline,
         priceFormatted: getText(productNode?.servicePrice?.formatted ?? productNode?.price?.formatted),

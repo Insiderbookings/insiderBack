@@ -4,6 +4,7 @@ import { AI_RATE_LIMITS } from "../modules/ai/ai.config.js";
 import { authenticate } from "../middleware/auth.js";
 import {
   createAiChat,
+  cancelAiChatTurn,
   deleteAiChat,
   getAiChat,
   getAiHealth,
@@ -42,6 +43,7 @@ const aiSessionWriteLimiter = buildAiLimiter(AI_RATE_LIMITS.sessionWritePerMinut
 router.get("/health", getAiHealth); // circuit breaker + readiness status (no extra rate limit)
 router.post("/chat", aiTurnLimiter, handleAiChat);
 router.post("/chat/stream", aiTurnLimiter, handleAiChatStream);
+router.post("/chat/cancel", cancelAiChatTurn);
 router.post("/chats", aiSessionWriteLimiter, createAiChat);
 router.get("/chats", aiSessionReadLimiter, listAiChats);
 router.get("/chats/:sessionId", aiSessionReadLimiter, getAiChat);

@@ -3,6 +3,7 @@ import rateLimit from "express-rate-limit";
 import { AI_RATE_LIMITS } from "../modules/ai/ai.config.js";
 import {
   createAiChat,
+  cancelAiChatTurn,
   deleteAiChat,
   getAiChat,
   handleAiChat,
@@ -38,6 +39,7 @@ const aiSessionReadLimiter = buildAiLimiter(AI_RATE_LIMITS.sessionReadPerMinute)
 const aiSessionWriteLimiter = buildAiLimiter(AI_RATE_LIMITS.sessionWritePerMinute);
 
 router.post("/search", aiTurnLimiter, handleAiChat);
+router.post("/chat/cancel", cancelAiChatTurn);
 router.post("/chats", aiSessionWriteLimiter, createAiChat);
 router.get("/chats", aiSessionReadLimiter, listAiChats);
 router.get("/chats/:sessionId", aiSessionReadLimiter, getAiChat);

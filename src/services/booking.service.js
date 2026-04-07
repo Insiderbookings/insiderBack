@@ -6,6 +6,7 @@ import {
     downgradeSignupBonusOnBookingCancel,
     reverseReferralRedemption,
 } from "../services/referralRewards.service.js";
+import { restoreReferralCreditForBooking } from "../services/referralCredit.service.js";
 import {
     deriveRefundRatio,
     refundUsedAmount,
@@ -1037,18 +1038,24 @@ export const processBookingCancellation = async ({
         }
     }
 
-    // Reverse Referral
+    // Reverse Referral / Referral Credit
     try {
-        const redemption = await sequelize.transaction((tx) => reverseReferralRedemption(booking.id, tx));
-        if (redemption) {
-            const meta = booking.meta || {};
-            const snapshot = booking.pricing_snapshot || {};
-            if (snapshot.referralCoupon) snapshot.referralCoupon.status = redemption.status;
-            if (meta.referralCoupon) meta.referralCoupon.status = redemption.status;
-            await booking.update({ meta, pricing_snapshot: snapshot });
+        const snapshot = booking.pricing_snapshot || {};
+        const meta = booking.meta || {};
+        const hasReferralCredit =
+            Boolean(snapshot.referralCredit || snapshot.referral_credit || meta.referralCredit || meta.referral_credit);
+        if (hasReferralCredit) {
+            await sequelize.transaction((tx) => restoreReferralCreditForBooking({ booking, transaction: tx }));
+        } else {
+            const redemption = await sequelize.transaction((tx) => reverseReferralRedemption(booking.id, tx));
+            if (redemption) {
+                if (snapshot.referralCoupon) snapshot.referralCoupon.status = redemption.status;
+                if (meta.referralCoupon) meta.referralCoupon.status = redemption.status;
+                await booking.update({ meta, pricing_snapshot: snapshot });
+            }
         }
     } catch (e) {
-        console.warn("cancelBooking: could not reverse referral coupon:", e?.message || e);
+        console.warn("cancelBooking: could not reverse referral benefit:", e?.message || e);
     }
 
     // Send Email

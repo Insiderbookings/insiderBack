@@ -1,6 +1,7 @@
 import {
     emitAdminActivity
 } from "./emitter.js";
+import { SUPPORT_AGENT_ROLE_CODES } from "../utils/userCapabilities.js";
 
 // Helper to join rooms
 const joinRoom = (socket, room) => socket.join(room);
@@ -11,7 +12,7 @@ export default function registerSupportGateway(io, socket) {
     if (!user) return;
 
     const role = Number(user.role || 0);
-    const isSupportAgent = [1, 7, 8, 100].includes(role);
+    const isSupportAgent = SUPPORT_AGENT_ROLE_CODES.includes(role);
 
     // Support team members subscribe to the global support feed
     if (isSupportAgent) {

@@ -49,6 +49,7 @@ import {
 import {
   assessWebSearchResult,
   decideCall2WebSearch,
+  isGreetingOnlyMessage,
   normalizeComparableText,
 } from "./ai.webSearchPolicy.js";
 import {
@@ -225,7 +226,11 @@ const streamCall2Completion = async ({
   onWebSearchStart = null,
   webSearchContext = null,
   streamText = true,
+  signal = null,
 } = {}) => {
+  if (signal?.aborted) {
+    return { text: "", webSources: [] };
+  }
   if (useWebSearch) {
     onWebSearchStart?.(webSearchContext || {});
   }
@@ -239,8 +244,10 @@ const streamCall2Completion = async ({
   if (useWebSearch) {
     request.web_search_options = {};
   }
-
-  const stream = await client.chat.completions.create(request);
+  const stream = await client.chat.completions.create(
+    request,
+    signal ? { signal } : undefined,
+  );
   let accumulated = "";
   const annotations = [];
 
@@ -278,7 +285,16 @@ const executeCall2WithPolicy = async ({
   toolName = null,
   toolArgs = null,
   latestUserMessage = "",
+  signal = null,
 } = {}) => {
+  if (signal?.aborted) {
+    return {
+      text: "",
+      webSources: [],
+      allowCompetitorWebSources: false,
+      usedWebSearch: false,
+    };
+  }
   const rawDecision =
     webSearchDecision || decideCall2WebSearch({ toolName, toolArgs });
   const decision = {
@@ -334,6 +350,7 @@ const executeCall2WithPolicy = async ({
         reason: decision.reason,
         trigger: decision.trigger || null,
       },
+      signal,
     });
 
   emitTrace?.("CALL2_MODEL_SELECTED", {
@@ -675,6 +692,13 @@ const withSemanticTimeout = (promise, ms, label) => {
     if (timer) clearTimeout(timer);
   });
 };
+
+const isAbortSignalError = (err, signal = null) =>
+  Boolean(
+    signal?.aborted ||
+      err?.name === "AbortError" ||
+      err?.code === "ERR_CANCELED",
+  );
 
 const stripSemanticDiacritics = (value) =>
   String(value || "")
@@ -3572,8 +3596,10 @@ const streamAssistantKickoffMessage = async ({
   isBlocked = null,
   emitTrace = null,
   emitFileDebug = null,
+  signal = null,
 } = {}) => {
   if (!shouldRunAssistantKickoffPlanner(plan)) return null;
+  if (signal?.aborted) return null;
   const kickoffReference = buildDeterministicAssistantKickoffReference({
     plan,
     language,
@@ -3611,6 +3637,12 @@ const streamAssistantKickoffMessage = async ({
     });
     const createController =
       typeof AbortController === "function" ? new AbortController() : null;
+    const onAbort = () => {
+      try {
+        createController?.abort?.();
+      } catch (_) {}
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
     const stream = await createOpenAIStreamWithTimeout({
       createStream: () =>
         client.chat.completions.create(
@@ -3745,6 +3777,7 @@ const streamAssistantKickoffMessage = async ({
       try {
         await iterator.return?.();
       } catch (_) {}
+      signal?.removeEventListener("abort", onAbort);
     }
 
     if (abortedReason === "blocked") {
@@ -3820,6 +3853,8 @@ const streamAssistantKickoffMessage = async ({
     emitFileDebug?.("assistant_kickoff", result);
     return result;
   } catch (err) {
+    signal?.removeEventListener("abort", onAbort);
+    if (isAbortSignalError(err, signal)) return null;
     const reason =
       err?.code ||
       err?.error?.code ||
@@ -3867,9 +3902,11 @@ const streamAssistantClosingMessage = async ({
   onClosingChunk = null,
   emitTrace = null,
   emitFileDebug = null,
+  signal = null,
 } = {}) => {
   const totalHotels = inventory?.hotels?.length || 0;
   if (!client || totalHotels === 0) return null;
+  if (signal?.aborted) return null;
 
   const destination = plan?.location?.city || plan?.location?.country || null;
   const hotelSearchScope = inventory?.searchScope?.hotels || null;
@@ -3903,7 +3940,7 @@ const streamAssistantClosingMessage = async ({
       model: AI_MODEL_ASSISTANT_CLOSING,
       stream: true,
       messages: closingMessages,
-    });
+    }, signal ? { signal } : undefined);
 
     const iterator = stream[Symbol.asyncIterator]();
     let rawText = "";
@@ -4014,6 +4051,7 @@ const streamAssistantClosingMessage = async ({
     emitFileDebug?.("assistant_closing", result);
     return result;
   } catch (err) {
+    if (isAbortSignalError(err, signal)) return null;
     emitTrace?.("ASSISTANT_CLOSING_STREAM_FAILED", {
       destination,
       reason: err?.code || err?.message || "unknown",
@@ -4034,10 +4072,12 @@ const generateAssistantNoResultsClosingMessage = async ({
   latestUserMessage,
   emitTrace = null,
   emitFileDebug = null,
+  signal = null,
 } = {}) => {
   const totalHotels = inventory?.hotels?.length || 0;
   const totalHomes = inventory?.homes?.length || 0;
   if (!client || totalHotels + totalHomes > 0) return null;
+  if (signal?.aborted) return null;
 
   const destination = plan?.location?.city || plan?.location?.country || null;
 
@@ -4050,6 +4090,7 @@ const generateAssistantNoResultsClosingMessage = async ({
       : false,
   });
 
+  let onAbort = null;
   try {
     const messages = buildAssistantNoResultsClosingMessages({
       plan,
@@ -4059,6 +4100,12 @@ const generateAssistantNoResultsClosingMessage = async ({
     });
     const createController =
       typeof AbortController === "function" ? new AbortController() : null;
+    onAbort = () => {
+      try {
+        createController?.abort?.();
+      } catch (_) {}
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
     const completion = await createOpenAIStreamWithTimeout({
       createStream: () =>
         client.chat.completions.create(
@@ -4074,6 +4121,7 @@ const generateAssistantNoResultsClosingMessage = async ({
       label: "assistantNoResultsClosingCreate",
       abortController: createController,
     });
+    signal?.removeEventListener("abort", onAbort);
     const text = normalizeAssistantKickoffText(
       completion?.choices?.[0]?.message?.content || "",
     );
@@ -4100,6 +4148,8 @@ const generateAssistantNoResultsClosingMessage = async ({
     emitFileDebug?.("assistant_no_results_closing", result);
     return result;
   } catch (err) {
+    signal?.removeEventListener("abort", onAbort);
+    if (isAbortSignalError(err, signal)) return null;
     emitTrace?.("ASSISTANT_NO_RESULTS_CLOSING_FAILED", {
       destination,
       reason: err?.code || err?.message || "unknown",
@@ -4199,10 +4249,12 @@ const planSemanticTopPickExplanations = async ({
   latestUserMessage,
   emitTrace = null,
   emitFileDebug = null,
+  signal = null,
 } = {}) => {
   if (!client || !shouldRunSemanticExplanationPlanner({ plan, inventory })) {
     return null;
   }
+  if (signal?.aborted) return null;
 
   const picks = getTopInventoryPicksByCategory(
     inventory,
@@ -4241,16 +4293,19 @@ const planSemanticTopPickExplanations = async ({
 
   try {
     const completion = await withSemanticTimeout(
-      client.chat.completions.create({
-        model: AI_MODEL_SEMANTIC_EXPLANATION,
-        response_format: { type: "json_object" },
-        messages: buildSemanticExplanationPlannerMessages({
-          latestUserMessage,
-          plan,
-          language,
-          picks,
-        }),
-      }),
+      client.chat.completions.create(
+        {
+          model: AI_MODEL_SEMANTIC_EXPLANATION,
+          response_format: { type: "json_object" },
+          messages: buildSemanticExplanationPlannerMessages({
+            latestUserMessage,
+            plan,
+            language,
+            picks,
+          }),
+        },
+        signal ? { signal } : undefined,
+      ),
       AI_SEMANTIC_EXPLANATION_TIMEOUT_MS,
       "semanticExplanationPlanner",
     );
@@ -4292,6 +4347,7 @@ const planSemanticTopPickExplanations = async ({
     }
     return finalPlan;
   } catch (err) {
+    if (isAbortSignalError(err, signal)) return null;
     emitTrace?.("SEMANTIC_EXPLANATION_PLANNER_FALLBACK", {
       reason: err?.code || err?.message || "planner_failed",
     });
@@ -4575,7 +4631,9 @@ const runSemanticGroundingPlanner = async ({
   plan,
   language,
   emitTrace = null,
+  signal = null,
 }) => {
+  if (signal?.aborted) return null;
   if (!client || !latestUserMessage || !plan) return null;
   emitTrace?.("SEMANTIC_GROUNDING_PLANNER_REQUESTED", {
     destination: plan?.location?.city || null,
@@ -4585,15 +4643,18 @@ const runSemanticGroundingPlanner = async ({
   });
   try {
     const completion = await withSemanticTimeout(
-      client.chat.completions.create({
-        model: SEMANTIC_SEARCH_MODEL,
-        response_format: { type: "json_object" },
-        messages: buildSemanticGroundingPlannerMessages({
-          latestUserMessage,
-          plan,
-          language,
-        }),
-      }),
+      client.chat.completions.create(
+        {
+          model: SEMANTIC_SEARCH_MODEL,
+          response_format: { type: "json_object" },
+          messages: buildSemanticGroundingPlannerMessages({
+            latestUserMessage,
+            plan,
+            language,
+          }),
+        },
+        signal ? { signal } : undefined,
+      ),
       SEMANTIC_SEARCH_TIMEOUT_MS,
       "semanticGroundingPlanner",
     );
@@ -4612,6 +4673,7 @@ const runSemanticGroundingPlanner = async ({
     });
     return normalized;
   } catch (err) {
+    if (isAbortSignalError(err, signal)) return null;
     emitTrace?.("SEMANTIC_GROUNDING_PLANNER_FAILED", {
       reason: err?.code || err?.message || "planner_failed",
     });
@@ -4854,7 +4916,9 @@ const runSemanticSearchEnrichment = async ({
   latestUserMessage,
   plan,
   language,
+  signal = null,
 }) => {
+  if (signal?.aborted) return null;
   if (
     !client ||
     !latestUserMessage ||
@@ -4864,15 +4928,18 @@ const runSemanticSearchEnrichment = async ({
   }
   try {
     const completion = await withSemanticTimeout(
-      client.chat.completions.create({
-        model: SEMANTIC_SEARCH_MODEL,
-        response_format: { type: "json_object" },
-        messages: buildSemanticEnrichmentMessages({
-          latestUserMessage,
-          plan,
-          language,
-        }),
-      }),
+      client.chat.completions.create(
+        {
+          model: SEMANTIC_SEARCH_MODEL,
+          response_format: { type: "json_object" },
+          messages: buildSemanticEnrichmentMessages({
+            latestUserMessage,
+            plan,
+            language,
+          }),
+        },
+        signal ? { signal } : undefined,
+      ),
       SEMANTIC_SEARCH_TIMEOUT_MS,
       "semanticSearchEnrichment",
     );
@@ -4881,6 +4948,7 @@ const runSemanticSearchEnrichment = async ({
     const parsed = JSON.parse(payload);
     return sanitizeSemanticEnrichment(parsed);
   } catch (err) {
+    if (isAbortSignalError(err, signal)) return null;
     console.warn("[ai] semantic enrichment failed", err?.message || err);
     return null;
   }
@@ -5057,7 +5125,9 @@ const runSemanticWebResolver = async ({
   plan,
   language,
   emitTrace = null,
+  signal = null,
 }) => {
+  if (signal?.aborted) return null;
   if (
     !client ||
     !latestUserMessage ||
@@ -5104,15 +5174,18 @@ const runSemanticWebResolver = async ({
 
   try {
     const completion = await withSemanticTimeout(
-      client.chat.completions.create({
-        model: CALL2_WEB_SEARCH_MODEL,
-        web_search_options: {},
-        messages: buildSemanticWebResolverMessages({
-          latestUserMessage,
-          plan,
-          language,
-        }),
-      }),
+      client.chat.completions.create(
+        {
+          model: CALL2_WEB_SEARCH_MODEL,
+          web_search_options: {},
+          messages: buildSemanticWebResolverMessages({
+            latestUserMessage,
+            plan,
+            language,
+          }),
+        },
+        signal ? { signal } : undefined,
+      ),
       SEMANTIC_WEB_RESOLVER_TIMEOUT_MS,
       "semanticWebResolver",
     );
@@ -5181,6 +5254,7 @@ const runSemanticWebResolver = async ({
     }
     return sanitized;
   } catch (err) {
+    if (isAbortSignalError(err, signal)) return null;
     emitTrace?.("SEMANTIC_PLACE_RESOLUTION_FAILED", {
       reason: err?.code || err?.message || "unknown_error",
     });
@@ -5480,7 +5554,9 @@ const resolvePlaceReferenceViaWebSearch = async ({
   intentMode,
   language,
   emitTrace = null,
+  signal = null,
 } = {}) => {
+  if (signal?.aborted) return null;
   if (!client || !query || !city) return null;
 
   emitTrace?.("PLACE_REFERENCE_WEB_FALLBACK_REQUESTED", {
@@ -5493,19 +5569,22 @@ const resolvePlaceReferenceViaWebSearch = async ({
 
   try {
     const completion = await withSemanticTimeout(
-      client.chat.completions.create({
-        model: CALL2_WEB_SEARCH_MODEL,
-        web_search_options: {},
-        messages: buildExplicitPlaceWebResolverMessages({
-          latestUserMessage,
-          query,
-          city,
-          country,
-          placeTypeHint,
-          intentMode,
-          language,
-        }),
-      }),
+      client.chat.completions.create(
+        {
+          model: CALL2_WEB_SEARCH_MODEL,
+          web_search_options: {},
+          messages: buildExplicitPlaceWebResolverMessages({
+            latestUserMessage,
+            query,
+            city,
+            country,
+            placeTypeHint,
+            intentMode,
+            language,
+          }),
+        },
+        signal ? { signal } : undefined,
+      ),
       SEMANTIC_WEB_RESOLVER_TIMEOUT_MS,
       "explicitPlaceWebResolver",
     );
@@ -5550,6 +5629,7 @@ const resolvePlaceReferenceViaWebSearch = async ({
 
     return sanitized;
   } catch (err) {
+    if (isAbortSignalError(err, signal)) return null;
     emitTrace?.("PLACE_REFERENCE_WEB_FALLBACK_FAILED", {
       query,
       reason: err?.code || err?.message || "unknown_error",
@@ -5741,8 +5821,10 @@ const resolveExplicitPlaceReferenceForPlan = async ({
           intentMode: mapGeoIntentToPlaceIntentMode(plan?.geoIntent),
           language,
           emitTrace,
+          signal,
         })
       : null;
+  throwIfAborted();
   const finalResolution =
     resolvedViaWebSearch && resolvedViaWebSearch.status !== "NOT_FOUND"
       ? resolvedViaWebSearch
@@ -7276,6 +7358,12 @@ const getMissingDataQuestion = (inputType, language) => {
   return "";
 };
 
+const getGreetingOnlyReply = (language) => {
+  if (language === "es") return "Hola, ¿en qué te ayudo?";
+  if (language === "pt") return "Oi! Em que posso te ajudar?";
+  return "Hi! How can I help you?";
+};
+
 const hasSearchDates = (plan) =>
   Boolean(plan?.dates?.checkIn && plan?.dates?.checkOut);
 
@@ -7625,6 +7713,7 @@ export const runFunctionCallingTurn = async ({
   onTextChunk = null,
   onKickoffChunk = null,
   onEvent = null,
+  signal = null,
 } = {}) => {
   const startedAt = Date.now();
   let latestUserMessage = "";
@@ -7651,16 +7740,13 @@ export const runFunctionCallingTurn = async ({
     emitEvent("trace", { code, ...data });
     emitFileDebug("trace", data, { code });
   };
-
-  // Circuit breaker
-  if (circuitBreaker.isOpen()) {
-    const err = new Error(
-      "AI service is temporarily unavailable. Please try again in a moment.",
-    );
-    err.code = "AI_CIRCUIT_OPEN";
-    err.status = 503;
+  const throwIfAborted = () => {
+    if (!signal?.aborted) return;
+    const err = new Error("AI turn aborted");
+    err.name = "AbortError";
+    err.code = "ERR_CANCELED";
     throw err;
-  }
+  };
 
   if (!AI_FLAGS.chatEnabled) {
     return {
@@ -7694,6 +7780,7 @@ export const runFunctionCallingTurn = async ({
       ? await loadAssistantState({ sessionId, userId })
       : null) ||
     getDefaultState();
+  throwIfAborted();
 
   const incomingTripContext = normalizeTripContext(
     context?.trip ?? context?.tripContext ?? context,
@@ -7805,6 +7892,30 @@ export const runFunctionCallingTurn = async ({
       hasMatchingPlaceSelection),
   );
 
+  if (!pendingTc && isGreetingOnlyMessage(latestUserMessage)) {
+    const greetingReply = getGreetingOnlyReply(language);
+    onTextChunk?.(greetingReply);
+    return {
+      reply: greetingReply,
+      assistant: {
+        text: greetingReply,
+        tone: "neutral",
+        disclaimers: [],
+      },
+      followUps: [],
+      ui: { inputs: [], chips: [], cards: [], sections: [] },
+      webSources: [],
+      plan: { intent: "SMALL_TALK", language },
+      inventory: buildEmptyInventory(),
+      carousels: [],
+      trip: null,
+      state: existingState,
+      intent: "SMALL_TALK",
+      nextAction: "SMALL_TALK",
+      safeMode: false,
+    };
+  }
+
   if (
     pendingTc?.missingField === "placeDisambiguation" &&
     !hasPendingToolCallResume &&
@@ -7859,6 +7970,16 @@ export const runFunctionCallingTurn = async ({
     };
   }
 
+  // Circuit breaker: only guard the model-backed branches below.
+  if (circuitBreaker.isOpen()) {
+    const err = new Error(
+      "AI service is temporarily unavailable. Please try again in a moment.",
+    );
+    err.code = "AI_CIRCUIT_OPEN";
+    err.status = 503;
+    throw err;
+  }
+
   // 4. Build Call 1 system prompt
   const systemPrompt = buildSystemPrompt({
     state: existingState,
@@ -7885,16 +8006,19 @@ export const runFunctionCallingTurn = async ({
   const toolCallAccum = {};
 
   try {
-    const stream = await client.chat.completions.create({
-      model: AI_MODEL_CALL1,
-      tools: AI_TOOLS,
-      tool_choice: "auto",
-      stream: true,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...normalizedMessages,
-      ],
-    });
+    const stream = await client.chat.completions.create(
+      {
+        model: AI_MODEL_CALL1,
+        tools: AI_TOOLS,
+        tool_choice: "auto",
+        stream: true,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...normalizedMessages,
+        ],
+      },
+      signal ? { signal } : undefined,
+    );
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta;
@@ -7919,6 +8043,9 @@ export const runFunctionCallingTurn = async ({
       }
     }
   } catch (callErr) {
+    if (isAbortSignalError(callErr, signal)) {
+      throw callErr;
+    }
     circuitBreaker.onFailure?.();
     throw callErr;
   }
@@ -8546,6 +8673,7 @@ export const runFunctionCallingTurn = async ({
           plan: planWithDefaults,
           language,
           latestUserMessage,
+          signal,
           onKickoffChunk: (chunk) => {
             if (!chunk || isAssistantKickoffBlocked()) return;
             onKickoffChunk?.(chunk);
@@ -8574,7 +8702,9 @@ export const runFunctionCallingTurn = async ({
       plan: planWithDefaults,
       language,
       emitTrace: emitSearchTrace,
+      signal,
     });
+    throwIfAborted();
     if (semanticGroundingPlan) {
       planWithDefaults = mergeSemanticGroundingPlanIntoPlan(
         planWithDefaults,
@@ -8737,7 +8867,9 @@ export const runFunctionCallingTurn = async ({
         latestUserMessage,
         plan: planWithDefaults,
         language,
+        signal,
       });
+      throwIfAborted();
       if (semanticEnrichment) {
         const explicitGeoRequested = hasExplicitSemanticGeoRequest({
           latestUserMessage,
@@ -8853,7 +8985,9 @@ export const runFunctionCallingTurn = async ({
             plan: planWithDefaults,
             language,
             emitTrace: emitSearchTrace,
+            signal,
           });
+    throwIfAborted();
     if (semanticWebResolution) {
       const explicitGeoRequested = hasExplicitSemanticGeoRequest({
         latestUserMessage,
@@ -9120,9 +9254,11 @@ export const runFunctionCallingTurn = async ({
       assistantKickoffPromise ?? Promise.resolve(),
       new Promise((r) => setTimeout(r, AI_ASSISTANT_KICKOFF_STREAM_TIMEOUT_MS)),
     ]);
+    throwIfAborted();
     assistantKickoffGate.finalize("response_ready");
 
     if (counts.homes + counts.hotels === 0) {
+      throwIfAborted();
       const noResultsClosingResult =
         await generateAssistantNoResultsClosingMessage({
           client,
@@ -9132,7 +9268,9 @@ export const runFunctionCallingTurn = async ({
           latestUserMessage,
           emitTrace: emitSearchTrace,
           emitFileDebug,
+          signal,
         });
+      throwIfAborted();
       if (noResultsClosingResult?.text) {
         preparedReply = {
           text: noResultsClosingResult.text,
@@ -9632,7 +9770,9 @@ export const runFunctionCallingTurn = async ({
             toolName: "answer_from_results",
             toolArgs: toolCall.args,
             latestUserMessage,
+            signal,
           });
+          throwIfAborted();
           accumulated = call2Result.text;
           webSources = call2Result.webSources;
           allowCompetitorWebSources = Boolean(
@@ -9807,7 +9947,9 @@ export const runFunctionCallingTurn = async ({
               toolName: "answer_from_results",
               toolArgs: toolCall.args,
               latestUserMessage,
+              signal,
             });
+            throwIfAborted();
             accumulated = call2Result.text;
             webSources = call2Result.webSources;
             allowCompetitorWebSources = Boolean(
@@ -9945,7 +10087,9 @@ export const runFunctionCallingTurn = async ({
             toolName: "answer_from_results",
             toolArgs: toolCall.args,
             latestUserMessage,
+            signal,
           });
+          throwIfAborted();
           accumulated = call2Result.text;
           webSources = call2Result.webSources;
           allowCompetitorWebSources = Boolean(
@@ -10164,7 +10308,9 @@ export const runFunctionCallingTurn = async ({
         toolName: toolCall.name,
         toolArgs: toolCall.args,
         latestUserMessage,
+        signal,
       });
+      throwIfAborted();
       accumulated = call2Result.text;
       webSources = call2Result.webSources;
       allowCompetitorWebSources = Boolean(
@@ -10238,7 +10384,9 @@ export const runFunctionCallingTurn = async ({
         toolName: "small_talk",
         toolArgs: null,
         latestUserMessage,
+        signal,
       });
+      throwIfAborted();
       directText = call2Result.text;
       webSources = call2Result.webSources;
       allowCompetitorWebSources = Boolean(
@@ -10503,6 +10651,7 @@ export const runFunctionCallingTurn = async ({
     }
   }
 
+  throwIfAborted();
   const rendered = await renderAssistantPayload({
     plan,
     messages: normalizedMessages,
@@ -10523,6 +10672,7 @@ export const runFunctionCallingTurn = async ({
     // The final search reply stays neutral and lands with the final payload.
     onTextChunk: nextAction === NEXT_ACTIONS.RUN_SEARCH ? null : onTextChunk,
   });
+  throwIfAborted();
   const effectiveFollowUpKind =
     followUpKind ||
     preparedReply?.followUpKind ||
@@ -10736,6 +10886,7 @@ export const runFunctionCallingTurn = async ({
 
   // Closing — sequential, after render, only when there are search results
   let closingResult = null;
+  throwIfAborted();
   if (
     nextAction === NEXT_ACTIONS.RUN_SEARCH &&
     (inventory?.hotels?.length || 0) > 0
@@ -10746,12 +10897,14 @@ export const runFunctionCallingTurn = async ({
       inventory,
       language,
       latestUserMessage,
+      signal,
       onClosingChunk: (chunk) => {
         emitEvent("closing_delta", { content: chunk });
       },
       emitTrace,
       emitFileDebug,
     });
+    throwIfAborted();
 
     if (closingResult?.text) {
       const hotelSearchScope = inventory?.searchScope?.hotels || null;

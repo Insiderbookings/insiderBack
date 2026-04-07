@@ -94,6 +94,75 @@ export default (sequelize) => {
         defaultValue: 0,
       },
 
+      hotel_pricing_tier: {
+        type: DataTypes.STRING(32),
+        allowNull: false,
+        defaultValue: "STANDARD",
+      },
+      hotel_pricing_request_status: {
+        type: DataTypes.STRING(24),
+        allowNull: false,
+        defaultValue: "none",
+      },
+      hotel_pricing_request_data: {
+        type: DataTypes.JSON,
+        allowNull: true,
+      },
+      hotel_pricing_requested_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      hotel_pricing_reviewed_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      hotel_pricing_reviewed_by_user_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: "user", key: "id" },
+        onDelete: "SET NULL",
+        onUpdate: "CASCADE",
+      },
+      hotel_pricing_note: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+
+      referral_credit_total_minor: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      referral_credit_available_minor: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      referral_credit_used_minor: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      referral_credit_granted_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      referral_credit_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      referral_credit_source_influencer_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: "user", key: "id" },
+        onDelete: "SET NULL",
+        onUpdate: "CASCADE",
+      },
+      referral_credit_source_code: {
+        type: DataTypes.STRING(32),
+        allowNull: true,
+      },
+
       // When admin pre-approves a role change and requires user info
       role_pending_info: {
         type: DataTypes.BOOLEAN,
@@ -254,6 +323,13 @@ export default (sequelize) => {
         foreignKey: "user_id",
         as: "bookingMemberships",
         onDelete: "SET NULL",
+      });
+    }
+    if (models.PartnerHotelClaim) {
+      User.hasMany(models.PartnerHotelClaim, {
+        foreignKey: "user_id",
+        as: "partnerClaims",
+        onDelete: "CASCADE",
       });
     }
     if (models.SupportTicketAssignee && models.SupportTicket) {

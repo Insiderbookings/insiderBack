@@ -131,6 +131,8 @@ import ScheduledJobModel from "./ScheduledJob.js";
 import ScheduledJobRunModel from "./ScheduledJobRun.js";
 import FxRateModel from "./FxRate.js";
 import FxRateChangeLogModel from "./FxRateChangeLog.js";
+import PartnerHotelClaimModel from "./PartnerHotelClaim.js";
+import PartnerEmailLogModel from "./PartnerEmailLog.js";
 
 /* ---------- Construir objetos ---------- */
 const Stay = StayModel(sequelize);
@@ -269,6 +271,8 @@ const models = {
   ScheduledJobRun: ScheduledJobRunModel(sequelize),
   FxRate: FxRateModel(sequelize),
   FxRateChangeLog: FxRateChangeLogModel(sequelize),
+  PartnerHotelClaim: PartnerHotelClaimModel(sequelize),
+  PartnerEmailLog: PartnerEmailLogModel(sequelize),
 };
 
 /* ---------- Ejecutar asociaciones ---------- */

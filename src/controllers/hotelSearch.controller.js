@@ -6,8 +6,16 @@ import models from "../models/index.js"
 import cache from "../services/cache.js"
 import { WebbedsProvider } from "../providers/webbeds/provider.js"
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
+import {
+  resolveHotelCanonicalPricing,
+  resolveHotelPricingRole,
+} from "../utils/hotelPricing.js"
 import { resolveEffectiveSearchIntent } from "../utils/hotelSearchIntent.js"
 import { resolveWebbedsCityMatch as sharedResolveWebbedsCityMatch } from "../services/webbedsCityResolver.service.js"
+import {
+  attachPartnerProgramToHotelItems,
+  comparePartnerAwareHotelItems,
+} from "../services/partnerLifecycle.service.js"
 
 const provider = new WebbedsProvider()
 const DEFAULT_LIMIT = 50
@@ -113,7 +121,18 @@ const resolveItemRating = (item) =>
   )
 
 const resolveItemPrice = (item) => {
-  const direct = Number(item?.bestPrice ?? item?.price ?? item?.minPrice)
+  const direct = Number(
+    item?.effectiveAmount ??
+    item?.publicMarkedAmount ??
+    item?.bestPrice ??
+    item?.price ??
+    item?.minPrice ??
+    item?.hotelDetails?.effectiveAmount ??
+    item?.hotelDetails?.publicMarkedAmount ??
+    item?.hotelDetails?.bestPrice ??
+    item?.hotelDetails?.price ??
+    item?.hotelDetails?.minPrice,
+  )
   if (Number.isFinite(direct)) return direct
   const options = Array.isArray(item?.options) ? item.options : []
   const best = options.reduce((picked, option) => {
@@ -124,6 +143,52 @@ const resolveItemPrice = (item) => {
   }, null)
   return Number.isFinite(best) ? best : null
 }
+
+const decorateHotelSearchPricing = (item, pricingRole = 0) => {
+  if (!item || typeof item !== "object") return item
+  const canonicalPricing = resolveHotelCanonicalPricing({
+    providerAmount: item,
+    minimumSelling: item,
+    pricingRole,
+  })
+  if (
+    canonicalPricing.providerAmount == null &&
+    canonicalPricing.publicMarkedAmount == null &&
+    canonicalPricing.minimumSelling == null &&
+    canonicalPricing.effectiveAmount == null
+  ) {
+    return item
+  }
+
+  const hotelDetails =
+    item.hotelDetails && typeof item.hotelDetails === "object"
+      ? {
+          ...item.hotelDetails,
+          providerAmount: canonicalPricing.providerAmount,
+          publicMarkupRate: canonicalPricing.publicMarkupRate,
+          publicMarkupAmount: canonicalPricing.publicMarkupAmount,
+          publicMarkedAmount: canonicalPricing.publicMarkedAmount,
+          minimumSelling: canonicalPricing.minimumSelling,
+          effectiveAmount: canonicalPricing.effectiveAmount,
+          pricingRole: canonicalPricing.pricingRole,
+        }
+      : item.hotelDetails
+
+  return {
+    ...item,
+    providerAmount: canonicalPricing.providerAmount,
+    publicMarkupRate: canonicalPricing.publicMarkupRate,
+    publicMarkupAmount: canonicalPricing.publicMarkupAmount,
+    publicMarkedAmount: canonicalPricing.publicMarkedAmount,
+    minimumSelling: canonicalPricing.minimumSelling,
+    effectiveAmount: canonicalPricing.effectiveAmount,
+    pricingRole: canonicalPricing.pricingRole,
+    hotelDetails,
+  }
+}
+
+const decorateHotelSearchPricingList = (items = [], pricingRole = 0) =>
+  (Array.isArray(items) ? items : []).map((item) => decorateHotelSearchPricing(item, pricingRole))
 
 const filterCachedItems = (items, filters = {}) => {
   const priceMin = Number(filters.priceMin)
@@ -1394,6 +1459,9 @@ const resolvePreferredScore = (item) => {
 }
 
 const compareAvailabilityItems = (a, b) => {
+  const partnerDiff = comparePartnerAwareHotelItems(a, b)
+  if (partnerDiff !== 0) return partnerDiff
+
   const preferredDiff = resolvePreferredScore(b) - resolvePreferredScore(a)
   if (preferredDiff !== 0) return preferredDiff
 
@@ -1416,6 +1484,17 @@ const compareAvailabilityItems = (a, b) => {
 
 const rankAvailabilityItems = (items = []) =>
   [...(Array.isArray(items) ? items : [])].sort(compareAvailabilityItems)
+
+const finalizePartnerHotelItems = async (items = []) => {
+  const enriched = await attachPartnerProgramToHotelItems(items)
+  return enriched
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) =>
+      comparePartnerAwareHotelItems(left.item, right.item, compareAvailabilityItems) ||
+      left.index - right.index,
+    )
+    .map(({ item }) => item)
+}
 
 const applyNearbyContextToItems = ({
   items = [],
@@ -1481,6 +1560,7 @@ export const searchHotels = async (req, res, next) => {
     lng,
   } = req.query
   const clientIsMobile = isMobileClient(req)
+  const hotelPricingRole = resolveHotelPricingRole(req.user)
 
   try {
     const searchRequestId = `srch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -1776,7 +1856,9 @@ export const searchHotels = async (req, res, next) => {
           cityCode: resolvedCityCode,
           query: searchQuery || null,
         })
-        const pagedItems = sanitizedItems.slice(safeOffset, safeOffset + safeLimit)
+        const pagedItems = await finalizePartnerHotelItems(
+          sanitizedItems.slice(safeOffset, safeOffset + safeLimit),
+        )
         const hasMore = sanitizedItems.length > safeOffset + safeLimit
 
         return res.json({
@@ -2451,6 +2533,7 @@ export const searchHotels = async (req, res, next) => {
         items = items.slice(safeOffset, safeOffset + safeLimit)
       }
     }
+    items = decorateHotelSearchPricingList(items, hotelPricingRole)
     const durationMs = Date.now() - startTime
     const searchDurationMs = Date.now() - searchStart
     const hasMore = effectiveFetchAll
@@ -2582,6 +2665,7 @@ export const searchHotels = async (req, res, next) => {
             cityCode: resolvedCityCode,
             query: searchQuery || null,
           })
+          fullItems = decorateHotelSearchPricingList(fullItems, hotelPricingRole)
           const fullPayload = {
             items: fullItems,
             meta: {
@@ -2624,6 +2708,7 @@ export const searchHotels = async (req, res, next) => {
       }, 0)
     }
 
+    responsePayload.items = await finalizePartnerHotelItems(responsePayload.items || [])
     return res.json(responsePayload)
   } catch (error) {
     console.error("[hotels.search] failed", {

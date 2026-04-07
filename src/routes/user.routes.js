@@ -18,6 +18,9 @@ import {
   becomeInfluencer,
   updateInfluencerCode,
   createInfluencerIdentityVerificationSession,
+  requestHotelPricingTier,
+  approveHotelPricingTier,
+  rejectHotelPricingTier,
 } from "../controllers/user.controller.js"
 import {
   getPayoutAccount,
@@ -100,6 +103,9 @@ router.use(authenticate)
 router.get("/lookup", lookupUserByEmail)
 router.post("/me/discount-code/status", recordDiscountCodeStatus)
 router.post("/me/discount-code", applyDiscountCode)
+router.post("/me/hotel-pricing/request", requestHotelPricingTier)
+router.post("/admin/hotel-pricing/:userId/approve", authorizeRoles(100), approveHotelPricingTier)
+router.post("/admin/hotel-pricing/:userId/reject", authorizeRoles(100), rejectHotelPricingTier)
 
 // Contracts
 router.get("/contracts", getUserContracts)

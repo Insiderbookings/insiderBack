@@ -135,6 +135,12 @@ const extractHostname = (url) => {
 
 const matchAny = (value, patterns = []) => patterns.find((pattern) => pattern.test(value)) || null;
 
+export const isGreetingOnlyMessage = (value) => {
+  const normalized = normalizeComparableText(value);
+  if (!normalized) return false;
+  return Boolean(matchAny(normalized, GREETING_ONLY_PATTERNS));
+};
+
 export const userExplicitlyRequestedCompetitor = (value) => {
   const normalized = normalizeComparableText(value);
   return COMPETITOR_SPECS.some((spec) => spec.textPattern.test(normalized));
@@ -168,7 +174,7 @@ export const decideCall2WebSearch = ({
     };
   }
 
-  if (matchAny(normalizedMessage, GREETING_ONLY_PATTERNS)) {
+  if (isGreetingOnlyMessage(normalizedMessage)) {
     return {
       enabled: false,
       reason: "greeting_only",
