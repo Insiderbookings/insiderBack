@@ -1829,6 +1829,11 @@ export const cancelPaymentIntent = async (req, res, next) => {
       cancelResult = await stripe.paymentIntents.cancel(intentId, cancelParams)
     }
 
+    const shouldRestoreReferralCredit =
+      booking &&
+      booking.status !== "CONFIRMED" &&
+      booking.status !== "COMPLETED"
+
     if (booking) {
       const updates = { payment_status: "UNPAID" }
       if (booking.status !== "CONFIRMED" && booking.status !== "COMPLETED") {
@@ -1859,6 +1864,18 @@ export const cancelPaymentIntent = async (req, res, next) => {
           paymentIntentId: intentId,
           error: walletReleaseError?.message || walletReleaseError,
         })
+      }
+
+      if (shouldRestoreReferralCredit) {
+        try {
+          await restoreReferralCreditForBooking({ booking })
+        } catch (referralCreditRestoreError) {
+          console.error("[webbeds] cancelPaymentIntent referral credit restore failed", {
+            bookingId: booking.id,
+            paymentIntentId: intentId,
+            error: referralCreditRestoreError?.message || referralCreditRestoreError,
+          })
+        }
       }
     }
 
