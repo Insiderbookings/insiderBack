@@ -549,6 +549,85 @@ const resolveCatalogForeignKey = ({ rawValue, catalogCodes, catalogLabel, hotelI
   return null
 }
 
+const buildHotelUpsertPayload = ({
+  hotel,
+  fallbackCityCode,
+  hotelChainCodes = hotelChainCodeCache,
+  hotelClassificationCodes = hotelClassificationCodeCache,
+}) => {
+  const hotelId = toPositiveIntOrNull(hotel?.["@_hotelid"] ?? hotel?.hotelid)
+  if (!hotelId) return null
+
+  const cityCodeValue = toPositiveIntOrNull(hotel?.cityCode ?? fallbackCityCode)
+  const countryCodeValue = toPositiveIntOrNull(hotel?.countryCode)
+  const lat = toNumberOrNull(hotel?.geoPoint?.lat)
+  const lng = toNumberOrNull(hotel?.geoPoint?.lng)
+  const chainCodeValue = resolveCatalogForeignKey({
+    rawValue: hotel?.chain,
+    catalogCodes: hotelChainCodes,
+    catalogLabel: "hotel_chain",
+    hotelId,
+  })
+  const classificationCodeValue = resolveCatalogForeignKey({
+    rawValue: hotel?.rating,
+    catalogCodes: hotelClassificationCodes,
+    catalogLabel: "hotel_classification",
+    hotelId,
+  })
+
+  return {
+    hotelId,
+    payload: {
+      hotel_id: hotelId,
+      name: hotel?.hotelName ?? hotel?.name ?? null,
+      city_code: cityCodeValue,
+      city_name: hotel?.cityName ?? null,
+      country_code: countryCodeValue,
+      country_name: hotel?.countryName ?? null,
+      region_name: hotel?.regionName ?? null,
+      region_code: hotel?.regionCode ?? null,
+      address: hotel?.address ?? null,
+      zip_code: hotel?.zipCode ?? null,
+      location1: hotel?.location1 ?? null,
+      location2: hotel?.location2 ?? null,
+      location3: hotel?.location3 ?? null,
+      built_year: hotel?.builtYear ?? null,
+      renovation_year: hotel?.renovationYear ?? null,
+      floors: hotel?.floors ?? null,
+      no_of_rooms: hotel?.noOfRooms ?? null,
+      rating: hotel?.rating ?? null,
+      priority: toPositiveIntOrNull(hotel?.priority),
+      preferred: normalizeBoolean(hotel?.preferred ?? hotel?.["@_preferred"]),
+      exclusive: normalizeBoolean(hotel?.exclusive ?? hotel?.["@_exclusive"]),
+      direct: normalizeBoolean(hotel?.direct),
+      fire_safety: normalizeBoolean(hotel?.fireSafety),
+      chain: hotel?.chain ?? null,
+      chain_code: chainCodeValue,
+      classification_code: classificationCodeValue,
+      hotel_phone: hotel?.hotelPhone ?? null,
+      hotel_check_in: hotel?.hotelCheckIn ?? null,
+      hotel_check_out: hotel?.hotelCheckOut ?? null,
+      min_age: hotel?.minAge ?? null,
+      last_updated: toPositiveIntOrNull(hotel?.lastUpdated),
+      lat,
+      lng,
+      full_address: hotel?.fullAddress ?? null,
+      descriptions: {
+        description1: hotel?.description1 ?? null,
+        description2: hotel?.description2 ?? null,
+      },
+      amenities: hotel?.amenitie ?? null,
+      leisure: hotel?.leisure ?? null,
+      business: hotel?.business ?? null,
+      transportation: hotel?.transportation ?? null,
+      geo_locations: hotel?.geoLocations ?? null,
+      images: hotel?.images ?? null,
+      room_static: hotel?.rooms ?? null,
+      raw_payload: hotel,
+    },
+  }
+}
+
 const persistHotels = async (hotels, fallbackCityCode) => {
   if (!hotels?.length) return 0
   const tx = await sequelize.transaction()
@@ -562,82 +641,21 @@ const persistHotels = async (hotels, fallbackCityCode) => {
 
     let processed = 0
     for (const hotel of hotels) {
-      const hotelId = Number(hotel["@_hotelid"] ?? hotel.hotelid) || null
-      if (!hotelId) {
+      const preparedHotel = buildHotelUpsertPayload({
+        hotel,
+        fallbackCityCode,
+        hotelChainCodes: hotelChainCodeCache,
+        hotelClassificationCodes: hotelClassificationCodeCache,
+      })
+
+      if (!preparedHotel) {
         console.warn("[webbeds][static] hotel missing id", { hotel })
         continue
       }
 
-      const cityCodeValue = Number(hotel.cityCode ?? fallbackCityCode) || null
-      const countryCodeValue = Number(hotel.countryCode) || null
-      const lat = hotel.geoPoint?.lat ? Number(hotel.geoPoint.lat) : null
-      const lng = hotel.geoPoint?.lng ? Number(hotel.geoPoint.lng) : null
-      const chainCodeValue = resolveCatalogForeignKey({
-        rawValue: hotel.chain,
-        catalogCodes: hotelChainCodeCache,
-        catalogLabel: "hotel_chain",
-        hotelId,
-      })
-      const classificationCodeValue = resolveCatalogForeignKey({
-        rawValue: hotel.rating,
-        catalogCodes: hotelClassificationCodeCache,
-        catalogLabel: "hotel_classification",
-        hotelId,
-      })
+      await models.WebbedsHotel.upsert(preparedHotel.payload, { transaction: tx })
 
-      await models.WebbedsHotel.upsert(
-        {
-          hotel_id: hotelId,
-          name: hotel.hotelName ?? hotel.name ?? null,
-          city_code: cityCodeValue,
-          city_name: hotel.cityName ?? null,
-          country_code: countryCodeValue,
-          country_name: hotel.countryName ?? null,
-          region_name: hotel.regionName ?? null,
-          region_code: hotel.regionCode ?? null,
-          address: hotel.address ?? null,
-          zip_code: hotel.zipCode ?? null,
-          location1: hotel.location1 ?? null,
-          location2: hotel.location2 ?? null,
-          location3: hotel.location3 ?? null,
-          built_year: hotel.builtYear ?? null,
-          renovation_year: hotel.renovationYear ?? null,
-          floors: hotel.floors ?? null,
-          no_of_rooms: hotel.noOfRooms ?? null,
-          rating: hotel.rating ?? null,
-          priority: hotel.priority ? Number(hotel.priority) : null,
-          preferred: normalizeBoolean(hotel.preferred ?? hotel["@_preferred"]),
-          exclusive: normalizeBoolean(hotel.exclusive ?? hotel["@_exclusive"]),
-          direct: normalizeBoolean(hotel.direct),
-          fire_safety: normalizeBoolean(hotel.fireSafety),
-          chain: hotel.chain ?? null,
-          chain_code: chainCodeValue,
-          classification_code: classificationCodeValue,
-          hotel_phone: hotel.hotelPhone ?? null,
-          hotel_check_in: hotel.hotelCheckIn ?? null,
-          hotel_check_out: hotel.hotelCheckOut ?? null,
-          min_age: hotel.minAge ?? null,
-          last_updated: hotel.lastUpdated ? Number(hotel.lastUpdated) : null,
-          lat,
-          lng,
-          full_address: hotel.fullAddress ?? null,
-          descriptions: {
-            description1: hotel.description1 ?? null,
-            description2: hotel.description2 ?? null,
-          },
-          amenities: hotel.amenitie ?? null,
-          leisure: hotel.leisure ?? null,
-          business: hotel.business ?? null,
-          transportation: hotel.transportation ?? null,
-          geo_locations: hotel.geoLocations ?? null,
-          images: hotel.images ?? null,
-          room_static: hotel.rooms ?? null,
-          raw_payload: hotel,
-        },
-        { transaction: tx },
-      )
-
-      await upsertHotelRelations(hotelId, hotel, tx)
+      await upsertHotelRelations(preparedHotel.hotelId, hotel, tx)
       processed += 1
     }
     await tx.commit()
@@ -1303,4 +1321,6 @@ export const syncWebbedsRateBasis = (options = {}) =>
     mapOption: (option) => mapCatalogRecord(option, {}),
   })
 
-
+export const __testables = {
+  buildHotelUpsertPayload,
+}

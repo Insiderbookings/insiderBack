@@ -9358,6 +9358,27 @@ export const runFunctionCallingTurn = async ({
 
       const makeHotelCard = (h, rank) => {
         const starsNum = resolveWebbedsHotelStars(h);
+        const priceCandidates = [
+          h?.pricePerNight,
+          h?.nightlyPrice,
+          h?.price,
+          h?.effectiveAmount,
+          h?.publicMarkedAmount,
+          h?.minimumSelling,
+          h?.bestPrice,
+          h?.providerAmount,
+          h?.hotelDetails?.pricePerNight,
+          h?.hotelDetails?.nightlyPrice,
+          h?.hotelDetails?.effectiveAmount,
+          h?.hotelDetails?.publicMarkedAmount,
+          h?.hotelDetails?.minimumSelling,
+          h?.hotelDetails?.bestPrice,
+          h?.hotelDetails?.providerAmount,
+        ];
+        const resolvedPriceFrom = priceCandidates.find((candidate) => {
+          const numeric = Number(candidate);
+          return Number.isFinite(numeric) && numeric > 0;
+        });
         return {
           type: "hotelCard",
           id: String(h.id),
@@ -9368,10 +9389,7 @@ export const runFunctionCallingTurn = async ({
           amenities: Array.isArray(h.amenities) ? h.amenities.slice(0, 3) : [],
           images: Array.isArray(h.images) ? h.images : [],
           priceFrom:
-            Number.isFinite(Number(h.pricePerNight)) &&
-            Number(h.pricePerNight) > 0
-              ? Number(h.pricePerNight)
-              : null,
+            resolvedPriceFrom != null ? Number(resolvedPriceFrom) : null,
           currency: h.currency || "USD",
           pickReason: compactHotelCardPickReason(
             h.shortReason ||

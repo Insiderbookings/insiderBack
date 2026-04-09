@@ -1006,8 +1006,12 @@ export const handleAiChatStream = async (req, res) => {
     turnReleased = true;
     releaseSessionTurn(conversationId, turnToken);
   };
+  const detachCloseListeners = () => {
+    req.removeListener("aborted", onClientClose);
+    res.removeListener("close", onClientClose);
+  };
   const onClientClose = () => {
-    if (turnReleased) return;
+    if (turnReleased || res.writableEnded || res.finished) return;
     console.warn("[ai] stream client disconnected mid-turn, aborting", {
       sessionId: conversationId,
       userId,
@@ -1194,6 +1198,8 @@ export const handleAiChatStream = async (req, res) => {
       quickStartPrompts: QUICK_START_PROMPTS,
       closingMessage: accumulatedClosingText || result.closingMessage || null,
     });
+    detachCloseListeners();
+    releaseTurn();
 
     // Persist in background — does not block the client
     const assistantUiSnapshot = buildAssistantUiSnapshot(
@@ -1237,6 +1243,17 @@ export const handleAiChatStream = async (req, res) => {
       console.error("[ai] stream: failed to persist assistant reply", err),
     );
   } catch (err) {
+    const isAborted =
+      err?.name === "AbortError" ||
+      err?.code === "ERR_CANCELED" ||
+      err?.message === "Request was aborted.";
+    if (isAborted) {
+      console.info("[ai] stream: turn aborted", {
+        sessionId: conversationId,
+        userId,
+      });
+      return;
+    }
     console.error("[ai] stream: chat failed", {
       sessionId: conversationId,
       userId,
@@ -1246,8 +1263,11 @@ export const handleAiChatStream = async (req, res) => {
       message: "Unable to process assistant query right now",
     });
   } finally {
+    detachCloseListeners();
     releaseTurn();
-    res.end();
+    if (!res.writableEnded) {
+      res.end();
+    }
   }
 };
 
