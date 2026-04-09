@@ -226,6 +226,136 @@ export const resolveHotelCanonicalPricingFromObject = (value, options = {}) =>
     ...options,
   });
 
+export const resolveHotelStayNights = ({
+  stayNights = null,
+  checkIn = null,
+  checkOut = null,
+  fallback = 1,
+} = {}) => {
+  const explicit = Number(stayNights);
+  if (Number.isFinite(explicit) && explicit > 0) {
+    return Math.max(1, Math.floor(explicit));
+  }
+
+  if (checkIn && checkOut) {
+    const start = new Date(checkIn);
+    const end = new Date(checkOut);
+    if (
+      !Number.isNaN(start.getTime()) &&
+      !Number.isNaN(end.getTime()) &&
+      end.getTime() > start.getTime()
+    ) {
+      const diffMs = end.getTime() - start.getTime();
+      const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+      if (Number.isFinite(diffDays) && diffDays > 0) {
+        return diffDays;
+      }
+    }
+  }
+
+  return Math.max(1, Number(fallback) || 1);
+};
+
+export const decorateHotelPricingForDisplay = (
+  item,
+  {
+    providerAmount = null,
+    minimumSelling = null,
+    pricingRole = null,
+    user = null,
+    stayNights = null,
+    checkIn = null,
+    checkOut = null,
+  } = {},
+) => {
+  if (!item || typeof item !== "object") return item;
+
+  const normalizedStayNights = resolveHotelStayNights({
+    stayNights:
+      stayNights ??
+      item?.stayNights ??
+      item?.hotelDetails?.stayNights ??
+      item?.details?.stayNights ??
+      null,
+    checkIn:
+      checkIn ??
+      item?.checkIn ??
+      item?.hotelDetails?.checkIn ??
+      item?.details?.checkIn ??
+      null,
+    checkOut:
+      checkOut ??
+      item?.checkOut ??
+      item?.hotelDetails?.checkOut ??
+      item?.details?.checkOut ??
+      null,
+  });
+
+  const canonicalPricing = resolveHotelCanonicalPricing({
+    providerAmount: providerAmount ?? item,
+    minimumSelling: minimumSelling ?? item,
+    pricingRole,
+    user,
+  });
+
+  if (
+    canonicalPricing.providerAmount == null &&
+    canonicalPricing.publicMarkedAmount == null &&
+    canonicalPricing.minimumSelling == null &&
+    canonicalPricing.effectiveAmount == null
+  ) {
+    return {
+      ...item,
+      stayNights: normalizedStayNights,
+    };
+  }
+
+  const displayedTotal =
+    canonicalPricing.effectiveAmount ??
+    canonicalPricing.publicMarkedAmount ??
+    canonicalPricing.providerAmount;
+  const displayedNightly =
+    displayedTotal != null
+      ? roundCurrency(displayedTotal / normalizedStayNights)
+      : null;
+
+  const hotelDetails =
+    item.hotelDetails && typeof item.hotelDetails === "object"
+      ? {
+          ...item.hotelDetails,
+          providerAmount: canonicalPricing.providerAmount,
+          publicMarkupRate: canonicalPricing.publicMarkupRate,
+          publicMarkupAmount: canonicalPricing.publicMarkupAmount,
+          publicMarkedAmount: canonicalPricing.publicMarkedAmount,
+          minimumSelling: canonicalPricing.minimumSelling,
+          effectiveAmount: canonicalPricing.effectiveAmount,
+          pricingRole: canonicalPricing.pricingRole,
+          bestPrice: displayedTotal ?? item.hotelDetails.bestPrice ?? null,
+          nightlyPrice:
+            displayedNightly ?? item.hotelDetails.nightlyPrice ?? null,
+          pricePerNight:
+            displayedNightly ?? item.hotelDetails.pricePerNight ?? null,
+          stayNights: normalizedStayNights,
+        }
+      : item.hotelDetails;
+
+  return {
+    ...item,
+    providerAmount: canonicalPricing.providerAmount,
+    publicMarkupRate: canonicalPricing.publicMarkupRate,
+    publicMarkupAmount: canonicalPricing.publicMarkupAmount,
+    publicMarkedAmount: canonicalPricing.publicMarkedAmount,
+    minimumSelling: canonicalPricing.minimumSelling,
+    effectiveAmount: canonicalPricing.effectiveAmount,
+    pricingRole: canonicalPricing.pricingRole,
+    bestPrice: displayedTotal ?? item.bestPrice ?? null,
+    nightlyPrice: displayedNightly ?? item.nightlyPrice ?? null,
+    pricePerNight: displayedNightly ?? item.pricePerNight ?? null,
+    stayNights: normalizedStayNights,
+    hotelDetails,
+  };
+};
+
 export const resolveHotelCanonicalDisplayAmount = (value, options = {}) => {
   const directEffectiveAmount = resolveAmountFromSource(value, HOTEL_CANONICAL_DISPLAY_KEYS);
   if (directEffectiveAmount != null) {
@@ -252,10 +382,12 @@ export default {
   HOTEL_PRICING_MARKUP_RATES,
   HOTEL_PRICING_TIERS,
   roundCurrency,
+  decorateHotelPricingForDisplay,
   resolveHotelCanonicalDisplayAmount,
   resolveHotelCanonicalPricing,
   resolveHotelCanonicalPricingFromObject,
   resolveHotelMarkupRate,
   resolveHotelPricingRole,
   resolveHotelPricingTier,
+  resolveHotelStayNights,
 };

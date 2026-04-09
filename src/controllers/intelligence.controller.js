@@ -4,6 +4,7 @@ import { getTripWeather } from "../services/tripHubWeather.service.js";
 import { getTripHubRecommendationsFromCache } from "../services/tripHubPacks.service.js";
 import { enqueueTripHubEnsure } from "../services/tripHubPacksQueue.service.js";
 import { runAiTurn } from "../modules/ai/ai.service.js";
+import { resolveHotelPricingRole } from "../utils/hotelPricing.js";
 import models from "../models/index.js";
 
 const { StayIntelligence } = models;
@@ -475,6 +476,7 @@ export const consultWidget = async (req, res) => {
         const result = await runAiTurn({
             sessionId,
             userId,
+            pricingRole: req?.user ? resolveHotelPricingRole(req.user) : null,
             message: query,
             context,
             // We can force a specific tone or limit for widget responses here

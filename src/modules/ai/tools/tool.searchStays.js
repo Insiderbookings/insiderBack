@@ -5,7 +5,13 @@ import {
 
 export const searchStays = async (
   plan,
-  { limit, maxResults = 120, excludeIds = [], traceSink = null } = {},
+  {
+    limit,
+    maxResults = 120,
+    excludeIds = [],
+    traceSink = null,
+    pricingRole = null,
+  } = {},
 ) => {
   const SEARCH_HOMES_ENABLED = false; // Feature flag: Temporarily disabled
 
@@ -37,6 +43,7 @@ export const searchStays = async (
           limit: limit?.hotels,
           excludeIds,
           traceSink,
+          pricingRole,
         })
       : { items: [], matchType: "NONE" },
   ]);

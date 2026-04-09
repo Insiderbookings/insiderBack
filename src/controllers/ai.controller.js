@@ -11,6 +11,7 @@ import {
   resolveWebbedsClassificationLabel,
   resolveWebbedsHotelStars,
 } from "../utils/webbedsStars.js";
+import { resolveHotelPricingRole } from "../utils/hotelPricing.js";
 import {
   appendAssistantChatMessage,
   createAssistantSessionForUser,
@@ -760,6 +761,7 @@ export const handleAiChat = async (req, res) => {
       const result = await runAiTurn({
         sessionId: conversationId,
         userId,
+        pricingRole: resolveHotelPricingRole(req.user),
         messages: normalizedMessages,
         limits,
         uiEvent,
@@ -1061,6 +1063,7 @@ export const handleAiChatStream = async (req, res) => {
     const result = await runAiTurn({
       sessionId: conversationId,
       userId,
+      pricingRole: resolveHotelPricingRole(req.user),
       messages: normalizedMessages,
       limits,
       uiEvent,

@@ -28,7 +28,7 @@ const MOBILE_SNAPSHOT_RESULT_LIMIT = Math.max(
   Number(process.env.WEBBEDS_MOBILE_SNAPSHOT_RESULT_LIMIT || 100),
 )
 const DEFAULT_CACHE_TTL = 120
-const SEARCH_CACHE_VERSION = "hotel-intent-v5"
+const SEARCH_CACHE_VERSION = "hotel-intent-v7"
 const FULL_CACHE_TTL_SECONDS = Math.max(
   60,
   Number(process.env.WEBBEDS_SEARCH_FULL_CACHE_TTL_SECONDS || DEFAULT_CACHE_TTL),
@@ -782,6 +782,18 @@ const scoreHotelNameMatch = (name, query) => {
   const normalizedQuery = normalizeComparableText(query)
   if (!normalizedName || !normalizedQuery) return 0
   if (normalizedName === normalizedQuery) return 1000
+  if (
+    normalizedQuery.startsWith(`${normalizedName} `) ||
+    normalizedQuery.startsWith(normalizedName)
+  ) {
+    return 940 - Math.max(0, normalizedQuery.length - normalizedName.length)
+  }
+  if (
+    normalizedQuery.includes(` ${normalizedName} `) ||
+    normalizedQuery.includes(normalizedName)
+  ) {
+    return 820 - Math.max(0, normalizedQuery.length - normalizedName.length)
+  }
   if (
     normalizedName.startsWith(`${normalizedQuery} `) ||
     normalizedName.startsWith(normalizedQuery)
@@ -1911,6 +1923,11 @@ export const searchHotels = async (req, res, next) => {
       manualHotelName,
       hasStrongHotelNameSignal: hasStrongHotelSignal,
     })
+    const requestedHotelName =
+      manualHotelName ||
+      (effectiveSearchIntent === "hotel"
+        ? String(searchQuery || "").trim() || null
+        : null)
 
     let hotelIds = []
     let fallback = null
@@ -2102,7 +2119,8 @@ export const searchHotels = async (req, res, next) => {
           nearbyAlternativesRadiusKm: null,
           nearbyAlternativesRadiiTried: [],
           exactHotelUnavailable: false,
-          anchorLabel: searchQuery || null,
+          hotelName: requestedHotelName,
+          anchorLabel: requestedHotelName || searchQuery || null,
           total: 0,
         },
       })
@@ -2136,8 +2154,7 @@ export const searchHotels = async (req, res, next) => {
       countryCode: resolvedCountryCode || undefined,
       hotelIds: hotelIds.length ? hotelIds.join(",") : undefined,
       hotelName:
-        manualHotelName ||
-        (effectiveSearchIntent === "hotel" ? searchQuery || undefined : undefined),
+        requestedHotelName || undefined,
       passengerNationality,
       passengerCountryOfResidence,
       priceMin,
@@ -2567,7 +2584,8 @@ export const searchHotels = async (req, res, next) => {
         nearbyAlternativesRadiusKm,
         nearbyAlternativesRadiiTried,
         exactHotelUnavailable,
-        anchorLabel: searchQuery || null,
+        hotelName: requestedHotelName,
+        anchorLabel: requestedHotelName || searchQuery || null,
         timing: {
           totalMs: durationMs,
           searchMs: searchDurationMs,

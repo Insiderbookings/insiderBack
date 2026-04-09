@@ -11,6 +11,10 @@ import {
   WEBBEDS_CLASSIFICATION_CODE_TO_STARS,
   resolveWebbedsHotelStars,
 } from "../utils/webbedsStars.js";
+import {
+  decorateHotelPricingForDisplay,
+  resolveHotelStayNights,
+} from "../utils/hotelPricing.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 import { resolvePoiToCoordinates, getNearbyPlaces, computeDistanceKm } from "../modules/ai/tools/tool.places.js";
 import { resolveSemanticCatalogContext } from "../modules/ai/ai.semanticCatalog.js";
@@ -100,6 +104,7 @@ const serializeProximityAnchorForCache = (proximityAnchor) => {
 const buildLiveHotelSearchCacheKey = ({
   plan,
   limit,
+  pricingRole,
   hotelFilters,
   coordinateFilter,
   proximityAnchor,
@@ -108,7 +113,7 @@ const buildLiveHotelSearchCacheKey = ({
 }) => {
   if (!LIVE_HOTEL_SEARCH_CACHE_TTL_SECONDS) return null;
   const payload = {
-    version: 1,
+    version: 2,
     locationCodes: {
       cityCode: String(resolvedLocationCodes?.cityCode || "").trim() || null,
       countryCode: String(resolvedLocationCodes?.countryCode || "").trim() || null,
@@ -123,6 +128,7 @@ const buildLiveHotelSearchCacheKey = ({
     })),
     nationality: String(plan?.passengerNationality ?? plan?.nationality ?? "").trim() || null,
     residence: String(plan?.passengerCountryOfResidence ?? plan?.residence ?? "").trim() || null,
+    pricingRole: toNumberOrNull(pricingRole) ?? 20,
     limit: clampLimit(limit),
     sortBy: String(plan?.sortBy || "PRICE_ASC").trim().toUpperCase(),
     budgetMax: resolveBudgetMax(plan),
@@ -4407,12 +4413,25 @@ const runStaticHotelQuery = async (where, options) => {
   return mapHotelCardsForOutput({ cards, plan, limit });
 };
 
-const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, coordinateFilter, proximityAnchor = null }) => {
+const mapLiveHotelOptions = async ({
+  options = [],
+  plan,
+  limit,
+  pricingRole = 20,
+  hotelFilters,
+  coordinateFilter,
+  proximityAnchor = null,
+}) => {
   if (!Array.isArray(options) || !options.length) return [];
   const debugLive =
     process.env.WEBBEDS_VERBOSE_LOGS === "true" || process.env.ASSISTANT_DEBUG_HOTEL_MATCH === "true";
   let priceMissing = 0;
   let priceInvalid = 0;
+  const stayNights = resolveHotelStayNights({
+    checkIn: plan?.dates?.checkIn,
+    checkOut: plan?.dates?.checkOut,
+    fallback: 1,
+  });
   const grouped = new Map();
   options.forEach((option) => {
     const hotelCode = option?.hotelCode ?? option?.hotelDetails?.hotelCode;
@@ -4514,15 +4533,22 @@ const mapLiveHotelOptions = async ({ options = [], plan, limit, hotelFilters, co
       if (!card) return null;
       const info = grouped.get(card.id);
       if (!info) return null;
-      return {
+      const baseCard = {
         ...card,
-        pricePerNight: info.price,
         currency: info.currency || card.currency || "USD",
+        bestPrice: info.price,
+        stayNights,
         providerInfo: {
           rateKey: info.option.rateKey,
           board: info.option.board,
         },
       };
+      return decorateHotelPricingForDisplay(baseCard, {
+        providerAmount: info.price,
+        minimumSelling: info.option,
+        pricingRole,
+        stayNights,
+      });
     })
     .filter(Boolean);
 
@@ -4779,6 +4805,7 @@ const flattenGroupedLiveOptions = (groups = []) => {
 const tryRunLiveHotelSearch = async ({
   plan,
   limit,
+  pricingRole = 20,
   hotelFilters,
   coordinateFilter,
   proximityAnchor = null,
@@ -4811,6 +4838,7 @@ const tryRunLiveHotelSearch = async ({
     const liveCacheKey = buildLiveHotelSearchCacheKey({
       plan,
       limit,
+      pricingRole,
       hotelFilters,
       coordinateFilter,
       proximityAnchor,
@@ -4897,6 +4925,7 @@ const tryRunLiveHotelSearch = async ({
       options,
       plan,
       limit,
+      pricingRole,
       hotelFilters,
       coordinateFilter,
       proximityAnchor,
@@ -4942,6 +4971,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   const excludeIds = Array.isArray(options.excludeIds) ? options.excludeIds : [];
   const skipLive = options.skipLive === true;
   const traceSink = typeof options.traceSink === "function" ? options.traceSink : null;
+  const pricingRole = toNumberOrNull(options.pricingRole) ?? 20;
 
   const prefFilters = deriveFiltersFromPreferences(plan);
   const hotelFiltersRaw = plan?.hotelFilters || {};
@@ -5079,6 +5109,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     const liveResults = await tryRunLiveHotelSearch({
       plan,
       limit,
+      pricingRole,
       hotelFilters: normalizedHotelFilters,
       coordinateFilter,
       proximityAnchor,

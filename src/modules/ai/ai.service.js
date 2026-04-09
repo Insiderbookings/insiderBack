@@ -7704,6 +7704,7 @@ const resolveSearchLimits = ({ plan, limits }) => {
 export const runFunctionCallingTurn = async ({
   sessionId,
   userId,
+  pricingRole = null,
   message,
   messages,
   limits,
@@ -9171,6 +9172,7 @@ export const runFunctionCallingTurn = async ({
       maxResults: searchLimits.maxResults,
       excludeIds,
       traceSink: emitSearchTrace,
+      pricingRole,
     });
     console.log("[timing] searchStays:", Date.now() - _t0, "ms");
     emitFileDebug(

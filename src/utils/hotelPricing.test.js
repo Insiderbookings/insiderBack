@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 
 import {
+  decorateHotelPricingForDisplay,
   resolveHotelCanonicalDisplayAmount,
   resolveHotelCanonicalPricing,
   resolveHotelCanonicalPricingFromObject,
   resolveHotelMarkupRate,
   resolveHotelPricingRole,
   resolveHotelPricingTier,
+  resolveHotelStayNights,
 } from "./hotelPricing.js";
 
 const tests = [
@@ -134,6 +136,73 @@ const tests = [
         }),
         150
       );
+    },
+  },
+  {
+    name: "stay nights resolve from explicit value or date range",
+    run: () => {
+      assert.equal(resolveHotelStayNights({ stayNights: 3 }), 3);
+      assert.equal(
+        resolveHotelStayNights({
+          checkIn: "2026-04-27",
+          checkOut: "2026-04-29",
+        }),
+        2,
+      );
+      assert.equal(resolveHotelStayNights({}), 1);
+    },
+  },
+  {
+    name: "display pricing decoration keeps total canonical and nightly derived",
+    run: () => {
+      const decorated = decorateHotelPricingForDisplay(
+        {
+          id: "hotel-1",
+          currency: "USD",
+          hotelDetails: { hotelCode: "hotel-1" },
+        },
+        {
+          providerAmount: 200,
+          pricingRole: 20,
+          stayNights: 2,
+        },
+      );
+
+      assert.equal(decorated.providerAmount, 200);
+      assert.equal(decorated.publicMarkupRate, 0.2);
+      assert.equal(decorated.publicMarkedAmount, 240);
+      assert.equal(decorated.effectiveAmount, 240);
+      assert.equal(decorated.bestPrice, 240);
+      assert.equal(decorated.pricePerNight, 120);
+      assert.equal(decorated.nightlyPrice, 120);
+      assert.equal(decorated.stayNights, 2);
+      assert.equal(decorated.hotelDetails.bestPrice, 240);
+      assert.equal(decorated.hotelDetails.pricePerNight, 120);
+    },
+  },
+  {
+    name: "display pricing decoration respects admin net pricing and minimum selling",
+    run: () => {
+      const decorated = decorateHotelPricingForDisplay(
+        {
+          id: "hotel-2",
+          currency: "USD",
+        },
+        {
+          providerAmount: 123.45,
+          minimumSelling: 150,
+          pricingRole: 100,
+          stayNights: 1,
+        },
+      );
+
+      assert.equal(decorated.providerAmount, 123.45);
+      assert.equal(decorated.publicMarkupRate, 0);
+      assert.equal(decorated.publicMarkedAmount, 123.45);
+      assert.equal(decorated.effectiveAmount, 150);
+      assert.equal(decorated.bestPrice, 150);
+      assert.equal(decorated.pricePerNight, 150);
+      assert.equal(decorated.stayNights, 1);
     },
   },
   {
