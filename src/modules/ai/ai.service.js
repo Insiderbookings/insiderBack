@@ -5728,6 +5728,8 @@ const resolveExplicitPlaceReferenceForPlan = async ({
   latestUserMessage,
   language,
   emitTrace = null,
+  signal = null,
+  throwIfAborted = () => {},
 } = {}) => {
   if (!plan || typeof plan !== "object") return null;
   const explicitGeoRequested =
@@ -8771,6 +8773,8 @@ export const runFunctionCallingTurn = async ({
           latestUserMessage,
           language,
           emitTrace: emitSearchTrace,
+          signal,
+          throwIfAborted,
         })
       : null;
     if (explicitPlaceResolution?.status === "RESOLVED") {
