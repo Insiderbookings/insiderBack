@@ -5728,6 +5728,8 @@ const resolveExplicitPlaceReferenceForPlan = async ({
   latestUserMessage,
   language,
   emitTrace = null,
+  signal = null,
+  throwIfAborted = () => {},
 } = {}) => {
   if (!plan || typeof plan !== "object") return null;
   const explicitGeoRequested =
@@ -7704,6 +7706,7 @@ const resolveSearchLimits = ({ plan, limits }) => {
 export const runFunctionCallingTurn = async ({
   sessionId,
   userId,
+  pricingRole = null,
   message,
   messages,
   limits,
@@ -8770,6 +8773,8 @@ export const runFunctionCallingTurn = async ({
           latestUserMessage,
           language,
           emitTrace: emitSearchTrace,
+          signal,
+          throwIfAborted,
         })
       : null;
     if (explicitPlaceResolution?.status === "RESOLVED") {
@@ -9171,6 +9176,7 @@ export const runFunctionCallingTurn = async ({
       maxResults: searchLimits.maxResults,
       excludeIds,
       traceSink: emitSearchTrace,
+      pricingRole,
     });
     console.log("[timing] searchStays:", Date.now() - _t0, "ms");
     emitFileDebug(
