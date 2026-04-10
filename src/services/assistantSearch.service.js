@@ -371,6 +371,7 @@ const hasRequiredAmenityKeys = (home, requiredKeys = []) => {
 };
 
 const buildCoordinateFilterUsingRadius = (location = {}) => {
+  if (isSelfReferentialLandmark(location)) return null;
   const lat = toNumberOrNull(location.lat);
   const lng = toNumberOrNull(location.lng);
   if (lat == null || lng == null) return null;
@@ -432,6 +433,36 @@ const resolveHotelStars = (hotel) => resolveWebbedsHotelStars(hotel);
 // WebBeds data is in English (no accents), so normalizing search terms is always safe.
 const stripDiacritics = (str) =>
   str.normalize("NFD").replace(/\p{Diacritic}/gu, "");
+
+const normalizeLocationIdentityText = (value = "") =>
+  stripDiacritics(String(value || ""))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const isSelfReferentialLandmark = (location = {}) => {
+  if (!location || typeof location !== "object") return false;
+  const rawLandmark =
+    typeof location.landmark === "string" ? location.landmark.trim() : "";
+  if (!rawLandmark) return false;
+
+  const landmark = normalizeLocationIdentityText(rawLandmark);
+  const rawCity = typeof location.city === "string" ? location.city.trim() : "";
+  const rawCountry =
+    typeof location.country === "string" ? location.country.trim() : "";
+  const city = normalizeLocationIdentityText(rawCity);
+  const country = normalizeLocationIdentityText(rawCountry);
+  const cityPrimarySegment = normalizeLocationIdentityText(
+    rawCity.split(",")[0] || "",
+  );
+
+  return Boolean(
+    landmark &&
+      (landmark === city ||
+        landmark === country ||
+        (cityPrimarySegment && landmark === cityPrimarySegment)),
+  );
+};
 
 // Spanish→English country name aliases for when the AI returns Spanish country names.
 // Keys are lowercase normalized (no diacritics).
@@ -4554,7 +4585,19 @@ const mapLiveHotelOptions = async ({
 
   let filteredCards = await applyHotelFilters(cards, hotelFilters);
   if (coordinateFilter) {
-    filteredCards = filteredCards.filter((card) => matchesCoordinateFilter(card.geoPoint, coordinateFilter));
+    const nearbyLiveCards = filteredCards.filter(
+      (card) => card.geoPoint && matchesCoordinateFilter(card.geoPoint, coordinateFilter),
+    );
+    if (nearbyLiveCards.length) {
+      filteredCards = nearbyLiveCards;
+      debugSearchLog(
+        `[DEBUG_SEARCH] Live proximity post-filter: ${nearbyLiveCards.length} hotels near landmark`,
+      );
+    } else {
+      debugSearchLog(
+        "[DEBUG_SEARCH] Live proximity post-filter: no live hotels with geoPoint near landmark, returning all live city results",
+      );
+    }
   }
 
   // Apply budget.max filter when the user specified an explicit numeric price cap.
@@ -4848,18 +4891,31 @@ const tryRunLiveHotelSearch = async ({
     if (liveCacheKey) {
       const cached = await cache.get(liveCacheKey);
       if (cached && Array.isArray(cached.items)) {
-        emitSearchTrace(traceSink, "LIVE_CACHE_HIT", {
-          label: "Reusing recent live availability",
-          debugLabel: `Live cache HIT for ${locationCodes.cityCode || locationCodes.countryCode || "unknown-location"}`,
-        });
-        console.log("[assistant][live-cache] HIT", {
-          cityCode: locationCodes.cityCode || null,
-          countryCode: locationCodes.countryCode || null,
-          checkIn: plan.dates.checkIn,
-          checkOut: plan.dates.checkOut,
-          count: cached.items.length,
-        });
-        return cached.items;
+        if (!cached.items.length) {
+          emitSearchTrace(traceSink, "LIVE_CACHE_EMPTY_IGNORED", {
+            label: "Ignoring empty cached live availability",
+            debugLabel: `Live cache contained 0 items for ${locationCodes.cityCode || locationCodes.countryCode || "unknown-location"}`,
+          });
+          console.log("[assistant][live-cache] EMPTY_IGNORED", {
+            cityCode: locationCodes.cityCode || null,
+            countryCode: locationCodes.countryCode || null,
+            checkIn: plan.dates.checkIn,
+            checkOut: plan.dates.checkOut,
+          });
+        } else {
+          emitSearchTrace(traceSink, "LIVE_CACHE_HIT", {
+            label: "Reusing recent live availability",
+            debugLabel: `Live cache HIT for ${locationCodes.cityCode || locationCodes.countryCode || "unknown-location"}`,
+          });
+          console.log("[assistant][live-cache] HIT", {
+            cityCode: locationCodes.cityCode || null,
+            countryCode: locationCodes.countryCode || null,
+            checkIn: plan.dates.checkIn,
+            checkOut: plan.dates.checkOut,
+            count: cached.items.length,
+          });
+          return cached.items;
+        }
       }
       emitSearchTrace(traceSink, "LIVE_CACHE_MISS", {
         label: "Fetching fresh live availability",
@@ -4937,7 +4993,7 @@ const tryRunLiveHotelSearch = async ({
         total: mappedResults.length,
       });
     }
-    if (liveCacheKey) {
+    if (liveCacheKey && mappedResults.length) {
       await cache.set(
         liveCacheKey,
         {
@@ -5009,6 +5065,16 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     }
     return finalized;
   };
+  const planLocation = plan?.location;
+  const shouldIgnoreSelfLandmark = isSelfReferentialLandmark(planLocation);
+  if (shouldIgnoreSelfLandmark && planLocation) {
+    console.log("[search:hotels] Ignoring self-referential landmark", {
+      city: planLocation.city || null,
+      country: planLocation.country || null,
+      landmark: planLocation.landmark || null,
+    });
+    planLocation.landmark = null;
+  }
 
   console.log(
     `[search:hotels] START — city:"${plan?.location?.city || ""}" country:"${plan?.location?.country || ""}"` +
@@ -5056,7 +5122,6 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   }
 
   // Resolve landmark to coordinates when the user asked for proximity to a place
-  const planLocation = plan?.location;
   if (
     planLocation &&
     typeof planLocation.landmark === "string" &&
