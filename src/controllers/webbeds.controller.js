@@ -1,4 +1,4 @@
-import { Op, literal } from "sequelize"
+import { Op, QueryTypes, literal } from "sequelize"
 import models from "../models/index.js"
 import { WebbedsProvider } from "../providers/webbeds/provider.js"
 import { formatStaticHotel } from "../utils/webbedsMapper.js"
@@ -2561,26 +2561,125 @@ export const listCities = async (req, res, next) => {
       countryName,
       limit = 20,
       offset = 0,
+      hasHotels,
+      minHotelCount,
     } = req.query
 
     const queryText = String(q ?? query ?? "").trim()
     const rawCountryCode = String(countryCode ?? "").trim()
     const rawCountryText = String(country ?? countryName ?? "").trim()
-    const where = {}
+    const hotelCountLiteral = literal(
+      `(SELECT COUNT(*)::int FROM webbeds_hotel h WHERE h.city_code::text = "WebbedsCity"."code"::text AND h.deleted_at IS NULL)`,
+    )
+    const whereClauses = []
+    const baseWhere = {}
     if (rawCountryCode) {
-      where.country_code = rawCountryCode
+      baseWhere.country_code = rawCountryCode
     } else if (rawCountryText) {
-      where.country_name = { [iLikeOp]: `%${rawCountryText}%` }
+      baseWhere.country_name = { [iLikeOp]: `%${rawCountryText}%` }
     }
     if (queryText) {
-      where.name = { [iLikeOp]: `%${queryText}%` }
+      baseWhere.name = { [iLikeOp]: `%${queryText}%` }
+    }
+    if (Object.keys(baseWhere).length) {
+      whereClauses.push(baseWhere)
     }
 
     const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20))
     const safeOffset = Math.max(0, Number(offset) || 0)
-    const hotelCountLiteral = literal(
-      `(SELECT COUNT(*)::int FROM webbeds_hotel h WHERE h.city_code::text = "WebbedsCity"."code"::text AND h.deleted_at IS NULL)`,
-    )
+    const parsedMinHotelCount = Number(minHotelCount)
+    const resolvedMinHotelCount = Number.isFinite(parsedMinHotelCount)
+      ? Math.max(0, Math.trunc(parsedMinHotelCount))
+      : (String(hasHotels || "").trim().toLowerCase() === "true" ? 1 : 0)
+
+    if (resolvedMinHotelCount > 0) {
+      const replacements = {
+        limit: safeLimit,
+        offset: safeOffset,
+        minHotelCount: resolvedMinHotelCount,
+      }
+      const whereClauses = ['h.deleted_at IS NULL']
+
+      if (rawCountryCode) {
+        replacements.countryCode = rawCountryCode
+        whereClauses.push('h.country_code::text = :countryCode')
+      } else if (rawCountryText) {
+        replacements.countryName = `%${rawCountryText}%`
+        whereClauses.push('h.country_name ILIKE :countryName')
+      }
+
+      if (queryText) {
+        replacements.queryText = `%${queryText}%`
+        whereClauses.push('h.city_name ILIKE :queryText')
+      }
+
+      const whereSql = whereClauses.join(' AND ')
+      const countSql = `
+        SELECT COUNT(*)::int AS total
+        FROM (
+          SELECT h.city_code
+          FROM webbeds_hotel h
+          WHERE ${whereSql}
+          GROUP BY h.city_code
+          HAVING COUNT(h.hotel_id) >= :minHotelCount
+        ) city_bucket
+      `
+      const rowsSql = `
+        SELECT
+          h.city_code::text AS code,
+          MAX(h.city_name) AS name,
+          MAX(h.country_code)::text AS "countryCode",
+          MAX(h.country_name) AS "countryName",
+          MAX(h.region_name) AS "regionName",
+          MAX(h.region_code) AS "regionCode",
+          AVG(h.lat)::float AS lat,
+          AVG(h.lng)::float AS lng,
+          COUNT(h.hotel_id)::int AS "hotelCount"
+        FROM webbeds_hotel h
+        WHERE ${whereSql}
+        GROUP BY h.city_code
+        HAVING COUNT(h.hotel_id) >= :minHotelCount
+        ORDER BY COUNT(h.hotel_id) DESC, MAX(h.city_name) ASC, MAX(h.country_name) ASC
+        LIMIT :limit
+        OFFSET :offset
+      `
+
+      const totalRows = await models.WebbedsHotel.sequelize.query(countSql, {
+        replacements,
+        type: QueryTypes.SELECT,
+      })
+      const rows = await models.WebbedsHotel.sequelize.query(rowsSql, {
+        replacements,
+        type: QueryTypes.SELECT,
+      })
+
+      const items = rows.map((row) => ({
+        code: row.code != null ? String(row.code) : null,
+        name: row.name ?? null,
+        countryCode: row.countryCode != null ? String(row.countryCode) : null,
+        countryName: row.countryName ?? null,
+        stateName: null,
+        stateCode: null,
+        regionName: row.regionName ?? null,
+        regionCode: row.regionCode ?? null,
+        lat: row.lat != null ? Number(row.lat) : null,
+        lng: row.lng != null ? Number(row.lng) : null,
+        hotelCount: Number(row.hotelCount ?? 0) || 0,
+      }))
+      const total = Number(totalRows?.[0]?.total ?? 0) || 0
+
+      return res.json({
+        items,
+        pagination: {
+          total,
+          limit: safeLimit,
+          offset: safeOffset,
+        },
+      })
+    }
+
+    const where = whereClauses.length > 1 ? { [Op.and]: whereClauses } : (whereClauses[0] ?? {})
+    const prioritizeHotelCount = Boolean(queryText)
 
     const { rows, count } = await models.WebbedsCity.findAndCountAll({
       where,
@@ -2597,7 +2696,7 @@ export const listCities = async (req, res, next) => {
         "lng",
         [hotelCountLiteral, "hotel_count"],
       ],
-      order: queryText
+      order: prioritizeHotelCount
         ? [
             [literal(`"hotel_count"`), "DESC"],
             ["name", "ASC"],

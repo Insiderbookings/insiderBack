@@ -485,6 +485,13 @@ const buildEmptyInventory = () => ({
 });
 
 const MAX_LAST_SHOWN_ITEMS = 30; // Full inventory: picks (shown as cards) + rest (shown in See All modal)
+const LIVE_AVAILABILITY_EXACT_ID_LIMIT = 50;
+const LIVE_AVAILABILITY_STRATEGIES = Object.freeze({
+  ID_SET: "ID_SET",
+  CITY_SCOPED: "CITY_SCOPED",
+  CITY_GENERAL: "CITY_GENERAL",
+  CITY_FALLBACK: "CITY_FALLBACK",
+});
 
 // ---- Raw inventory cache (Option B) ----------------------------------------
 // Stores the chat-visible hotel list per session so follow-up questions stay scoped to shown results.
@@ -6109,6 +6116,297 @@ const buildReferencedHotelIdsFromState = (state = {}) => {
   return normalizeReferencedHotelIds(summaryHotels.map((hotel) => hotel?.id));
 };
 
+const hasNonEmptyArray = (value) => Array.isArray(value) && value.length > 0;
+
+const hasSpecificScopedSearchPlan = (plan = {}) => {
+  const searchPlan =
+    plan && typeof plan === "object" && !Array.isArray(plan) ? plan : {};
+  const intentProfile =
+    searchPlan?.semanticSearch?.intentProfile &&
+    typeof searchPlan.semanticSearch.intentProfile === "object" &&
+    !Array.isArray(searchPlan.semanticSearch.intentProfile)
+      ? searchPlan.semanticSearch.intentProfile
+      : {};
+  return Boolean(
+    searchPlan?.geoIntent ||
+      searchPlan?.location?.landmark ||
+      searchPlan?.preferences?.nearbyInterest ||
+      searchPlan?.areaIntent ||
+      hasNonEmptyArray(searchPlan?.placeTargets) ||
+      hasNonEmptyArray(searchPlan?.areaTraits) ||
+      hasNonEmptyArray(searchPlan?.preferences?.areaPreference) ||
+      hasNonEmptyArray(intentProfile?.userRequestedZones) ||
+      hasNonEmptyArray(intentProfile?.requestedZones) ||
+      hasNonEmptyArray(intentProfile?.userRequestedLandmarks) ||
+      hasNonEmptyArray(intentProfile?.requestedLandmarks) ||
+      hasNonEmptyArray(intentProfile?.userRequestedAreaTraits) ||
+      hasNonEmptyArray(intentProfile?.requestedAreaTraits)
+  );
+};
+
+const resolveLiveAvailabilityContextMatch = (state = {}) => {
+  const storedCurrentKey =
+    typeof state?.currentSearchContextKey === "string" &&
+    state.currentSearchContextKey.trim()
+      ? state.currentSearchContextKey.trim()
+      : null;
+  const fallbackCurrentKey =
+    state?.searchPlan &&
+    typeof state.searchPlan === "object" &&
+    Object.keys(state.searchPlan).length > 0
+      ? buildSearchContextKey(state.searchPlan)
+      : null;
+  const currentSearchContextKey = storedCurrentKey || fallbackCurrentKey;
+  const lastSearchContextKey =
+    typeof state?.lastResultsContext?.searchContextKey === "string" &&
+    state.lastResultsContext.searchContextKey.trim()
+      ? state.lastResultsContext.searchContextKey.trim()
+      : null;
+  if (!currentSearchContextKey || !lastSearchContextKey) return false;
+  return currentSearchContextKey === lastSearchContextKey;
+};
+
+const resolveVisibleShownHotelSetFromState = ({
+  state = {},
+  sessionId = null,
+} = {}) => {
+  const shownIds = normalizeReferencedHotelIds(state?.lastResultsContext?.shownIds);
+  const shownIdSet = shownIds.length ? new Set(shownIds) : null;
+  const cachedRaw =
+    sessionId && rawInventoryCache.has(sessionId)
+      ? rawInventoryCache.get(sessionId)
+      : null;
+  const cachedHotels = Array.isArray(cachedRaw?.hotels) ? cachedRaw.hotels : [];
+
+  if (shownIdSet && cachedHotels.length) {
+    const hotelIds = normalizeReferencedHotelIds(
+      cachedHotels
+        .filter((hotel) => shownIdSet.has(String(hotel?.id || "")))
+        .map((hotel) => hotel?.id),
+    );
+    if (hotelIds.length) {
+      return {
+        hotelIds,
+        source: "raw_cache",
+        exact: true,
+        usedFallback: false,
+      };
+    }
+  }
+
+  const summaryHotels = Array.isArray(state?.lastShownInventorySummary?.hotels)
+    ? state.lastShownInventorySummary.hotels
+    : [];
+  const summaryHomes = Array.isArray(state?.lastShownInventorySummary?.homes)
+    ? state.lastShownInventorySummary.homes
+    : [];
+  const hotelIds = normalizeReferencedHotelIds(
+    summaryHotels.map((hotel) => hotel?.id),
+  );
+  const summaryVisibleCount = summaryHotels.length + summaryHomes.length;
+  const exact =
+    shownIds.length > 0 &&
+    summaryVisibleCount > 0 &&
+    shownIds.length === summaryVisibleCount;
+
+  if (hotelIds.length) {
+    return {
+      hotelIds,
+      source: "summary",
+      exact,
+      usedFallback: true,
+    };
+  }
+
+  return {
+    hotelIds: [],
+    source: "none",
+    exact: false,
+    usedFallback: shownIds.length > 0,
+  };
+};
+
+const buildLiveAvailabilityScopedArgs = ({
+  existingState = {},
+  currentArgs = {},
+  referenceHotelIds = [],
+} = {}) => {
+  const baseSearchPlan =
+    existingState?.searchPlan && typeof existingState.searchPlan === "object"
+      ? existingState.searchPlan
+      : {};
+  const normalizedReferenceHotelIds = normalizeReferencedHotelIds(
+    Array.isArray(referenceHotelIds) && referenceHotelIds.length
+      ? referenceHotelIds
+      : currentArgs?.referenceHotelIds,
+  );
+  const args = {
+    city:
+      currentArgs?.city ||
+      baseSearchPlan?.location?.city ||
+      existingState?.destination?.name ||
+      null,
+    country: currentArgs?.country || baseSearchPlan?.location?.country || null,
+    checkIn: currentArgs?.checkIn || existingState?.dates?.checkIn || null,
+    checkOut: currentArgs?.checkOut || existingState?.dates?.checkOut || null,
+    adults: currentArgs?.adults ?? existingState?.guests?.adults ?? null,
+    children: currentArgs?.children ?? existingState?.guests?.children ?? null,
+    sortBy: currentArgs?.sortBy ?? baseSearchPlan?.sortBy ?? null,
+    amenityCodes: Array.isArray(currentArgs?.amenityCodes)
+      ? currentArgs.amenityCodes
+      : Array.isArray(baseSearchPlan?.hotelFilters?.amenityCodes)
+        ? baseSearchPlan.hotelFilters.amenityCodes
+        : [],
+    minStars:
+      currentArgs?.minStars ?? baseSearchPlan?.hotelFilters?.minRating ?? null,
+    starRatings: Array.isArray(currentArgs?.starRatings)
+      ? currentArgs.starRatings
+      : Array.isArray(baseSearchPlan?.starRatings)
+        ? baseSearchPlan.starRatings
+        : [],
+    viewIntent: currentArgs?.viewIntent ?? baseSearchPlan?.viewIntent ?? null,
+    geoIntent: currentArgs?.geoIntent ?? baseSearchPlan?.geoIntent ?? null,
+    placeTargets: Array.isArray(currentArgs?.placeTargets)
+      ? currentArgs.placeTargets
+      : Array.isArray(baseSearchPlan?.placeTargets)
+        ? baseSearchPlan.placeTargets
+        : [],
+    areaIntent: currentArgs?.areaIntent ?? baseSearchPlan?.areaIntent ?? null,
+    qualityIntent:
+      currentArgs?.qualityIntent ?? baseSearchPlan?.qualityIntent ?? null,
+    areaTraits: Array.isArray(currentArgs?.areaTraits)
+      ? currentArgs.areaTraits
+      : Array.isArray(baseSearchPlan?.areaTraits)
+        ? baseSearchPlan.areaTraits
+        : [],
+    preferenceNotes: Array.isArray(currentArgs?.preferenceNotes)
+      ? currentArgs.preferenceNotes
+      : Array.isArray(baseSearchPlan?.preferenceNotes)
+        ? baseSearchPlan.preferenceNotes
+        : [],
+    areaPreference:
+      currentArgs?.areaPreference ??
+      (Array.isArray(baseSearchPlan?.preferences?.areaPreference)
+        ? (baseSearchPlan.preferences.areaPreference[0] ?? null)
+        : null),
+    nearbyInterest:
+      currentArgs?.nearbyInterest ??
+      baseSearchPlan?.preferences?.nearbyInterest ??
+      null,
+    wantsMoreResults: false,
+  };
+  if (normalizedReferenceHotelIds.length) {
+    args.referenceHotelIds = normalizedReferenceHotelIds;
+  }
+  return args;
+};
+
+const resolveForcedLiveAvailabilitySearch = ({
+  userContext = {},
+  uiEventId = null,
+  hasPendingToolCallResume = false,
+  existingState = {},
+  sessionId = null,
+} = {}) => {
+  const hasDestination = Boolean(
+    existingState?.destination?.name ||
+      existingState?.searchPlan?.location?.city ||
+      existingState?.searchPlan?.location?.country,
+  );
+  const requested =
+    (userContext?.forceLiveAvailability === true ||
+      uiEventId === SEARCH_UI_EVENTS.LIVE_AVAILABILITY_ENABLE) &&
+    !hasPendingToolCallResume &&
+    !existingState?.locks?.bookingFlowLocked &&
+    hasDestination;
+  if (!requested) return null;
+
+  const baseSearchPlan =
+    existingState?.searchPlan && typeof existingState.searchPlan === "object"
+      ? existingState.searchPlan
+      : {};
+  const specificScopedSearch = hasSpecificScopedSearchPlan(baseSearchPlan);
+  const visibleHotelSet = resolveVisibleShownHotelSetFromState({
+    state: existingState,
+    sessionId,
+  });
+  const matchesLastSearchContext = resolveLiveAvailabilityContextMatch(
+    existingState,
+  );
+  const hasReliableExactHotelSet =
+    matchesLastSearchContext &&
+    visibleHotelSet.exact === true &&
+    visibleHotelSet.hotelIds.length > 0;
+
+  let strategy = LIVE_AVAILABILITY_STRATEGIES.CITY_GENERAL;
+  let fallbackReason = null;
+
+  if (specificScopedSearch) {
+    if (
+      hasReliableExactHotelSet &&
+      visibleHotelSet.hotelIds.length <= LIVE_AVAILABILITY_EXACT_ID_LIMIT
+    ) {
+      strategy = LIVE_AVAILABILITY_STRATEGIES.ID_SET;
+    } else if (
+      hasReliableExactHotelSet &&
+      visibleHotelSet.hotelIds.length > LIVE_AVAILABILITY_EXACT_ID_LIMIT
+    ) {
+      strategy = LIVE_AVAILABILITY_STRATEGIES.CITY_SCOPED;
+    } else {
+      strategy = LIVE_AVAILABILITY_STRATEGIES.CITY_FALLBACK;
+      fallbackReason = !matchesLastSearchContext
+        ? "SEARCH_CONTEXT_MISMATCH"
+        : visibleHotelSet.source === "summary"
+          ? "SUMMARY_ONLY"
+          : visibleHotelSet.source === "none"
+            ? "NO_VISIBLE_HOTEL_SET"
+            : "UNRELIABLE_VISIBLE_HOTEL_SET";
+    }
+  }
+
+  const referenceHotelIds =
+    strategy === LIVE_AVAILABILITY_STRATEGIES.ID_SET
+      ? visibleHotelSet.hotelIds
+      : [];
+  const args =
+    strategy === LIVE_AVAILABILITY_STRATEGIES.CITY_GENERAL
+      ? {
+          city: existingState?.destination?.name || null,
+          checkIn: existingState?.dates?.checkIn || null,
+          checkOut: existingState?.dates?.checkOut || null,
+          adults: existingState?.guests?.adults ?? null,
+          children: existingState?.guests?.children ?? null,
+          wantsMoreResults: false,
+        }
+      : buildLiveAvailabilityScopedArgs({
+          existingState,
+          referenceHotelIds,
+        });
+
+  return {
+    strategy,
+    specificScopedSearch,
+    referenceHotelIds,
+    visibleHotelIdsSource: visibleHotelSet.source,
+    visibleHotelIdCount: visibleHotelSet.hotelIds.length,
+    exactHotelSet: visibleHotelSet.exact === true,
+    matchesLastSearchContext,
+    fallbackReason,
+    toolCall: {
+      id:
+        strategy === LIVE_AVAILABILITY_STRATEGIES.ID_SET
+          ? "force_live_availability_id_set"
+          : strategy === LIVE_AVAILABILITY_STRATEGIES.CITY_SCOPED
+            ? "force_live_availability_city_scoped"
+            : strategy === LIVE_AVAILABILITY_STRATEGIES.CITY_FALLBACK
+              ? "force_live_availability_city_fallback"
+              : "force_live_availability",
+      name: "search_stays",
+      args,
+    },
+  };
+};
+
 const buildLastShownInventorySummary = (
   inventory,
   searchId,
@@ -8085,26 +8383,44 @@ export const runFunctionCallingTurn = async ({
     };
   }
 
-  const shouldForceLiveAvailabilitySearch =
-    (userContext?.forceLiveAvailability === true ||
-      uiEventId === SEARCH_UI_EVENTS.LIVE_AVAILABILITY_ENABLE) &&
-    !hasPendingToolCallResume &&
-    !existingState?.locks?.bookingFlowLocked &&
-    Boolean(existingState?.destination?.name);
+  const forcedLiveAvailabilitySearch = resolveForcedLiveAvailabilitySearch({
+    userContext,
+    uiEventId,
+    hasPendingToolCallResume,
+    existingState,
+    sessionId,
+  });
+  const shouldForceLiveAvailabilitySearch = Boolean(
+    forcedLiveAvailabilitySearch,
+  );
 
-  if (shouldForceLiveAvailabilitySearch) {
-    toolCall = {
-      id: "force_live_availability",
-      name: "search_stays",
-      args: {
-        city: existingState?.destination?.name || null,
-        checkIn: existingState?.dates?.checkIn || null,
-        checkOut: existingState?.dates?.checkOut || null,
-        adults: existingState?.guests?.adults ?? null,
-        children: existingState?.guests?.children ?? null,
-        wantsMoreResults: false,
-      },
-    };
+  if (forcedLiveAvailabilitySearch) {
+    toolCall = forcedLiveAvailabilitySearch.toolCall;
+    emitTrace("LIVE_AVAILABILITY_STRATEGY_SELECTED", {
+      strategy: forcedLiveAvailabilitySearch.strategy,
+      specificScopedSearch: forcedLiveAvailabilitySearch.specificScopedSearch,
+      visibleHotelIdCount: forcedLiveAvailabilitySearch.visibleHotelIdCount,
+      visibleHotelIdsSource: forcedLiveAvailabilitySearch.visibleHotelIdsSource,
+      exactHotelSet: forcedLiveAvailabilitySearch.exactHotelSet,
+      matchesLastSearchContext:
+        forcedLiveAvailabilitySearch.matchesLastSearchContext,
+      fallbackReason: forcedLiveAvailabilitySearch.fallbackReason || undefined,
+      destination:
+        existingState?.searchPlan?.location?.city ||
+        existingState?.destination?.name ||
+        null,
+    });
+    emitFileDebug("live_availability_strategy", {
+      strategy: forcedLiveAvailabilitySearch.strategy,
+      specificScopedSearch: forcedLiveAvailabilitySearch.specificScopedSearch,
+      visibleHotelIdCount: forcedLiveAvailabilitySearch.visibleHotelIdCount,
+      visibleHotelIdsSource: forcedLiveAvailabilitySearch.visibleHotelIdsSource,
+      exactHotelSet: forcedLiveAvailabilitySearch.exactHotelSet,
+      matchesLastSearchContext:
+        forcedLiveAvailabilitySearch.matchesLastSearchContext,
+      fallbackReason: forcedLiveAvailabilitySearch.fallbackReason || null,
+      toolCall: summarizeToolCallForDebug(forcedLiveAvailabilitySearch.toolCall),
+    });
   }
 
   const referencedHotelIdsForLiveFollowUp =
@@ -8121,67 +8437,11 @@ export const runFunctionCallingTurn = async ({
       existingState?.searchPlan && typeof existingState.searchPlan === "object"
         ? existingState.searchPlan
         : {};
-    const forcedArgs = {
-      city:
-        toolCall?.args?.city ||
-        baseSearchPlan?.location?.city ||
-        existingState?.destination?.name ||
-        null,
-      country:
-        toolCall?.args?.country || baseSearchPlan?.location?.country || null,
-      checkIn: toolCall?.args?.checkIn || existingState?.dates?.checkIn || null,
-      checkOut:
-        toolCall?.args?.checkOut || existingState?.dates?.checkOut || null,
-      adults: toolCall?.args?.adults ?? existingState?.guests?.adults ?? null,
-      children:
-        toolCall?.args?.children ?? existingState?.guests?.children ?? null,
-      sortBy: toolCall?.args?.sortBy ?? baseSearchPlan?.sortBy ?? null,
-      amenityCodes: Array.isArray(toolCall?.args?.amenityCodes)
-        ? toolCall.args.amenityCodes
-        : Array.isArray(baseSearchPlan?.hotelFilters?.amenityCodes)
-          ? baseSearchPlan.hotelFilters.amenityCodes
-          : [],
-      minStars:
-        toolCall?.args?.minStars ??
-        baseSearchPlan?.hotelFilters?.minRating ??
-        null,
-      starRatings: Array.isArray(toolCall?.args?.starRatings)
-        ? toolCall.args.starRatings
-        : Array.isArray(baseSearchPlan?.starRatings)
-          ? baseSearchPlan.starRatings
-          : [],
-      viewIntent:
-        toolCall?.args?.viewIntent ?? baseSearchPlan?.viewIntent ?? null,
-      geoIntent: toolCall?.args?.geoIntent ?? baseSearchPlan?.geoIntent ?? null,
-      placeTargets: Array.isArray(toolCall?.args?.placeTargets)
-        ? toolCall.args.placeTargets
-        : Array.isArray(baseSearchPlan?.placeTargets)
-          ? baseSearchPlan.placeTargets
-          : [],
-      areaIntent:
-        toolCall?.args?.areaIntent ?? baseSearchPlan?.areaIntent ?? null,
-      qualityIntent:
-        toolCall?.args?.qualityIntent ?? baseSearchPlan?.qualityIntent ?? null,
-      areaTraits: Array.isArray(toolCall?.args?.areaTraits)
-        ? toolCall.args.areaTraits
-        : Array.isArray(baseSearchPlan?.areaTraits)
-          ? baseSearchPlan.areaTraits
-          : [],
-      preferenceNotes: Array.isArray(toolCall?.args?.preferenceNotes)
-        ? toolCall.args.preferenceNotes
-        : Array.isArray(baseSearchPlan?.preferenceNotes)
-          ? baseSearchPlan.preferenceNotes
-          : [],
-      areaPreference: Array.isArray(baseSearchPlan?.preferences?.areaPreference)
-        ? (baseSearchPlan.preferences.areaPreference[0] ?? null)
-        : null,
-      nearbyInterest:
-        toolCall?.args?.nearbyInterest ??
-        baseSearchPlan?.preferences?.nearbyInterest ??
-        null,
-      wantsMoreResults: false,
+    const forcedArgs = buildLiveAvailabilityScopedArgs({
+      existingState,
+      currentArgs: toolCall?.args || {},
       referenceHotelIds: referencedHotelIdsForLiveFollowUp,
-    };
+    });
     toolCall = {
       id:
         toolCall?.name === "search_stays"
@@ -8239,6 +8499,7 @@ export const runFunctionCallingTurn = async ({
     directTextPreview: directText ? directText.slice(0, 240) : null,
     resumedPendingToolCall: hasPendingToolCallResume,
     forcedLiveAvailabilitySearch: shouldForceLiveAvailabilitySearch,
+    forcedLiveAvailabilityStrategy: forcedLiveAvailabilitySearch?.strategy || null,
     forcedAvailabilityForShownHotels: shouldForceAvailabilityForShownHotels,
     toolCall: summarizeToolCallForDebug(toolCall),
   });
@@ -8379,6 +8640,8 @@ export const runFunctionCallingTurn = async ({
       uiEventId === SEARCH_UI_EVENTS.LIVE_AVAILABILITY_ENABLE;
     const forcedLiveAvailabilityRequest =
       userContext?.forceLiveAvailability === true ||
+      uiEventId === SEARCH_UI_EVENTS.LIVE_AVAILABILITY_ENABLE;
+    const isUiLiveAvailabilityTurn =
       uiEventId === SEARCH_UI_EVENTS.LIVE_AVAILABILITY_ENABLE;
     const hasExplicitAvailabilityInputs = Boolean(
       originalToolArgs?.checkIn ||
@@ -8587,6 +8850,7 @@ export const runFunctionCallingTurn = async ({
         : "searching_catalog";
     const shouldAttemptAssistantKickoff =
       !shouldRequireBlockingSearchInputs &&
+      !isUiLiveAvailabilityTurn &&
       shouldRunAssistantKickoffPlanner(planWithDefaults);
     const assistantKickoffGate = createAssistantKickoffEventGate({
       emitEvent,
@@ -8699,35 +8963,14 @@ export const runFunctionCallingTurn = async ({
           })
       : Promise.resolve(null);
     void assistantKickoffPromise;
-    const semanticGroundingPlan = await runSemanticGroundingPlanner({
-      client,
-      latestUserMessage,
-      plan: planWithDefaults,
-      language,
-      emitTrace: emitSearchTrace,
-      signal,
-    });
-    throwIfAborted();
-    if (semanticGroundingPlan) {
-      planWithDefaults = mergeSemanticGroundingPlanIntoPlan(
-        planWithDefaults,
-        semanticGroundingPlan,
-        { latestUserMessage },
-      );
-      emitFileDebug("plan_after_grounding_planner", {
-        plan: summarizePlanForDebug(planWithDefaults),
+    if (isUiLiveAvailabilityTurn) {
+      emitSearchTrace("SEMANTIC_GROUNDING_SKIPPED", {
+        reason: "ui_live_followup",
+        destination: planWithDefaults?.location?.city || null,
       });
-      emitSemanticScopeTransition(
-        "plan_after_grounding_planner",
-        planWithDefaults,
-        {
-          skipped: false,
-        },
-      );
-    } else {
       emitFileDebug("plan_after_grounding_planner", {
         skipped: true,
-        reason: "planner_failed_or_empty",
+        reason: "ui_live_followup",
         plan: summarizePlanForDebug(planWithDefaults),
       });
       emitSemanticScopeTransition(
@@ -8735,12 +8978,53 @@ export const runFunctionCallingTurn = async ({
         planWithDefaults,
         {
           skipped: true,
-          reason: "planner_failed_or_empty",
+          reason: "ui_live_followup",
         },
       );
+    } else {
+      const semanticGroundingPlan = await runSemanticGroundingPlanner({
+        client,
+        latestUserMessage,
+        plan: planWithDefaults,
+        language,
+        emitTrace: emitSearchTrace,
+        signal,
+      });
+      throwIfAborted();
+      if (semanticGroundingPlan) {
+        planWithDefaults = mergeSemanticGroundingPlanIntoPlan(
+          planWithDefaults,
+          semanticGroundingPlan,
+          { latestUserMessage },
+        );
+        emitFileDebug("plan_after_grounding_planner", {
+          plan: summarizePlanForDebug(planWithDefaults),
+        });
+        emitSemanticScopeTransition(
+          "plan_after_grounding_planner",
+          planWithDefaults,
+          {
+            skipped: false,
+          },
+        );
+      } else {
+        emitFileDebug("plan_after_grounding_planner", {
+          skipped: true,
+          reason: "planner_failed_or_empty",
+          plan: summarizePlanForDebug(planWithDefaults),
+        });
+        emitSemanticScopeTransition(
+          "plan_after_grounding_planner",
+          planWithDefaults,
+          {
+            skipped: true,
+            reason: "planner_failed_or_empty",
+          },
+        );
+      }
     }
 
-    if (!hasCanonicalSemanticGrounding(planWithDefaults)) {
+    if (!hasCanonicalSemanticGrounding(planWithDefaults) && !isUiLiveAvailabilityTurn) {
       planWithDefaults = applyDeterministicSemanticHintsToPlan(
         planWithDefaults,
         latestUserMessage,
@@ -8751,7 +9035,9 @@ export const runFunctionCallingTurn = async ({
       });
     } else {
       emitSearchTrace("SEMANTIC_LEGACY_FALLBACK_SKIPPED", {
-        reason: "canonical_grounding_present",
+        reason: isUiLiveAvailabilityTurn
+          ? "ui_live_followup"
+          : "canonical_grounding_present",
         destination: planWithDefaults?.location?.city || null,
         groundingStrategy:
           planWithDefaults?.semanticSearch?.grounding?.groundingStrategy ||
@@ -8763,20 +9049,20 @@ export const runFunctionCallingTurn = async ({
       latestUserMessage,
       emitTrace: emitSearchTrace,
     });
-    const explicitPlaceResolution = shouldRunExplicitPlaceResolutionForPlan(
-      planWithDefaults,
-    )
-      ? await resolveExplicitPlaceReferenceForPlan({
-          client,
-          plan: planWithDefaults,
-          originalToolArgs,
-          latestUserMessage,
-          language,
-          emitTrace: emitSearchTrace,
-          signal,
-          throwIfAborted,
-        })
-      : null;
+    const explicitPlaceResolution = isUiLiveAvailabilityTurn
+      ? null
+      : shouldRunExplicitPlaceResolutionForPlan(planWithDefaults)
+        ? await resolveExplicitPlaceReferenceForPlan({
+            client,
+            plan: planWithDefaults,
+            originalToolArgs,
+            latestUserMessage,
+            language,
+            emitTrace: emitSearchTrace,
+            signal,
+            throwIfAborted,
+          })
+        : null;
     if (explicitPlaceResolution?.status === "RESOLVED") {
       planWithDefaults = applyResolvedPlaceReferenceToPlan({
         plan: planWithDefaults,
@@ -8858,6 +9144,7 @@ export const runFunctionCallingTurn = async ({
     );
 
     if (
+      !isUiLiveAvailabilityTurn &&
       !hasCanonicalSemanticGrounding(planWithDefaults) &&
       shouldRunSemanticSearchFallback(latestUserMessage, planWithDefaults)
     ) {
@@ -8951,11 +9238,11 @@ export const runFunctionCallingTurn = async ({
         );
       }
     } else {
-      const semanticEnrichmentSkipReason = hasCanonicalSemanticGrounding(
-        planWithDefaults,
-      )
-        ? "canonical_grounding_present"
-        : "no_soft_semantic_cue";
+      const semanticEnrichmentSkipReason = isUiLiveAvailabilityTurn
+        ? "ui_live_followup"
+        : hasCanonicalSemanticGrounding(planWithDefaults)
+          ? "canonical_grounding_present"
+          : "no_soft_semantic_cue";
       emitSearchTrace("SEMANTIC_ENRICHMENT_SKIPPED", {
         reason: semanticEnrichmentSkipReason,
         destination: planWithDefaults?.location?.city || null,
@@ -8978,6 +9265,7 @@ export const runFunctionCallingTurn = async ({
     const explicitPlaceAlreadyResolved =
       planWithDefaults?.semanticSearch?.placeResolution?.status === "RESOLVED";
     const semanticWebResolution =
+      isUiLiveAvailabilityTurn ||
       explicitPlaceAlreadyResolved ||
       !shouldRunSemanticWebResolverForPlan({
         latestUserMessage,
@@ -9358,6 +9646,27 @@ export const runFunctionCallingTurn = async ({
 
       const makeHotelCard = (h, rank) => {
         const starsNum = resolveWebbedsHotelStars(h);
+        const priceCandidates = [
+          h?.pricePerNight,
+          h?.nightlyPrice,
+          h?.price,
+          h?.effectiveAmount,
+          h?.publicMarkedAmount,
+          h?.minimumSelling,
+          h?.bestPrice,
+          h?.providerAmount,
+          h?.hotelDetails?.pricePerNight,
+          h?.hotelDetails?.nightlyPrice,
+          h?.hotelDetails?.effectiveAmount,
+          h?.hotelDetails?.publicMarkedAmount,
+          h?.hotelDetails?.minimumSelling,
+          h?.hotelDetails?.bestPrice,
+          h?.hotelDetails?.providerAmount,
+        ];
+        const resolvedPriceFrom = priceCandidates.find((candidate) => {
+          const numeric = Number(candidate);
+          return Number.isFinite(numeric) && numeric > 0;
+        });
         return {
           type: "hotelCard",
           id: String(h.id),
@@ -9368,10 +9677,7 @@ export const runFunctionCallingTurn = async ({
           amenities: Array.isArray(h.amenities) ? h.amenities.slice(0, 3) : [],
           images: Array.isArray(h.images) ? h.images : [],
           priceFrom:
-            Number.isFinite(Number(h.pricePerNight)) &&
-            Number(h.pricePerNight) > 0
-              ? Number(h.pricePerNight)
-              : null,
+            resolvedPriceFrom != null ? Number(resolvedPriceFrom) : null,
           currency: h.currency || "USD",
           pickReason: compactHotelCardPickReason(
             h.shortReason ||

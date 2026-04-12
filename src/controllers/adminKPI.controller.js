@@ -156,8 +156,8 @@ export const getKPIDashboard = async (req, res, next) => {
             models.User.count({ where: { role: 6 } }),
             models.Home.count({ where: { status: 'PUBLISHED' } }),
             models.Stay.count({ where: { inventory_type: 'HOME' } }),
-            models.Hotel.count(),
-            models.Hotel.count({ distinct: true, col: 'city' }),
+            models.WebbedsHotel.count(),
+            models.WebbedsHotel.count({ distinct: true, col: 'city_code' }),
             // Real Margin Calculation for Homes
             models.Stay.findOne({
                 where: { inventory_type: 'HOME', payment_status: 'PAID', gross_price: { [Op.gt]: 0 } },

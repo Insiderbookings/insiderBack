@@ -237,13 +237,103 @@ const buildChips = (followUps = []) =>
     label,
   }));
 
+const firstPositiveMoney = (candidates = []) => {
+  for (const candidate of candidates) {
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric;
+    }
+  }
+  return null;
+};
+
+const resolveItemDisplayCurrency = (item) =>
+  normalizeDisplayCurrencyCode(
+    item?.currency ||
+      item?.hotelPayload?.currency ||
+      item?.hotelDetails?.currency ||
+      item?.details?.currency ||
+      "USD",
+  );
+
+const resolveItemStayNights = (item) =>
+  firstPositiveMoney([
+    item?.stayNights,
+    item?.hotelPayload?.stayNights,
+    item?.hotelDetails?.stayNights,
+    item?.details?.stayNights,
+  ]);
+
+const resolveExplicitNightlyPrice = (item) =>
+  firstPositiveMoney([
+    item?.priceFromPerNight,
+    item?.priceFrom,
+    item?.pricePerNight,
+    item?.nightlyPrice,
+    item?.nightlyRate,
+    item?.hotelPayload?.priceFromPerNight,
+    item?.hotelPayload?.priceFrom,
+    item?.hotelPayload?.pricePerNight,
+    item?.hotelPayload?.nightlyPrice,
+    item?.hotelPayload?.nightlyRate,
+    item?.hotelDetails?.priceFromPerNight,
+    item?.hotelDetails?.priceFrom,
+    item?.hotelDetails?.pricePerNight,
+    item?.hotelDetails?.nightlyPrice,
+    item?.hotelDetails?.nightlyRate,
+    item?.details?.priceFromPerNight,
+    item?.details?.priceFrom,
+    item?.details?.pricePerNight,
+    item?.details?.nightlyPrice,
+    item?.details?.nightlyRate,
+  ]);
+
+const resolveDisplayedTotalPrice = (item) =>
+  firstPositiveMoney([
+    item?.effectiveAmount,
+    item?.publicMarkedAmount,
+    item?.minimumSelling,
+    item?.bestPrice,
+    item?.providerAmount,
+    item?.price,
+    item?.hotelPayload?.effectiveAmount,
+    item?.hotelPayload?.publicMarkedAmount,
+    item?.hotelPayload?.minimumSelling,
+    item?.hotelPayload?.bestPrice,
+    item?.hotelPayload?.providerAmount,
+    item?.hotelPayload?.price,
+    item?.hotelDetails?.effectiveAmount,
+    item?.hotelDetails?.publicMarkedAmount,
+    item?.hotelDetails?.minimumSelling,
+    item?.hotelDetails?.bestPrice,
+    item?.hotelDetails?.providerAmount,
+    item?.hotelDetails?.price,
+    item?.details?.effectiveAmount,
+    item?.details?.publicMarkedAmount,
+    item?.details?.minimumSelling,
+    item?.details?.bestPrice,
+    item?.details?.providerAmount,
+    item?.details?.price,
+  ]);
+
+const resolveItemDisplayPrice = (item) => {
+  const explicitNightly = resolveExplicitNightlyPrice(item);
+  if (explicitNightly != null) return explicitNightly;
+  const displayedTotal = resolveDisplayedTotalPrice(item);
+  if (displayedTotal == null) return null;
+  const stayNights = resolveItemStayNights(item);
+  return stayNights != null && stayNights > 0
+    ? displayedTotal / stayNights
+    : displayedTotal;
+};
+
 const mapStayCard = (item, type, { isLiveMode = false } = {}) => {
   if (!item) return null;
   const id = String(item.id || item.hotelCode || item.homeId || "");
   if (!id) return null;
   const title = item.title || item.name || "Stay";
   const locationText = item.locationText || item.city || item.country || null;
-  const numericPrice = toNum(item?.pricePerNight ?? item?.price ?? null);
+  const numericPrice = resolveItemDisplayPrice(item);
   return {
     type: "stay",
     id,
@@ -253,7 +343,7 @@ const mapStayCard = (item, type, { isLiveMode = false } = {}) => {
       isLiveMode && numericPrice != null && numericPrice > 0
         ? numericPrice
         : null,
-    currency: normalizeDisplayCurrencyCode(item.currency || "USD"),
+    currency: resolveItemDisplayCurrency(item),
     image: item.coverImage || item.image || null,
     meta: {
       kind: type,
@@ -394,10 +484,9 @@ const getItemRating = (item) =>
       item?.classification?.code ??
       item?.hotelDetails?.rating,
   ) ?? 0;
-const getItemPrice = (item) =>
-  toNum(item?.pricePerNight ?? item?.price ?? item?.nightlyRate) ?? 999999;
+const getItemPrice = (item) => resolveItemDisplayPrice(item) ?? 999999;
 const hasUsablePrice = (item) => {
-  const price = toNum(item?.pricePerNight ?? item?.price ?? item?.nightlyRate);
+  const price = resolveItemDisplayPrice(item);
   return price != null && price > 0;
 };
 const hasLiveSearchContext = (plan) => {
@@ -1716,13 +1805,11 @@ const buildSearchShortlistSection = ({
           item?.classification?.code ??
           item?.hotelDetails?.rating,
       );
+      const nightlyPrice = resolveItemDisplayPrice(item);
+      const displayCurrency = resolveItemDisplayCurrency(item);
       const value =
-        isLiveMode && hasUsablePrice(item)
-          ? formatCompactPriceLabel(
-              item?.pricePerNight ?? item?.price ?? null,
-              item?.currency || "USD",
-              language,
-            )
+        isLiveMode && nightlyPrice != null
+          ? formatCompactPriceLabel(nightlyPrice, displayCurrency, language)
           : stars
             ? `${stars}★`
             : null;
@@ -1746,11 +1833,8 @@ const buildSearchShortlistSection = ({
         title: clampText(name, 64),
         subtitle,
         value,
-        priceFrom:
-          isLiveMode && hasUsablePrice(item)
-            ? Number(item?.pricePerNight ?? item?.price ?? null)
-            : null,
-        currency: normalizeDisplayCurrencyCode(item?.currency || "USD"),
+        priceFrom: isLiveMode && nightlyPrice != null ? nightlyPrice : null,
+        currency: displayCurrency,
         city: city ? toTitleCase(city) : null,
         locationText: city ? toTitleCase(city) : null,
         tags,
@@ -2044,8 +2128,8 @@ const buildHotelPickSection = (
   );
   const amenities = pickAmenityLabels(item, 3);
   const images = extractImageUrls(item, 4);
-  const priceFrom = item?.pricePerNight ?? item?.price ?? null;
-  const currency = normalizeDisplayCurrencyCode(item?.currency || "USD");
+  const priceFrom = resolveItemDisplayPrice(item);
+  const currency = resolveItemDisplayCurrency(item);
   const amenityLabels = pickAmenityLabels(item, 6);
   const characteristics = (
     amenityLabels && amenityLabels.length ? amenityLabels : amenities
@@ -2086,15 +2170,34 @@ const buildStructuredSearchReply = ({
   resultCount = 0,
   latestUserMessage = "",
 }) => {
+  const isLiveMode = hasLiveSearchContext(plan);
+  const pricedInventory =
+    isLiveMode &&
+    (((Array.isArray(inventory?.hotels) ? inventory.hotels : []).filter(
+      (item) => hasUsablePrice(item),
+    ).length > 0) ||
+      ((Array.isArray(inventory?.homes) ? inventory.homes : []).filter(
+        (item) => hasUsablePrice(item),
+      ).length > 0))
+      ? {
+          ...inventory,
+          homes: (Array.isArray(inventory?.homes) ? inventory.homes : []).filter(
+            (item) => hasUsablePrice(item),
+          ),
+          hotels: (
+            Array.isArray(inventory?.hotels) ? inventory.hotels : []
+          ).filter((item) => hasUsablePrice(item)),
+        }
+      : inventory;
   const picksWithReasons = getTopInventoryPicksByCategory(
-    inventory,
+    pricedInventory,
     plan,
     language,
     seed ?? 0,
   );
   const picks = picksWithReasons.length
     ? picksWithReasons
-    : getTopInventoryPicks(inventory, 5).map((item) => ({
+    : getTopInventoryPicks(pricedInventory, 5).map((item) => ({
         item,
         pickReason: null,
       }));
@@ -2108,7 +2211,6 @@ const buildStructuredSearchReply = ({
     "";
   const name = userName ? String(userName).split(" ")[0] : null;
   const filterContext = buildEnhancedFilterContext(plan, language);
-  const isLiveMode = hasLiveSearchContext(plan);
   const semanticInferenceMode = String(
     plan?.semanticSearch?.intentProfile?.inferenceMode || "",
   )

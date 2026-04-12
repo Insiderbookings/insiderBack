@@ -23,12 +23,51 @@ const parsePriceValue = (value) => {
 
 const extractPrice = (item) =>
   parsePriceValue(
-    item?.pricePerNight ??
-      item?.price ??
+    item?.priceFromPerNight ??
+      item?.priceFrom ??
+      item?.pricePerNight ??
+      item?.nightlyPrice ??
       item?.nightlyRate ??
+      item?.effectiveAmount ??
+      item?.publicMarkedAmount ??
+      item?.minimumSelling ??
+      item?.bestPrice ??
+      item?.providerAmount ??
+      item?.price ??
       item?.priceLabel ??
+      item?.homePayload?.priceFromPerNight ??
+      item?.homePayload?.priceFrom ??
       item?.homePayload?.pricePerNight ??
+      item?.homePayload?.nightlyPrice ??
+      item?.homePayload?.nightlyRate ??
+      item?.homePayload?.effectiveAmount ??
+      item?.homePayload?.publicMarkedAmount ??
+      item?.homePayload?.minimumSelling ??
+      item?.homePayload?.bestPrice ??
+      item?.homePayload?.providerAmount ??
+      item?.homePayload?.price ??
+      item?.hotelPayload?.priceFromPerNight ??
+      item?.hotelPayload?.priceFrom ??
       item?.hotelPayload?.pricePerNight ??
+      item?.hotelPayload?.nightlyPrice ??
+      item?.hotelPayload?.nightlyRate ??
+      item?.hotelPayload?.effectiveAmount ??
+      item?.hotelPayload?.publicMarkedAmount ??
+      item?.hotelPayload?.minimumSelling ??
+      item?.hotelPayload?.bestPrice ??
+      item?.hotelPayload?.providerAmount ??
+      item?.hotelPayload?.price ??
+      item?.hotelDetails?.priceFromPerNight ??
+      item?.hotelDetails?.priceFrom ??
+      item?.hotelDetails?.pricePerNight ??
+      item?.hotelDetails?.nightlyPrice ??
+      item?.hotelDetails?.nightlyRate ??
+      item?.hotelDetails?.effectiveAmount ??
+      item?.hotelDetails?.publicMarkedAmount ??
+      item?.hotelDetails?.minimumSelling ??
+      item?.hotelDetails?.bestPrice ??
+      item?.hotelDetails?.providerAmount ??
+      item?.hotelDetails?.price ??
       null
   );
 

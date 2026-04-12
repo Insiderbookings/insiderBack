@@ -15,6 +15,12 @@ const sequelize = new Sequelize(
     host: process.env.DB_HOST,
     dialect: process.env.DB_DIALECT || "postgres",
     logging: false,
+    pool: {
+      max: 5,
+      min: 1,
+      acquire: 20000,
+      idle: 10000,
+    },
     dialectOptions: { timezone: process.env.DB_TIMEZONE || "Etc/UTC" },
     define: { underscored: true, freezeTableName: true, timestamps: true, paranoid: true }
   }

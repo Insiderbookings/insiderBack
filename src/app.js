@@ -27,7 +27,6 @@ import { initSocketServer } from "./websocket/index.js";
 import diagnoseForeignKeyError from "./utils/diagnoseForeignKeyError.js";
 import { warmSalutationsCache } from "./providers/webbeds/salutations.js";
 import globalErrorHandler from "./middleware/globalErrorHandler.js";
-import statusLogger from "./middleware/statusLogger.js";
 import { AI_CHAT_REQUEST_LIMITS } from "./modules/ai/ai.config.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -170,7 +169,6 @@ app.use("/api/assistant", aiJsonParser);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
-app.use(statusLogger);
 
 /* ---------- Resto de tu API ---------- */
 app.get("/", (req, res) => res.json({ status: "API running" }));
