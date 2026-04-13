@@ -110,6 +110,13 @@ export default (sequelize) => {
         as: "partnerClaim",
       })
     }
+    if (models.WebbedsHotelRoomType) {
+      WebbedsHotel.hasMany(models.WebbedsHotelRoomType, {
+        foreignKey: "hotel_id",
+        sourceKey: "hotel_id",
+        as: "roomTypes",
+      })
+    }
   }
 
   return WebbedsHotel

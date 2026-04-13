@@ -3,6 +3,29 @@ const ensureArray = (value) => {
   return Array.isArray(value) ? value : [value];
 };
 
+const extractStaticRoomTypes = (roomStatic) => {
+  if (!roomStatic) return [];
+
+  if (Array.isArray(roomStatic?.roomTypes)) {
+    return roomStatic.roomTypes
+      .map((roomType) => roomType?.raw_payload ?? roomType)
+      .filter(Boolean);
+  }
+
+  if (Array.isArray(roomStatic)) {
+    return roomStatic
+      .map((roomType) => roomType?.raw_payload ?? roomType)
+      .filter(Boolean);
+  }
+
+  const rooms = ensureArray(roomStatic?.room);
+  if (rooms.length) {
+    return rooms.flatMap((room) => ensureArray(room?.roomType)).filter(Boolean);
+  }
+
+  return ensureArray(roomStatic).filter(Boolean);
+};
+
 const extractTextList = (node, entryKey) => {
   if (!node) return [];
   if (Array.isArray(node)) {
@@ -137,12 +160,9 @@ export const formatStaticHotel = (hotel, options = {}) => {
   const extraLocations = [plain.location1, plain.location2, plain.location3]
     .map((item) => (item ? String(item).trim() : null))
     .filter(Boolean);
-  const roomTypesRaw =
-    plain.room_static?.roomTypes ||
-    plain.room_static ||
-    plain.roomTypes ||
-    plain.room_types ||
-    [];
+  const roomTypesRaw = extractStaticRoomTypes(
+    plain.roomTypes ?? plain.room_types ?? plain.room_static ?? [],
+  );
 
   return {
     id: String(plain.hotel_id),

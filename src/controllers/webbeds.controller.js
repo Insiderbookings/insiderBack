@@ -508,6 +508,20 @@ const getStaticHotelIncludes = () => [
     as: "classification",
     attributes: ["code", "name"],
   },
+  {
+    model: models.WebbedsHotelRoomType,
+    as: "roomTypes",
+    attributes: [
+      "hotel_id",
+      "roomtype_code",
+      "name",
+      "twin",
+      "room_info",
+      "room_capacity",
+      "raw_payload",
+    ],
+    required: false,
+  },
 ]
 
 const sortPartnerFirstWithFallback = (items = [], fallbackCompare = null) =>
