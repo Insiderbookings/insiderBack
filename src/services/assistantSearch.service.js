@@ -149,6 +149,7 @@ const buildLiveHotelSearchCacheKey = ({
   return `ai:live-hotels:${hashCachePayload(payload)}`;
 };
 
+
 const clampLimit = (value, fallback = 6) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return fallback;

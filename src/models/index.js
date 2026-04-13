@@ -117,6 +117,7 @@ import ReviewReminderLogModel from "./ReviewReminderLog.js";
 import BookingAbandonmentReminderLogModel from "./BookingAbandonmentReminderLog.js";
 import AiChatSessionModel from "./AiChatSession.js";
 import AiChatMessageModel from "./AiChatMessage.js";
+import AiChatMessageFeedbackModel from "./AiChatMessageFeedback.js";
 import SupportTicketModel from "./SupportTicket.js";
 import SupportTicketAssigneeModel from "./SupportTicketAssignee.js";
 import SupportMessageModel from "./SupportMessage.js";
@@ -189,6 +190,7 @@ const models = {
   ChatAutoPrompt: ChatAutoPromptModel(sequelize),
   AiChatSession: AiChatSessionModel(sequelize),
   AiChatMessage: AiChatMessageModel(sequelize),
+  AiChatMessageFeedback: AiChatMessageFeedbackModel(sequelize),
   UpsellCode: UpsellCodeModel(sequelize),
   BookingFlow: BookingFlowModel(sequelize),
   BookingFlowStep: BookingFlowStepModel(sequelize),

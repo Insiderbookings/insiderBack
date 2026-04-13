@@ -19,6 +19,8 @@ import {
   fetchAssistantMessages,
   getAssistantSessionWithMessages,
   listAssistantSessionsForUser,
+  replaceAssistantChatMessage,
+  saveAssistantMessageFeedback,
 } from "../services/aiAssistantHistory.service.js";
 import {
   isContentAllowed,
@@ -426,6 +428,56 @@ const normalizeAiRequest = (body) => {
   };
 };
 
+const normalizeUiEventId = (uiEvent) =>
+  String(
+    typeof uiEvent === "string" ? uiEvent : uiEvent?.id || uiEvent?.event || "",
+  )
+    .trim()
+    .toUpperCase();
+
+const getUiEventPayload = (uiEvent) => {
+  if (!uiEvent || typeof uiEvent !== "object" || Array.isArray(uiEvent)) {
+    return null;
+  }
+  const payload = uiEvent?.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  return payload;
+};
+
+const isRetryResponseUiEvent = (uiEvent) =>
+  normalizeUiEventId(uiEvent) === "RETRY_RESPONSE";
+
+const buildMessagesForRetry = (storedMessages, uiEvent) => {
+  const messages = Array.isArray(storedMessages) ? [...storedMessages] : [];
+  const payload = getUiEventPayload(uiEvent);
+  const targetAssistantMessageId = String(
+    payload?.targetAssistantMessageId || "",
+  ).trim();
+  const sourceMessage = String(payload?.sourceMessage || "").trim();
+
+  if (!targetAssistantMessageId) {
+    return sourceMessage
+      ? [...messages, { role: "user", content: sourceMessage }]
+      : messages;
+  }
+
+  const targetIndex = messages.findIndex(
+    (message) =>
+      String(message?.id || "").trim() === targetAssistantMessageId &&
+      message?.role === "assistant",
+  );
+
+  if (targetIndex < 0) {
+    return sourceMessage
+      ? [...messages, { role: "user", content: sourceMessage }]
+      : messages;
+  }
+
+  return messages.slice(0, targetIndex);
+};
+
 const tryAcquireSessionTurn = (sessionId) => {
   if (!sessionId) return null;
   const existing = activeSessionTurns.get(sessionId);
@@ -654,6 +706,11 @@ export const handleAiChat = async (req, res) => {
 
   let { conversationId, incomingMessage, limits, context, uiEvent } =
     requestPayload;
+  const retryResponseRequested = isRetryResponseUiEvent(uiEvent);
+  const retryPayload = getUiEventPayload(uiEvent);
+  const retryTargetAssistantMessageId = String(
+    retryPayload?.targetAssistantMessageId || "",
+  ).trim();
 
   // Validate that context.user.id (if provided) matches the authenticated user
   if (context?.user?.id != null) {
@@ -674,7 +731,7 @@ export const handleAiChat = async (req, res) => {
       .json({ error: "message is required", code: "AI_INVALID_PAYLOAD" });
   }
 
-  if (incomingMessage) {
+  if (incomingMessage && !retryResponseRequested) {
     const moderation = await isContentAllowed(incomingMessage);
     if (!moderation.allowed) {
       return res.status(400).json({
@@ -702,7 +759,7 @@ export const handleAiChat = async (req, res) => {
   }
 
   try {
-    if (incomingMessage) {
+    if (incomingMessage && !retryResponseRequested) {
       try {
         await appendAssistantChatMessage(conversationId, userId, {
           role: "user",
@@ -727,7 +784,10 @@ export const handleAiChat = async (req, res) => {
       return res.status(500).json({ error: "Unable to load messages" });
     }
 
-    const normalizedMessages = storedMessages.map((msg) => ({
+    const normalizedMessagesSource = retryResponseRequested
+      ? buildMessagesForRetry(storedMessages, uiEvent)
+      : storedMessages;
+    const normalizedMessages = normalizedMessagesSource.map((msg) => ({
       role:
         msg.role === "assistant"
           ? "assistant"
@@ -782,6 +842,7 @@ export const handleAiChat = async (req, res) => {
             ? result.orientationMessage.trim()
             : "";
         if (
+          !retryResponseRequested &&
           orientationText &&
           orientationText !== (result.reply || "").trim()
         ) {
@@ -797,13 +858,27 @@ export const handleAiChat = async (req, res) => {
             );
           }
         }
-        await appendAssistantChatMessage(conversationId, userId, {
-          role: "assistant",
-          content: result.reply || "Ok.",
-          planSnapshot: result.plan,
-          inventorySnapshot: result.inventory,
-          uiSnapshot: assistantUiSnapshot,
-        });
+        if (retryResponseRequested) {
+          await replaceAssistantChatMessage(
+            conversationId,
+            userId,
+            retryTargetAssistantMessageId,
+            {
+              content: result.reply || "Ok.",
+              planSnapshot: result.plan,
+              inventorySnapshot: result.inventory,
+              uiSnapshot: assistantUiSnapshot,
+            },
+          );
+        } else {
+          await appendAssistantChatMessage(conversationId, userId, {
+            role: "assistant",
+            content: result.reply || "Ok.",
+            planSnapshot: result.plan,
+            inventorySnapshot: result.inventory,
+            uiSnapshot: assistantUiSnapshot,
+          });
+        }
         try {
           await saveAssistantState({
             sessionId: conversationId,
@@ -934,6 +1009,11 @@ export const handleAiChatStream = async (req, res) => {
 
   let { conversationId, incomingMessage, limits, context, uiEvent } =
     requestPayload;
+  const retryResponseRequested = isRetryResponseUiEvent(uiEvent);
+  const retryPayload = getUiEventPayload(uiEvent);
+  const retryTargetAssistantMessageId = String(
+    retryPayload?.targetAssistantMessageId || "",
+  ).trim();
 
   if (context?.user?.id != null) {
     const ctxId = String(context.user.id).trim();
@@ -953,7 +1033,7 @@ export const handleAiChatStream = async (req, res) => {
       .json({ error: "message is required", code: "AI_INVALID_PAYLOAD" });
   }
 
-  if (incomingMessage) {
+  if (incomingMessage && !retryResponseRequested) {
     const moderation = await isContentAllowed(incomingMessage);
     if (!moderation.allowed) {
       return res.status(400).json({
@@ -1023,7 +1103,7 @@ export const handleAiChatStream = async (req, res) => {
   res.on("close", onClientClose);
 
   try {
-    if (incomingMessage) {
+    if (incomingMessage && !retryResponseRequested) {
       try {
         await appendAssistantChatMessage(conversationId, userId, {
           role: "user",
@@ -1050,7 +1130,10 @@ export const handleAiChatStream = async (req, res) => {
       return res.end();
     }
 
-    const normalizedMessages = storedMessages.map((msg) => ({
+    const normalizedMessagesSource = retryResponseRequested
+      ? buildMessagesForRetry(storedMessages, uiEvent)
+      : storedMessages;
+    const normalizedMessages = normalizedMessagesSource.map((msg) => ({
       role:
         msg.role === "assistant"
           ? "assistant"
@@ -1214,7 +1297,11 @@ export const handleAiChatStream = async (req, res) => {
         typeof result?.orientationMessage === "string"
           ? result.orientationMessage.trim()
           : "";
-      if (orientationText && orientationText !== (replyText || "").trim()) {
+      if (
+        !retryResponseRequested &&
+        orientationText &&
+        orientationText !== (replyText || "").trim()
+      ) {
         try {
           await appendAssistantChatMessage(conversationId, userId, {
             role: "assistant",
@@ -1227,13 +1314,27 @@ export const handleAiChatStream = async (req, res) => {
           );
         }
       }
-      await appendAssistantChatMessage(conversationId, userId, {
-        role: "assistant",
-        content: replyText || "Ok.",
-        planSnapshot: result.plan,
-        inventorySnapshot: result.inventory,
-        uiSnapshot: assistantUiSnapshot,
-      });
+      if (retryResponseRequested) {
+        await replaceAssistantChatMessage(
+          conversationId,
+          userId,
+          retryTargetAssistantMessageId,
+          {
+            content: replyText || "Ok.",
+            planSnapshot: result.plan,
+            inventorySnapshot: result.inventory,
+            uiSnapshot: assistantUiSnapshot,
+          },
+        );
+      } else {
+        await appendAssistantChatMessage(conversationId, userId, {
+          role: "assistant",
+          content: replyText || "Ok.",
+          planSnapshot: result.plan,
+          inventorySnapshot: result.inventory,
+          uiSnapshot: assistantUiSnapshot,
+        });
+      }
       await saveAssistantState({
         sessionId: conversationId,
         userId,
@@ -1368,6 +1469,54 @@ export const cancelAiChatTurn = async (req, res) => {
 
   const cancelled = cancelSessionTurn(sessionId);
   return res.json({ ok: true, cancelled });
+};
+
+export const submitAiMessageFeedback = async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const sessionId = req.params?.sessionId;
+  const messageId = req.params?.messageId;
+  if (!sessionId || !messageId) {
+    return res.status(400).json({
+      error: "sessionId and messageId are required.",
+      code: "AI_INVALID_FEEDBACK",
+    });
+  }
+
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const metadata =
+    body?.meta && typeof body.meta === "object" && !Array.isArray(body.meta)
+      ? body.meta
+      : null;
+
+  try {
+    const feedback = await saveAssistantMessageFeedback(
+      sessionId,
+      userId,
+      messageId,
+      {
+        value: body?.value,
+        reason: body?.reason ?? null,
+        metadata,
+      },
+    );
+    return res.json({ ok: true, feedback });
+  } catch (err) {
+    if (trySendKnownAiError(res, err)) return;
+    console.error("[ai] failed to save message feedback", {
+      sessionId,
+      messageId,
+      userId,
+      error: err?.message,
+    });
+    return res.status(500).json({
+      error: "Unable to save message feedback.",
+      code: "AI_FEEDBACK_SAVE_FAILED",
+    });
+  }
 };
 
 /**
