@@ -178,6 +178,27 @@ export default (sequelize) => {
         onDelete: "CASCADE",
       });
     }
+    if (models.PartnerMetricEvent) {
+      PartnerHotelClaim.hasMany(models.PartnerMetricEvent, {
+        foreignKey: "claim_id",
+        as: "metricEvents",
+        onDelete: "CASCADE",
+      });
+    }
+    if (models.PartnerMetricAdjustment) {
+      PartnerHotelClaim.hasMany(models.PartnerMetricAdjustment, {
+        foreignKey: "claim_id",
+        as: "metricAdjustments",
+        onDelete: "SET NULL",
+      });
+    }
+    if (models.PartnerInquiryLog) {
+      PartnerHotelClaim.hasMany(models.PartnerInquiryLog, {
+        foreignKey: "claim_id",
+        as: "inquiryLogs",
+        onDelete: "CASCADE",
+      });
+    }
   };
 
   return PartnerHotelClaim;

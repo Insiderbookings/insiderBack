@@ -110,6 +110,27 @@ export default (sequelize) => {
         as: "partnerClaim",
       })
     }
+    if (models.PartnerHotelVerificationCode) {
+      WebbedsHotel.hasOne(models.PartnerHotelVerificationCode, {
+        foreignKey: "hotel_id",
+        sourceKey: "hotel_id",
+        as: "partnerVerificationCode",
+      })
+    }
+    if (models.PartnerMetricEvent) {
+      WebbedsHotel.hasMany(models.PartnerMetricEvent, {
+        foreignKey: "hotel_id",
+        sourceKey: "hotel_id",
+        as: "partnerMetricEvents",
+      })
+    }
+    if (models.PartnerMetricAdjustment) {
+      WebbedsHotel.hasMany(models.PartnerMetricAdjustment, {
+        foreignKey: "hotel_id",
+        sourceKey: "hotel_id",
+        as: "partnerMetricAdjustments",
+      })
+    }
   }
 
   return WebbedsHotel

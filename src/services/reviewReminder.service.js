@@ -2,6 +2,7 @@ import { Op } from "sequelize";
 import models from "../models/index.js";
 import { sendPushToUser } from "./pushNotifications.service.js";
 import { getCoverImage } from "../utils/homeMapper.js";
+import { resolvePartnerProfileFromClaim } from "./partnerCatalog.service.js";
 
 const REVIEW_WINDOW_DAYS = Number(process.env.REVIEW_WINDOW_DAYS || 30);
 const REMINDER_CHANNEL = "PUSH";
@@ -172,7 +173,22 @@ const resolveReviewTimeZone = (booking) =>
       booking?.inventory_snapshot?.hotel?.timezone
   ) || FALLBACK_TIMEZONE;
 
-const buildPushContent = ({ inventoryType, summary }) => {
+const resolveReviewBoostMeta = (booking) => {
+  const claim =
+    booking?.hotelStay?.webbedsHotel?.partnerClaim ||
+    booking?.hotelStay?.hotel?.partnerClaim ||
+    null;
+  if (!claim) return null;
+  const profile = resolvePartnerProfileFromClaim(claim);
+  if (!profile?.reviewBoostEnabled || !profile?.googleReviewUrl) return null;
+  return {
+    enabled: true,
+    externalReviewUrl: profile.googleReviewUrl,
+    provider: "google",
+  };
+};
+
+const buildPushContent = ({ inventoryType, summary, reviewBoost = null }) => {
   if (inventoryType === HOME_INVENTORY_TYPE) {
     return {
       title: "Leave a review",
@@ -180,12 +196,21 @@ const buildPushContent = ({ inventoryType, summary }) => {
     };
   }
   return {
-    title: "Review your hotel stay",
-    body: `Tell us about your stay at ${summary.title}.`,
+    title: reviewBoost?.enabled ? "Review your hotel stay on Google" : "Review your hotel stay",
+    body: reviewBoost?.enabled
+      ? `Share your stay at ${summary.title} on Google.`
+      : `Tell us about your stay at ${summary.title}.`,
   };
 };
 
-const buildReminderPayload = ({ booking, reminderKey, inventoryType, summary, inventoryId }) => ({
+const buildReminderPayload = ({
+  booking,
+  reminderKey,
+  inventoryType,
+  summary,
+  inventoryId,
+  reviewBoost = null,
+}) => ({
   type: "REVIEW_REMINDER",
   reviewRole: "GUEST",
   reminderKey,
@@ -198,6 +223,8 @@ const buildReminderPayload = ({ booking, reminderKey, inventoryType, summary, in
   stayImage: summary.image,
   checkIn: booking.check_in,
   checkOut: booking.check_out,
+  externalReviewUrl: reviewBoost?.externalReviewUrl || null,
+  externalReviewProvider: reviewBoost?.provider || null,
 });
 
 export const runReviewReminderSweep = async () => {
@@ -251,6 +278,25 @@ export const runReviewReminderSweep = async () => {
             as: "webbedsHotel",
             required: false,
             attributes: ["hotel_id", "name", "city_name", "country_name"],
+            include: [
+              {
+                model: models.PartnerHotelClaim,
+                as: "partnerClaim",
+                required: false,
+                attributes: [
+                  "id",
+                  "hotel_id",
+                  "claim_status",
+                  "current_plan_code",
+                  "pending_plan_code",
+                  "subscription_status",
+                  "trial_ends_at",
+                  "trial_started_at",
+                  "claimed_at",
+                  "profile_overrides",
+                ],
+              },
+            ],
           },
         ],
       },
@@ -330,6 +376,7 @@ export const runReviewReminderSweep = async () => {
     const summary = isHomeInventory(inventoryType)
       ? resolveHomeSummary(booking)
       : resolveHotelSummary(booking);
+    const reviewBoost = isHotelInventory(inventoryType) ? resolveReviewBoostMeta(booking) : null;
     const inventoryId = isHomeInventory(inventoryType)
       ? toInventoryIdString(booking.inventory_id)
       : summary.inventoryId;
@@ -369,13 +416,14 @@ export const runReviewReminderSweep = async () => {
         throw error;
       }
 
-      const pushCopy = buildPushContent({ inventoryType, summary });
+      const pushCopy = buildPushContent({ inventoryType, summary, reviewBoost });
       const payload = buildReminderPayload({
         booking,
         reminderKey,
         inventoryType,
         summary,
         inventoryId,
+        reviewBoost,
       });
 
       try {
