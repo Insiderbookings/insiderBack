@@ -11,6 +11,7 @@ import {
   handleAiChat,
   handleAiChatStream,
   listAiChats,
+  submitAiMessageFeedback,
 } from "../controllers/ai.controller.js";
 
 const router = Router();
@@ -47,6 +48,11 @@ router.post("/chat/cancel", cancelAiChatTurn);
 router.post("/chats", aiSessionWriteLimiter, createAiChat);
 router.get("/chats", aiSessionReadLimiter, listAiChats);
 router.get("/chats/:sessionId", aiSessionReadLimiter, getAiChat);
+router.post(
+  "/chats/:sessionId/messages/:messageId/feedback",
+  aiSessionWriteLimiter,
+  submitAiMessageFeedback,
+);
 router.delete("/chats/:sessionId", aiSessionWriteLimiter, deleteAiChat);
 
 export default router;

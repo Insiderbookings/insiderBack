@@ -2202,7 +2202,6 @@ const buildStructuredSearchReply = ({
         pickReason: null,
       }));
   if (!picks.length) return null;
-
   const isSpanish = language === "es";
   const destination =
     plan?.location?.city ||

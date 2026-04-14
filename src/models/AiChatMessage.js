@@ -54,6 +54,10 @@ export default (sequelize) => {
       foreignKey: "session_id",
       as: "session",
     });
+    AiChatMessage.hasMany(models.AiChatMessageFeedback, {
+      foreignKey: "message_id",
+      as: "feedbackEntries",
+    });
   };
 
   AiChatMessage.ROLES = ROLES;

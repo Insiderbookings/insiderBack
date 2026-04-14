@@ -211,7 +211,7 @@ export const buildSystemPrompt = ({ state, userContext, language = "es" }) => {
 
 /**
  * Builds the system prompt for Call 2 (text generation after tool execution).
- * @param {{ toolName: string|null, toolArgs: object|null, userContext: object, language: string, summaryContext: string|null, useWebSearch?: boolean, allowCompetitorMentions?: boolean, followUpKind?: string|null }} params
+ * @param {{ toolName: string|null, toolArgs: object|null, userContext: object, language: string, summaryContext: string|null, useWebSearch?: boolean, allowCompetitorMentions?: boolean, followUpKind?: string|null, retryRequested?: boolean, previousAssistantReply?: string|null }} params
  */
 export const buildCall2SystemPrompt = ({
   toolName,
@@ -223,6 +223,8 @@ export const buildCall2SystemPrompt = ({
   allowCompetitorMentions = false,
   preFiltered = false,
   followUpKind = null,
+  retryRequested = false,
+  previousAssistantReply = null,
 }) => {
   const langName =
     language === "es"
@@ -239,6 +241,19 @@ export const buildCall2SystemPrompt = ({
   const competitorInstruction = allowCompetitorMentions
     ? "Mention competitor travel brands only because the user explicitly asked about them."
     : "Never mention, cite, or rely on competitor travel brands or OTAs unless the user explicitly asked about them.";
+  const retryInstruction = retryRequested
+    ? "RETRY MODE: The user asked for a new approach to the same turn. Give a meaningfully different response than the previous assistant reply. Do not reuse the same opener, sentence structure, ordering, or framing. Keep the answer consistent with the same facts and intent, but vary the approach noticeably."
+    : null;
+  const retryPreviousReplyInstruction =
+    retryRequested &&
+    typeof previousAssistantReply === "string" &&
+    previousAssistantReply.trim()
+      ? [
+          "PREVIOUS ASSISTANT REPLY TO AVOID REPEATING:",
+          previousAssistantReply.trim().slice(0, 1200),
+          "Do not closely paraphrase, mirror, or reuse that wording. Keep the same intent, but answer with a clearly different structure and phrasing.",
+        ].join("\n")
+      : null;
 
   if (toolName === "answer_from_results") {
     const hotelListSection = summaryContext
@@ -260,9 +275,13 @@ export const buildCall2SystemPrompt = ({
         "Do NOT append |||IDS:. Do NOT force a rigid template. The UI may attach cards separately.",
         sourceInstruction,
         competitorInstruction,
+        retryInstruction,
+        retryPreviousReplyInstruction,
         hotelListSection,
         NO_REPEAT_INSTRUCTION,
-      ].join("\n");
+      ]
+        .filter(Boolean)
+        .join("\n");
     }
 
     if (followUpKind === "advisory_results") {
@@ -280,9 +299,13 @@ export const buildCall2SystemPrompt = ({
         "Do NOT append |||IDS:. Do NOT force a rigid template. The UI may attach cards separately.",
         sourceInstruction,
         competitorInstruction,
+        retryInstruction,
+        retryPreviousReplyInstruction,
         hotelListSection,
         NO_REPEAT_INSTRUCTION,
-      ].join("\n");
+      ]
+        .filter(Boolean)
+        .join("\n");
     }
 
     if (preFiltered) {
@@ -297,9 +320,13 @@ export const buildCall2SystemPrompt = ({
         "Do NOT append |||IDS: — hotel selection is already done.",
         sourceInstruction,
         competitorInstruction,
+        retryInstruction,
+        retryPreviousReplyInstruction,
         hotelListSection,
         NO_REPEAT_INSTRUCTION,
-      ].join("\n");
+      ]
+        .filter(Boolean)
+        .join("\n");
     }
 
     return [
@@ -313,9 +340,13 @@ export const buildCall2SystemPrompt = ({
       "CRITICAL: At the very end of your response (after all visible text), append exactly: |||IDS: followed by a comma-separated list of the IDs (from the [ID:...] tags) of every hotel you mentioned. Example: |||IDS:123,456. If you mentioned no specific hotel, append |||IDS: with no IDs. Never show this tag to the user.",
       sourceInstruction,
       competitorInstruction,
+      retryInstruction,
+      retryPreviousReplyInstruction,
       hotelListSection,
       NO_REPEAT_INSTRUCTION,
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   if (toolName === "plan_trip") {
@@ -336,8 +367,12 @@ export const buildCall2SystemPrompt = ({
         "- Vary structure each reply — never use identical section titles twice in a conversation",
       sourceInstruction,
       competitorInstruction,
+      retryInstruction,
+      retryPreviousReplyInstruction,
       NO_REPEAT_INSTRUCTION,
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   if (toolName === "get_destination_info") {
@@ -363,8 +398,12 @@ export const buildCall2SystemPrompt = ({
         "- Vary format each reply — no identical section titles twice in a conversation",
       sourceInstruction,
       competitorInstruction,
+      retryInstruction,
+      retryPreviousReplyInstruction,
       NO_REPEAT_INSTRUCTION,
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   if (toolName === "get_stay_details") {
@@ -375,8 +414,12 @@ export const buildCall2SystemPrompt = ({
       "Reply in plain text.",
       sourceInstruction,
       competitorInstruction,
+      retryInstruction,
+      retryPreviousReplyInstruction,
       NO_REPEAT_INSTRUCTION,
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   // SMALL_TALK / default (no tool was called)
@@ -388,7 +431,11 @@ export const buildCall2SystemPrompt = ({
     "FORMAT: Conversational tone. Use **bold** for key terms only. 1 emoji max as a tone signal. No headers unless listing 3+ items.",
     sourceInstruction,
     competitorInstruction,
+    retryInstruction,
+    retryPreviousReplyInstruction,
     "Don't assume the user wants to search unless they clearly indicate it.",
     NO_REPEAT_INSTRUCTION,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 };

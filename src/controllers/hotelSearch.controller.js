@@ -28,7 +28,7 @@ const MOBILE_SNAPSHOT_RESULT_LIMIT = Math.max(
   Number(process.env.WEBBEDS_MOBILE_SNAPSHOT_RESULT_LIMIT || 100),
 )
 const DEFAULT_CACHE_TTL = 120
-const SEARCH_CACHE_VERSION = "hotel-intent-v7"
+const SEARCH_CACHE_VERSION = "hotel-intent-v9"
 const FULL_CACHE_TTL_SECONDS = Math.max(
   60,
   Number(process.env.WEBBEDS_SEARCH_FULL_CACHE_TTL_SECONDS || DEFAULT_CACHE_TTL),
@@ -84,6 +84,9 @@ const buildCacheKey = (payload) => buildHashedKey("webbeds:search:", payload)
 const buildFullCacheKey = (payload) => buildHashedKey("webbeds:search:full:", payload)
 const buildFullCacheStatusKey = (payload) =>
   buildHashedKey("webbeds:search:full:status:", payload)
+
+const buildAutocompleteSubtitle = (row = {}) =>
+  [row.city_name, row.country_name].filter(Boolean).join(", ") || row.address || null
 
 const parseCsvList = (value) => {
   if (!value) return []
@@ -929,6 +932,7 @@ const buildCatalogHotelItems = async ({
   distanceMap = new Map(),
   unavailable = false,
   unavailableReason = null,
+  anchorHotelId = null,
 }) => {
   const targetIds = hotelIds.map((id) => String(id)).filter(Boolean)
   if (!targetIds.length) return []
@@ -969,6 +973,8 @@ const buildCatalogHotelItems = async ({
             unavailableReason: unavailableReason || "no-availability",
           }
         : null
+      const isSearchAnchor =
+        anchorHotelId != null && String(anchorHotelId).trim() === String(row.hotel_id)
 
       return {
         hotelId: String(row.hotel_id),
@@ -990,6 +996,7 @@ const buildCatalogHotelItems = async ({
         bestPrice: null,
         currency: null,
         distanceKm: distanceMap.get(String(row.hotel_id)) ?? null,
+        searchAnchor: isSearchAnchor,
         preferred: Boolean(row.preferred || row.exclusive),
         exclusive: Boolean(row.exclusive),
         priority: row.priority ?? null,
@@ -1016,9 +1023,11 @@ const buildCatalogHotelItems = async ({
           images: row.images ?? (cover ? { hotelImages: { thumb: cover } } : null),
           image: cover,
           coverImage: cover,
+          searchAnchor: isSearchAnchor,
           ...(unavailableState || null),
         },
         isStatic: true,
+        searchAnchor: isSearchAnchor,
         ...(unavailableState || null),
       }
     })
@@ -1304,6 +1313,55 @@ const hasStrongHotelNameSignal = async ({ query, cityCode = null }) => {
   return scoreHotelNameMatch(best?.name, trimmed) >= threshold
 }
 
+const resolveStrictHotelAnchorIds = async ({
+  query,
+  cityCode = null,
+  filters = {},
+}) => {
+  const trimmed = String(query || "").trim()
+  if (!trimmed) return []
+
+  const findAnchor = async (scopedCityCode = null) => {
+    const where = {}
+    applyHotelNameCandidateFilter(where, trimmed)
+    if (scopedCityCode) {
+      where.city_code = String(scopedCityCode).trim()
+    }
+    if (filters.ratingCodes?.length) {
+      where.rating = { [Op.in]: filters.ratingCodes }
+    }
+    if (filters.chain?.length) {
+      where.chain_code = { [Op.in]: filters.chain }
+    }
+
+    const rows = await models.WebbedsHotel.findAll({
+      where,
+      attributes: ["hotel_id", "priority", "name", "rating"],
+      order: [
+        ["priority", "DESC"],
+        ["rating", "DESC"],
+        ["name", "ASC"],
+      ],
+      limit: 25,
+      raw: true,
+    })
+
+    const rankedRows = rankHotelRowsByName(rows, trimmed)
+    const best = rankedRows[0]
+    if (!best) return []
+
+    const threshold = countComparableWords(trimmed) <= 1 ? 820 : 700
+    const bestScore = scoreHotelNameMatch(best?.name, trimmed)
+    if (bestScore < threshold) return []
+
+    return [String(best.hotel_id)].filter(Boolean)
+  }
+
+  const cityScopedIds = await findAnchor(cityCode)
+  if (cityScopedIds.length || !cityCode) return cityScopedIds
+  return findAnchor(null)
+}
+
 const fetchHotelIdsByName = async (query, limit = DEFAULT_LIMIT, offset = 0, filters = {}) => {
   const trimmed = String(query || "").trim()
   if (!trimmed) return []
@@ -1344,6 +1402,67 @@ const fetchHotelIdsByName = async (query, limit = DEFAULT_LIMIT, offset = 0, fil
     .slice(safeOffset, safeOffset + safeLimit)
     .map((row) => String(row.hotel_id))
     .filter(Boolean)
+}
+
+export const autocompleteHotels = async (req, res, next) => {
+  try {
+    const query = String(req.query?.query ?? req.query?.q ?? "").trim()
+    const rawLimit = Number(req.query?.limit ?? 6)
+    const limit = Math.max(1, Math.min(8, Number.isFinite(rawLimit) ? rawLimit : 6))
+
+    if (query.length < 2) {
+      return res.json({ items: [] })
+    }
+
+    const where = {}
+    applyHotelNameCandidateFilter(where, query)
+
+    const rows = await models.WebbedsHotel.findAll({
+      where,
+      attributes: [
+        "hotel_id",
+        "name",
+        "city_name",
+        "country_name",
+        "address",
+        "lat",
+        "lng",
+        "priority",
+        "rating",
+      ],
+      order: [
+        ["priority", "DESC"],
+        ["rating", "DESC"],
+        ["name", "ASC"],
+      ],
+      limit: Math.max(limit * 4, 24),
+      raw: true,
+    })
+
+    const items = rankHotelRowsByName(rows, query)
+      .slice(0, limit)
+      .map((row) => {
+        const lat = parseCoordinateValue(row?.lat)
+        const lng = parseCoordinateValue(row?.lng)
+        return {
+          id: String(row.hotel_id),
+          hotelId: String(row.hotel_id),
+          title: row.name,
+          subtitle: buildAutocompleteSubtitle(row),
+          city: row.city_name ?? null,
+          country: row.country_name ?? null,
+          lat,
+          lng,
+          kind: "hotel",
+          source: "catalog",
+          types: ["lodging"],
+        }
+      })
+
+    return res.json({ items })
+  } catch (error) {
+    next(error)
+  }
 }
 
 const fetchAllHotelIdsByCity = async (cityCode, filters = {}) => {
@@ -1714,6 +1833,7 @@ export const searchHotels = async (req, res, next) => {
     const specialDeals = req.query.specialDeals ?? req.query.specialDeal
     const topDeals = req.query.topDeals ?? req.query.topDeal
     const hotelName = req.query.hotelName ?? req.query.nameFilter
+    const requestedHotelId = String(req.query.hotelId ?? req.query.selectedHotelId ?? "").trim() || null
     const passengerNationality =
       req.query.passengerNationality ?? req.query.nationality ?? null
     const passengerCountryOfResidence =
@@ -1751,6 +1871,7 @@ export const searchHotels = async (req, res, next) => {
       fields,
       roomFields,
       hotelName, // Cache must respect name filter
+      hotelId: requestedHotelId,
     }
     const hasFilterValue = (val) => val !== undefined && val !== null && val !== ""
     const hasAnyFilter = [
@@ -1766,6 +1887,7 @@ export const searchHotels = async (req, res, next) => {
       specialDeals,
       topDeals,
       hotelName,
+      requestedHotelId,
     ].some(hasFilterValue)
     const canUseFullCache =
       fullCacheKey &&
@@ -1775,6 +1897,7 @@ export const searchHotels = async (req, res, next) => {
       isCacheFilterable(cacheFilters) &&
       resolvedSearchMode === "hotelids" &&
       !hotelName &&
+      !requestedHotelId &&
       (!requestedIntent || requestedIntent === "city")
 
     if (FULL_CACHE_ENABLED && canUseFullCache && process.env.WEBBEDS_SEARCH_CACHE_DISABLED !== "true") {
@@ -1929,7 +2052,7 @@ export const searchHotels = async (req, res, next) => {
         ? String(searchQuery || "").trim() || null
         : null)
 
-    let hotelIds = []
+    let hotelIds = requestedHotelId ? [requestedHotelId] : []
     let fallback = null
     let intentResolved =
       effectiveSearchIntent || requestedIntent || (resolvedSearchMode === "city" ? "city" : null)
@@ -1966,7 +2089,16 @@ export const searchHotels = async (req, res, next) => {
       ? { ...baseDbFilters, hotelName: manualHotelName }
       : baseDbFilters
 
-    if (effectiveSearchIntent === "landmark") {
+    if (requestedHotelId && hotelIds.length) {
+      hotelOrderMap = new Map(hotelIds.map((id, index) => [String(id), index]))
+      hasCustomHotelOrdering = true
+      fallback = "hotel-id"
+      intentResolved = "hotel"
+    }
+
+    if (hotelIds.length) {
+      // hotelId is an explicit anchor; skip intent resolution fallbacks.
+    } else if (effectiveSearchIntent === "landmark") {
       let landmarkGeo =
         requestedLat != null && requestedLng != null
           ? { lat: requestedLat, lng: requestedLng }
@@ -2012,13 +2144,27 @@ export const searchHotels = async (req, res, next) => {
         ? { ...baseDbFilters, hotelName: hotelIntentName }
         : { ...baseDbFilters }
       const autoHotelNameApplied = !manualHotelName && Boolean(searchQuery)
+      const preferStrictHotelAnchor = Boolean(hotelIntentName)
 
-      if (resolvedCityCode) {
+      if (preferStrictHotelAnchor) {
+        hotelIds = await resolveStrictHotelAnchorIds({
+          query: hotelIntentName,
+          cityCode: resolvedCityCode,
+          filters: baseDbFilters,
+        })
+      }
+
+      if (hotelIds.length) {
+        hotelOrderMap = new Map(hotelIds.map((id, index) => [String(id), index]))
+        hasCustomHotelOrdering = true
+        fallback = "strict-hotel"
+        intentResolved = "hotel"
+      } else if (resolvedCityCode) {
         hotelIds = effectiveFetchAll
           ? await fetchAllHotelIdsByCity(resolvedCityCode, hotelIntentFilters)
           : await fetchHotelIdsByCity(resolvedCityCode, safeLimit, safeOffset, hotelIntentFilters)
       }
-      if (hotelIds.length) {
+      if (hotelIds.length && !hasCustomHotelOrdering) {
         hotelOrderMap = new Map(hotelIds.map((id, index) => [String(id), index]))
         hasCustomHotelOrdering = true
         fallback = "city"
@@ -2153,6 +2299,7 @@ export const searchHotels = async (req, res, next) => {
       cityCode: resolvedCityCode || undefined,
       countryCode: resolvedCountryCode || undefined,
       hotelIds: hotelIds.length ? hotelIds.join(",") : undefined,
+      hotelId: requestedHotelId || undefined,
       hotelName:
         requestedHotelName || undefined,
       passengerNationality,
@@ -2176,6 +2323,7 @@ export const searchHotels = async (req, res, next) => {
       providerQuery.offset = 0
     }
     delete providerQuery.intent
+    delete providerQuery.hotelId
     delete providerQuery.hotelName
     if (providerSearchMode === "hotelids") {
       if (providerQuery.hotelIds) {
@@ -2189,6 +2337,7 @@ export const searchHotels = async (req, res, next) => {
     const cacheKey = buildCacheKey({
       version: SEARCH_CACHE_VERSION,
       ...normalizedQuery,
+      hotelId: requestedHotelId,
       placeId: String(placeId || "").trim() || null,
       placeLat: requestedLat,
       placeLng: requestedLng,
@@ -2418,6 +2567,7 @@ export const searchHotels = async (req, res, next) => {
           distanceMap: hotelDistanceMap,
           unavailable: true,
           unavailableReason: "no-availability",
+          anchorHotelId: anchorHotelIds[0] ?? null,
         })
 
         let nearbyLat = parseCoordinateValue(primaryAnchorRow?.lat)
@@ -2530,6 +2680,21 @@ export const searchHotels = async (req, res, next) => {
 
     if (useLite && Array.isArray(items) && !isStaticResult) {
       items = reduceToLite(items)
+    }
+    if (Array.isArray(items) && requestedHotelId) {
+      items = items.map((item) => {
+        const hotelCode = resolveItemHotelCode(item)
+        const isSearchAnchor =
+          hotelCode && String(hotelCode) === String(requestedHotelId)
+        if (!isSearchAnchor) return item
+        return {
+          ...item,
+          searchAnchor: true,
+          hotelDetails: item?.hotelDetails
+            ? { ...item.hotelDetails, searchAnchor: true }
+            : item?.hotelDetails,
+        }
+      })
     }
     items = sanitizeRenderableHotelItems(Array.isArray(items) ? items : [], {
       searchRequestId,

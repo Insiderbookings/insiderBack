@@ -222,6 +222,7 @@ const streamCall2Completion = async ({
   messages,
   onTextChunk = null,
   useWebSearch = false,
+  retryRequested = false,
   modelOverride = null,
   onWebSearchStart = null,
   webSearchContext = null,
@@ -285,6 +286,7 @@ const executeCall2WithPolicy = async ({
   toolName = null,
   toolArgs = null,
   latestUserMessage = "",
+  retryRequested = false,
   signal = null,
 } = {}) => {
   if (signal?.aborted) {
@@ -335,6 +337,7 @@ const executeCall2WithPolicy = async ({
       messages: messagesOverride || messages,
       onTextChunk,
       useWebSearch,
+      retryRequested,
       modelOverride: useWebSearch
         ? CALL2_WEB_SEARCH_MODEL
         : selectedNonWebModel,
@@ -6981,6 +6984,7 @@ const SEARCH_UI_EVENTS = Object.freeze({
   NATIONALITY_SUBMIT: "NATIONALITY_SUBMIT",
   PENDING_CANCEL: "PENDING_CANCEL",
   LIVE_AVAILABILITY_ENABLE: "LIVE_AVAILABILITY_ENABLE",
+  RETRY_RESPONSE: "RETRY_RESPONSE",
 });
 
 const normalizeUiEventId = (uiEvent) =>
@@ -6999,6 +7003,12 @@ const getUiEventPayload = (uiEvent) => {
     return null;
   }
   return payload;
+};
+
+const getRetryPreviousAssistantReplyFromUiEvent = (uiEvent) => {
+  const payload = getUiEventPayload(uiEvent);
+  const reply = String(payload?.previousAssistantReply || "").trim();
+  return reply || null;
 };
 
 const getConfirmedWhenFromUiEvent = (uiEvent) => {
@@ -8088,6 +8098,8 @@ export const runFunctionCallingTurn = async ({
   );
   const userContext = context && typeof context === "object" ? context : null;
   const uiEventId = normalizeUiEventId(uiEvent);
+  const retryPreviousAssistantReply =
+    getRetryPreviousAssistantReplyFromUiEvent(uiEvent);
   const confirmedSearch =
     userContext &&
     typeof userContext === "object" &&
@@ -8193,7 +8205,11 @@ export const runFunctionCallingTurn = async ({
       hasMatchingPlaceSelection),
   );
 
-  if (!pendingTc && isGreetingOnlyMessage(latestUserMessage)) {
+  if (
+    !pendingTc &&
+    uiEventId !== SEARCH_UI_EVENTS.RETRY_RESPONSE &&
+    isGreetingOnlyMessage(latestUserMessage)
+  ) {
     const greetingReply = getGreetingOnlyReply(language);
     onTextChunk?.(greetingReply);
     return {
@@ -10027,6 +10043,8 @@ export const runFunctionCallingTurn = async ({
           allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
           preFiltered: false,
           followUpKind,
+          retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
+          previousAssistantReply: retryPreviousAssistantReply,
         });
         const fallbackCall2System = buildCall2SystemPrompt({
           toolName: "answer_from_results",
@@ -10038,6 +10056,8 @@ export const runFunctionCallingTurn = async ({
           allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
           preFiltered: false,
           followUpKind,
+          retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
+          previousAssistantReply: retryPreviousAssistantReply,
         });
         const call2Messages = [
           { role: "system", content: call2System },
@@ -10082,6 +10102,7 @@ export const runFunctionCallingTurn = async ({
             toolName: "answer_from_results",
             toolArgs: toolCall.args,
             latestUserMessage,
+            retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
             signal,
           });
           throwIfAborted();
@@ -10220,6 +10241,8 @@ export const runFunctionCallingTurn = async ({
             useWebSearch: false,
             allowCompetitorMentions: false,
             preFiltered: true,
+            retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
+            previousAssistantReply: retryPreviousAssistantReply,
           });
 
           const call2Messages = [
@@ -10259,6 +10282,7 @@ export const runFunctionCallingTurn = async ({
               toolName: "answer_from_results",
               toolArgs: toolCall.args,
               latestUserMessage,
+              retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
               signal,
             });
             throwIfAborted();
@@ -10326,6 +10350,8 @@ export const runFunctionCallingTurn = async ({
           useWebSearch: webSearchDecision.enabled,
           allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
           preFiltered: false,
+          retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
+          previousAssistantReply: retryPreviousAssistantReply,
         });
         const fallbackCall2System = buildCall2SystemPrompt({
           toolName: "answer_from_results",
@@ -10336,6 +10362,8 @@ export const runFunctionCallingTurn = async ({
           useWebSearch: false,
           allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
           preFiltered: false,
+          retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
+          previousAssistantReply: retryPreviousAssistantReply,
         });
 
         const call2Messages = [
@@ -10399,6 +10427,7 @@ export const runFunctionCallingTurn = async ({
             toolName: "answer_from_results",
             toolArgs: toolCall.args,
             latestUserMessage,
+            retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
             signal,
           });
           throwIfAborted();
@@ -10566,6 +10595,8 @@ export const runFunctionCallingTurn = async ({
       language,
       useWebSearch: webSearchDecision.enabled,
       allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
+      retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
+      previousAssistantReply: retryPreviousAssistantReply,
     });
     const fallbackCall2System = buildCall2SystemPrompt({
       toolName: toolCall.name,
@@ -10574,6 +10605,8 @@ export const runFunctionCallingTurn = async ({
       language,
       useWebSearch: false,
       allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
+      retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
+      previousAssistantReply: retryPreviousAssistantReply,
     });
     const toolResultContent = stayDetailsFromDb
       ? `Tool result: ${JSON.stringify(toolCall.args)}\n${stayDetailsFromDb}`
@@ -10620,6 +10653,7 @@ export const runFunctionCallingTurn = async ({
         toolName: toolCall.name,
         toolArgs: toolCall.args,
         latestUserMessage,
+        retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
         signal,
       });
       throwIfAborted();
@@ -10666,6 +10700,8 @@ export const runFunctionCallingTurn = async ({
       language,
       useWebSearch: webSearchDecision.enabled,
       allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
+      retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
+      previousAssistantReply: retryPreviousAssistantReply,
     });
     const fallbackCall2System = buildCall2SystemPrompt({
       toolName: null,
@@ -10674,6 +10710,8 @@ export const runFunctionCallingTurn = async ({
       language,
       useWebSearch: false,
       allowCompetitorMentions: webSearchDecision.allowCompetitorMentions,
+      retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
+      previousAssistantReply: retryPreviousAssistantReply,
     });
     const call2Messages = [
       { role: "system", content: call2System },
@@ -10696,6 +10734,7 @@ export const runFunctionCallingTurn = async ({
         toolName: "small_talk",
         toolArgs: null,
         latestUserMessage,
+        retryRequested: uiEventId === SEARCH_UI_EVENTS.RETRY_RESPONSE,
         signal,
       });
       throwIfAborted();

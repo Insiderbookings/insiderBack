@@ -8,6 +8,16 @@ export const DEFAULT_ASSISTANT_GREETING =
   "Hi there! I am your Insider assistant. Tell me what kind of hotel you're looking for and I'll find it.";
 
 const MESSAGE_ROLES = ["assistant", "user", "system"];
+const FEEDBACK_VALUES = ["up", "down"];
+const FEEDBACK_REASONS = [
+  "didnt_understand",
+  "bad_results",
+  "too_generic",
+  "incorrect_info",
+  "other",
+];
+const UUID_V4_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const sanitizeContent = (value) => {
   if (typeof value === "string") return value.trim();
@@ -107,7 +117,55 @@ const mapMessage = (message) => {
       : [],
     webSearchUsed: Boolean(ui?.meta?.webSearchUsed),
     webSources: Array.isArray(ui?.webSources) ? ui.webSources : [],
+    feedback: null,
   };
+};
+
+const mapFeedback = (feedback) => {
+  if (!feedback) return null;
+  const data =
+    typeof feedback.get === "function" ? feedback.get({ plain: true }) : feedback;
+  return {
+    id: data.id,
+    sessionId: data.session_id,
+    messageId: data.message_id,
+    value: data.value,
+    reason: data.reason ?? null,
+    metadata: parseJsonField(data.metadata) || null,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+};
+
+const isUuidLike = (value) =>
+  typeof value === "string" && UUID_V4_REGEX.test(value.trim());
+
+const attachFeedbackToMessages = async (messages, userId) => {
+  if (!Array.isArray(messages) || !messages.length || !userId) return messages;
+  const messageIds = messages
+    .map((message) => message?.id)
+    .filter((messageId) => typeof messageId === "string" && messageId);
+  if (!messageIds.length) return messages;
+
+  const feedbackRows = await models.AiChatMessageFeedback.findAll({
+    where: {
+      user_id: userId,
+      message_id: messageIds,
+    },
+  });
+
+  const feedbackByMessageId = new Map();
+  feedbackRows.forEach((feedbackRow) => {
+    const normalized = mapFeedback(feedbackRow);
+    if (normalized?.messageId) {
+      feedbackByMessageId.set(normalized.messageId, normalized);
+    }
+  });
+
+  return messages.map((message) => ({
+    ...message,
+    feedback: message?.id ? feedbackByMessageId.get(message.id) || null : null,
+  }));
 };
 
 const notFoundError = () => {
@@ -214,9 +272,13 @@ export const getAssistantSessionWithMessages = async (
       max: AI_CHAT_HISTORY_LIMITS.detailMax,
     }),
   });
+  const messages = await attachFeedbackToMessages(
+    rows.reverse().map(mapMessage),
+    userId,
+  );
   return {
     session: mapSession(session),
-    messages: rows.reverse().map(mapMessage),
+    messages,
   };
 };
 
@@ -234,7 +296,7 @@ export const fetchAssistantMessages = async (
       max: AI_CHAT_HISTORY_LIMITS.contextMax,
     }),
   });
-  return rows.reverse().map(mapMessage);
+  return attachFeedbackToMessages(rows.reverse().map(mapMessage), userId);
 };
 
 export const appendAssistantChatMessage = async (
@@ -336,5 +398,208 @@ export const deleteAssistantSession = async (sessionId, userId) => {
     });
     await session.destroy({ transaction });
     return true;
+  });
+};
+
+export const replaceAssistantChatMessage = async (
+  sessionId,
+  userId,
+  messageId,
+  {
+    content,
+    planSnapshot = null,
+    inventorySnapshot = null,
+    uiSnapshot = null,
+  } = {},
+) => {
+  const sanitized = sanitizeContent(content);
+  if (!sanitized) throw new Error("Message content is required");
+
+  return sequelize.transaction(async (transaction) => {
+    const lock = transaction.LOCK ? transaction.LOCK.UPDATE : undefined;
+    const session = await models.AiChatSession.findOne({
+      where: { id: sessionId, user_id: userId },
+      transaction,
+      lock,
+    });
+    if (!session) throw notFoundError();
+
+    const normalizedMessageId = isUuidLike(messageId) ? messageId.trim() : null;
+    let message = null;
+
+    if (normalizedMessageId) {
+      message = await models.AiChatMessage.findOne({
+        where: {
+          id: normalizedMessageId,
+          session_id: sessionId,
+          role: "assistant",
+        },
+        transaction,
+        lock,
+      });
+    }
+
+    if (!message) {
+      message = await models.AiChatMessage.findOne({
+        where: {
+          session_id: sessionId,
+          role: "assistant",
+        },
+        order: [["created_at", "DESC"]],
+        transaction,
+        lock,
+      });
+    }
+
+    if (!message) throw notFoundError();
+
+    await message.update(
+      {
+        content: sanitized,
+        plan_snapshot: planSnapshot ?? null,
+        inventory_snapshot: inventorySnapshot ?? null,
+        ui_snapshot: uiSnapshot ?? null,
+      },
+      { transaction },
+    );
+
+    await models.AiChatMessageFeedback.destroy({
+      where: { message_id: message.id },
+      transaction,
+    });
+
+    const preview = buildPreview(sanitized);
+    const sessionMessages = await models.AiChatMessage.findAll({
+      where: { session_id: sessionId },
+      attributes: ["id"],
+      order: [["created_at", "ASC"]],
+      transaction,
+    });
+    const isLastMessage =
+      Array.isArray(sessionMessages) &&
+      sessionMessages.length > 0 &&
+      String(sessionMessages[sessionMessages.length - 1]?.id || "") ===
+        String(message.id);
+
+    if (isLastMessage) {
+      await session.update(
+        {
+          last_message_at: new Date(),
+          last_message_preview: preview || session.last_message_preview,
+        },
+        { transaction },
+      );
+    }
+
+    return mapMessage(message);
+  });
+};
+
+const invalidFeedbackError = (message = "Invalid message feedback payload.") => {
+  const error = new Error(message);
+  error.code = "AI_INVALID_FEEDBACK";
+  error.status = 400;
+  return error;
+};
+
+export const saveAssistantMessageFeedback = async (
+  sessionId,
+  userId,
+  messageId,
+  { value, reason = null, metadata = null } = {},
+) => {
+  if (!sessionId || !userId || !messageId) {
+    throw invalidFeedbackError("sessionId, userId and messageId are required.");
+  }
+  const normalizedValue = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (!FEEDBACK_VALUES.includes(normalizedValue)) {
+    throw invalidFeedbackError("feedback value is invalid.");
+  }
+  const normalizedReason =
+    reason == null
+      ? null
+      : String(reason)
+          .trim()
+          .toLowerCase();
+  if (normalizedValue === "down" && !FEEDBACK_REASONS.includes(normalizedReason)) {
+    throw invalidFeedbackError("feedback reason is required for down votes.");
+  }
+  if (normalizedValue === "up" && normalizedReason) {
+    throw invalidFeedbackError("feedback reason is only allowed for down votes.");
+  }
+
+  return sequelize.transaction(async (transaction) => {
+    await getAssistantSessionOrThrow(sessionId, userId, { transaction });
+
+    const normalizedMessageId = isUuidLike(messageId) ? messageId.trim() : null;
+    let message = null;
+
+    if (normalizedMessageId) {
+      message = await models.AiChatMessage.findOne({
+        where: {
+          id: normalizedMessageId,
+          session_id: sessionId,
+        },
+        transaction,
+        paranoid: true,
+      });
+    }
+
+    if (!message) {
+      message = await models.AiChatMessage.findOne({
+        where: {
+          session_id: sessionId,
+          role: "assistant",
+        },
+        order: [["created_at", "DESC"]],
+        transaction,
+        paranoid: true,
+      });
+    }
+
+    if (!message || message.role !== "assistant") {
+      throw notFoundError();
+    }
+
+    const existing = await models.AiChatMessageFeedback.findOne({
+      where: {
+        user_id: userId,
+        message_id: message.id,
+      },
+      transaction,
+      paranoid: false,
+    });
+
+    if (existing) {
+      if (existing.deleted_at) {
+        await existing.restore({ transaction });
+      }
+      await existing.update(
+        {
+          session_id: sessionId,
+          value: normalizedValue,
+          reason: normalizedValue === "down" ? normalizedReason : null,
+          metadata: metadata ?? existing.metadata ?? null,
+        },
+        { transaction },
+      );
+      return mapFeedback(existing);
+    }
+
+    const created = await models.AiChatMessageFeedback.create(
+      {
+        session_id: sessionId,
+        message_id: message.id,
+        user_id: userId,
+        value: normalizedValue,
+        reason: normalizedValue === "down" ? normalizedReason : null,
+        metadata: metadata ?? null,
+      },
+      { transaction },
+    );
+
+    return mapFeedback(created);
   });
 };
