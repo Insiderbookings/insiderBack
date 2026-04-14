@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { searchHotels } from "../controllers/hotelSearch.controller.js";
+import { autocompleteHotels, searchHotels } from "../controllers/hotelSearch.controller.js";
 const router = Router();
 
+router.get("/autocomplete", autocompleteHotels);
 router.get("/search", searchHotels);
 
 export default router;
