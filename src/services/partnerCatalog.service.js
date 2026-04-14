@@ -308,6 +308,12 @@ const sanitizeTextList = (value, { maxItems = 40, itemMaxLength = 80 } = {}) => 
   ).slice(0, maxItems);
 };
 
+const normalizeAmenityKey = (value) =>
+  sanitizeText(value, 80)
+    ?.toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim() || null;
+
 const sanitizeUrlList = (value, { maxItems = 12, itemMaxLength = 500 } = {}) => {
   const source = Array.isArray(value)
     ? value
@@ -369,24 +375,28 @@ const extractHotelDescription = (hotel) => {
   return null;
 };
 
-const extractPhotoCandidate = (value) => {
-  if (!value) return null;
-  if (typeof value === "string" || typeof value === "number") return sanitizeUrl(String(value), 500);
+const collectPhotoCandidates = (value, acc = []) => {
+  if (!value) return acc;
+  if (typeof value === "string" || typeof value === "number") {
+    const normalized = sanitizeUrl(String(value), 500);
+    if (normalized) acc.push(normalized);
+    return acc;
+  }
   if (Array.isArray(value)) {
-    for (const entry of value) {
-      const candidate = extractPhotoCandidate(entry);
-      if (candidate) return candidate;
-    }
-    return null;
+    value.forEach((entry) => collectPhotoCandidates(entry, acc));
+    return acc;
   }
   if (typeof value === "object") {
-    const candidateKeys = ["url", "@_url", "#text", "text", "value", "photo", "image"];
-    for (const key of candidateKeys) {
-      const candidate = extractPhotoCandidate(value?.[key]);
-      if (candidate) return candidate;
-    }
+    const directKeys = ["thumb", "url", "@_url", "#text", "text", "value"];
+    directKeys.forEach((key) => {
+      if (value?.[key]) collectPhotoCandidates(value[key], acc);
+    });
+    const nestedKeys = ["photo", "photos", "image", "images", "hotelImage", "hotelImages"];
+    nestedKeys.forEach((key) => {
+      if (value?.[key]) collectPhotoCandidates(value[key], acc);
+    });
   }
-  return null;
+  return acc;
 };
 
 const collectHotelPhotoUrls = (hotel) => {
@@ -402,21 +412,20 @@ const collectHotelPhotoUrls = (hotel) => {
   ];
   const urls = [];
   for (const source of sources) {
-    if (Array.isArray(source)) {
-      for (const entry of source) {
-        const candidate = extractPhotoCandidate(entry);
-        if (candidate) urls.push(candidate);
-      }
-      continue;
-    }
-    const candidate = extractPhotoCandidate(source);
-    if (candidate) urls.push(candidate);
+    collectPhotoCandidates(source, urls);
   }
   return Array.from(new Set(urls)).slice(0, 12);
 };
 
 const extractHotelAmenityLabels = (hotel) => {
   if (!hotel || typeof hotel !== "object") return [];
+  const normalizedRows = Array.isArray(hotel.hotelAmenities) ? hotel.hotelAmenities : [];
+  if (normalizedRows.length) {
+    return sanitizeTextList(
+      normalizedRows.map((entry) => entry?.item_name ?? entry?.catalog?.name ?? null),
+      { maxItems: 40, itemMaxLength: 80 },
+    );
+  }
   const sources = [
     hotel.amenities,
     hotel.leisure,
@@ -432,6 +441,91 @@ const extractHotelAmenityLabels = (hotel) => {
     }
   }
   return sanitizeTextList(values, { maxItems: 40, itemMaxLength: 80 });
+};
+
+export const buildPartnerProfileSnapshotFromHotel = (hotel, contact = {}) => ({
+  description: extractHotelDescription(hotel),
+  amenities: extractHotelAmenityLabels(hotel),
+  photoUrls: collectHotelPhotoUrls(hotel),
+  publicContactEmail: sanitizeEmail(contact?.publicContactEmail || contact?.contactEmail),
+  publicContactPhone: sanitizeText(contact?.publicContactPhone || contact?.contactPhone, 40),
+});
+
+const resolvePartnerProfileSnapshot = (claim) => {
+  const snapshot =
+    claim?.profile_snapshot && typeof claim.profile_snapshot === "object" && !Array.isArray(claim.profile_snapshot)
+      ? claim.profile_snapshot
+      : {};
+  const livePhotoUrls = collectHotelPhotoUrls(claim?.hotel);
+  const snapshotPhotoUrls = sanitizeUrlList(snapshot.photoUrls, { maxItems: 12, itemMaxLength: 500 });
+  const resolvedPhotoUrls =
+    snapshotPhotoUrls.length >= livePhotoUrls.length
+      ? snapshotPhotoUrls
+      : livePhotoUrls;
+
+  return {
+    description: sanitizeTextBlock(snapshot.description, 4000) || extractHotelDescription(claim?.hotel),
+    amenities: sanitizeTextList(snapshot.amenities, { maxItems: 40, itemMaxLength: 80 }).length
+      ? sanitizeTextList(snapshot.amenities, { maxItems: 40, itemMaxLength: 80 })
+      : extractHotelAmenityLabels(claim?.hotel),
+    photoUrls: resolvedPhotoUrls,
+    publicContactEmail:
+      sanitizeEmail(snapshot.publicContactEmail || claim?.contact_email),
+    publicContactPhone:
+      sanitizeText(snapshot.publicContactPhone || claim?.contact_phone, 40),
+  };
+};
+
+const resolvePartnerAmenityDelta = ({ snapshotAmenities = [], overrides = {} }) => {
+  const baseAmenities = sanitizeTextList(snapshotAmenities, { maxItems: 60, itemMaxLength: 80 });
+  const hiddenAmenities = sanitizeTextList(overrides.hiddenAmenities, { maxItems: 60, itemMaxLength: 80 });
+  const addedAmenities = sanitizeTextList(overrides.addedAmenities, { maxItems: 30, itemMaxLength: 80 });
+  const legacyAmenities = sanitizeTextList(overrides.amenities, { maxItems: 60, itemMaxLength: 80 });
+
+  if (legacyAmenities.length && !hiddenAmenities.length && !addedAmenities.length) {
+    return {
+      baseAmenities,
+      hiddenAmenities: [],
+      addedAmenities: [],
+      effectiveAmenities: legacyAmenities,
+      mode: "legacy_replace",
+    };
+  }
+
+  const hiddenKeys = new Set(hiddenAmenities.map((entry) => normalizeAmenityKey(entry)).filter(Boolean));
+  const visibleBaseAmenities = baseAmenities.filter((entry) => {
+    const key = normalizeAmenityKey(entry);
+    return key ? !hiddenKeys.has(key) : true;
+  });
+
+  const effectiveAmenities = Array.from(
+    new Set(
+      [...visibleBaseAmenities, ...addedAmenities]
+        .map((entry) => sanitizeText(entry, 80))
+        .filter(Boolean),
+    ),
+  );
+
+  return {
+    baseAmenities,
+    hiddenAmenities,
+    addedAmenities,
+    effectiveAmenities,
+    mode: "delta",
+  };
+};
+
+const resolvePartnerPhotoDelta = ({ snapshotPhotoUrls = [], overrides = {} }) => {
+  const basePhotoUrls = sanitizeUrlList(snapshotPhotoUrls, { maxItems: 20, itemMaxLength: 500 });
+  const addedPhotoUrls = sanitizeUrlList(
+    overrides.addedPhotoUrls ?? overrides.photoUrls,
+    { maxItems: 12, itemMaxLength: 500 },
+  );
+  return {
+    basePhotoUrls,
+    addedPhotoUrls,
+    effectivePhotoUrls: Array.from(new Set([...basePhotoUrls, ...addedPhotoUrls])),
+  };
 };
 
 export const getPartnerPlanByCode = (code) =>
@@ -540,8 +634,17 @@ export const normalizePartnerProfileOverrides = (input = {}, existing = null) =>
   if (Object.prototype.hasOwnProperty.call(input, "amenities")) {
     base.amenities = sanitizeTextList(input.amenities, { maxItems: 40, itemMaxLength: 80 });
   }
+  if (Object.prototype.hasOwnProperty.call(input, "hiddenAmenities")) {
+    base.hiddenAmenities = sanitizeTextList(input.hiddenAmenities, { maxItems: 60, itemMaxLength: 80 });
+  }
+  if (Object.prototype.hasOwnProperty.call(input, "addedAmenities")) {
+    base.addedAmenities = sanitizeTextList(input.addedAmenities, { maxItems: 30, itemMaxLength: 80 });
+  }
   if (Object.prototype.hasOwnProperty.call(input, "photoUrls")) {
     base.photoUrls = sanitizeUrlList(input.photoUrls, { maxItems: 12, itemMaxLength: 500 });
+  }
+  if (Object.prototype.hasOwnProperty.call(input, "addedPhotoUrls")) {
+    base.addedPhotoUrls = sanitizeUrlList(input.addedPhotoUrls, { maxItems: 12, itemMaxLength: 500 });
   }
   if (Object.prototype.hasOwnProperty.call(input, "publicContactEmail")) {
     base.publicContactEmail = sanitizeEmail(input.publicContactEmail);
@@ -595,13 +698,19 @@ export const resolvePartnerProfileFromClaim = (claim, now = new Date()) => {
     claim?.profile_overrides && typeof claim.profile_overrides === "object" && !Array.isArray(claim.profile_overrides)
       ? claim.profile_overrides
       : {};
-  const baseDescription = extractHotelDescription(claim?.hotel);
-  const baseAmenities = extractHotelAmenityLabels(claim?.hotel);
-  const basePhotoUrls = collectHotelPhotoUrls(claim?.hotel);
+  const snapshot = resolvePartnerProfileSnapshot(claim);
+  const amenityDelta = resolvePartnerAmenityDelta({
+    snapshotAmenities: snapshot.amenities,
+    overrides,
+  });
+  const photoDelta = resolvePartnerPhotoDelta({
+    snapshotPhotoUrls: snapshot.photoUrls,
+    overrides,
+  });
   const publicContactEmail =
-    sanitizeEmail(overrides.publicContactEmail || claim?.contact_email);
+    sanitizeEmail(overrides.publicContactEmail || snapshot.publicContactEmail || claim?.contact_email);
   const publicContactPhone =
-    sanitizeText(overrides.publicContactPhone || claim?.contact_phone, 40);
+    sanitizeText(overrides.publicContactPhone || snapshot.publicContactPhone || claim?.contact_phone, 40);
   const responseTime = getPartnerResponseTimeOption(overrides.responseTimeCode);
   const contactEmail = sanitizeEmail(overrides.inquiryEmail || publicContactEmail || claim?.contact_email);
   const inquiryCtaLabel = sanitizeText(overrides.inquiryCtaLabel, 40) || PARTNER_INQUIRY_CTA_LABEL;
@@ -618,17 +727,35 @@ export const resolvePartnerProfileFromClaim = (claim, now = new Date()) => {
   const resolvedCity = sanitizeText(claim?.hotel?.city_name, 150);
 
   return {
-    description: access.basicProfileVisible ? sanitizeTextBlock(overrides.description, 4000) || baseDescription : null,
+    description: access.basicProfileVisible ? sanitizeTextBlock(overrides.description, 4000) || snapshot.description : null,
     amenities: access.basicProfileVisible
-      ? (sanitizeTextList(overrides.amenities, { maxItems: 40, itemMaxLength: 80 }).length
-          ? sanitizeTextList(overrides.amenities, { maxItems: 40, itemMaxLength: 80 })
-          : baseAmenities)
+      ? amenityDelta.effectiveAmenities
       : [],
+    amenityEditor: access.basicProfileVisible
+      ? {
+          mode: amenityDelta.mode,
+          baseAmenities: amenityDelta.baseAmenities,
+          hiddenAmenities: amenityDelta.hiddenAmenities,
+          addedAmenities: amenityDelta.addedAmenities,
+        }
+      : {
+          mode: "delta",
+          baseAmenities: [],
+          hiddenAmenities: [],
+          addedAmenities: [],
+        },
     photoUrls: access.basicProfileVisible
-      ? (sanitizeUrlList(overrides.photoUrls, { maxItems: 12, itemMaxLength: 500 }).length
-          ? sanitizeUrlList(overrides.photoUrls, { maxItems: 12, itemMaxLength: 500 })
-          : basePhotoUrls)
+      ? photoDelta.effectivePhotoUrls
       : [],
+    photoEditor: access.basicProfileVisible
+      ? {
+          basePhotoUrls: photoDelta.basePhotoUrls,
+          addedPhotoUrls: photoDelta.addedPhotoUrls,
+        }
+      : {
+          basePhotoUrls: [],
+          addedPhotoUrls: [],
+        },
     publicContactEmail: access.basicProfileVisible ? publicContactEmail : null,
     publicContactPhone: access.basicProfileVisible ? publicContactPhone : null,
     specialOfferText: access.specialOffersVisible
@@ -663,6 +790,16 @@ export const buildPublicPartnerProfile = (claim, now = new Date()) => {
     photoUrls: Array.isArray(resolved.photoUrls) ? resolved.photoUrls : [],
     publicContactEmail: resolved.publicContactEmail || null,
     publicContactPhone: resolved.publicContactPhone || null,
+    amenityEditor: resolved.amenityEditor || {
+      mode: "delta",
+      baseAmenities: [],
+      hiddenAmenities: [],
+      addedAmenities: [],
+    },
+    photoEditor: resolved.photoEditor || {
+      basePhotoUrls: [],
+      addedPhotoUrls: [],
+    },
     specialOfferText: resolved.specialOfferText,
     responseTimeLabel: resolved.responseTimeLabel,
     responseTimeShortLabel: resolved.responseTimeShortLabel,

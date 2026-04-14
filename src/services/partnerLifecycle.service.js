@@ -1,8 +1,10 @@
 import dayjs from "dayjs";
 import { Op } from "sequelize";
 import models from "../models/index.js";
+import cache from "./cache.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 import {
+  buildPartnerProfileSnapshotFromHotel,
   buildPublicPartnerProfile,
   PARTNER_CLAIM_STATUSES,
   PARTNER_EMAIL_SEQUENCE,
@@ -65,6 +67,14 @@ const buildClaimInclude = () => [
     model: models.WebbedsHotel,
     as: "hotel",
     required: false,
+    include: [
+      {
+        model: models.WebbedsHotelAmenity,
+        as: "hotelAmenities",
+        required: false,
+        attributes: ["id", "category", "item_name", "catalog_code"],
+      },
+    ],
   },
   {
     model: models.PartnerEmailLog,
@@ -83,6 +93,14 @@ const buildVerificationInclude = () => [
     model: models.WebbedsHotel,
     as: "hotel",
     required: false,
+    include: [
+      {
+        model: models.WebbedsHotelAmenity,
+        as: "hotelAmenities",
+        required: false,
+        attributes: ["id", "category", "item_name", "catalog_code"],
+      },
+    ],
   },
 ];
 
@@ -98,7 +116,10 @@ const loadPartnerClaimByHotelId = async (hotelId) => {
 const PARTNER_PROFILE_EDIT_FIELDS = Object.freeze({
   description: "basicProfileEditable",
   amenities: "basicProfileEditable",
+  hiddenAmenities: "basicProfileEditable",
+  addedAmenities: "basicProfileEditable",
   photoUrls: "basicProfileEditable",
+  addedPhotoUrls: "basicProfileEditable",
   publicContactEmail: "basicProfileEditable",
   publicContactPhone: "basicProfileEditable",
   specialOfferText: "specialOffersEditable",
@@ -131,6 +152,12 @@ const normalizeRecipientEmails = (value) => {
     ),
   );
 };
+
+const buildClaimProfileSnapshot = ({ claim = null, hotel = null, contactEmail = null, contactPhone = null }) =>
+  buildPartnerProfileSnapshotFromHotel(hotel || claim?.hotel || null, {
+    contactEmail: contactEmail || claim?.contact_email || null,
+    contactPhone: contactPhone || claim?.contact_phone || null,
+  });
 
 const normalizeOptionalText = (value, maxLength = 160) => {
   const normalized = String(value || "").trim().replace(/\s+/g, " ");
@@ -261,7 +288,14 @@ export const ensurePartnerClaim = async ({
   }
 
   const hotel = await models.WebbedsHotel.findByPk(resolvedHotelId, {
-    attributes: ["hotel_id", "name", "city_name", "country_name", "address", "images"],
+    include: [
+      {
+        model: models.WebbedsHotelAmenity,
+        as: "hotelAmenities",
+        required: false,
+        attributes: ["id", "category", "item_name", "catalog_code"],
+      },
+    ],
   });
   if (!hotel) {
     const error = new Error("Hotel not found");
@@ -292,6 +326,14 @@ export const ensurePartnerClaim = async ({
     if (!existing.claim_status || existing.claim_status === PARTNER_CLAIM_STATUSES.cancelled) {
       updates.claim_status = PARTNER_CLAIM_STATUSES.trialActive;
     }
+    if (!existing.profile_snapshot) {
+      updates.profile_snapshot = buildClaimProfileSnapshot({
+        claim: existing,
+        hotel,
+        contactEmail: contactEmail || existing.contact_email || null,
+        contactPhone: contactPhone || existing.contact_phone || null,
+      });
+    }
     if (Object.keys(updates).length) await existing.update(updates);
     const refreshed = await models.PartnerHotelClaim.findByPk(existing.id, {
       include: buildClaimInclude(),
@@ -311,6 +353,11 @@ export const ensurePartnerClaim = async ({
     trial_started_at: now,
     trial_ends_at: dayjs(now).add(PARTNER_TRIAL_DAYS, "day").toDate(),
     last_badge_activated_at: now,
+    profile_snapshot: buildClaimProfileSnapshot({
+      hotel,
+      contactEmail: contactEmail || null,
+      contactPhone: contactPhone || null,
+    }),
   });
 
   const hydrated = await models.PartnerHotelClaim.findByPk(claim.id, {
@@ -853,6 +900,22 @@ export const updatePartnerClaimProfile = async ({ claim, updates = {}, now = new
   }
 
   const profileOverrides = normalizePartnerProfileOverrides(updates, claim.profile_overrides);
+  const nextSnapshot = buildClaimProfileSnapshot({
+    claim,
+    contactEmail: claim?.contact_email || null,
+    contactPhone: claim?.contact_phone || null,
+  });
+  const currentSnapshot =
+    claim.profile_snapshot && typeof claim.profile_snapshot === "object" && !Array.isArray(claim.profile_snapshot)
+      ? claim.profile_snapshot
+      : {};
+  const currentPhotoUrls = Array.isArray(currentSnapshot.photoUrls) ? currentSnapshot.photoUrls : [];
+  const nextPhotoUrls = Array.isArray(nextSnapshot.photoUrls) ? nextSnapshot.photoUrls : [];
+  const profileSnapshot = {
+    ...currentSnapshot,
+    ...nextSnapshot,
+    photoUrls: nextPhotoUrls.length >= currentPhotoUrls.length ? nextPhotoUrls : currentPhotoUrls,
+  };
   const effectiveInquiryEmail =
     profileOverrides.inquiryEmail ||
     (claim?.contact_email ? String(claim.contact_email).trim().toLowerCase() : null);
@@ -874,8 +937,15 @@ export const updatePartnerClaimProfile = async ({ claim, updates = {}, now = new
 
   await claim.update({
     profile_overrides: profileOverrides,
+    profile_snapshot: profileSnapshot,
     onboarding_step: claim.onboarding_step || "CLAIMED",
   });
+
+  await Promise.all([
+    cache.delByPrefix("webbeds:static-hotels:"),
+    cache.delByPrefix("webbeds:explore-hotels:"),
+    cache.delByPrefix("webbeds:explore-collections:"),
+  ]);
 
   await claim.reload({ include: buildClaimInclude() });
   return claim;
@@ -1213,7 +1283,21 @@ export const attachPartnerProgramToHotelItems = async (items = []) => {
     where: {
       hotel_id: { [Op.in]: hotelIds },
     },
-    include: [{ model: models.WebbedsHotel, as: "hotel", required: false }],
+    include: [
+      {
+        model: models.WebbedsHotel,
+        as: "hotel",
+        required: false,
+        include: [
+          {
+            model: models.WebbedsHotelAmenity,
+            as: "hotelAmenities",
+            required: false,
+            attributes: ["id", "category", "item_name", "catalog_code"],
+          },
+        ],
+      },
+    ],
   });
 
   const claimMap = new Map(

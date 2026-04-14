@@ -125,6 +125,10 @@ export default (sequelize) => {
         type: JSON_TYPE,
         allowNull: true,
       },
+      profile_snapshot: {
+        type: JSON_TYPE,
+        allowNull: true,
+      },
       meta: {
         type: JSON_TYPE,
         allowNull: true,

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildPartnerProfileSnapshotFromHotel,
   buildPublicPartnerProfile,
   getPartnerResponseTimeOption,
   normalizePartnerProfileOverrides,
@@ -148,4 +149,77 @@ test("profile overrides normalize only supported values", () => {
   assert.equal(normalized.destinationEmailEnabled, true);
   assert.equal(normalized.reviewBoostEnabled, true);
   assert.equal(normalized.googleReviewUrl, "https://maps.google.com/?cid=12345");
+});
+
+test("partner snapshot is built from hotel content without mutating the source hotel", () => {
+  const snapshot = buildPartnerProfileSnapshotFromHotel(
+    {
+      description: "Base hotel description",
+      amenities: ["Pool", "Spa", "Pool"],
+      images: [{ url: "https://cdn.example.com/a.jpg" }],
+    },
+    {
+      contactEmail: "hotel@example.com",
+      contactPhone: "+971 555 100 200",
+    },
+  );
+
+  assert.equal(snapshot.description, "Base hotel description");
+  assert.deepEqual(snapshot.amenities, ["Pool", "Spa"]);
+  assert.deepEqual(snapshot.photoUrls, ["https://cdn.example.com/a.jpg"]);
+  assert.equal(snapshot.publicContactEmail, "hotel@example.com");
+  assert.equal(snapshot.publicContactPhone, "+971 555 100 200");
+});
+
+test("resolved profile precedence is override over snapshot over webbeds", () => {
+  const claim = {
+    claim_status: PARTNER_CLAIM_STATUSES.subscribed,
+    subscription_status: PARTNER_SUBSCRIPTION_STATUSES.active,
+    current_plan_code: "verified",
+    contact_email: "owner@example.com",
+    hotel: {
+      description: "Webbeds description",
+      amenities: ["Gym"],
+      images: [{ url: "https://cdn.example.com/webbeds.jpg" }],
+    },
+    profile_snapshot: {
+      description: "Snapshot description",
+      amenities: ["Pool", "Spa"],
+      photoUrls: ["https://cdn.example.com/snapshot.jpg"],
+      publicContactEmail: "snapshot@example.com",
+      publicContactPhone: "+1 555 0101",
+    },
+    profile_overrides: {
+      description: "Override description",
+      amenities: ["Late checkout", "Rooftop pool"],
+      photoUrls: ["https://cdn.example.com/override.jpg"],
+      publicContactEmail: "override@example.com",
+    },
+  };
+
+  const profile = resolvePartnerProfileFromClaim(claim, "2026-04-10T12:00:00.000Z");
+  assert.equal(profile.description, "Override description");
+  assert.deepEqual(profile.amenities, ["Late checkout", "Rooftop pool"]);
+  assert.deepEqual(profile.photoUrls, ["https://cdn.example.com/override.jpg"]);
+  assert.equal(profile.publicContactEmail, "override@example.com");
+  assert.equal(profile.publicContactPhone, "+1 555 0101");
+});
+
+test("resolved profile falls back from snapshot to webbeds when snapshot is missing", () => {
+  const claim = {
+    claim_status: PARTNER_CLAIM_STATUSES.subscribed,
+    subscription_status: PARTNER_SUBSCRIPTION_STATUSES.active,
+    current_plan_code: "verified",
+    hotel: {
+      description: "Webbeds fallback description",
+      amenities: ["Breakfast"],
+      images: [{ url: "https://cdn.example.com/fallback.jpg" }],
+    },
+    profile_overrides: {},
+  };
+
+  const profile = resolvePartnerProfileFromClaim(claim, "2026-04-10T12:00:00.000Z");
+  assert.equal(profile.description, "Webbeds fallback description");
+  assert.deepEqual(profile.amenities, ["Breakfast"]);
+  assert.deepEqual(profile.photoUrls, ["https://cdn.example.com/fallback.jpg"]);
 });

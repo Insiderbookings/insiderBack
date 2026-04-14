@@ -81,4 +81,29 @@ async function del(key) {
   }
 }
 
-export default { set, get, del }
+async function delByPrefix(prefix) {
+  const normalized = String(prefix || "").trim()
+  if (!normalized) return
+  try {
+    if (redisClient) {
+      let cursor = "0"
+      do {
+        const [nextCursor, keys] = await redisClient.scan(cursor, "MATCH", `${normalized}*`, "COUNT", 200)
+        cursor = nextCursor
+        if (Array.isArray(keys) && keys.length) {
+          await redisClient.del(...keys)
+        }
+      } while (cursor !== "0")
+    } else {
+      for (const key of store.keys()) {
+        if (String(key).startsWith(normalized)) {
+          store.delete(key)
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[Cache] DelByPrefix error", e)
+  }
+}
+
+export default { set, get, del, delByPrefix }
