@@ -240,11 +240,50 @@ const scoreRoomImageCandidate = (targetProfile, candidateProfile) => {
   return score;
 };
 
+const extractRoomDescriptionText = (roomType) => {
+  const readText = (value) => {
+    if (!value) return null;
+    if (typeof value === "string") {
+      const cleaned = value.replace(/\s+/g, " ").trim();
+      return cleaned || null;
+    }
+    if (typeof value === "object") {
+      const text =
+        value?.["#cdata-section"] ??
+        value?.["#text"] ??
+        value?.text ??
+        value?.description ??
+        null;
+      if (text && typeof text === "string") {
+        const cleaned = text.replace(/\s+/g, " ").trim();
+        return cleaned || null;
+      }
+    }
+    return null;
+  };
+
+  const sources = [
+    roomType?.roomDescription,
+    roomType?.room_description,
+    roomType?.description,
+    roomType?.raw_payload?.roomDescription,
+    roomType?.raw_payload?.room_description,
+    roomType?.raw_payload?.description,
+  ];
+
+  for (const source of sources) {
+    const text = readText(source);
+    if (text) return text;
+  }
+  return null;
+};
+
 const enrichStaticRoomTypes = (roomTypes = []) => {
   const normalizedRoomTypes = ensureArray(roomTypes).filter(Boolean);
   if (!normalizedRoomTypes.length) return [];
 
   const exactImagesByCode = new Map();
+  // donorCandidates: rooms that have images, tracking also their description
   const donorCandidates = [];
 
   normalizedRoomTypes.forEach((roomType) => {
@@ -258,6 +297,7 @@ const enrichStaticRoomTypes = (roomTypes = []) => {
 
     donorCandidates.push({
       urls,
+      description: extractRoomDescriptionText(roomType),
       profile: buildRoomImageProfile(roomType),
     });
   });
@@ -271,9 +311,9 @@ const enrichStaticRoomTypes = (roomTypes = []) => {
     let inheritedSource = roomTypeCode ? "roomTypeCode" : null;
     let inheritedUrls = roomTypeCode ? exactImagesByCode.get(roomTypeCode) : null;
 
+    let bestCandidate = null;
     if (!inheritedUrls?.length) {
       let bestScore = Number.NEGATIVE_INFINITY;
-      let bestCandidate = null;
       donorCandidates.forEach((candidate) => {
         const score = scoreRoomImageCandidate(targetProfile, candidate.profile);
         if (score > bestScore) {
@@ -289,12 +329,21 @@ const enrichStaticRoomTypes = (roomTypes = []) => {
 
     if (!inheritedUrls?.length) return roomType;
 
+    // Conservatively inherit description only from the same profile-matched image donor
+    const currentDescription = extractRoomDescriptionText(roomType);
+    const inheritedDescription =
+      !currentDescription && bestCandidate?.description
+        ? bestCandidate.description
+        : null;
+
     return {
       ...roomType,
       roomImages: buildRoomImagePayload(inheritedUrls),
+      ...(inheritedDescription ? { roomDescription: inheritedDescription } : {}),
       imageInheritance: {
         source: inheritedSource,
         profile: targetProfile,
+        hasInheritedDescription: Boolean(inheritedDescription),
       },
     };
   });
