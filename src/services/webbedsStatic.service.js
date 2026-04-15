@@ -2,6 +2,8 @@ import models, { sequelize } from "../models/index.js"
 import { createWebbedsClient, buildEnvelope } from "../providers/webbeds/client.js"
 import { getWebbedsConfig } from "../providers/webbeds/config.js"
 import { createHash } from "crypto"
+import fs from "fs"
+import path from "path"
 import { gzipSync } from "zlib"
 import dayjs from "dayjs"
 
@@ -770,6 +772,7 @@ const executeHotelSync = async ({
   syncLog,
   metadata,
   hotelLimit,
+  xmlDebug,
 }) => {
   if (!cityCode) throw new Error("cityCode is required to sync hotels")
   if (dryRun) {
@@ -816,7 +819,26 @@ const executeHotelSync = async ({
         },
       }
 
-      const { result } = await client.send("searchhotels", pagedPayload)
+      const { result, requestXml, responseXml } = await client.send("searchhotels", pagedPayload)
+
+      if (xmlDebug?.enabled && xmlDebug?.directory) {
+        const safeMode = String(mode || "full").replace(/[^a-z0-9_-]/gi, "_")
+        const safeCity = String(cityCode || "unknown").replace(/[^a-z0-9_-]/gi, "_")
+        const baseName = `searchhotels-city-${safeCity}-mode-${safeMode}-page-${String(page).padStart(4, "0")}`
+        const requestPath = path.join(xmlDebug.directory, `${baseName}.request.xml`)
+        const responsePath = path.join(xmlDebug.directory, `${baseName}.response.xml`)
+        fs.mkdirSync(xmlDebug.directory, { recursive: true })
+        if (requestXml) fs.writeFileSync(requestPath, requestXml, "utf8")
+        if (responseXml) fs.writeFileSync(responsePath, responseXml, "utf8")
+        console.info("[webbeds][static] xml dumped", {
+          cityCode,
+          mode,
+          page,
+          requestPath: requestXml ? requestPath : null,
+          responsePath: responseXml ? responsePath : null,
+        })
+      }
+
       const hotels = ensureArray(result?.hotels?.hotel)
       if (!hotels.length) {
         if (page === 1) {
@@ -1114,10 +1136,10 @@ export const syncWebbedsCities = async ({ countryCode, dryRun = false } = {}) =>
   }
 }
 
-export const syncWebbedsHotels = async ({ cityCode, dryRun = false, hotelLimit } = {}) => {
+export const syncWebbedsHotels = async ({ cityCode, dryRun = false, hotelLimit, xmlDebug } = {}) => {
   if (!cityCode) throw new Error("cityCode is required to sync hotels")
   const payload = buildStaticHotelsPayload({ cityCode })
-  return executeHotelSync({ cityCode, payload, dryRun, mode: "full", hotelLimit })
+  return executeHotelSync({ cityCode, payload, dryRun, mode: "full", hotelLimit, xmlDebug })
 }
 
 export const syncWebbedsHotelsIncremental = async ({
@@ -1127,6 +1149,7 @@ export const syncWebbedsHotelsIncremental = async ({
   since,
   excludeHotelIds = [],
   hotelLimit,
+  xmlDebug,
 } = {}) => {
   if (!cityCode) throw new Error("cityCode is required to sync hotels")
   if (!["new", "updated"].includes(mode)) {
@@ -1167,7 +1190,7 @@ export const syncWebbedsHotelsIncremental = async ({
 
     if (!existingIds.length) {
       console.warn("[webbeds][static] no existing hotels found, falling back to full sync", { cityCode })
-      return syncWebbedsHotels({ cityCode, dryRun, hotelLimit })
+      return syncWebbedsHotels({ cityCode, dryRun, hotelLimit, xmlDebug })
     }
 
     if (existingIds.length > MAX_NOTIN_VALUES) {
@@ -1202,6 +1225,7 @@ export const syncWebbedsHotelsIncremental = async ({
     syncLog,
     metadata,
     hotelLimit,
+    xmlDebug,
   })
 }
 

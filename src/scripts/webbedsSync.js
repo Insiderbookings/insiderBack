@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import "dotenv/config"
+import path from "path"
 import yargs from "yargs/yargs"
 import { hideBin } from "yargs/helpers"
 import models, { sequelize } from "../models/index.js"
@@ -78,6 +79,15 @@ const run = async () => {
       type: "number",
       describe: "Limit number of hotels processed per city (useful for test runs)",
     })
+    .option("xmlDebug", {
+      type: "boolean",
+      default: false,
+      describe: "Dump searchhotels request/response XML files for static hotel sync",
+    })
+    .option("xmlDebugDir", {
+      type: "string",
+      describe: "Directory where XML debug files will be written",
+    })
     .check((args) => {
       if (!args.city && !args.country && !args.catalog) {
         throw new Error("Provide --city/--country or --catalog")
@@ -92,6 +102,17 @@ const run = async () => {
     .parse()
 
   await sequelize.authenticate()
+
+  const xmlDebug =
+    argv.xmlDebug
+      ? {
+          enabled: true,
+          directory: path.resolve(
+            process.cwd(),
+            argv.xmlDebugDir || "tmp/webbeds-static-xml",
+          ),
+        }
+      : null
 
   const catalogHandlers = {
     currencies: syncWebbedsCurrencies,
@@ -168,6 +189,7 @@ const run = async () => {
           cityCode,
           dryRun: argv.dryRun,
           hotelLimit: argv.hotelLimit,
+          xmlDebug,
         })
       } else {
         summary = await syncWebbedsHotelsIncremental({
@@ -176,6 +198,7 @@ const run = async () => {
           mode: argv.mode,
           since: argv.since,
           hotelLimit: argv.hotelLimit,
+          xmlDebug,
         })
       }
       console.log("[webbeds-sync] ok", { cityCode, summary })

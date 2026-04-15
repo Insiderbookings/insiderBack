@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<customer>
+    <username>InsiderBookings</username>
+    <password>2c34f74cbfaee427d23b18330a5f6bf1</password>
+    <id>2266975</id>
+    <source>1</source>
+    <product>hotel</product>
+    <request command="searchhotels">
+        <bookingDetails>
+            <fromDate>2026-08-12</fromDate>
+            <toDate>2026-08-13</toDate>
+            <currency>520</currency>
+            <rooms no="3">
+                <room runno="0">
+                    <adultsCode>1</adultsCode>
+                    <children no="0" />
+                    <rateBasis>-1</rateBasis>
+                </room>
+                <room runno="1">
+                    <adultsCode>1</adultsCode>
+                    <children no="0" />
+                    <rateBasis>-1</rateBasis>
+                </room>
+                <room runno="2">
+                    <adultsCode>2</adultsCode>
+                    <children no="0" />
+                    <rateBasis>-1</rateBasis>
+                </room>
+            </rooms>
+        </bookingDetails>
+        <return>
+            <getRooms>true</getRooms>
+            <filters xmlns:a="http://us.dotwconnect.com/xsd/atomicCondition"
+                xmlns:c="http://us.dotwconnect.com/xsd/complexCondition">
+                <city>17024</city>
+                <noPrice>true</noPrice>
+            </filters>
+            <fields>
+                <field>preferred</field>
+                <field>builtYear</field>
+                <field>renovationYear</field>
+                <field>floors</field>
+                <field>noOfRooms</field>
+                <field>fullAddress</field>
+                <field>description1</field>
+                <field>description2</field>
+                <field>hotelName</field>
+                <field>address</field>
+                <field>zipCode</field>
+                <field>location</field>
+                <field>locationId</field>
+                <field>geoLocations</field>
+                <field>location1</field>
+                <field>location2</field>
+                <field>location3</field>
+                <field>cityName</field>
+                <field>cityCode</field>
+                <field>stateName</field>
+                <field>stateCode</field>
+                <field>countryName</field>
+                <field>countryCode</field>
+                <field>regionName</field>
+                <field>regionCode</field>
+                <field>attraction</field>
+                <field>amenitie</field>
+                <field>leisure</field>
+                <field>business</field>
+                <field>transportation</field>
+                <field>hotelPhone</field>
+                <field>hotelCheckIn</field>
+                <field>hotelCheckOut</field>
+                <field>minAge</field>
+                <field>rating</field>
+                <field>images</field>
+                <field>fireSafety</field>
+                <field>hotelPreference</field>
+                <field>direct</field>
+                <field>geoPoint</field>
+                <field>leftToSell</field>
+                <field>chain</field>
+                <field>lastUpdated</field>
+                <field>priority</field>
+                <roomField>name</roomField>
+                <roomField>roomInfo</roomField>
+                <roomField>roomAmenities</roomField>
+                <roomField>twin</roomField>
+                <roomField>roomAttributes</roomField>
+                <roomField>roomDescription</roomField>
+                <roomField>roomImages</roomField>
+            </fields>
+            <resultsPerPage>50</resultsPerPage>
+            <page>1</page>
+        </return>
+    </request>
+</customer>
