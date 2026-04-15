@@ -1,5 +1,7 @@
 
 import { createHmac, randomUUID } from "crypto";
+import fs from "fs";
+import path from "path";
 import models from "../models/index.js";
 import { getWebbedsConfig } from "../providers/webbeds/config.js";
 import { createWebbedsClient, WebbedsError } from "../providers/webbeds/client.js";
@@ -50,7 +52,74 @@ const FLOW_VERBOSE_LOGS = process.env.WEBBEDS_VERBOSE_LOGS === "true";
 const FLOW_RATE_DEBUG_LOGS = String(process.env.FLOW_RATE_DEBUG_LOGS || "")
   .trim()
   .toLowerCase() === "true";
+const FLOW_XML_DUMP_ENABLED = String(process.env.WEBBEDS_FLOW_XML_DUMP || "")
+  .trim()
+  .toLowerCase() === "true";
+const FLOW_XML_DUMP_DIR = process.env.WEBBEDS_FLOW_XML_DUMP_DIR
+  ? path.resolve(process.cwd(), process.env.WEBBEDS_FLOW_XML_DUMP_DIR)
+  : path.resolve(process.cwd(), "tmp", "webbeds-flow-xml");
 const MERCHANT_CONTEXT_CACHE_KEY = "webbeds:merchant-payment-context";
+
+const sanitizeFileSegment = (value, fallback = "unknown") => {
+  const text = String(value ?? "")
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return text || fallback;
+};
+
+const dumpFlowXmlTrace = ({
+  stage,
+  hotelId,
+  flowId,
+  requestId,
+  requestXml,
+  responseXml,
+}) => {
+  if (!FLOW_XML_DUMP_ENABLED) return;
+  if (!requestXml && !responseXml) return;
+  try {
+    fs.mkdirSync(FLOW_XML_DUMP_DIR, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const prefix = [
+      timestamp,
+      sanitizeFileSegment(stage, "stage"),
+      `hotel-${sanitizeFileSegment(hotelId, "unknown")}`,
+      `flow-${sanitizeFileSegment(flowId, "none")}`,
+      `req-${sanitizeFileSegment(requestId, "none")}`,
+    ].join("_");
+    if (requestXml) {
+      fs.writeFileSync(
+        path.join(FLOW_XML_DUMP_DIR, `${prefix}.request.xml`),
+        requestXml,
+        "utf8",
+      );
+    }
+    if (responseXml) {
+      fs.writeFileSync(
+        path.join(FLOW_XML_DUMP_DIR, `${prefix}.response.xml`),
+        responseXml,
+        "utf8",
+      );
+    }
+    console.info("[flows] xml dumped", {
+      stage,
+      hotelId: hotelId ?? null,
+      flowId: flowId ?? null,
+      requestId: requestId ?? null,
+      dir: FLOW_XML_DUMP_DIR,
+    });
+  } catch (error) {
+    console.warn("[flows] xml dump failed", {
+      stage,
+      hotelId: hotelId ?? null,
+      flowId: flowId ?? null,
+      requestId: requestId ?? null,
+      error: error?.message ?? String(error),
+    });
+  }
+};
 
 const shortDebugToken = (token) => {
   const text = String(token || "").trim();
@@ -1122,6 +1191,14 @@ export class FlowOrchestratorService {
       requestId: getRequestId(req),
       productOverride: "hotel",
     });
+    dumpFlowXmlTrace({
+      stage: "start-getrooms",
+      hotelId: resolvedHotelCode,
+      flowId: null,
+      requestId: getRequestId(req),
+      requestXml,
+      responseXml,
+    });
     const mapped = mapGetRoomsResponse(result);
     const sampleRateCurrency = (() => {
       const roomsList = ensureArray(mapped?.hotel?.rooms);
@@ -1196,6 +1273,14 @@ export class FlowOrchestratorService {
       });
     }
     const flowId = randomUUID();
+    dumpFlowXmlTrace({
+      stage: "start-getrooms-final",
+      hotelId: hotel.id ?? resolvedHotelCode,
+      flowId,
+      requestId: getRequestId(req),
+      requestXml,
+      responseXml,
+    });
     const flowBenchmarkContext = { id: flowId };
     const offers = [];
     roomsList.forEach((room) => {
@@ -1450,6 +1535,14 @@ export class FlowOrchestratorService {
       requestId: getRequestId(req),
       productOverride: "hotel",
       logMeta: { flowId },
+    });
+    dumpFlowXmlTrace({
+      stage: "block-getrooms",
+      hotelId: context.hotelId,
+      flowId,
+      requestId: getRequestId(req),
+      requestXml,
+      responseXml,
     });
     const mapped = mapGetRoomsResponse(result);
     const rateBasis = findRateBasisMatch(mapped?.hotel, flow.selected_offer);
