@@ -24,6 +24,7 @@ import {
   sendPartnerInvoiceRequestedEmail,
   sendPartnerPlanConfirmationEmail,
   hydrateSinglePartnerDashboardClaim,
+  updatePartnerClaimAccountManager,
 } from "../services/partnerLifecycle.service.js";
 import {
   getPartnerPlanByCode,
@@ -496,6 +497,50 @@ export const ensurePartnerVerificationCodeController = async (req, res, next) =>
         generatedAt: verification.generated_at || verification.created_at || null,
         usedAt: verification.used_at || null,
       },
+    });
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
+export const updatePartnerAccountManagerController = async (req, res, next) => {
+  try {
+    const claimId = Number(req.params?.claimId || req.body?.claimId || 0);
+    if (!claimId) return res.status(400).json({ error: "claimId is required" });
+
+    const claim = await models.PartnerHotelClaim.findByPk(claimId, {
+      include: [
+        {
+          model: models.WebbedsHotel,
+          as: "hotel",
+          required: false,
+          include: [
+            {
+              model: models.WebbedsHotelAmenity,
+              as: "hotelAmenities",
+              required: false,
+              attributes: ["id", "category", "item_name", "catalog_code"],
+            },
+          ],
+        },
+        { model: models.PartnerEmailLog, as: "emailLogs", required: false },
+        { model: models.PartnerInquiryLog, as: "inquiryLogs", required: false },
+      ],
+    });
+    if (!claim) return res.status(404).json({ error: "Partner claim not found" });
+
+    const updated = await updatePartnerClaimAccountManager({
+      claim,
+      updates: req.body || {},
+      updatedByUserId: req.user?.id || null,
+    });
+    await hydrateSinglePartnerDashboardClaim(updated);
+    return res.json({
+      claim: buildPartnerDashboardPayload(updated),
+      item: buildPartnerDashboardPayload(updated),
     });
   } catch (error) {
     if (error?.status) {

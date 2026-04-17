@@ -451,6 +451,56 @@ export const buildPartnerProfileSnapshotFromHotel = (hotel, contact = {}) => ({
   publicContactPhone: sanitizeText(contact?.publicContactPhone || contact?.contactPhone, 40),
 });
 
+export const resolvePartnerAccountManagerFromClaim = (claim) => {
+  const meta =
+    claim?.meta && typeof claim.meta === "object" && !Array.isArray(claim.meta) ? claim.meta : {};
+  const source =
+    meta.accountManager && typeof meta.accountManager === "object" && !Array.isArray(meta.accountManager)
+      ? meta.accountManager
+      : {};
+
+  const role = sanitizeText(
+    source.role || process.env.PARTNERS_ACCOUNT_MANAGER_ROLE || "Dedicated account manager",
+    80,
+  );
+  const name = sanitizeText(
+    source.name || process.env.PARTNERS_ACCOUNT_MANAGER_NAME || "BookingGPT Partner Success",
+    120,
+  );
+  const email = sanitizeEmail(
+    source.email ||
+      process.env.PARTNERS_ACCOUNT_MANAGER_EMAIL ||
+      process.env.PARTNERS_INTERNAL_EMAIL ||
+      process.env.PARTNERS_EMAIL,
+  );
+  const phone = sanitizeText(source.phone || process.env.PARTNERS_ACCOUNT_MANAGER_PHONE, 40);
+  const calendarUrl = sanitizeUrl(
+    source.calendarUrl || process.env.PARTNERS_ACCOUNT_MANAGER_CALENDAR_URL,
+    500,
+  );
+  const note = sanitizeText(
+    source.note ||
+      process.env.PARTNERS_ACCOUNT_MANAGER_NOTE ||
+      "Use this contact for launch help, destination campaigns and badge performance follow-up.",
+    220,
+  );
+  const assignedAt = source.assignedAt || null;
+  const assignedByUserId = Number(source.assignedByUserId || 0) || null;
+
+  if (!name && !email && !phone && !calendarUrl) return null;
+
+  return {
+    role,
+    name,
+    email,
+    phone,
+    calendarUrl,
+    note,
+    assignedAt,
+    assignedByUserId,
+  };
+};
+
 const resolvePartnerProfileSnapshot = (claim) => {
   const snapshot =
     claim?.profile_snapshot && typeof claim.profile_snapshot === "object" && !Array.isArray(claim.profile_snapshot)

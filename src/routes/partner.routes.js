@@ -16,6 +16,7 @@ import {
   sendPartnerDestinationEmailTestController,
   submitPartnerInquiryController,
   trackPartnerMetricEventController,
+  updatePartnerAccountManagerController,
   updatePartnerProfileController,
   verifyPartnerHotelController,
   selectPartnerSubscriptionController,
@@ -59,6 +60,12 @@ router.post(
   partnerControllerMiddleware.authenticate,
   partnerControllerMiddleware.authorizeAdmin,
   activatePartnerInvoiceController,
+);
+router.post(
+  "/admin/claims/:claimId/account-manager",
+  partnerControllerMiddleware.authenticate,
+  partnerControllerMiddleware.authorizeAdmin,
+  updatePartnerAccountManagerController,
 );
 router.post(
   "/admin/hotels/:hotelId/verification-code",

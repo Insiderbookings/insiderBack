@@ -15,6 +15,7 @@ import {
   getPartnerPlanByCode,
   getPartnerPlans,
   normalizePartnerProfileOverrides,
+  resolvePartnerAccountManagerFromClaim,
   resolvePartnerFeatureAccess,
   getStripePriceIdForPartnerPlan,
   resolvePartnerBadgePriority as resolveProgramBadgePriority,
@@ -951,6 +952,65 @@ export const updatePartnerClaimProfile = async ({ claim, updates = {}, now = new
   return claim;
 };
 
+export const updatePartnerClaimAccountManager = async ({
+  claim,
+  updates = {},
+  updatedByUserId = null,
+}) => {
+  if (!claim) {
+    const error = new Error("Partner claim not found");
+    error.status = 404;
+    throw error;
+  }
+
+  const nextMeta =
+    claim.meta && typeof claim.meta === "object" && !Array.isArray(claim.meta)
+      ? { ...claim.meta }
+      : {};
+  const currentAccountManager =
+    nextMeta.accountManager &&
+    typeof nextMeta.accountManager === "object" &&
+    !Array.isArray(nextMeta.accountManager)
+      ? { ...nextMeta.accountManager }
+      : {};
+
+  const normalizeText = (value, limit = 120) => {
+    const normalized = String(value || "").trim().replace(/\s+/g, " ");
+    return normalized ? normalized.slice(0, limit) : null;
+  };
+  const normalizeEmail = (value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalized) ? normalized : null;
+  };
+  const normalizeUrl = (value) => {
+    const normalized = String(value || "").trim();
+    if (!normalized) return null;
+    try {
+      const url = new URL(normalized);
+      if (!["http:", "https:"].includes(url.protocol)) return null;
+      return url.toString();
+    } catch {
+      return null;
+    }
+  };
+
+  nextMeta.accountManager = {
+    ...currentAccountManager,
+    role: normalizeText(updates.role || currentAccountManager.role || null, 80),
+    name: normalizeText(updates.name || currentAccountManager.name || null, 120),
+    email: normalizeEmail(updates.email || currentAccountManager.email || null),
+    phone: normalizeText(updates.phone || currentAccountManager.phone || null, 40),
+    calendarUrl: normalizeUrl(updates.calendarUrl || currentAccountManager.calendarUrl || null),
+    note: normalizeText(updates.note || currentAccountManager.note || null, 220),
+    assignedAt: new Date(),
+    assignedByUserId: Number(updatedByUserId || 0) || null,
+  };
+
+  await claim.update({ meta: nextMeta });
+  await claim.reload({ include: buildClaimInclude() });
+  return claim;
+};
+
 export const submitPartnerHotelInquiry = async ({
   hotelId,
   travelerName,
@@ -1182,6 +1242,7 @@ const buildOnboardingChecklist = (claim) => {
 export const buildPartnerDashboardPayload = (claim) => {
   const program = resolvePartnerProgramFromClaim(claim);
   const partnerProfile = resolvePartnerProfileFromClaim(claim);
+  const accountManager = resolvePartnerAccountManagerFromClaim(claim);
   const hotel = claim?.hotel || null;
   const cancellationMeta =
     claim?.meta && typeof claim.meta === "object" ? claim.meta.subscriptionCancellation || null : null;
@@ -1221,6 +1282,10 @@ export const buildPartnerDashboardPayload = (claim) => {
       enabled: Boolean(partnerProfile?.reviewBoostEnabled),
       googleReviewUrl: partnerProfile?.googleReviewUrl || null,
     },
+    accountManager:
+      program?.trialActive || partnerProfile?.features?.activePlanCode === "featured"
+        ? accountManager
+        : null,
     onboardingChecklist: buildOnboardingChecklist(claim),
     emailTimeline: buildEmailTimeline(claim),
     inquiries: Array.isArray(claim?.inquiryLogs)
@@ -1300,9 +1365,60 @@ export const attachPartnerProgramToHotelItems = async (items = []) => {
     ],
   });
 
+  const claimStatusPriority = (claim) => {
+    const status = String(claim?.claim_status || "").toUpperCase();
+    switch (status) {
+      case PARTNER_CLAIM_STATUSES.subscribed:
+        return 70;
+      case PARTNER_CLAIM_STATUSES.trialEnding:
+        return 60;
+      case PARTNER_CLAIM_STATUSES.trialActive:
+        return 50;
+      case PARTNER_CLAIM_STATUSES.invoicePending:
+        return 40;
+      case PARTNER_CLAIM_STATUSES.paymentDue:
+        return 30;
+      case PARTNER_CLAIM_STATUSES.expired:
+        return 20;
+      case PARTNER_CLAIM_STATUSES.cancelled:
+        return 10;
+      default:
+        return 0;
+    }
+  };
+
+  const claimTimestamp = (claim) =>
+    new Date(
+      claim?.updated_at ||
+        claim?.last_badge_activated_at ||
+        claim?.subscription_started_at ||
+        claim?.trial_started_at ||
+        claim?.claimed_at ||
+        claim?.created_at ||
+        0
+    ).getTime();
+
+  const selectPreferredPublicClaim = (existing, candidate) => {
+    if (!existing) return candidate;
+    const existingPriority = claimStatusPriority(existing);
+    const candidatePriority = claimStatusPriority(candidate);
+    if (candidatePriority !== existingPriority) {
+      return candidatePriority > existingPriority ? candidate : existing;
+    }
+    return claimTimestamp(candidate) >= claimTimestamp(existing) ? candidate : existing;
+  };
+
+  const selectedClaimsByHotel = new Map();
+  claims.forEach((claim) => {
+    const hotelKey = String(claim?.hotel_id || "").trim();
+    if (!hotelKey) return;
+    const current = selectedClaimsByHotel.get(hotelKey);
+    selectedClaimsByHotel.set(hotelKey, selectPreferredPublicClaim(current, claim));
+  });
+
   const claimMap = new Map(
-    claims.map((claim) => [
-      String(claim.hotel_id),
+    Array.from(selectedClaimsByHotel.entries()).map(([hotelKey, claim]) => [
+      hotelKey,
       {
         partnerProgram: resolvePartnerProgramFromClaim(claim),
         partnerProfile: buildPublicPartnerProfile(claim),

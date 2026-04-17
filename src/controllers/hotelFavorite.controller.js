@@ -1,5 +1,6 @@
 import models from "../models/index.js";
 import { formatStaticHotel } from "../utils/webbedsMapper.js";
+import { attachPartnerProgramToHotelItems } from "../services/partnerLifecycle.service.js";
 
 const ensureUser = (req, res) => {
   const userId = Number(req.user?.id);
@@ -98,6 +99,22 @@ const includeForHotelCard = [
   },
 ];
 
+const hydratePartnerCards = async (cards = []) => {
+  const items = Array.isArray(cards) ? cards.filter(Boolean) : [];
+  if (!items.length) return [];
+  return attachPartnerProgramToHotelItems(items);
+};
+
+const hydrateFavoriteEntries = async (entries = []) => {
+  const safeEntries = Array.isArray(entries) ? entries.filter(Boolean) : [];
+  if (!safeEntries.length) return [];
+  const hydratedCards = await hydratePartnerCards(safeEntries.map((entry) => entry.card));
+  return safeEntries.map((entry, index) => ({
+    ...entry,
+    card: hydratedCards[index] || entry.card,
+  }));
+};
+
 export const listHotelFavoriteLists = async (req, res) => {
   const userId = ensureUser(req, res);
   if (!userId) return;
@@ -138,8 +155,10 @@ export const listHotelFavoriteLists = async (req, res) => {
       listHotelIdsMap.get(listKey).add(hotelId);
     });
 
-    const mappedLists = lists.map((list) => {
-      const items = Array.isArray(list.items) ? list.items.map(mapHotelFavoriteItem).filter(Boolean) : [];
+    const mappedLists = await Promise.all(lists.map(async (list) => {
+      const items = await hydrateFavoriteEntries(
+        Array.isArray(list.items) ? list.items.map(mapHotelFavoriteItem).filter(Boolean) : [],
+      );
       const hotelIdSet =
         listHotelIdsMap.get(list.id) || new Set(items.map((item) => item.hotelId).filter(Boolean));
       return {
@@ -150,7 +169,7 @@ export const listHotelFavoriteLists = async (req, res) => {
         hotelIds: Array.from(hotelIdSet),
         itemCount: hotelIdSet.size,
       };
-    });
+    }));
 
     const recentViews = await models.HotelRecentView.findAll({
       where: { user_id: userId },
@@ -166,13 +185,13 @@ export const listHotelFavoriteLists = async (req, res) => {
       limit: 12,
     });
 
-    const recent = recentViews
+    const recent = await hydrateFavoriteEntries(recentViews
       .map((view) => ({
         hotelId: view.hotel_id != null ? String(view.hotel_id) : null,
         viewedAt: view.viewed_at,
         card: formatStaticHotel(view.hotel),
       }))
-      .filter((entry) => entry.card);
+      .filter((entry) => entry.card));
 
     res.json({
       lists: mappedLists,
@@ -244,17 +263,17 @@ export const getHotelFavoriteListDetail = async (req, res) => {
       grouped[bucketKey].push(mapped);
     });
 
-    const buckets = Object.entries(grouped)
+    const buckets = await Promise.all(Object.entries(grouped)
       .sort(([a], [b]) => (a > b ? -1 : 1))
-      .map(([key, items]) => {
+      .map(async ([key, items]) => {
         const date = new Date(key);
         const title = date.toLocaleDateString(undefined, {
           weekday: "long",
           day: "numeric",
           month: "long",
         });
-        return { key, title, items };
-      });
+        return { key, title, items: await hydrateFavoriteEntries(items) };
+      }));
 
     res.json({
       list: { id: list.id, name: list.name, createdAt: list.created_at },
@@ -297,17 +316,17 @@ export const getHotelRecentViews = async (req, res) => {
       });
     });
 
-    const buckets = Object.entries(grouped)
+    const buckets = await Promise.all(Object.entries(grouped)
       .sort(([a], [b]) => (a > b ? -1 : 1))
-      .map(([key, items]) => {
+      .map(async ([key, items]) => {
         const date = new Date(key);
         const title = date.toLocaleDateString(undefined, {
           weekday: "long",
           day: "numeric",
           month: "long",
         });
-        return { key, title, items };
-      });
+        return { key, title, items: await hydrateFavoriteEntries(items) };
+      }));
 
     res.json({ groups: buckets });
   } catch (err) {
