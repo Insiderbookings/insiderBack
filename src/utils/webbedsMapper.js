@@ -486,7 +486,36 @@ export const formatStaticHotel = (hotel, options = {}) => {
   const roomTypesRaw = extractStaticRoomTypes(
     plain.roomTypes ?? plain.room_types ?? plain.room_static ?? [],
   );
-  const roomTypes = enrichStaticRoomTypes(roomTypesRaw);
+
+  // Deduplicate by roomTypeCode before enrichment.
+  // The DB can accumulate multiple rows per code across sync passes (paranoid soft-deletes +
+  // multi-page syncs). Hotel 31264, for example, had 1250 rows for ~30 unique codes.
+  // Without dedup, enrichStaticRoomTypes runs O(n²) comparisons on all rows, causing OOM.
+  const deduplicatedRoomTypes = (() => {
+    const byCode = new Map();
+    const noCode = [];
+    roomTypesRaw.forEach((rt) => {
+      const code = resolveRoomTypeCode(rt);
+      if (!code) {
+        noCode.push(rt);
+        return;
+      }
+      const existing = byCode.get(code);
+      if (!existing) {
+        byCode.set(code, rt);
+        return;
+      }
+      // Keep the entry with the most images so donors stay rich.
+      const existingCount = extractRoomImageUrls(existing).length;
+      const candidateCount = extractRoomImageUrls(rt).length;
+      if (candidateCount > existingCount) {
+        byCode.set(code, rt);
+      }
+    });
+    return [...byCode.values(), ...noCode];
+  })();
+
+  const roomTypes = enrichStaticRoomTypes(deduplicatedRoomTypes);
 
   return {
     id: String(plain.hotel_id),

@@ -59,6 +59,7 @@ const FLOW_XML_DUMP_DIR = process.env.WEBBEDS_FLOW_XML_DUMP_DIR
   ? path.resolve(process.cwd(), process.env.WEBBEDS_FLOW_XML_DUMP_DIR)
   : path.resolve(process.cwd(), "tmp", "webbeds-flow-xml");
 const MERCHANT_CONTEXT_CACHE_KEY = "webbeds:merchant-payment-context";
+const START_INFLIGHT_REQUESTS = new Map();
 
 const sanitizeFileSegment = (value, fallback = "unknown") => {
   const text = String(value ?? "")
@@ -67,6 +68,57 @@ const sanitizeFileSegment = (value, fallback = "unknown") => {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
   return text || fallback;
+};
+
+const buildStartDedupKey = ({
+  userId,
+  hotelId,
+  fromDate,
+  toDate,
+  currency,
+  rooms,
+  passengerNationality,
+  passengerCountryOfResidence,
+  cityCode,
+  rateBasis,
+  clientType,
+}) =>
+  JSON.stringify({
+    userId: Number(userId || 0),
+    hotelId: String(hotelId || "").trim(),
+    fromDate: String(fromDate || "").trim(),
+    toDate: String(toDate || "").trim(),
+    currency: normalizeCurrency(currency),
+    rooms: Array.isArray(rooms) ? rooms : rooms ?? null,
+    passengerNationality: ensureNumericCode(passengerNationality, null),
+    passengerCountryOfResidence: ensureNumericCode(passengerCountryOfResidence, null),
+    cityCode: cityCode != null ? String(cityCode).trim() : null,
+    rateBasis: normalizeRateBasis(rateBasis),
+    clientType: String(clientType || "").trim().toUpperCase() || "UNKNOWN",
+  });
+
+const withStartDedup = async (dedupKey, factory, context = {}) => {
+  const existing = START_INFLIGHT_REQUESTS.get(dedupKey);
+  if (existing?.promise) {
+    console.info("[flows] start dedup hit", context);
+    return existing.promise;
+  }
+
+  const promise = Promise.resolve()
+    .then(factory)
+    .finally(() => {
+      const current = START_INFLIGHT_REQUESTS.get(dedupKey);
+      if (current?.promise === promise) {
+        START_INFLIGHT_REQUESTS.delete(dedupKey);
+      }
+    });
+
+  START_INFLIGHT_REQUESTS.set(dedupKey, {
+    promise,
+    createdAt: Date.now(),
+  });
+
+  return promise;
 };
 
 const dumpFlowXmlTrace = ({
@@ -940,6 +992,60 @@ const buildNoAvailabilityError = ({
     metadata,
   });
 
+const buildFlowOffer = ({
+  offerToken,
+  hotel,
+  room,
+  roomType,
+  rateBasis,
+  mappedCurrency,
+  fallbackCurrency,
+  canonicalPricing,
+  priceNumeric,
+  minSellingNumeric,
+  nonRefundable,
+  cancelRestricted,
+  amendRestricted,
+}) => ({
+  offerToken,
+  hotelId: hotel?.id ?? null,
+  hotelName: hotel?.name ?? null,
+  roomRunno: room?.runno ?? null,
+  roomTypeCode: roomType?.roomTypeCode ?? null,
+  roomName: roomType?.name ?? null,
+  rateBasisId: rateBasis?.id ?? null,
+  rateDescription: rateBasis?.description ?? null,
+  allocationDetails: rateBasis?.allocationDetails ?? null,
+  price: priceNumeric,
+  providerAmount: canonicalPricing.providerAmount,
+  priceFormatted:
+    rateBasis?.totalFormatted ??
+    rateBasis?.totalMinimumSellingFormatted ??
+    rateBasis?.totalInRequestedCurrencyFormatted ??
+    null,
+  minimumSelling:
+    canonicalPricing.minimumSelling ??
+    minSellingNumeric ??
+    rateBasis?.minimumSelling ??
+    rateBasis?.totalMinimumSelling ??
+    null,
+  minimumSellingFormatted:
+    rateBasis?.minimumSellingFormatted ?? rateBasis?.totalMinimumSellingFormatted ?? null,
+  currency: mappedCurrency ?? fallbackCurrency ?? null,
+  publicMarkupRate: canonicalPricing.publicMarkupRate,
+  publicMarkupAmount: canonicalPricing.publicMarkupAmount,
+  publicMarkedAmount: canonicalPricing.publicMarkedAmount,
+  effectiveAmount: canonicalPricing.effectiveAmount,
+  pricingRole: canonicalPricing.pricingRole,
+  withinCancellationDeadline: rateBasis?.withinCancellationDeadline ?? null,
+  refundable: !nonRefundable,
+  nonRefundable,
+  cancelRestricted,
+  amendRestricted,
+  changedOccupancy: rateBasis?.changedOccupancy ?? null,
+  validForOccupancy: rateBasis?.validForOccupancy ?? null,
+});
+
 const attachOfferTokensToRooms = (mapped, offers = []) => {
   if (!mapped?.hotel?.rooms || !Array.isArray(offers) || !offers.length) return mapped;
   const offerMap = new Map();
@@ -951,51 +1057,29 @@ const attachOfferTokensToRooms = (mapped, offers = []) => {
     queue.push(offer);
     offerMap.set(key, queue);
   });
-  const rooms = ensureArray(mapped.hotel.rooms).map((room) => ({
-    ...room,
-    roomTypes: ensureArray(room?.roomTypes).map((roomType) => ({
-      ...roomType,
-      rateBases: ensureArray(roomType?.rateBases).map((rateBasis) => {
+  ensureArray(mapped.hotel.rooms).forEach((room) => {
+    ensureArray(room?.roomTypes).forEach((roomType) => {
+      ensureArray(roomType?.rateBases).forEach((rateBasis) => {
         const key = `${String(room?.runno ?? "")}:${String(roomType?.roomTypeCode ?? "")}:${String(
           rateBasis?.id ?? "",
         )}`;
         const queue = offerMap.get(key) ?? [];
-        let offerToken = null;
-        if (queue.length) {
-          const selected = queue.shift();
-          offerToken = selected?.offerToken ?? null;
-          const canonicalPricing = selected
-            ? {
-                providerAmount: selected.providerAmount ?? selected.price ?? null,
-                publicMarkupRate: selected.publicMarkupRate ?? null,
-                publicMarkupAmount: selected.publicMarkupAmount ?? null,
-                publicMarkedAmount: selected.publicMarkedAmount ?? null,
-                minimumSelling: selected.minimumSelling ?? null,
-                effectiveAmount: selected.effectiveAmount ?? null,
-                pricingRole: selected.pricingRole ?? null,
-              }
-            : null;
-          offerMap.set(key, queue);
-          return {
-            ...rateBasis,
-            offerToken,
-            ...(canonicalPricing || {}),
-          };
+        const selected = queue.length ? queue.shift() : null;
+        rateBasis.offerToken = selected?.offerToken ?? null;
+        if (selected) {
+          rateBasis.providerAmount = selected.providerAmount ?? selected.price ?? null;
+          rateBasis.publicMarkupRate = selected.publicMarkupRate ?? null;
+          rateBasis.publicMarkupAmount = selected.publicMarkupAmount ?? null;
+          rateBasis.publicMarkedAmount = selected.publicMarkedAmount ?? null;
+          rateBasis.minimumSelling = selected.minimumSelling ?? rateBasis.minimumSelling ?? null;
+          rateBasis.effectiveAmount = selected.effectiveAmount ?? null;
+          rateBasis.pricingRole = selected.pricingRole ?? null;
         }
-        return {
-          ...rateBasis,
-          offerToken,
-        };
-      }),
-    })),
-  }));
-  return {
-    ...mapped,
-    hotel: {
-      ...mapped.hotel,
-      rooms,
-    },
-  };
+        offerMap.set(key, queue);
+      });
+    });
+  });
+  return mapped;
 };
 
 const createWebbedsClientSafe = () => {
@@ -1146,292 +1230,280 @@ export class FlowOrchestratorService {
       throw Object.assign(new Error("hotelId (productId) is required"), { status: 400 });
     }
 
-    const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102";
-
-    logCurrencyDebug("flows.start.input", {
-      currency,
-      rooms,
-      fromDate,
-      toDate,
-    });
-    const occupancies = serializeRoomsParam(rooms);
-    logCurrencyDebug("flows.start.occupancies", { occupancies });
-
-    const payload = buildGetRoomsPayload({
-      checkIn: fromDate,
-      checkOut: toDate,
-      currency: normalizeCurrency(currency),
-      occupancies,
-      rateBasis: normalizeRateBasis(rateBasis),
-      nationality: ensureNumericCode(passengerNationality, defaultCountryCode),
-      residence: ensureNumericCode(passengerCountryOfResidence, defaultCountryCode),
-      hotelId: resolvedHotelCode,
-    });
-    logCurrencyDebug("flows.start.payload", {
-      currencyInput: currency ?? null,
-      currencyNormalized: payload.currency ?? null,
-      rateBasis: payload.rateBasis ?? null,
-      hotelId: resolvedHotelCode,
-    });
-    logFlowRateDebug("start.request", {
-      traceId: debugTraceId ?? null,
-      requestId: getRequestId(req) ?? null,
+    const clientType = resolveFlowClientType(req);
+    const dedupKey = buildStartDedupKey({
       userId,
       hotelId: resolvedHotelCode,
-      checkIn: fromDate,
-      checkOut: toDate,
-      currency: normalizeCurrency(currency),
-      nationality: ensureNumericCode(passengerNationality, defaultCountryCode),
-      residence: ensureNumericCode(passengerCountryOfResidence, defaultCountryCode),
+      fromDate,
+      toDate,
+      currency,
       rooms,
-      rateBasis: normalizeRateBasis(rateBasis),
+      passengerNationality,
+      passengerCountryOfResidence,
+      cityCode,
+      rateBasis,
+      clientType,
     });
 
-    const { result, requestXml, responseXml, metadata } = await this.client.send("getrooms", payload, {
-      requestId: getRequestId(req),
-      productOverride: "hotel",
-    });
-    dumpFlowXmlTrace({
-      stage: "start-getrooms",
-      hotelId: resolvedHotelCode,
-      flowId: null,
-      requestId: getRequestId(req),
-      requestXml,
-      responseXml,
-    });
-    const mapped = mapGetRoomsResponse(result);
-    const sampleRateCurrency = (() => {
-      const roomsList = ensureArray(mapped?.hotel?.rooms);
-      const roomTypes = roomsList.flatMap((room) => ensureArray(room?.roomTypes));
-      const rateBases = roomTypes.flatMap((roomType) => ensureArray(roomType?.rateBases));
-      const sampleRate = rateBases[0] ?? null;
-      return sampleRate?.currency ?? sampleRate?.currencyShort ?? null;
-    })();
-    logCurrencyDebug("flows.start.response", {
-      responseCurrency: mapped?.currency ?? null,
-      sampleRateCurrency,
-    });
-    const hotel = mapped?.hotel || {};
-    const hotelPricingRole = resolveHotelPricingRole(req?.user);
-    const roomsList = ensureArray(hotel.rooms);
-    if (FLOW_VERBOSE_LOGS) {
-      const roomTypes = roomsList.flatMap((room) => ensureArray(room?.roomTypes));
-      const rateBases = roomTypes.flatMap((roomType) => ensureArray(roomType?.rateBases));
-      const sampleRate =
-        rateBases.find((rate) => {
-          if (!rate) return false;
-          if (ensureArray(rate?.appliedSpecials ?? rate?.specials).length) return true;
-          if (ensureArray(rate?.cancellationRules).length) return true;
-          if (ensureArray(rate?.includedMeals).length) return true;
-          if (rate?.includedMeal || rate?.mealPlan) return true;
-          return false;
-        }) ?? rateBases[0] ?? null;
-      const specials = ensureArray(sampleRate?.appliedSpecials ?? sampleRate?.specials)
-        .map((special) =>
-          special?.label ??
-          special?.specialName ??
-          special?.name ??
-          special?.description ??
-          special,
-        )
-        .filter(Boolean)
-        .slice(0, 3);
-      const cancellationSample = ensureArray(sampleRate?.cancellationRules)
-        .slice(0, 2)
-        .map((rule) => ({
-          from: rule?.fromDateDetails ?? rule?.fromDate ?? null,
-          to: rule?.toDateDetails ?? rule?.toDate ?? null,
-          charge:
-            rule?.formatted ??
-            rule?.cancelCharge?.formatted ??
-            rule?.amendCharge?.formatted ??
-            rule?.cancelCharge ??
-            rule?.charge ??
-            null,
-          currency: rule?.currency ?? null,
-        }));
-      console.info("[flows] getrooms mapped summary", {
-        hotelId: hotel.id ?? resolvedHotelCode,
-        currency: mapped.currency ?? currency ?? null,
-        roomsCount: roomsList.length,
-        roomTypesCount: roomTypes.length,
-        rateBasesCount: rateBases.length,
-        sampleRate: sampleRate
-          ? {
-            id: sampleRate.id ?? null,
-            total: sampleRate.total ?? null,
-            totalFormatted: sampleRate.totalFormatted ?? null,
-            totalMinimumSelling: sampleRate.totalMinimumSelling ?? null,
-            totalInRequestedCurrency: sampleRate.totalInRequestedCurrency ?? null,
-            specials,
-            mealPlan: sampleRate.mealPlan ?? sampleRate.includedMeal?.mealName ?? null,
-            includedMealsCount: ensureArray(sampleRate.includedMeals).length,
-            cancellationRulesCount: ensureArray(sampleRate.cancellationRules).length,
-            cancellationSample,
-          }
-          : null,
-      });
-    }
-    const flowId = randomUUID();
-    dumpFlowXmlTrace({
-      stage: "start-getrooms-final",
-      hotelId: hotel.id ?? resolvedHotelCode,
-      flowId,
-      requestId: getRequestId(req),
-      requestXml,
-      responseXml,
-    });
-    const flowBenchmarkContext = { id: flowId };
-    const offers = [];
-    roomsList.forEach((room) => {
-      ensureArray(room.roomTypes).forEach((roomType) => {
-        ensureArray(roomType.rateBases).forEach((rateBasis) => {
-          const tokenPayload = buildOfferPayload({
+    return withStartDedup(
+      dedupKey,
+      async () => {
+        const defaultCountryCode = process.env.WEBBEDS_DEFAULT_COUNTRY_CODE || "102";
+
+        logCurrencyDebug("flows.start.input", {
+          currency,
+          rooms,
+          fromDate,
+          toDate,
+        });
+        const occupancies = serializeRoomsParam(rooms);
+        logCurrencyDebug("flows.start.occupancies", { occupancies });
+
+        const payload = buildGetRoomsPayload({
+          checkIn: fromDate,
+          checkOut: toDate,
+          currency: normalizeCurrency(currency),
+          occupancies,
+          rateBasis: normalizeRateBasis(rateBasis),
+          nationality: ensureNumericCode(passengerNationality, defaultCountryCode),
+          residence: ensureNumericCode(passengerCountryOfResidence, defaultCountryCode),
+          hotelId: resolvedHotelCode,
+        });
+        logCurrencyDebug("flows.start.payload", {
+          currencyInput: currency ?? null,
+          currencyNormalized: payload.currency ?? null,
+          rateBasis: payload.rateBasis ?? null,
+          hotelId: resolvedHotelCode,
+        });
+        logFlowRateDebug("start.request", {
+          traceId: debugTraceId ?? null,
+          requestId: getRequestId(req) ?? null,
+          userId,
+          hotelId: resolvedHotelCode,
+          checkIn: fromDate,
+          checkOut: toDate,
+          currency: normalizeCurrency(currency),
+          nationality: ensureNumericCode(passengerNationality, defaultCountryCode),
+          residence: ensureNumericCode(passengerCountryOfResidence, defaultCountryCode),
+          rooms,
+          rateBasis: normalizeRateBasis(rateBasis),
+        });
+
+        const { result, requestXml, responseXml, metadata } = await this.client.send("getrooms", payload, {
+          requestId: getRequestId(req),
+          productOverride: "hotel",
+        });
+        dumpFlowXmlTrace({
+          stage: "start-getrooms",
+          hotelId: resolvedHotelCode,
+          flowId: null,
+          requestId: getRequestId(req),
+          requestXml,
+          responseXml,
+        });
+        const mapped = mapGetRoomsResponse(result);
+        const sampleRateCurrency = (() => {
+          const roomsList = ensureArray(mapped?.hotel?.rooms);
+          const roomTypes = roomsList.flatMap((room) => ensureArray(room?.roomTypes));
+          const rateBases = roomTypes.flatMap((roomType) => ensureArray(roomType?.rateBases));
+          const sampleRate = rateBases[0] ?? null;
+          return sampleRate?.currency ?? sampleRate?.currencyShort ?? null;
+        })();
+        logCurrencyDebug("flows.start.response", {
+          responseCurrency: mapped?.currency ?? null,
+          sampleRateCurrency,
+        });
+        const hotel = mapped?.hotel || {};
+        const hotelPricingRole = resolveHotelPricingRole(req?.user);
+        const roomsList = ensureArray(hotel.rooms);
+        if (FLOW_VERBOSE_LOGS) {
+          const roomTypes = roomsList.flatMap((room) => ensureArray(room?.roomTypes));
+          const rateBases = roomTypes.flatMap((roomType) => ensureArray(roomType?.rateBases));
+          const sampleRate =
+            rateBases.find((rate) => {
+              if (!rate) return false;
+              if (ensureArray(rate?.appliedSpecials ?? rate?.specials).length) return true;
+              if (ensureArray(rate?.cancellationRules).length) return true;
+              if (ensureArray(rate?.includedMeals).length) return true;
+              if (rate?.includedMeal || rate?.mealPlan) return true;
+              return false;
+            }) ?? rateBases[0] ?? null;
+          const specials = ensureArray(sampleRate?.appliedSpecials ?? sampleRate?.specials)
+            .map((special) =>
+              special?.label ??
+              special?.specialName ??
+              special?.name ??
+              special?.description ??
+              special,
+            )
+            .filter(Boolean)
+            .slice(0, 3);
+          const cancellationSample = ensureArray(sampleRate?.cancellationRules)
+            .slice(0, 2)
+            .map((rule) => ({
+              from: rule?.fromDateDetails ?? rule?.fromDate ?? null,
+              to: rule?.toDateDetails ?? rule?.toDate ?? null,
+              charge:
+                rule?.formatted ??
+                rule?.cancelCharge?.formatted ??
+                rule?.amendCharge?.formatted ??
+                rule?.cancelCharge ??
+                rule?.charge ??
+                null,
+              currency: rule?.currency ?? null,
+            }));
+          console.info("[flows] getrooms mapped summary", {
             hotelId: hotel.id ?? resolvedHotelCode,
+            currency: mapped.currency ?? currency ?? null,
+            roomsCount: roomsList.length,
+            roomTypesCount: roomTypes.length,
+            rateBasesCount: rateBases.length,
+            sampleRate: sampleRate
+              ? {
+                id: sampleRate.id ?? null,
+                total: sampleRate.total ?? null,
+                totalFormatted: sampleRate.totalFormatted ?? null,
+                totalMinimumSelling: sampleRate.totalMinimumSelling ?? null,
+                totalInRequestedCurrency: sampleRate.totalInRequestedCurrency ?? null,
+                specials,
+                mealPlan: sampleRate.mealPlan ?? sampleRate.includedMeal?.mealName ?? null,
+                includedMealsCount: ensureArray(sampleRate.includedMeals).length,
+                cancellationRulesCount: ensureArray(sampleRate.cancellationRules).length,
+                cancellationSample,
+              }
+              : null,
+          });
+        }
+        const flowId = randomUUID();
+        dumpFlowXmlTrace({
+          stage: "start-getrooms-final",
+          hotelId: hotel.id ?? resolvedHotelCode,
+          flowId,
+          requestId: getRequestId(req),
+          requestXml,
+          responseXml,
+        });
+        const flowBenchmarkContext = { id: flowId };
+        const offers = [];
+        roomsList.forEach((room) => {
+          ensureArray(room.roomTypes).forEach((roomType) => {
+            ensureArray(roomType.rateBases).forEach((rateBasis) => {
+              const tokenPayload = buildOfferPayload({
+                hotelId: hotel.id ?? resolvedHotelCode,
+                fromDate,
+                toDate,
+                currency: normalizeCurrency(currency),
+                roomsRaw: rooms,
+                room,
+                roomType,
+                rateBasis,
+              });
+              const offerToken = signOfferToken(tokenPayload);
+              const priceNumeric =
+                toNumberSafe(rateBasis?.total) ??
+                toNumberSafe(rateBasis?.totalInRequestedCurrency) ??
+                toNumberSafe(rateBasis?.totalMinimumSelling) ??
+                toNumberSafe(
+                  rateBasis?.totalFormatted ??
+                  rateBasis?.totalMinimumSellingFormatted ??
+                  rateBasis?.totalInRequestedCurrencyFormatted,
+                );
+              const minSellingNumeric =
+                toNumberSafe(rateBasis?.minimumSelling) ??
+                toNumberSafe(rateBasis?.priceMinimumSelling) ??
+                toNumberSafe(rateBasis?.totalMinimumSelling) ??
+                toNumberSafe(
+                  rateBasis?.minimumSellingFormatted ??
+                  rateBasis?.totalMinimumSellingFormatted,
+                );
+              const canonicalPricing = resolveHotelCanonicalPricing({
+                providerAmount: priceNumeric,
+                minimumSelling: minSellingNumeric,
+                pricingRole: hotelPricingRole,
+              });
+              const benchmarkAlert = captureHotelBenchmarkAlert({
+                flow: flowBenchmarkContext,
+                selectedOffer: rateBasis,
+                canonicalPricing,
+                context: "block",
+              });
+              const nonRefundable = toBoolean(rateBasis?.rateType?.nonRefundable);
+              const cancelRestricted = rateBasis?.cancellationRules?.some((r) => r?.cancelRestricted) ?? false;
+              const amendRestricted = rateBasis?.cancellationRules?.some((r) => r?.amendRestricted) ?? false;
+              if (benchmarkAlert) {
+                flowBenchmarkContext.benchmarkAlert = benchmarkAlert;
+              }
+              offers.push(buildFlowOffer({
+                offerToken,
+                hotel: {
+                  id: tokenPayload.hotelId,
+                  name: hotel.name,
+                },
+                room,
+                roomType,
+                rateBasis,
+                mappedCurrency: mapped.currency,
+                fallbackCurrency: currency,
+                canonicalPricing,
+                priceNumeric,
+                minSellingNumeric,
+                nonRefundable,
+                cancelRestricted,
+                amendRestricted,
+              }));
+            });
+          });
+        });
+
+        const flow = await models.BookingFlow.create({
+          id: flowId,
+          user_id: userId,
+          status: FLOW_STATUSES.STARTED,
+          search_context: {
+            hotelId: hotel.id ?? resolvedHotelCode,
+            hotelName: hotel.name ?? null,
             fromDate,
             toDate,
             currency: normalizeCurrency(currency),
-            roomsRaw: rooms,
-            room,
-            roomType,
-            rateBasis,
-          });
-          const offerToken = signOfferToken(tokenPayload);
-          const priceNumeric =
-            toNumberSafe(rateBasis?.total) ??
-            toNumberSafe(rateBasis?.totalInRequestedCurrency) ??
-            toNumberSafe(rateBasis?.totalMinimumSelling) ??
-            toNumberSafe(
-              rateBasis?.totalFormatted ??
-              rateBasis?.totalMinimumSellingFormatted ??
-              rateBasis?.totalInRequestedCurrencyFormatted,
-            );
-          const minSellingNumeric =
-            toNumberSafe(rateBasis?.minimumSelling) ??
-            toNumberSafe(rateBasis?.priceMinimumSelling) ??
-            toNumberSafe(rateBasis?.totalMinimumSelling) ??
-            toNumberSafe(
-              rateBasis?.minimumSellingFormatted ??
-              rateBasis?.totalMinimumSellingFormatted,
-            );
-          const canonicalPricing = resolveHotelCanonicalPricing({
-            providerAmount: priceNumeric,
-            minimumSelling: minSellingNumeric,
-            pricingRole: hotelPricingRole,
-          });
-          const benchmarkAlert = captureHotelBenchmarkAlert({
-            flow: flowBenchmarkContext,
-            selectedOffer: rateBasis,
-            canonicalPricing,
-            context: "block",
-          });
-          const nonRefundable = toBoolean(rateBasis?.rateType?.nonRefundable);
-          const cancelRestricted = rateBasis?.cancellationRules?.some((r) => r?.cancelRestricted) ?? false;
-          const amendRestricted = rateBasis?.cancellationRules?.some((r) => r?.amendRestricted) ?? false;
-          offers.push({
-            offerToken,
-            hotelId: tokenPayload.hotelId,
-            hotelName: hotel.name,
-            roomRunno: room.runno,
-            roomTypeCode: roomType.roomTypeCode,
-            roomName: roomType.name,
-            rateBasisId: rateBasis.id,
-            rateDescription: rateBasis.description,
-            allocationDetails: rateBasis.allocationDetails,
-            price: priceNumeric,
-            providerAmount: canonicalPricing.providerAmount,
-            priceFormatted:
-              rateBasis.totalFormatted ??
-              rateBasis.totalMinimumSellingFormatted ??
-              rateBasis.totalInRequestedCurrencyFormatted ??
-              null,
-            minimumSelling:
-              canonicalPricing.minimumSelling ??
-              minSellingNumeric ??
-              rateBasis.minimumSelling ??
-              rateBasis.totalMinimumSelling ??
-              null,
-            minimumSellingFormatted:
-              rateBasis.minimumSellingFormatted ?? rateBasis.totalMinimumSellingFormatted ?? null,
-            currency: mapped.currency ?? currency,
-            publicMarkupRate: canonicalPricing.publicMarkupRate,
-            publicMarkupAmount: canonicalPricing.publicMarkupAmount,
-            publicMarkedAmount: canonicalPricing.publicMarkedAmount,
-            effectiveAmount: canonicalPricing.effectiveAmount,
-            pricingRole: canonicalPricing.pricingRole,
-            benchmarkAlert,
-            cancellationRules: rateBasis.cancellationRules ?? [],
-            withinCancellationDeadline: rateBasis.withinCancellationDeadline ?? null,
-            refundable: !nonRefundable,
-            nonRefundable,
-            cancelRestricted,
-            amendRestricted,
-            tariffNotes: rateBasis.tariffNotes ?? null,
-            specials:
-              rateBasis.specials ??
-              rateBasis.promotionSummary ??
-              rateBasis.specialPromotions ??
-              null,
-            promotionSummary:
-              rateBasis.promotionSummary ??
-              rateBasis.specialPromotions ??
-              rateBasis.specials ??
-              null,
-            specialPromotions:
-              rateBasis.specialPromotions ??
-              rateBasis.promotionSummary ??
-              rateBasis.specials ??
-              null,
-            minStay: rateBasis.minStay ?? null,
-            dateApplyMinStay: rateBasis.dateApplyMinStay ?? null,
-            changedOccupancy: rateBasis.changedOccupancy ?? null,
-            validForOccupancy: rateBasis.validForOccupancy ?? null,
-          });
+            rooms,
+            rateBasis: normalizeRateBasis(rateBasis),
+            passengerNationality: ensureNumericCode(passengerNationality, defaultCountryCode),
+            passengerCountryOfResidence: ensureNumericCode(passengerCountryOfResidence, defaultCountryCode),
+            cityCode: cityCode ?? null,
+            clientType,
+          },
         });
-      });
-    });
+        console.info("[flows] started", { flowId });
 
-    const flow = await models.BookingFlow.create({
-      id: flowId,
-      user_id: userId,
-      status: FLOW_STATUSES.STARTED,
-      search_context: {
-        hotelId: hotel.id ?? resolvedHotelCode,
-        hotelName: hotel.name ?? null,
+        await logStep({
+          flowId,
+          step: "GETROOMS",
+          command: STEP_COMMAND.GETROOMS,
+          tid: metadata?.transactionId,
+          success: true,
+          pricesOut: { offersCount: offers.length },
+          requestXml,
+          responseXml,
+        });
+
+        const responsePayload = attachOfferTokensToRooms(mapped, offers);
+        logFlowRateDebug("start.response", {
+          traceId: debugTraceId ?? null,
+          requestId: getRequestId(req) ?? null,
+          flowId,
+          offersCount: offers.length,
+          offers: offers.slice(0, 10).map((offer) => summarizeOfferForDebug(offer, { includeToken: true })),
+          responseCurrency: mapped?.currency ?? null,
+        });
+        return { flowId, offers, flow: serializeFlow(flow), ...responsePayload };
+      },
+      {
+        userId,
+        hotelId: resolvedHotelCode,
         fromDate,
         toDate,
-        currency: normalizeCurrency(currency),
-        rooms,
-        rateBasis: normalizeRateBasis(rateBasis),
-        passengerNationality: ensureNumericCode(passengerNationality, defaultCountryCode),
-        passengerCountryOfResidence: ensureNumericCode(passengerCountryOfResidence, defaultCountryCode),
-        cityCode: cityCode ?? null,
-        clientType: resolveFlowClientType(req),
       },
-    });
-    console.info("[flows] started", { flowId });
-
-    await logStep({
-      flowId,
-      step: "GETROOMS",
-      command: STEP_COMMAND.GETROOMS,
-      tid: metadata?.transactionId,
-      success: true,
-      pricesOut: { offersCount: offers.length },
-      requestXml,
-      responseXml,
-    });
-
-    const responsePayload = attachOfferTokensToRooms(mapped, offers);
-    logFlowRateDebug("start.response", {
-      traceId: debugTraceId ?? null,
-      requestId: getRequestId(req) ?? null,
-      flowId,
-      offersCount: offers.length,
-      offers: offers.slice(0, 10).map((offer) => summarizeOfferForDebug(offer, { includeToken: true })),
-      responseCurrency: mapped?.currency ?? null,
-    });
-    return { flowId, offers, flow: serializeFlow(flow), ...responsePayload };
+    );
   }
   async select({ body, req }) {
     const { flowId, offerToken } = body || {};

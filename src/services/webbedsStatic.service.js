@@ -495,22 +495,25 @@ const upsertHotelRelations = async (hotelId, hotel, transaction) => {
     amenityCatalogCache.add(amenity.catalog_code)
   }
 
-  await models.WebbedsHotelImage.destroy({ where: { hotel_id: hotelId }, transaction })
+  // force: true = hard DELETE instead of soft-delete (SET deleted_at).
+  // Without force, paranoid models accumulate rows across sync passes for the same hotel,
+  // causing webbeds_hotel_room_type to grow to 1000+ rows per hotel and trigger OOM.
+  await models.WebbedsHotelImage.destroy({ where: { hotel_id: hotelId }, force: true, transaction })
   if (imageEntries.length) {
     await models.WebbedsHotelImage.bulkCreate(imageEntries, { transaction })
   }
 
-  await models.WebbedsHotelAmenity.destroy({ where: { hotel_id: hotelId }, transaction })
+  await models.WebbedsHotelAmenity.destroy({ where: { hotel_id: hotelId }, force: true, transaction })
   if (amenityEntries.length) {
     await models.WebbedsHotelAmenity.bulkCreate(amenityEntries, { transaction })
   }
 
-  await models.WebbedsHotelGeoLocation.destroy({ where: { hotel_id: hotelId }, transaction })
+  await models.WebbedsHotelGeoLocation.destroy({ where: { hotel_id: hotelId }, force: true, transaction })
   if (geoEntries.length) {
     await models.WebbedsHotelGeoLocation.bulkCreate(geoEntries, { transaction })
   }
 
-  await models.WebbedsHotelRoomType.destroy({ where: { hotel_id: hotelId }, transaction })
+  await models.WebbedsHotelRoomType.destroy({ where: { hotel_id: hotelId }, force: true, transaction })
   if (roomEntries.length) {
     await models.WebbedsHotelRoomType.bulkCreate(roomEntries, { transaction })
   }
