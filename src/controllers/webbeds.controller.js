@@ -2036,6 +2036,8 @@ export const listStaticHotels = async (req, res, next) => {
       where,
       attributes: getStaticHotelAttributes(useLite),
       include: getStaticHotelIncludes(),
+      distinct: true,
+      col: "hotel_id",
       order: [
         ["priority", "DESC"],
         ["name", "ASC"],

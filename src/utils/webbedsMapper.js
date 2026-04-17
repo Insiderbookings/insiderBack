@@ -3,6 +3,11 @@ const ensureArray = (value) => {
   return Array.isArray(value) ? value : [value];
 };
 
+const stripHtml = (value) => {
+  if (typeof value !== "string") return value;
+  return value.replace(/<\/?[^>]+(>|$)/g, "").trim();
+};
+
 const extractStaticRoomTypes = (roomStatic) => {
   if (!roomStatic) return [];
 
@@ -24,6 +29,324 @@ const extractStaticRoomTypes = (roomStatic) => {
   }
 
   return ensureArray(roomStatic).filter(Boolean);
+};
+
+const resolveRoomTypeCode = (roomType) =>
+  String(
+    roomType?.roomTypeCode ??
+      roomType?.roomtypecode ??
+      roomType?.["@_roomtypecode"] ??
+      roomType?.code ??
+      roomType?.id ??
+      "",
+  ).trim();
+
+const normalizeRoomFamilyName = (value) => {
+  const text = stripHtml(String(value ?? "")).replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  return text
+    .replace(/\s*\([^)]*\)\s*$/g, "")
+    .replace(/\s*-\s*BAR$/i, "")
+    .replace(/\s+\bBAR\b$/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+};
+
+const extractRoomImageUrls = (roomType) => {
+  if (!roomType) return [];
+  const sources = [
+    roomType?.roomImages,
+    roomType?.room_images,
+    roomType?.roomImage,
+    roomType?.room_image,
+    roomType?.images,
+    roomType?.image,
+    roomType?.photos,
+    roomType?.photo,
+    roomType?.raw_payload?.roomImages,
+    roomType?.raw_payload?.room_images,
+    roomType?.raw_payload?.roomImage,
+    roomType?.raw_payload?.room_image,
+    roomType?.raw_payload?.images,
+    roomType?.raw_payload?.image,
+    roomType?.raw_payload?.photos,
+    roomType?.raw_payload?.photo,
+  ];
+
+  const urls = new Set();
+  const readUrl = (value) => {
+    if (!value) return null;
+    if (typeof value === "string" || typeof value === "number") return String(value);
+    return (
+      value?.url ??
+      value?.["@_url"] ??
+      value?.["#text"] ??
+      value?.text ??
+      value?.value ??
+      value?.["#cdata-section"] ??
+      null
+    );
+  };
+
+  sources.forEach((source) => {
+    if (!source) return;
+    const thumb = readUrl(source?.thumb);
+    if (thumb) urls.add(thumb);
+    const node =
+      source?.image ??
+      source?.images ??
+      source?.roomImage ??
+      source?.roomImages ??
+      source?.room_image ??
+      source?.room_images ??
+      source?.photo ??
+      source?.photos ??
+      source;
+    ensureArray(node).forEach((entry) => {
+      const url = readUrl(entry?.url ?? entry);
+      if (url) urls.add(url);
+    });
+  });
+
+  return Array.from(urls);
+};
+
+const buildRoomImagePayload = (urls = []) => {
+  const uniqueUrls = Array.from(
+    new Set(
+      ensureArray(urls)
+        .map((url) => (url == null ? null : String(url).trim()))
+        .filter(Boolean),
+    ),
+  );
+  if (!uniqueUrls.length) return null;
+  return {
+    "@_count": String(uniqueUrls.length),
+    thumb: uniqueUrls[0],
+    image: uniqueUrls.map((url, index) => ({
+      "@_runno": String(index),
+      url,
+    })),
+  };
+};
+
+const buildRoomImageProfile = (roomType) => {
+  const normalizedName = normalizeRoomFamilyName(roomType?.name);
+  const text = ` ${String(normalizedName ?? "").toLowerCase()} `;
+  const normalizedText = ` ${String(normalizedName ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()} `;
+  const includesAny = (patterns = []) =>
+    patterns.some((pattern) => {
+      const normalizedPattern = String(pattern).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      return (normalizedPattern && normalizedText.includes(` ${normalizedPattern} `)) || text.includes(pattern);
+    });
+  const hasKing = includesAny([" king ", "king bed"]);
+  const hasTwin = includesAny([" twin ", "twin bed", "twin beds"]);
+  const hasDouble = includesAny([" double ", "double bed"]);
+  const hasTriple = includesAny([" triple "]);
+  const hasSingle = includesAny([" single "]);
+  const hasClub = includesAny([" club "]);
+  const hasRegency = includesAny([" regency "]);
+  const hasRoyal = includesAny([" royal "]);
+  const hasExecutive = includesAny([" executive "]);
+  const hasStandard = includesAny([" standard ", " classic "]);
+  const hasSeaView = includesAny([" sea view", " ocean view", " partial sea view", " with view", " view "]);
+  const hasSuite = includesAny([" suite "]);
+  const hasConnecting = includesAny([" connecting "]);
+  const hasFamily = includesAny([" family "]);
+  const hasApartment = includesAny([" apartment "]);
+
+  let bedType = "generic";
+  if (includesAny(["double or twin", "king or twin"])) bedType = "flex";
+  else if (hasTwin) bedType = "twin";
+  else if (hasKing) bedType = "king";
+  else if (hasDouble) bedType = "double";
+  else if (hasTriple) bedType = "triple";
+  else if (hasSingle) bedType = "single";
+
+  let tier = "base";
+  if (hasRoyal) tier = "royal";
+  else if (hasRegency) tier = "regency";
+  else if (hasExecutive) tier = "executive";
+  else if (hasClub) tier = "club";
+  else if (hasStandard) tier = "standard";
+  else if (includesAny([" room "])) tier = "room";
+
+  return {
+    normalizedName,
+    bedType,
+    tier,
+    hasSeaView,
+    hasSuite,
+    hasConnecting,
+    hasFamily,
+    hasApartment,
+  };
+};
+
+const scoreRoomImageCandidate = (targetProfile, candidateProfile) => {
+  if (!targetProfile || !candidateProfile) return Number.NEGATIVE_INFINITY;
+
+  if (targetProfile.hasApartment !== candidateProfile.hasApartment) return Number.NEGATIVE_INFINITY;
+  if (targetProfile.hasFamily !== candidateProfile.hasFamily) return Number.NEGATIVE_INFINITY;
+  if (targetProfile.hasConnecting !== candidateProfile.hasConnecting) return Number.NEGATIVE_INFINITY;
+  if (targetProfile.hasSuite !== candidateProfile.hasSuite) return Number.NEGATIVE_INFINITY;
+  if (targetProfile.hasSeaView !== candidateProfile.hasSeaView) return Number.NEGATIVE_INFINITY;
+
+  let score = 0;
+
+  if (targetProfile.tier === candidateProfile.tier) {
+    score += 6;
+  } else {
+    const relaxedTierMatch =
+      (targetProfile.tier === "room" && candidateProfile.tier === "base") ||
+      (targetProfile.tier === "base" && candidateProfile.tier === "room") ||
+      (targetProfile.tier === "standard" && candidateProfile.tier === "base") ||
+      (targetProfile.tier === "base" && candidateProfile.tier === "standard");
+    if (!relaxedTierMatch) return Number.NEGATIVE_INFINITY;
+    score += 2;
+  }
+
+  if (targetProfile.bedType === candidateProfile.bedType) {
+    score += 4;
+  } else if (
+    (targetProfile.bedType === "king" || targetProfile.bedType === "twin" || targetProfile.bedType === "double") &&
+    candidateProfile.bedType === "flex"
+  ) {
+    score += 1;
+  } else if (
+    targetProfile.bedType === "flex" &&
+    ["king", "twin", "double"].includes(candidateProfile.bedType)
+  ) {
+    score += 1;
+  } else if (targetProfile.bedType !== "generic" && candidateProfile.bedType !== "generic") {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  if (targetProfile.normalizedName && candidateProfile.normalizedName) {
+    const targetTokens = new Set(targetProfile.normalizedName.split(/[\s,]+/).filter(Boolean));
+    const candidateTokens = new Set(candidateProfile.normalizedName.split(/[\s,]+/).filter(Boolean));
+    let overlap = 0;
+    targetTokens.forEach((token) => {
+      if (candidateTokens.has(token)) overlap += 1;
+    });
+    score += overlap * 0.25;
+  }
+
+  return score;
+};
+
+const extractRoomDescriptionText = (roomType) => {
+  const readText = (value) => {
+    if (!value) return null;
+    if (typeof value === "string") {
+      const cleaned = value.replace(/\s+/g, " ").trim();
+      return cleaned || null;
+    }
+    if (typeof value === "object") {
+      const text =
+        value?.["#cdata-section"] ??
+        value?.["#text"] ??
+        value?.text ??
+        value?.description ??
+        null;
+      if (text && typeof text === "string") {
+        const cleaned = text.replace(/\s+/g, " ").trim();
+        return cleaned || null;
+      }
+    }
+    return null;
+  };
+
+  const sources = [
+    roomType?.roomDescription,
+    roomType?.room_description,
+    roomType?.description,
+    roomType?.raw_payload?.roomDescription,
+    roomType?.raw_payload?.room_description,
+    roomType?.raw_payload?.description,
+  ];
+
+  for (const source of sources) {
+    const text = readText(source);
+    if (text) return text;
+  }
+  return null;
+};
+
+const enrichStaticRoomTypes = (roomTypes = []) => {
+  const normalizedRoomTypes = ensureArray(roomTypes).filter(Boolean);
+  if (!normalizedRoomTypes.length) return [];
+
+  const exactImagesByCode = new Map();
+  // donorCandidates: rooms that have images, tracking also their description
+  const donorCandidates = [];
+
+  normalizedRoomTypes.forEach((roomType) => {
+    const urls = extractRoomImageUrls(roomType);
+    if (!urls.length) return;
+
+    const roomTypeCode = resolveRoomTypeCode(roomType);
+    if (roomTypeCode && !exactImagesByCode.has(roomTypeCode)) {
+      exactImagesByCode.set(roomTypeCode, urls);
+    }
+
+    donorCandidates.push({
+      urls,
+      description: extractRoomDescriptionText(roomType),
+      profile: buildRoomImageProfile(roomType),
+    });
+  });
+
+  return normalizedRoomTypes.map((roomType) => {
+    const currentUrls = extractRoomImageUrls(roomType);
+    if (currentUrls.length) return roomType;
+
+    const roomTypeCode = resolveRoomTypeCode(roomType);
+    const targetProfile = buildRoomImageProfile(roomType);
+    let inheritedSource = roomTypeCode ? "roomTypeCode" : null;
+    let inheritedUrls = roomTypeCode ? exactImagesByCode.get(roomTypeCode) : null;
+
+    let bestCandidate = null;
+    if (!inheritedUrls?.length) {
+      let bestScore = Number.NEGATIVE_INFINITY;
+      donorCandidates.forEach((candidate) => {
+        const score = scoreRoomImageCandidate(targetProfile, candidate.profile);
+        if (score > bestScore) {
+          bestScore = score;
+          bestCandidate = candidate;
+        }
+      });
+      if (bestScore > 0 && bestCandidate?.urls?.length) {
+        inheritedUrls = bestCandidate.urls;
+        inheritedSource = "roomProfile";
+      }
+    }
+
+    if (!inheritedUrls?.length) return roomType;
+
+    // Conservatively inherit description only from the same profile-matched image donor
+    const currentDescription = extractRoomDescriptionText(roomType);
+    const inheritedDescription =
+      !currentDescription && bestCandidate?.description
+        ? bestCandidate.description
+        : null;
+
+    return {
+      ...roomType,
+      roomImages: buildRoomImagePayload(inheritedUrls),
+      ...(inheritedDescription ? { roomDescription: inheritedDescription } : {}),
+      imageInheritance: {
+        source: inheritedSource,
+        profile: targetProfile,
+        hasInheritedDescription: Boolean(inheritedDescription),
+      },
+    };
+  });
 };
 
 const extractTextList = (node, entryKey) => {
@@ -164,6 +487,36 @@ export const formatStaticHotel = (hotel, options = {}) => {
     plain.roomTypes ?? plain.room_types ?? plain.room_static ?? [],
   );
 
+  // Deduplicate by roomTypeCode before enrichment.
+  // The DB can accumulate multiple rows per code across sync passes (paranoid soft-deletes +
+  // multi-page syncs). Hotel 31264, for example, had 1250 rows for ~30 unique codes.
+  // Without dedup, enrichStaticRoomTypes runs O(n²) comparisons on all rows, causing OOM.
+  const deduplicatedRoomTypes = (() => {
+    const byCode = new Map();
+    const noCode = [];
+    roomTypesRaw.forEach((rt) => {
+      const code = resolveRoomTypeCode(rt);
+      if (!code) {
+        noCode.push(rt);
+        return;
+      }
+      const existing = byCode.get(code);
+      if (!existing) {
+        byCode.set(code, rt);
+        return;
+      }
+      // Keep the entry with the most images so donors stay rich.
+      const existingCount = extractRoomImageUrls(existing).length;
+      const candidateCount = extractRoomImageUrls(rt).length;
+      if (candidateCount > existingCount) {
+        byCode.set(code, rt);
+      }
+    });
+    return [...byCode.values(), ...noCode];
+  })();
+
+  const roomTypes = enrichStaticRoomTypes(deduplicatedRoomTypes);
+
   return {
     id: String(plain.hotel_id),
     name: plain.name,
@@ -219,7 +572,7 @@ export const formatStaticHotel = (hotel, options = {}) => {
     transportation: compact ? [] : transportationList,
     descriptions: compact ? null : plain.descriptions ?? null,
     shortDescription,
-    roomTypes: compact ? [] : roomTypesRaw,
+    roomTypes: compact ? [] : roomTypes,
     metadata: {
       hasLeisure: compact ? false : amenitiesLeisure.length > 0,
       hasBusiness: compact ? false : amenitiesBusiness.length > 0,
