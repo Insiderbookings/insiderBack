@@ -497,32 +497,39 @@ const STATIC_HOTEL_ATTRIBUTES_FULL = [
 const getStaticHotelAttributes = (useLite) =>
   useLite ? STATIC_HOTEL_ATTRIBUTES_LITE : STATIC_HOTEL_ATTRIBUTES_FULL
 
-const getStaticHotelIncludes = () => [
-  {
-    model: models.WebbedsHotelChain,
-    as: "chainCatalog",
-    attributes: ["code", "name"],
-  },
-  {
-    model: models.WebbedsHotelClassification,
-    as: "classification",
-    attributes: ["code", "name"],
-  },
-  {
-    model: models.WebbedsHotelRoomType,
-    as: "roomTypes",
-    attributes: [
-      "hotel_id",
-      "roomtype_code",
-      "name",
-      "twin",
-      "room_info",
-      "room_capacity",
-      "raw_payload",
-    ],
-    required: false,
-  },
-]
+const getStaticHotelIncludes = (useLite = false) => {
+  const includes = [
+    {
+      model: models.WebbedsHotelChain,
+      as: "chainCatalog",
+      attributes: ["code", "name"],
+    },
+    {
+      model: models.WebbedsHotelClassification,
+      as: "classification",
+      attributes: ["code", "name"],
+    },
+  ]
+
+  if (!useLite) {
+    includes.push({
+      model: models.WebbedsHotelRoomType,
+      as: "roomTypes",
+      attributes: [
+        "hotel_id",
+        "roomtype_code",
+        "name",
+        "twin",
+        "room_info",
+        "room_capacity",
+        "raw_payload",
+      ],
+      required: false,
+    })
+  }
+
+  return includes
+}
 
 const sortPartnerFirstWithFallback = (items = [], fallbackCompare = null) =>
   items
@@ -1976,6 +1983,7 @@ export const listStaticHotels = async (req, res, next) => {
       hotelIds,
       lite,
       imagesLimit,
+      skipCount,
     } = req.query
 
     const where = {}
@@ -2032,21 +2040,37 @@ export const listStaticHotels = async (req, res, next) => {
       }
     }
 
-    const { rows, count } = await models.WebbedsHotel.findAndCountAll({
+    const queryConfig = {
       where,
       attributes: getStaticHotelAttributes(useLite),
-      include: getStaticHotelIncludes(),
-      distinct: true,
-      col: "hotel_id",
+      include: getStaticHotelIncludes(useLite),
       order: [
         ["priority", "DESC"],
         ["name", "ASC"],
       ],
       limit: safeLimit,
       offset: safeOffset,
-    })
+    }
 
-    let items = rows.map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit }))
+    let rows = []
+    let count = 0
+    const shouldSkipCount =
+      String(skipCount || "").trim().toLowerCase() === "true" ||
+      Boolean(hotelId || hotelIdList.length)
+    if (shouldSkipCount) {
+      rows = await models.WebbedsHotel.findAll(queryConfig)
+      count = rows.length
+    } else {
+      const result = await models.WebbedsHotel.findAndCountAll({
+        ...queryConfig,
+        distinct: true,
+        col: "hotel_id",
+      })
+      rows = result.rows
+      count = result.count
+    }
+
+    let items = rows.map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit, compact: useLite }))
     items = await attachPartnerProgramToHotelItems(items)
     items = sortPartnerFirstWithFallback(
       items,
@@ -2215,7 +2239,7 @@ export const listExploreHotels = async (req, res, next) => {
     }
 
     const attributes = getStaticHotelAttributes(useLite)
-    const include = getStaticHotelIncludes()
+    const include = getStaticHotelIncludes(useLite)
     const selectedRows = []
     const seen = new Set()
 
@@ -2287,7 +2311,7 @@ export const listExploreHotels = async (req, res, next) => {
     const pageRows = selectedRows.slice(safeOffset, safeOffset + safeLimit)
     let items = pageRows
       .map((row) => {
-        const item = formatStaticHotel(row, { imageLimit: safeImagesLimit })
+        const item = formatStaticHotel(row, { imageLimit: safeImagesLimit, compact: useLite })
         if (!item) return null
         const distanceValue = row?.get ? row.get("distance_km") : row?.distance_km
         const distanceNum = Number(distanceValue)
@@ -2462,7 +2486,7 @@ export const listExploreCollections = async (req, res, next) => {
     }
 
     const attributes = getStaticHotelAttributes(useLite)
-    const include = getStaticHotelIncludes()
+    const include = getStaticHotelIncludes(useLite)
     let sectionsPayload = []
 
     for (const entry of cityBuckets.slice(0, safeSections)) {
@@ -2476,7 +2500,7 @@ export const listExploreCollections = async (req, res, next) => {
         limit: perSection,
       })
       let items = rows
-        .map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit }))
+        .map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit, compact: useLite }))
         .filter(Boolean)
       items = await attachPartnerProgramToHotelItems(items)
       items = sortPartnerFirstWithFallback(
