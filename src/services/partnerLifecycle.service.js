@@ -8,16 +8,21 @@ import {
   PARTNER_PAYMENT_METHODS,
   PARTNER_SUBSCRIPTION_STATUSES,
   PARTNER_TRIAL_DAYS,
-  getPartnerBadgeByCode,
   getPartnerPlanByCode,
   getPartnerPlans,
+  normalizePartnerPlanCode,
   resolvePartnerBadgePriority as resolveProgramBadgePriority,
   resolvePartnerProgramFromClaim,
+  resolvePartnerStripePriceId,
 } from "./partnerCatalog.service.js";
 import {
   sendPartnerInternalInvoiceAlert,
   sendPartnerLifecycleEmail,
 } from "./partnerEmail.service.js";
+import {
+  applyEffectivePartnerProfilesToHotelItems,
+  getPartnerClaimsWithProfilesByHotelIds,
+} from "./partnerHotelProfile.service.js";
 
 const iLikeOp = getCaseInsensitiveLikeOp();
 
@@ -26,10 +31,25 @@ const getStripeClient = async () => {
   return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" });
 };
 
-const normalizePlanCode = (value) => String(value || "").trim().toLowerCase();
+const normalizePlanCode = (value) =>
+  normalizePartnerPlanCode(value) || String(value || "").trim().toLowerCase();
 const normalizePaymentMethod = (value) =>
   String(value || "").trim().toLowerCase() || PARTNER_PAYMENT_METHODS.card;
 const toNow = () => new Date();
+
+const PARTNER_DASHBOARD_HOTEL_ATTRIBUTES = Object.freeze([
+  "hotel_id",
+  "name",
+  "city_name",
+  "country_name",
+  "address",
+]);
+
+const PARTNER_EMAIL_LOG_ATTRIBUTES = Object.freeze([
+  "id",
+  "email_key",
+  "sent_at",
+]);
 
 const extractHotelId = (item) =>
   item?.id ??
@@ -40,18 +60,31 @@ const extractHotelId = (item) =>
   item?.hotelDetails?.hotelId ??
   null;
 
-const buildClaimInclude = () => [
-  {
-    model: models.WebbedsHotel,
-    as: "hotel",
-    required: false,
-  },
-  {
-    model: models.PartnerEmailLog,
-    as: "emailLogs",
-    required: false,
-  },
-];
+const buildClaimInclude = ({
+  includeHotel = true,
+  hotelAttributes = PARTNER_DASHBOARD_HOTEL_ATTRIBUTES,
+  includeEmailLogs = true,
+  emailLogAttributes = PARTNER_EMAIL_LOG_ATTRIBUTES,
+} = {}) => {
+  const include = [];
+  if (includeHotel) {
+    include.push({
+      model: models.WebbedsHotel,
+      as: "hotel",
+      required: false,
+      attributes: Array.isArray(hotelAttributes) ? hotelAttributes : undefined,
+    });
+  }
+  if (includeEmailLogs) {
+    include.push({
+      model: models.PartnerEmailLog,
+      as: "emailLogs",
+      required: false,
+      attributes: Array.isArray(emailLogAttributes) ? emailLogAttributes : undefined,
+    });
+  }
+  return include;
+};
 
 export const searchPartnerHotels = async ({ query, limit = 12 }) => {
   const trimmed = String(query || "").trim();
@@ -293,9 +326,16 @@ export const createPartnerCardCheckout = async ({
     error.status = 400;
     throw error;
   }
-  const priceId = process.env[plan.stripePriceEnv];
+  const priceId = resolvePartnerStripePriceId(plan);
   if (!priceId) {
-    const error = new Error(`Missing ${plan.stripePriceEnv}`);
+    const envKeys = Array.isArray(plan.stripePriceEnvs)
+      ? plan.stripePriceEnvs.filter(Boolean)
+      : [plan.stripePriceEnv].filter(Boolean);
+    const error = new Error(
+      `Missing partner Stripe price configuration for ${plan.code}${
+        envKeys.length ? ` (${envKeys.join(" or ")})` : ""
+      }`,
+    );
     error.status = 500;
     throw error;
   }
@@ -507,8 +547,10 @@ export const buildPartnerDashboardPayload = (claim) => {
       stripeCustomerId: claim.stripe_customer_id || null,
       stripeSubscriptionId: claim.stripe_subscription_id || null,
       stripeInvoiceId: claim.stripe_invoice_id || null,
-      currentPlanCode: claim.current_plan_code || null,
-      pendingPlanCode: claim.pending_plan_code || null,
+      currentPlanCode: normalizePartnerPlanCode(claim.current_plan_code) || null,
+      currentPlanLegacyCode: claim.current_plan_code || null,
+      pendingPlanCode: normalizePartnerPlanCode(claim.pending_plan_code) || null,
+      pendingPlanLegacyCode: claim.pending_plan_code || null,
       nextBillingAt: claim.next_billing_at || null,
       invoiceRequestedAt: claim.invoice_requested_at || null,
       invoicePaidAt: claim.invoice_paid_at || null,
@@ -527,18 +569,13 @@ export const attachPartnerProgramToHotelItems = async (items = []) => {
   );
   if (!hotelIds.length) return Array.isArray(items) ? items : [];
 
-  const claims = await models.PartnerHotelClaim.findAll({
-    where: {
-      hotel_id: { [Op.in]: hotelIds },
-    },
-    include: [{ model: models.WebbedsHotel, as: "hotel", required: false }],
-  });
+  const claims = await getPartnerClaimsWithProfilesByHotelIds(hotelIds);
 
   const claimMap = new Map(
     claims.map((claim) => [String(claim.hotel_id), resolvePartnerProgramFromClaim(claim)]),
   );
 
-  return (Array.isArray(items) ? items : []).map((item) => {
+  const enriched = (Array.isArray(items) ? items : []).map((item) => {
     const hotelId = extractHotelId(item);
     if (hotelId == null) return item;
     const partnerProgram = claimMap.get(String(hotelId));
@@ -560,6 +597,8 @@ export const attachPartnerProgramToHotelItems = async (items = []) => {
       hotelDetails: nextHotelDetails,
     };
   });
+
+  return applyEffectivePartnerProfilesToHotelItems(enriched, claims);
 };
 
 export const comparePartnerAwareHotelItems = (a, b, fallbackCompare) => {

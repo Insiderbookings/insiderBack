@@ -33,6 +33,7 @@ import {
   attachPartnerProgramToHotelItems,
   comparePartnerAwareHotelItems,
 } from "../services/partnerLifecycle.service.js"
+import { getPartnerHotelProfileCacheVersion } from "../services/partnerHotelProfile.service.js"
 
 import {
   previewReferralCreditForBooking,
@@ -2007,6 +2008,7 @@ export const listStaticHotels = async (req, res, next) => {
     const safeImagesLimit = Number.isFinite(imagesLimitValue)
       ? Math.max(0, Math.min(imagesLimitValue, 200))
       : (useLite ? 1 : null)
+    const partnerProfileCacheVersion = await getPartnerHotelProfileCacheVersion()
 
     const cacheKey = STATIC_HOTELS_CACHE_DISABLED
       ? null
@@ -2021,6 +2023,7 @@ export const listStaticHotels = async (req, res, next) => {
         offset: safeOffset,
         lite: useLite,
         imagesLimit: safeImagesLimit,
+        partnerProfileCacheVersion,
       })
 
     if (cacheKey) {
@@ -2190,6 +2193,7 @@ export const listExploreHotels = async (req, res, next) => {
     const bucketLng = coords
       ? roundCoordinate(coords.lng, EXPLORE_GEO_BUCKET_PRECISION)
       : null
+    const partnerProfileCacheVersion = await getPartnerHotelProfileCacheVersion()
 
     const cacheKey = EXPLORE_HOTELS_CACHE_DISABLED
       ? null
@@ -2203,6 +2207,7 @@ export const listExploreHotels = async (req, res, next) => {
         lite: useLite,
         imagesLimit: safeImagesLimit,
         rankingVariant: rankingVariant.variant,
+        partnerProfileCacheVersion,
       })
 
     if (cacheKey) {
@@ -2397,6 +2402,7 @@ export const listExploreCollections = async (req, res, next) => {
     const bucketLng = coords
       ? roundCoordinate(coords.lng, EXPLORE_GEO_BUCKET_PRECISION)
       : null
+    const partnerProfileCacheVersion = await getPartnerHotelProfileCacheVersion()
 
     const fallbackCodes = parseCsvList(fallbackCities).length
       ? parseCsvList(fallbackCities)
@@ -2418,6 +2424,7 @@ export const listExploreCollections = async (req, res, next) => {
         lite: useLite,
         imagesLimit: safeImagesLimit,
         rankingVariant: rankingVariant.variant,
+        partnerProfileCacheVersion,
       })
 
     if (cacheKey) {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   PARTNER_CLAIM_STATUSES,
   PARTNER_SUBSCRIPTION_STATUSES,
+  getPartnerPlanByCode,
   resolvePartnerBadgePriority,
   resolvePartnerProgramFromClaim,
 } from "../../src/services/partnerCatalog.service.js";
@@ -18,12 +19,13 @@ test("trial claims resolve to Featured badge during the free window", () => {
 
   const program = resolvePartnerProgramFromClaim(claim, "2026-03-10T12:00:00.000Z");
   assert.equal(program.badgeCode, "featured");
-  assert.equal(program.planCode, "elite");
+  assert.equal(program.planCode, "featured");
+  assert.equal(program.planLegacyCode, "elite");
   assert.equal(program.trialActive, true);
   assert.equal(program.priceVisible, false);
 });
 
-test("subscribed Pro claims resolve to Preferred badge", () => {
+test("subscribed legacy Pro claims resolve to Preferred badge with canonical plan codes", () => {
   const claim = {
     id: 11,
     hotel_id: 43,
@@ -38,8 +40,15 @@ test("subscribed Pro claims resolve to Preferred badge", () => {
   const program = resolvePartnerProgramFromClaim(claim, "2026-04-01T12:00:00.000Z");
   assert.equal(program.badgeCode, "preferred");
   assert.equal(program.badgePriority, 2);
-  assert.equal(program.planCode, "pro");
+  assert.equal(program.planCode, "preferred");
+  assert.equal(program.planLegacyCode, "pro");
   assert.equal(program.trialActive, false);
+});
+
+test("legacy plan aliases still resolve to canonical partner plans", () => {
+  assert.equal(getPartnerPlanByCode("starter")?.code, "verified");
+  assert.equal(getPartnerPlanByCode("pro")?.code, "preferred");
+  assert.equal(getPartnerPlanByCode("elite")?.code, "featured");
 });
 
 test("expired claims resolve without badge and partner priority falls back to zero", () => {

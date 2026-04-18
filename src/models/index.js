@@ -134,6 +134,9 @@ import FxRateModel from "./FxRate.js";
 import FxRateChangeLogModel from "./FxRateChangeLog.js";
 import PartnerHotelClaimModel from "./PartnerHotelClaim.js";
 import PartnerEmailLogModel from "./PartnerEmailLog.js";
+import PartnerHotelProfileModel from "./PartnerHotelProfile.js";
+import PartnerHotelProfileImageModel from "./PartnerHotelProfileImage.js";
+import PartnerHotelProfileAmenityModel from "./PartnerHotelProfileAmenity.js";
 
 /* ---------- Construir objetos ---------- */
 const Stay = StayModel(sequelize);
@@ -275,6 +278,9 @@ const models = {
   FxRateChangeLog: FxRateChangeLogModel(sequelize),
   PartnerHotelClaim: PartnerHotelClaimModel(sequelize),
   PartnerEmailLog: PartnerEmailLogModel(sequelize),
+  PartnerHotelProfile: PartnerHotelProfileModel(sequelize),
+  PartnerHotelProfileImage: PartnerHotelProfileImageModel(sequelize),
+  PartnerHotelProfileAmenity: PartnerHotelProfileAmenityModel(sequelize),
 };
 
 /* ---------- Ejecutar asociaciones ---------- */
