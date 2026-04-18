@@ -1,0 +1,15 @@
+[Cache] No Redis config found. Using In-Memory Map.
+[payments] registering /api/payments routes (includes /stripe/webhook)
+[places.routes] loaded
+********webbeds request: getsalutationsids (Attempt 1 (plain))**********
+[webbeds] salutations cache refreshed { count: 12 }
+[job-scheduler] scheduled {
+  name: 'guest-wallet-hold-cleanup',
+  cronExpression: '0 * * * *',
+  timezone: 'UTC'
+}
+[job-scheduler] reload complete { reason: 'startup', jobs: 17, scheduled: 1 }
+[tripHub-packs] worker disabled by TRIP_HUB_PACKS_ENABLED
+Server listening on port 3006
+[job:guest-wallet-hold-cleanup] stale holds { source: 'automatic', enabled: true, released: 0 }
+[job:guest-wallet-hold-cleanup] reconcile { source: 'automatic', enabled: true, checked: 0, discrepancies: 0 }

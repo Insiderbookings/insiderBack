@@ -332,6 +332,13 @@ export default (sequelize) => {
         onDelete: "CASCADE",
       });
     }
+    if (models.PartnerHotelProfile) {
+      User.hasMany(models.PartnerHotelProfile, {
+        foreignKey: "updated_by_user_id",
+        as: "updatedPartnerHotelProfiles",
+        onDelete: "SET NULL",
+      });
+    }
     if (models.SupportTicketAssignee && models.SupportTicket) {
       User.hasMany(models.SupportTicketAssignee, {
         foreignKey: "user_id",

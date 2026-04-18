@@ -178,6 +178,13 @@ export default (sequelize) => {
         onDelete: "CASCADE",
       });
     }
+    if (models.PartnerHotelProfile) {
+      PartnerHotelClaim.hasOne(models.PartnerHotelProfile, {
+        foreignKey: "claim_id",
+        as: "hotelProfile",
+        onDelete: "CASCADE",
+      });
+    }
   };
 
   return PartnerHotelClaim;
