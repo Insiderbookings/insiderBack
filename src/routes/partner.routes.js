@@ -3,10 +3,12 @@ import rateLimit from "express-rate-limit";
 import {
   activatePartnerInvoiceController,
   claimPartnerHotelController,
+  getOrCreatePartnerVerificationCodeController,
   getMyPartnerHotelProfileController,
   getMyPartnerClaimsController,
   listPartnerPlans,
   partnerControllerMiddleware,
+  previewPartnerVerificationCodeController,
   searchPartnerHotelsController,
   selectPartnerSubscriptionController,
   updateMyPartnerHotelProfileController,
@@ -23,6 +25,7 @@ const partnerPublicLimiter = rateLimit({
 
 router.get("/plans", listPartnerPlans);
 router.get("/hotels/search", partnerPublicLimiter, searchPartnerHotelsController);
+router.post("/verification/lookup", partnerPublicLimiter, previewPartnerVerificationCodeController);
 router.post("/claim", partnerPublicLimiter, claimPartnerHotelController);
 
 router.get("/me", partnerControllerMiddleware.authenticate, getMyPartnerClaimsController);
@@ -40,6 +43,12 @@ router.post(
   "/subscriptions/select",
   partnerControllerMiddleware.authenticate,
   selectPartnerSubscriptionController,
+);
+router.post(
+  "/admin/hotels/:hotelId/verification-code",
+  partnerControllerMiddleware.authenticate,
+  partnerControllerMiddleware.authorizeAdmin,
+  getOrCreatePartnerVerificationCodeController,
 );
 router.post(
   "/admin/claims/:claimId/activate-invoice",

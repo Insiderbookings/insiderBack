@@ -24,6 +24,11 @@ import {
   getPartnerPlanByCode,
   getPartnerPlans,
 } from "../services/partnerCatalog.service.js";
+import {
+  getOrCreatePartnerVerificationCode,
+  lookupPartnerVerificationCode,
+  markPartnerVerificationCodeClaimed,
+} from "../services/partnerVerification.service.js";
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
 
@@ -54,7 +59,7 @@ const resolveOptionalUserFromRequest = async (req) => {
   }
 };
 
-const ensurePartnerUser = async (req, res) => {
+const ensurePartnerUser = async (req, res, { allowCreate = true } = {}) => {
   const authenticatedUser = await resolveOptionalUserFromRequest(req);
   if (authenticatedUser) return { user: authenticatedUser, issuedSession: null };
 
@@ -87,6 +92,11 @@ const ensurePartnerUser = async (req, res) => {
       throw error;
     }
   } else {
+    if (!allowCreate) {
+      const error = new Error("Sign in with the original partner account for this hotel.");
+      error.status = 401;
+      throw error;
+    }
     const passwordHash = await bcrypt.hash(password, 10);
     user = await models.User.create({
       name,
@@ -130,14 +140,66 @@ export const searchPartnerHotelsController = async (req, res, next) => {
   }
 };
 
+export const previewPartnerVerificationCodeController = async (req, res, next) => {
+  try {
+    const currentUser = await resolveOptionalUserFromRequest(req);
+    const lookup = await lookupPartnerVerificationCode({
+      code: req.body?.code ?? req.body?.verificationCode ?? req.query?.code,
+      currentUserId: currentUser?.id || null,
+    });
+    return res.json({
+      item: lookup.item,
+    });
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
 export const claimPartnerHotelController = async (req, res, next) => {
   try {
-    const hotelId = String(req.body?.hotelId || "").trim();
+    const directHotelId = String(req.body?.hotelId || "").trim();
+    const verificationCodeInput = req.body?.verificationCode ?? req.body?.code;
+    let hotelId = directHotelId;
+    let verificationLookup = null;
+    const optionalUser = await resolveOptionalUserFromRequest(req);
+
     if (!hotelId) {
-      return res.status(400).json({ error: "hotelId is required" });
+      verificationLookup = await lookupPartnerVerificationCode({
+        code: verificationCodeInput,
+        currentUserId: optionalUser?.id || null,
+      });
+      hotelId = String(verificationLookup?.item?.hotelId || "").trim();
     }
 
-    const { user, issuedSession } = await ensurePartnerUser(req, res);
+    if (!hotelId) {
+      return res.status(400).json({ error: "hotelId or verificationCode is required" });
+    }
+
+    const { user, issuedSession } = await ensurePartnerUser(req, res, {
+      allowCreate: !verificationLookup?.item?.alreadyClaimed,
+    });
+
+    if (verificationLookup) {
+      verificationLookup = await lookupPartnerVerificationCode({
+        code: verificationLookup.item.code,
+        currentUserId: user.id,
+      });
+    }
+
+    if (
+      verificationLookup &&
+      !verificationLookup.item.canActivate &&
+      !verificationLookup.item.claimedByCurrentUser
+    ) {
+      const message = verificationLookup.item.alreadyClaimed
+        ? "This hotel is already claimed."
+        : "This verification id is not available.";
+      return res.status(409).json({ error: message });
+    }
+
     const { claim, hotel, created } = await ensurePartnerClaim({
       hotelId,
       userId: user.id,
@@ -150,6 +212,13 @@ export const claimPartnerHotelController = async (req, res, next) => {
       contactEmail: normalizeEmail(req.body?.email || req.body?.contactEmail || user.email),
       contactPhone: req.body?.phone || req.body?.contactPhone || user.phone || null,
     });
+    if (verificationLookup?.record) {
+      await markPartnerVerificationCodeClaimed({
+        record: verificationLookup.record,
+        claim,
+        userId: user.id,
+      });
+    }
 
     const welcomeAlreadySent = Array.isArray(claim?.emailLogs)
       ? claim.emailLogs.some((entry) => entry.email_key === "day_1_welcome")
@@ -275,6 +344,27 @@ export const selectPartnerSubscriptionController = async (req, res, next) => {
       checkoutUrl: checkout.url,
       claim: claimPayload,
       item: claimPayload,
+    });
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
+export const getOrCreatePartnerVerificationCodeController = async (req, res, next) => {
+  try {
+    const hotelId = String(req.params?.hotelId || req.body?.hotelId || "").trim();
+    if (!hotelId) {
+      return res.status(400).json({ error: "hotelId is required" });
+    }
+    const result = await getOrCreatePartnerVerificationCode({
+      hotelId,
+    });
+    return res.status(result.created ? 201 : 200).json({
+      created: result.created,
+      item: result.item,
     });
   } catch (error) {
     if (error?.status) {

@@ -62,6 +62,10 @@ const STATIC_HOTELS_CACHE_TTL_SECONDS = Math.max(
   30,
   Number(process.env.WEBBEDS_STATIC_HOTELS_CACHE_TTL_SECONDS || 300),
 )
+const INVENTORY_DIRECTORY_CACHE_TTL_SECONDS = Math.max(
+  60,
+  Number(process.env.WEBBEDS_INVENTORY_DIRECTORY_CACHE_TTL_SECONDS || 600),
+)
 const STATIC_HOTELS_CACHE_DISABLED = process.env.WEBBEDS_STATIC_HOTELS_CACHE_DISABLED === "true"
 const EXPLORE_HOTELS_CACHE_DISABLED = process.env.WEBBEDS_EXPLORE_CACHE_DISABLED === "true"
 const EXPLORE_HOTELS_CACHE_TTL_SECONDS = Math.max(
@@ -103,6 +107,8 @@ const EXPLORE_GEO_BUCKET_PRECISION = Math.min(
 
 const buildStaticHotelsCacheKey = (payload = {}) =>
   `webbeds:static-hotels:${JSON.stringify(payload)}`
+const buildInventoryDirectoryCacheKey = (payload = {}) =>
+  `webbeds:inventory-directory:${JSON.stringify(payload)}`
 const buildExploreHotelsCacheKey = (payload = {}) =>
   `webbeds:explore-hotels:${JSON.stringify(payload)}`
 const buildExploreCollectionsCacheKey = (payload = {}) =>
@@ -338,6 +344,19 @@ const parseCsvList = (value) => {
     ),
   )
 }
+
+const normalizeDirectoryValue = (value, fallback = null) => {
+  const normalized = String(value ?? "").trim()
+  return normalized || fallback
+}
+
+const resolveInventoryDirectoryAddress = (row = {}) =>
+  normalizeDirectoryValue(row?.full_address?.hotelStreetAddress) ||
+  normalizeDirectoryValue(row?.address) ||
+  [row?.city_name, row?.country_name]
+    .map((item) => normalizeDirectoryValue(item))
+    .filter(Boolean)
+    .join(", ")
 
 const WEBBEDS_PAYMENT_CONTEXT_MODE = String(
   process.env.WEBBEDS_PAYMENT_CONTEXT_MODE || "guest",
@@ -1960,6 +1979,89 @@ export const clearMerchantPaymentContext = async (req, res, next) => {
     })
   } catch (error) {
     next(error)
+  }
+}
+
+export const exportInventoryDirectory = async (req, res, next) => {
+  try {
+    const cacheKey = STATIC_HOTELS_CACHE_DISABLED
+      ? null
+      : buildInventoryDirectoryCacheKey({ version: 1 })
+
+    if (cacheKey) {
+      const cached = await cache.get(cacheKey)
+      if (cached) {
+        res.set("Cache-Control", `private, max-age=${INVENTORY_DIRECTORY_CACHE_TTL_SECONDS}`)
+        res.set("X-Cache", "HIT")
+        return res.json(cached)
+      }
+    }
+
+    const rows = await models.WebbedsHotel.findAll({
+      attributes: [
+        "city_code",
+        "city_name",
+        "country_name",
+        "name",
+        "hotel_phone",
+        "address",
+        "full_address",
+      ],
+      order: [
+        ["country_name", "ASC"],
+        ["city_name", "ASC"],
+        ["name", "ASC"],
+      ],
+      raw: true,
+    })
+
+    const cities = []
+    let activeCity = null
+    let activeKey = null
+
+    rows.forEach((row) => {
+      const cityCode = normalizeDirectoryValue(row.city_code)
+      const cityName = normalizeDirectoryValue(row.city_name, "Unknown City")
+      const countryName = normalizeDirectoryValue(row.country_name, "Unknown Country")
+      const cityKey = `${cityCode || cityName}:${countryName}`
+
+      if (cityKey !== activeKey) {
+        activeKey = cityKey
+        activeCity = {
+          cityCode,
+          cityName,
+          countryName,
+          hotelCount: 0,
+          hotels: [],
+        }
+        cities.push(activeCity)
+      }
+
+      activeCity.hotels.push({
+        name: normalizeDirectoryValue(row.name, "Unnamed Hotel"),
+        phone: normalizeDirectoryValue(row.hotel_phone, "-"),
+        address: normalizeDirectoryValue(resolveInventoryDirectoryAddress(row), "-"),
+        city: cityName,
+      })
+      activeCity.hotelCount += 1
+    })
+
+    const payload = {
+      generatedAt: new Date().toISOString(),
+      totalHotels: rows.length,
+      totalCities: cities.length,
+      cities,
+    }
+
+    if (cacheKey) {
+      await cache.set(cacheKey, payload, INVENTORY_DIRECTORY_CACHE_TTL_SECONDS)
+    }
+
+    res.set("Cache-Control", `private, max-age=${INVENTORY_DIRECTORY_CACHE_TTL_SECONDS}`)
+    res.set("X-Cache", "MISS")
+    return res.json(payload)
+  } catch (error) {
+    return next(error)
   }
 }
 
