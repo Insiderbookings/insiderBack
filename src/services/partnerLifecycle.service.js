@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import { Op } from "sequelize";
+import { Op, col, fn } from "sequelize";
 import models from "../models/index.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 import {
@@ -36,6 +36,11 @@ const normalizePlanCode = (value) =>
 const normalizePaymentMethod = (value) =>
   String(value || "").trim().toLowerCase() || PARTNER_PAYMENT_METHODS.card;
 const toNow = () => new Date();
+const PARTNER_REACH_WINDOW_DAYS = Math.max(
+  30,
+  Number(process.env.PARTNER_REACH_WINDOW_DAYS || 90),
+);
+const PARTNER_WEEKLY_WINDOW_DAYS = 7;
 
 const PARTNER_DASHBOARD_HOTEL_ATTRIBUTES = Object.freeze([
   "hotel_id",
@@ -50,6 +55,253 @@ const PARTNER_EMAIL_LOG_ATTRIBUTES = Object.freeze([
   "email_key",
   "sent_at",
 ]);
+
+const normalizeCount = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.round(numeric);
+};
+
+const toObject = (value) =>
+  value && typeof value === "object" && !Array.isArray(value) ? value : {};
+
+const readNestedMetaNumber = (source, path = []) => {
+  let current = source;
+  for (const segment of path) {
+    if (!current || typeof current !== "object") return null;
+    current = current[segment];
+  }
+  const numeric = Number(current);
+  return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : null;
+};
+
+const readFirstMetaNumber = (sources = [], paths = []) => {
+  for (const source of sources) {
+    for (const path of paths) {
+      const found = readNestedMetaNumber(source, path);
+      if (found != null) return found;
+    }
+  }
+  return 0;
+};
+
+const buildPartnerPerformanceSnapshot = ({
+  trackedViews = 0,
+  trackedViewsLast7Days = 0,
+  travelersViewedToday = 0,
+  favoritesCount = 0,
+  manualViews = 0,
+  socialViews = 0,
+  clicks = 0,
+  windowDays = PARTNER_REACH_WINDOW_DAYS,
+} = {}) => {
+  const safeTrackedViews = normalizeCount(trackedViews);
+  const safeTrackedViewsLast7Days = normalizeCount(trackedViewsLast7Days);
+  const safeTravelersViewedToday = normalizeCount(travelersViewedToday);
+  const safeFavoritesCount = normalizeCount(favoritesCount);
+  const safeManualViews = normalizeCount(manualViews);
+  const safeSocialViews = normalizeCount(socialViews);
+  const safeClicks = normalizeCount(clicks);
+  const adminAddedViews = safeManualViews + safeSocialViews;
+
+  return {
+    bookingGptReach: {
+      total: safeTrackedViews + adminAddedViews,
+      trackedViews: safeTrackedViews,
+      adminAddedViews,
+      manualViews: safeManualViews,
+      socialViews: safeSocialViews,
+      last7Days: safeTrackedViewsLast7Days,
+      windowDays: Math.max(7, Number(windowDays) || PARTNER_REACH_WINDOW_DAYS),
+    },
+    clicks: {
+      total: safeClicks,
+    },
+    favorites: {
+      total: safeFavoritesCount,
+    },
+    views: {
+      today: safeTravelersViewedToday,
+      last7Days: safeTrackedViewsLast7Days,
+      windowDays: Math.max(7, Number(windowDays) || PARTNER_REACH_WINDOW_DAYS),
+    },
+    softPressure: {
+      travelersViewedToday: safeTravelersViewedToday,
+    },
+  };
+};
+
+const resolvePartnerPerformanceAdjustments = (claim) => {
+  const meta = toObject(claim?.meta);
+  const sources = [
+    toObject(meta.partnerPerformance),
+    toObject(meta.performance),
+    toObject(meta.bookingGptReach),
+    toObject(meta.reach),
+    meta,
+  ];
+
+  const manualViews = readFirstMetaNumber(sources, [
+    ["manualViews"],
+    ["manual_views"],
+    ["adminAddedViews"],
+    ["admin_added_views"],
+    ["manualReach"],
+    ["manual_reach"],
+  ]);
+  const socialViews = readFirstMetaNumber(sources, [
+    ["socialViews"],
+    ["social_views"],
+    ["socialReach"],
+    ["social_reach"],
+  ]);
+  const directClicks = readFirstMetaNumber(sources, [
+    ["clicks"],
+    ["click_total"],
+    ["totalClicks"],
+    ["total_clicks"],
+  ]);
+  const manualClicks = readFirstMetaNumber(sources, [
+    ["manualClicks"],
+    ["manual_clicks"],
+  ]);
+  const socialClicks = readFirstMetaNumber(sources, [
+    ["socialClicks"],
+    ["social_clicks"],
+  ]);
+  const destinationEmailClicks = readFirstMetaNumber(sources, [
+    ["destinationEmailClicks"],
+    ["destination_email_clicks"],
+  ]);
+
+  return {
+    manualViews,
+    socialViews,
+    clicks: directClicks || manualClicks + socialClicks + destinationEmailClicks,
+  };
+};
+
+const getUtcStartOfDay = (now = new Date()) =>
+  new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+const buildGroupedCountMap = (rows = [], keyField = "hotel_id") => {
+  const map = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const key = row?.[keyField] != null ? String(row[keyField]) : null;
+    if (!key) return;
+    map.set(key, normalizeCount(row?.count));
+  });
+  return map;
+};
+
+export const fetchPartnerPerformanceByHotelIds = async (
+  hotelIds = [],
+  claims = [],
+  { now = new Date(), reachWindowDays = PARTNER_REACH_WINDOW_DAYS } = {},
+) => {
+  const targetIds = Array.from(
+    new Set(
+      (Array.isArray(hotelIds) ? hotelIds : [])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (!targetIds.length) return new Map();
+
+  const claimMap =
+    claims instanceof Map
+      ? claims
+      : new Map(
+          (Array.isArray(claims) ? claims : [])
+            .filter(Boolean)
+            .map((claim) => [String(claim.hotel_id), claim]),
+        );
+
+  const safeWindowDays = Math.max(7, Number(reachWindowDays) || PARTNER_REACH_WINDOW_DAYS);
+  const reachSince = new Date(now.getTime() - safeWindowDays * 24 * 60 * 60 * 1000);
+  const weeklySince = new Date(now.getTime() - PARTNER_WEEKLY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const todayStart = getUtcStartOfDay(now);
+
+  const [reachRows, weeklyRows, todayRows, favoritesRows] = await Promise.all([
+    models.HotelRecentView.findAll({
+      attributes: ["hotel_id", [fn("COUNT", col("id")), "count"]],
+      where: {
+        hotel_id: { [Op.in]: targetIds },
+        viewed_at: { [Op.gte]: reachSince },
+      },
+      group: ["hotel_id"],
+      raw: true,
+    }),
+    models.HotelRecentView.findAll({
+      attributes: ["hotel_id", [fn("COUNT", col("id")), "count"]],
+      where: {
+        hotel_id: { [Op.in]: targetIds },
+        viewed_at: { [Op.gte]: weeklySince },
+      },
+      group: ["hotel_id"],
+      raw: true,
+    }),
+    models.HotelRecentView.findAll({
+      attributes: ["hotel_id", [fn("COUNT", col("id")), "count"]],
+      where: {
+        hotel_id: { [Op.in]: targetIds },
+        viewed_at: { [Op.gte]: todayStart },
+      },
+      group: ["hotel_id"],
+      raw: true,
+    }),
+    models.HotelFavorite.findAll({
+      attributes: ["hotel_id", [fn("COUNT", col("id")), "count"]],
+      where: {
+        hotel_id: { [Op.in]: targetIds },
+      },
+      group: ["hotel_id"],
+      raw: true,
+    }),
+  ]);
+
+  const reachMap = buildGroupedCountMap(reachRows);
+  const weeklyMap = buildGroupedCountMap(weeklyRows);
+  const todayMap = buildGroupedCountMap(todayRows);
+  const favoritesMap = buildGroupedCountMap(favoritesRows);
+  const statsByHotelId = new Map();
+
+  targetIds.forEach((hotelId) => {
+    const claim = claimMap.get(String(hotelId)) || null;
+    const adjustments = resolvePartnerPerformanceAdjustments(claim);
+    statsByHotelId.set(
+      String(hotelId),
+      buildPartnerPerformanceSnapshot({
+        trackedViews: reachMap.get(String(hotelId)) || 0,
+        trackedViewsLast7Days: weeklyMap.get(String(hotelId)) || 0,
+        travelersViewedToday: todayMap.get(String(hotelId)) || 0,
+        favoritesCount: favoritesMap.get(String(hotelId)) || 0,
+        manualViews: adjustments.manualViews,
+        socialViews: adjustments.socialViews,
+        clicks: adjustments.clicks,
+        windowDays: safeWindowDays,
+      }),
+    );
+  });
+
+  return statsByHotelId;
+};
+
+export const hydratePartnerClaimsPerformance = async (claims = [], options = {}) => {
+  const list = Array.isArray(claims) ? claims.filter(Boolean) : [];
+  if (!list.length) return list;
+  const statsByHotelId = await fetchPartnerPerformanceByHotelIds(
+    list.map((claim) => claim?.hotel_id),
+    list,
+    options,
+  );
+  list.forEach((claim) => {
+    claim.partnerPerformance =
+      statsByHotelId.get(String(claim.hotel_id)) ||
+      buildPartnerPerformanceSnapshot(resolvePartnerPerformanceAdjustments(claim));
+  });
+  return list;
+};
 
 const extractHotelId = (item) =>
   item?.id ??
@@ -496,6 +748,7 @@ export const listPartnerClaimsForUser = async ({ userId, hotelId = null }) => {
     include: buildClaimInclude(),
     order: [["created_at", "ASC"]],
   });
+  await hydratePartnerClaimsPerformance(claims);
   return claims;
 };
 
@@ -517,6 +770,8 @@ const buildEmailTimeline = (claim) => {
 export const buildPartnerDashboardPayload = (claim) => {
   const program = resolvePartnerProgramFromClaim(claim);
   const hotel = claim?.hotel || null;
+  const performance =
+    claim?.partnerPerformance || buildPartnerPerformanceSnapshot(resolvePartnerPerformanceAdjustments(claim));
   return {
     claimId: claim.id,
     hotelId: claim.hotel_id != null ? String(claim.hotel_id) : null,
@@ -542,6 +797,7 @@ export const buildPartnerDashboardPayload = (claim) => {
     invoicePending:
       String(claim.claim_status || "").toUpperCase() === PARTNER_CLAIM_STATUSES.invoicePending,
     canChoosePlan: Boolean(program?.trialActive || claim?.claim_status === PARTNER_CLAIM_STATUSES.expired),
+    performance,
     subscription: {
       billingMethod: claim.billing_method || null,
       stripeCustomerId: claim.stripe_customer_id || null,
@@ -598,7 +854,35 @@ export const attachPartnerProgramToHotelItems = async (items = []) => {
     };
   });
 
-  return applyEffectivePartnerProfilesToHotelItems(enriched, claims);
+  const withProfiles = await applyEffectivePartnerProfilesToHotelItems(enriched, claims);
+  const claimedHotelIds = claims.map((claim) => String(claim.hotel_id));
+  if (!claimedHotelIds.length) return withProfiles;
+  const statsByHotelId = await fetchPartnerPerformanceByHotelIds(claimedHotelIds, claims);
+
+  return withProfiles.map((item) => {
+    const hotelId = extractHotelId(item);
+    if (hotelId == null) return item;
+    const performance = statsByHotelId.get(String(hotelId));
+    if (!performance) return item;
+
+    const nextHotelDetails =
+      item?.hotelDetails && typeof item.hotelDetails === "object"
+        ? {
+            ...item.hotelDetails,
+            bookingGptReach: performance.bookingGptReach,
+            softPressure: performance.softPressure,
+            partnerPerformance: performance,
+          }
+        : item?.hotelDetails;
+
+    return {
+      ...item,
+      bookingGptReach: performance.bookingGptReach,
+      softPressure: performance.softPressure,
+      partnerPerformance: performance,
+      hotelDetails: nextHotelDetails,
+    };
+  });
 };
 
 export const comparePartnerAwareHotelItems = (a, b, fallbackCompare) => {

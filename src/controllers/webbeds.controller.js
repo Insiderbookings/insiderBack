@@ -34,6 +34,7 @@ import {
   comparePartnerAwareHotelItems,
 } from "../services/partnerLifecycle.service.js"
 import { getPartnerHotelProfileCacheVersion } from "../services/partnerHotelProfile.service.js"
+import { resolvePartnerProgramFromClaim } from "../services/partnerCatalog.service.js"
 
 import {
   previewReferralCreditForBooking,
@@ -557,6 +558,105 @@ const sortPartnerFirstWithFallback = (items = [], fallbackCompare = null) =>
       }),
     )
     .map(({ item }) => item)
+
+const toDateTimestamp = (value) => {
+  if (!value) return null
+  const parsed = new Date(value)
+  const time = parsed.getTime()
+  return Number.isFinite(time) ? time : null
+}
+
+const resolvePartnerCarouselSequenceTimestamp = (claim) =>
+  toDateTimestamp(
+    claim?.subscription_started_at ??
+      claim?.trial_started_at ??
+      claim?.claimed_at ??
+      claim?.created_at ??
+      null,
+  )
+
+const comparePartnerClaimsForCityCarousel = (left, right) => {
+  const leftTime = resolvePartnerCarouselSequenceTimestamp(left)
+  const rightTime = resolvePartnerCarouselSequenceTimestamp(right)
+  if (leftTime != null && rightTime != null && leftTime !== rightTime) {
+    return leftTime - rightTime
+  }
+  if (leftTime != null && rightTime == null) return -1
+  if (leftTime == null && rightTime != null) return 1
+  return String(left?.hotel_id || "").localeCompare(String(right?.hotel_id || ""))
+}
+
+const reorderCityCarouselItemsWithPartnersFirst = (
+  items = [],
+  orderedPartnerHotelIds = [],
+) => {
+  const source = Array.isArray(items) ? items.filter(Boolean) : []
+  const partnerOrder = new Map(
+    (Array.isArray(orderedPartnerHotelIds) ? orderedPartnerHotelIds : [])
+      .map((hotelId, index) => [String(hotelId), index]),
+  )
+  if (!source.length || !partnerOrder.size) return source
+
+  const partners = []
+  const others = []
+  source.forEach((item, index) => {
+    const hotelId =
+      item?.id ??
+      item?.hotelId ??
+      item?.hotel_id ??
+      item?.hotelCode ??
+      item?.hotelDetails?.hotelCode ??
+      null
+    const key = hotelId != null ? String(hotelId) : null
+    if (key && partnerOrder.has(key)) {
+      partners.push({ item, index, order: partnerOrder.get(key) })
+      return
+    }
+    others.push(item)
+  })
+
+  partners.sort(
+    (left, right) => left.order - right.order || left.index - right.index,
+  )
+  return [...partners.map((entry) => entry.item), ...others]
+}
+
+const getCityActivePartnerClaims = async (cityCode) => {
+  const resolvedCityCode = String(cityCode || "").trim()
+  if (!resolvedCityCode) return []
+
+  const claims = await models.PartnerHotelClaim.findAll({
+    attributes: [
+      "id",
+      "hotel_id",
+      "claim_status",
+      "subscription_status",
+      "claimed_at",
+      "trial_started_at",
+      "subscription_started_at",
+      "next_billing_at",
+      "last_badge_activated_at",
+      "current_plan_code",
+      "pending_plan_code",
+      "billing_method",
+      "invoice_requested_at",
+      "invoice_paid_at",
+    ],
+    include: [
+      {
+        model: models.WebbedsHotel,
+        as: "hotel",
+        required: true,
+        attributes: ["hotel_id", "city_code"],
+        where: { city_code: resolvedCityCode },
+      },
+    ],
+  })
+
+  return claims
+    .filter((claim) => Number(resolvePartnerProgramFromClaim(claim)?.badgePriority || 0) > 0)
+    .sort(comparePartnerClaimsForCityCarousel)
+}
 
 export const search = (req, res, next) => provider.search(req, res, next)
 export const getRooms = (req, res, next) => provider.getRooms(req, res, next)
@@ -2577,22 +2677,60 @@ export const listExploreCollections = async (req, res, next) => {
     for (const entry of cityBuckets.slice(0, safeSections)) {
       const code = String(entry.cityCode).trim()
       if (!code) continue
-      const rows = await models.WebbedsHotel.findAll({
-        where: { city_code: code },
-        attributes,
-        include,
-        order: [["priority", "DESC"], ["rating", "DESC"], ["name", "ASC"]],
-        limit: perSection,
-      })
-      let items = rows
+      const partnerClaims = await getCityActivePartnerClaims(code)
+      const orderedPartnerHotelIds = partnerClaims.map((claim) =>
+        String(claim.hotel_id),
+      )
+
+      let partnerRows = []
+      if (orderedPartnerHotelIds.length) {
+        partnerRows = await models.WebbedsHotel.findAll({
+          where: {
+            city_code: code,
+            hotel_id: { [Op.in]: orderedPartnerHotelIds },
+          },
+          attributes,
+          include,
+        })
+      }
+
+      const partnerRowMap = new Map(
+        partnerRows.map((row) => [String(row.hotel_id), row]),
+      )
+      const partnerItems = orderedPartnerHotelIds
+        .map((hotelId) => partnerRowMap.get(String(hotelId)))
+        .filter(Boolean)
         .map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit }))
         .filter(Boolean)
+
+      const fillerLimit = Math.max(0, perSection - partnerItems.length)
+      let fillerItems = []
+      if (fillerLimit > 0) {
+        const fillerWhere = {
+          city_code: code,
+          ...(orderedPartnerHotelIds.length
+            ? {
+                hotel_id: { [Op.notIn]: orderedPartnerHotelIds },
+              }
+            : {}),
+        }
+        const fillerRows = await models.WebbedsHotel.findAll({
+          where: fillerWhere,
+          attributes,
+          include,
+          order: [["priority", "DESC"], ["rating", "DESC"], ["name", "ASC"]],
+          limit: fillerLimit,
+        })
+        fillerItems = fillerRows
+          .map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit }))
+          .filter(Boolean)
+      }
+
+      let items = [...partnerItems, ...fillerItems]
       items = await attachPartnerProgramToHotelItems(items)
-      items = sortPartnerFirstWithFallback(
+      items = reorderCityCarouselItemsWithPartnersFirst(
         items,
-        (a, b) =>
-          Number(b?.priority ?? 0) - Number(a?.priority ?? 0) ||
-          String(a?.name || "").localeCompare(String(b?.name || "")),
+        orderedPartnerHotelIds,
       )
       if (!items.length) continue
       const cityLabel = entry.cityName || entry.countryName || "Explore"
@@ -2605,6 +2743,7 @@ export const listExploreCollections = async (req, res, next) => {
           country: entry.countryName || null,
         },
         data: items,
+        _partnerHotelIds: orderedPartnerHotelIds,
       })
     }
 
@@ -2619,11 +2758,19 @@ export const listExploreCollections = async (req, res, next) => {
           engagementById,
           coords: coords ? { lat: Number(coords.lat), lng: Number(coords.lng) } : null,
           debug: rankingVariant.debug,
-        })
+        }).map((section) => ({
+          ...section,
+          data: reorderCityCarouselItemsWithPartnersFirst(
+            Array.isArray(section?.data) ? section.data : [],
+            section?._partnerHotelIds ?? [],
+          ),
+        }))
       } catch (error) {
         console.warn("[webbeds] listExploreCollections ranking failed", error?.message || error)
       }
     }
+
+    sectionsPayload = sectionsPayload.map(({ _partnerHotelIds, ...section }) => section)
 
     const responsePayload = {
       sections: sectionsPayload,

@@ -247,6 +247,79 @@ const serializeProfileAmenity = (entry, index = 0) => {
   };
 };
 
+const resolveGalleryImageUrl = (value) => {
+  if (!value) return null;
+  if (typeof value === "string" || typeof value === "number") {
+    return normalizeTrimmedString(value);
+  }
+  if (typeof value === "object") {
+    return normalizeTrimmedString(
+      value?.url ??
+        value?.imageUrl ??
+        value?.image_url ??
+        value?.providerImageUrl ??
+        value?.provider_image_url ??
+        value?.thumb ??
+        value?.["@_url"] ??
+        value?.["#text"] ??
+        value?.text ??
+        value?.value ??
+        null,
+    );
+  }
+  return null;
+};
+
+const normalizeGalleryEntriesFromSource = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+
+  const hotelImages = value?.hotelImages ?? value;
+  const entries = [];
+  const thumbUrl = resolveGalleryImageUrl(hotelImages?.thumb ?? value?.thumb ?? null);
+  if (thumbUrl) {
+    entries.push({
+      url: thumbUrl,
+      categoryName: "thumbnail",
+      isThumbnail: true,
+    });
+  }
+
+  const rawImages = hotelImages?.image;
+  const imageEntries = Array.isArray(rawImages)
+    ? rawImages
+    : rawImages
+      ? [rawImages]
+      : [];
+  imageEntries.forEach((entry) => {
+    const url = resolveGalleryImageUrl(entry);
+    if (!url) return;
+    if (entry && typeof entry === "object") {
+      entries.push({
+        ...entry,
+        url,
+      });
+      return;
+    }
+    entries.push({ url });
+  });
+
+  return entries;
+};
+
+const resolveFirstGalleryImage = (...sources) => {
+  for (const source of sources) {
+    const entries = normalizeGalleryEntriesFromSource(source);
+    for (const entry of entries) {
+      const url = resolveGalleryImageUrl(entry);
+      if (url) return url;
+    }
+  }
+  return null;
+};
+
 const buildImageObjectsForPublicPayload = (galleryItems = []) =>
   galleryItems
     .map((entry) => {
@@ -261,14 +334,20 @@ const buildImageObjectsForPublicPayload = (galleryItems = []) =>
     .filter(Boolean);
 
 const buildBaseGalleryFromItem = (item) => {
-  const baseImages = Array.isArray(item?.images)
-    ? item.images
-    : Array.isArray(item?.hotelDetails?.images)
-      ? item.hotelDetails.images
-      : [];
+  const topLevelImages = normalizeGalleryEntriesFromSource(item?.images);
+  const detailImages = normalizeGalleryEntriesFromSource(item?.hotelDetails?.images);
+  const baseImages = topLevelImages.length ? topLevelImages : detailImages;
+  const explicitCover =
+    normalizeTrimmedString(
+      item?.coverImage ||
+        item?.image ||
+        item?.hotelDetails?.coverImage ||
+        item?.hotelDetails?.image ||
+        null,
+    ) || resolveFirstGalleryImage(baseImages);
   return baseImages
     .map((entry, index) => {
-      const url = normalizeTrimmedString(entry?.url || entry, null);
+      const url = resolveGalleryImageUrl(entry);
       if (!url) return null;
       return {
         sourceType: PARTNER_HOTEL_PROFILE_IMAGE_SOURCE.provider,
@@ -276,8 +355,7 @@ const buildBaseGalleryFromItem = (item) => {
         imageUrl: url,
         caption: normalizeTrimmedString(entry?.categoryName || null, 255),
         sortOrder: index,
-        isCover:
-          url === normalizeTrimmedString(item?.coverImage || item?.image || null) || index === 0,
+        isCover: url === explicitCover || index === 0,
         isActive: true,
       };
     })
@@ -430,7 +508,14 @@ export const buildEffectivePartnerHotelProfile = ({
     description,
     coverImage:
       explicitCover ||
-      normalizeTrimmedString(item?.coverImage || item?.image || item?.hotelDetails?.coverImage || null),
+      normalizeTrimmedString(
+        item?.coverImage ||
+          item?.image ||
+          item?.hotelDetails?.coverImage ||
+          item?.hotelDetails?.image ||
+          resolveFirstGalleryImage(item?.images, item?.hotelDetails?.images) ||
+          null,
+      ),
     gallery: publicGallery,
     amenities: amenityItems
       .filter((entry) => entry.isActive)
@@ -452,15 +537,22 @@ export const buildEffectivePartnerHotelProfile = ({
 const applyEffectiveProfileToItem = ({ item, effectiveProfile }) => {
   if (!item || typeof item !== "object" || !effectiveProfile) return item;
   const publicGallery = Array.isArray(effectiveProfile.gallery) ? effectiveProfile.gallery : [];
-  const coverImage = effectiveProfile.coverImage || item.coverImage || item.image || null;
-  const topLevelImages = publicGallery.length ? publicGallery : item.images;
+  const existingImages = item.images ?? item?.hotelDetails?.images ?? null;
+  const topLevelImages = publicGallery.length ? publicGallery : existingImages;
+  const coverImage =
+    effectiveProfile.coverImage ||
+    item.coverImage ||
+    item.image ||
+    item?.hotelDetails?.coverImage ||
+    item?.hotelDetails?.image ||
+    resolveFirstGalleryImage(topLevelImages);
   const hotelDetails =
     item?.hotelDetails && typeof item.hotelDetails === "object"
       ? {
           ...item.hotelDetails,
           coverImage,
-          image: coverImage,
-          images: topLevelImages,
+          image: coverImage || item.hotelDetails.image || null,
+          images: topLevelImages ?? item.hotelDetails.images ?? null,
           amenities:
             effectiveProfile.amenities?.length > 0
               ? effectiveProfile.amenities
@@ -482,7 +574,7 @@ const applyEffectiveProfileToItem = ({ item, effectiveProfile }) => {
     description: effectiveProfile.description || item.description || null,
     coverImage,
     image: coverImage,
-    images: topLevelImages,
+    images: topLevelImages ?? item.images ?? null,
     amenities:
       effectiveProfile.amenities?.length > 0 ? effectiveProfile.amenities : item.amenities,
     contact:

@@ -8,6 +8,7 @@ import {
   buildPartnerDashboardPayload,
   createPartnerCardCheckout,
   ensurePartnerClaim,
+  hydratePartnerClaimsPerformance,
   listPartnerClaimsForUser,
   logPartnerEmail,
   requestPartnerInvoice,
@@ -238,6 +239,7 @@ export const claimPartnerHotelController = async (req, res, next) => {
         }).catch(() => {});
       });
     }
+    await hydratePartnerClaimsPerformance([claim]);
 
     const safeUser = await loadSafeUser(user.id);
     const claimPayload = buildPartnerDashboardPayload(claim);
@@ -321,6 +323,7 @@ export const selectPartnerSubscriptionController = async (req, res, next) => {
         },
       });
       await sendPartnerInvoiceRequestedEmail({ claim: invoiceResult.claim }).catch(() => {});
+      await hydratePartnerClaimsPerformance([invoiceResult.claim]);
       const claimPayload = buildPartnerDashboardPayload(invoiceResult.claim);
       return res.json({
         mode: "invoice",
@@ -338,6 +341,9 @@ export const selectPartnerSubscriptionController = async (req, res, next) => {
       successUrl: req.body?.successUrl || null,
       cancelUrl: req.body?.cancelUrl || null,
     });
+    if (checkout.claim) {
+      await hydratePartnerClaimsPerformance([checkout.claim]);
+    }
     const claimPayload = checkout.claim ? buildPartnerDashboardPayload(checkout.claim) : null;
     return res.json({
       mode: checkout.mode,
@@ -438,6 +444,7 @@ export const activatePartnerInvoiceController = async (req, res, next) => {
       invoiceId: req.body?.invoiceId || claim.stripe_invoice_id || null,
     });
     await sendPartnerPlanConfirmationEmail({ claim: activated }).catch(() => {});
+    await hydratePartnerClaimsPerformance([activated]);
     return res.json({
       claim: buildPartnerDashboardPayload(activated),
     });
