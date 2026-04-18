@@ -3,6 +3,7 @@ import { authenticate, authorizeRoles } from "../middleware/auth.js"
 import { createTenant, listTenants, updateTenant, deleteTenant, listAccounts, linkAccountToTenant, unlinkAccountFromTenant, linkUserToTenant, unlinkUserFromTenant, unpauseTenant, getStatsOverview, getHealthStatus } from "../controllers/admin.controller.js"
 import { adminCreateCards, adminApprove, adminListCards, adminMarkPaid } from "../controllers/vcc.controller.js"
 import { adminListPlatforms, adminGetTenantPlatforms, adminUpsertTenantPlatform } from "../controllers/platform.controller.js"
+import { exportInventoryDirectory } from "../controllers/webbeds.controller.js"
 import {
   adminListRoleRequests,
   adminApproveInitial,
@@ -70,6 +71,7 @@ router.post("/provider-1/hotels/sync", syncWebbedsHotelsController)
 router.post("/webbeds/countries/sync", authenticate, authorizeRoles(100), syncWebbedsCountriesController)
 router.post("/webbeds/cities/sync", authenticate, authorizeRoles(100), syncWebbedsCitiesController)
 router.post("/webbeds/hotels/sync", authenticate, authorizeRoles(100), syncWebbedsHotelsController)
+router.get("/webbeds/inventory-directory", authenticate, authorizeRoles(100), exportInventoryDirectory)
 
 // Stays / Bookings admin
 router.get("/stays", authenticate, authorizeRoles(100), adminListStays)

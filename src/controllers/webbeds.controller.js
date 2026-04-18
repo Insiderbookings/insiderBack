@@ -33,6 +33,8 @@ import {
   attachPartnerProgramToHotelItems,
   comparePartnerAwareHotelItems,
 } from "../services/partnerLifecycle.service.js"
+import { getPartnerHotelProfileCacheVersion } from "../services/partnerHotelProfile.service.js"
+import { resolvePartnerProgramFromClaim } from "../services/partnerCatalog.service.js"
 
 import {
   previewReferralCreditForBooking,
@@ -60,6 +62,10 @@ const logStripeFxDebug = (...args) => {
 const STATIC_HOTELS_CACHE_TTL_SECONDS = Math.max(
   30,
   Number(process.env.WEBBEDS_STATIC_HOTELS_CACHE_TTL_SECONDS || 300),
+)
+const INVENTORY_DIRECTORY_CACHE_TTL_SECONDS = Math.max(
+  60,
+  Number(process.env.WEBBEDS_INVENTORY_DIRECTORY_CACHE_TTL_SECONDS || 600),
 )
 const STATIC_HOTELS_CACHE_DISABLED = process.env.WEBBEDS_STATIC_HOTELS_CACHE_DISABLED === "true"
 const EXPLORE_HOTELS_CACHE_DISABLED = process.env.WEBBEDS_EXPLORE_CACHE_DISABLED === "true"
@@ -102,6 +108,8 @@ const EXPLORE_GEO_BUCKET_PRECISION = Math.min(
 
 const buildStaticHotelsCacheKey = (payload = {}) =>
   `webbeds:static-hotels:${JSON.stringify(payload)}`
+const buildInventoryDirectoryCacheKey = (payload = {}) =>
+  `webbeds:inventory-directory:${JSON.stringify(payload)}`
 const buildExploreHotelsCacheKey = (payload = {}) =>
   `webbeds:explore-hotels:${JSON.stringify(payload)}`
 const buildExploreCollectionsCacheKey = (payload = {}) =>
@@ -338,6 +346,19 @@ const parseCsvList = (value) => {
   )
 }
 
+const normalizeDirectoryValue = (value, fallback = null) => {
+  const normalized = String(value ?? "").trim()
+  return normalized || fallback
+}
+
+const resolveInventoryDirectoryAddress = (row = {}) =>
+  normalizeDirectoryValue(row?.full_address?.hotelStreetAddress) ||
+  normalizeDirectoryValue(row?.address) ||
+  [row?.city_name, row?.country_name]
+    .map((item) => normalizeDirectoryValue(item))
+    .filter(Boolean)
+    .join(", ")
+
 const WEBBEDS_PAYMENT_CONTEXT_MODE = String(
   process.env.WEBBEDS_PAYMENT_CONTEXT_MODE || "guest",
 )
@@ -537,6 +558,105 @@ const sortPartnerFirstWithFallback = (items = [], fallbackCompare = null) =>
       }),
     )
     .map(({ item }) => item)
+
+const toDateTimestamp = (value) => {
+  if (!value) return null
+  const parsed = new Date(value)
+  const time = parsed.getTime()
+  return Number.isFinite(time) ? time : null
+}
+
+const resolvePartnerCarouselSequenceTimestamp = (claim) =>
+  toDateTimestamp(
+    claim?.subscription_started_at ??
+      claim?.trial_started_at ??
+      claim?.claimed_at ??
+      claim?.created_at ??
+      null,
+  )
+
+const comparePartnerClaimsForCityCarousel = (left, right) => {
+  const leftTime = resolvePartnerCarouselSequenceTimestamp(left)
+  const rightTime = resolvePartnerCarouselSequenceTimestamp(right)
+  if (leftTime != null && rightTime != null && leftTime !== rightTime) {
+    return leftTime - rightTime
+  }
+  if (leftTime != null && rightTime == null) return -1
+  if (leftTime == null && rightTime != null) return 1
+  return String(left?.hotel_id || "").localeCompare(String(right?.hotel_id || ""))
+}
+
+const reorderCityCarouselItemsWithPartnersFirst = (
+  items = [],
+  orderedPartnerHotelIds = [],
+) => {
+  const source = Array.isArray(items) ? items.filter(Boolean) : []
+  const partnerOrder = new Map(
+    (Array.isArray(orderedPartnerHotelIds) ? orderedPartnerHotelIds : [])
+      .map((hotelId, index) => [String(hotelId), index]),
+  )
+  if (!source.length || !partnerOrder.size) return source
+
+  const partners = []
+  const others = []
+  source.forEach((item, index) => {
+    const hotelId =
+      item?.id ??
+      item?.hotelId ??
+      item?.hotel_id ??
+      item?.hotelCode ??
+      item?.hotelDetails?.hotelCode ??
+      null
+    const key = hotelId != null ? String(hotelId) : null
+    if (key && partnerOrder.has(key)) {
+      partners.push({ item, index, order: partnerOrder.get(key) })
+      return
+    }
+    others.push(item)
+  })
+
+  partners.sort(
+    (left, right) => left.order - right.order || left.index - right.index,
+  )
+  return [...partners.map((entry) => entry.item), ...others]
+}
+
+const getCityActivePartnerClaims = async (cityCode) => {
+  const resolvedCityCode = String(cityCode || "").trim()
+  if (!resolvedCityCode) return []
+
+  const claims = await models.PartnerHotelClaim.findAll({
+    attributes: [
+      "id",
+      "hotel_id",
+      "claim_status",
+      "subscription_status",
+      "claimed_at",
+      "trial_started_at",
+      "subscription_started_at",
+      "next_billing_at",
+      "last_badge_activated_at",
+      "current_plan_code",
+      "pending_plan_code",
+      "billing_method",
+      "invoice_requested_at",
+      "invoice_paid_at",
+    ],
+    include: [
+      {
+        model: models.WebbedsHotel,
+        as: "hotel",
+        required: true,
+        attributes: ["hotel_id", "city_code"],
+        where: { city_code: resolvedCityCode },
+      },
+    ],
+  })
+
+  return claims
+    .filter((claim) => Number(resolvePartnerProgramFromClaim(claim)?.badgePriority || 0) > 0)
+    .sort(comparePartnerClaimsForCityCarousel)
+}
 
 export const search = (req, res, next) => provider.search(req, res, next)
 export const getRooms = (req, res, next) => provider.getRooms(req, res, next)
@@ -1962,6 +2082,89 @@ export const clearMerchantPaymentContext = async (req, res, next) => {
   }
 }
 
+export const exportInventoryDirectory = async (req, res, next) => {
+  try {
+    const cacheKey = STATIC_HOTELS_CACHE_DISABLED
+      ? null
+      : buildInventoryDirectoryCacheKey({ version: 1 })
+
+    if (cacheKey) {
+      const cached = await cache.get(cacheKey)
+      if (cached) {
+        res.set("Cache-Control", `private, max-age=${INVENTORY_DIRECTORY_CACHE_TTL_SECONDS}`)
+        res.set("X-Cache", "HIT")
+        return res.json(cached)
+      }
+    }
+
+    const rows = await models.WebbedsHotel.findAll({
+      attributes: [
+        "city_code",
+        "city_name",
+        "country_name",
+        "name",
+        "hotel_phone",
+        "address",
+        "full_address",
+      ],
+      order: [
+        ["country_name", "ASC"],
+        ["city_name", "ASC"],
+        ["name", "ASC"],
+      ],
+      raw: true,
+    })
+
+    const cities = []
+    let activeCity = null
+    let activeKey = null
+
+    rows.forEach((row) => {
+      const cityCode = normalizeDirectoryValue(row.city_code)
+      const cityName = normalizeDirectoryValue(row.city_name, "Unknown City")
+      const countryName = normalizeDirectoryValue(row.country_name, "Unknown Country")
+      const cityKey = `${cityCode || cityName}:${countryName}`
+
+      if (cityKey !== activeKey) {
+        activeKey = cityKey
+        activeCity = {
+          cityCode,
+          cityName,
+          countryName,
+          hotelCount: 0,
+          hotels: [],
+        }
+        cities.push(activeCity)
+      }
+
+      activeCity.hotels.push({
+        name: normalizeDirectoryValue(row.name, "Unnamed Hotel"),
+        phone: normalizeDirectoryValue(row.hotel_phone, "-"),
+        address: normalizeDirectoryValue(resolveInventoryDirectoryAddress(row), "-"),
+        city: cityName,
+      })
+      activeCity.hotelCount += 1
+    })
+
+    const payload = {
+      generatedAt: new Date().toISOString(),
+      totalHotels: rows.length,
+      totalCities: cities.length,
+      cities,
+    }
+
+    if (cacheKey) {
+      await cache.set(cacheKey, payload, INVENTORY_DIRECTORY_CACHE_TTL_SECONDS)
+    }
+
+    res.set("Cache-Control", `private, max-age=${INVENTORY_DIRECTORY_CACHE_TTL_SECONDS}`)
+    res.set("X-Cache", "MISS")
+    return res.json(payload)
+  } catch (error) {
+    return next(error)
+  }
+}
+
 
 export const listStaticHotels = async (req, res, next) => {
   try {
@@ -2007,6 +2210,7 @@ export const listStaticHotels = async (req, res, next) => {
     const safeImagesLimit = Number.isFinite(imagesLimitValue)
       ? Math.max(0, Math.min(imagesLimitValue, 200))
       : (useLite ? 1 : null)
+    const partnerProfileCacheVersion = await getPartnerHotelProfileCacheVersion()
 
     const cacheKey = STATIC_HOTELS_CACHE_DISABLED
       ? null
@@ -2021,6 +2225,7 @@ export const listStaticHotels = async (req, res, next) => {
         offset: safeOffset,
         lite: useLite,
         imagesLimit: safeImagesLimit,
+        partnerProfileCacheVersion,
       })
 
     if (cacheKey) {
@@ -2190,6 +2395,7 @@ export const listExploreHotels = async (req, res, next) => {
     const bucketLng = coords
       ? roundCoordinate(coords.lng, EXPLORE_GEO_BUCKET_PRECISION)
       : null
+    const partnerProfileCacheVersion = await getPartnerHotelProfileCacheVersion()
 
     const cacheKey = EXPLORE_HOTELS_CACHE_DISABLED
       ? null
@@ -2203,6 +2409,7 @@ export const listExploreHotels = async (req, res, next) => {
         lite: useLite,
         imagesLimit: safeImagesLimit,
         rankingVariant: rankingVariant.variant,
+        partnerProfileCacheVersion,
       })
 
     if (cacheKey) {
@@ -2397,6 +2604,7 @@ export const listExploreCollections = async (req, res, next) => {
     const bucketLng = coords
       ? roundCoordinate(coords.lng, EXPLORE_GEO_BUCKET_PRECISION)
       : null
+    const partnerProfileCacheVersion = await getPartnerHotelProfileCacheVersion()
 
     const fallbackCodes = parseCsvList(fallbackCities).length
       ? parseCsvList(fallbackCities)
@@ -2418,6 +2626,7 @@ export const listExploreCollections = async (req, res, next) => {
         lite: useLite,
         imagesLimit: safeImagesLimit,
         rankingVariant: rankingVariant.variant,
+        partnerProfileCacheVersion,
       })
 
     if (cacheKey) {
@@ -2468,22 +2677,60 @@ export const listExploreCollections = async (req, res, next) => {
     for (const entry of cityBuckets.slice(0, safeSections)) {
       const code = String(entry.cityCode).trim()
       if (!code) continue
-      const rows = await models.WebbedsHotel.findAll({
-        where: { city_code: code },
-        attributes,
-        include,
-        order: [["priority", "DESC"], ["rating", "DESC"], ["name", "ASC"]],
-        limit: perSection,
-      })
-      let items = rows
+      const partnerClaims = await getCityActivePartnerClaims(code)
+      const orderedPartnerHotelIds = partnerClaims.map((claim) =>
+        String(claim.hotel_id),
+      )
+
+      let partnerRows = []
+      if (orderedPartnerHotelIds.length) {
+        partnerRows = await models.WebbedsHotel.findAll({
+          where: {
+            city_code: code,
+            hotel_id: { [Op.in]: orderedPartnerHotelIds },
+          },
+          attributes,
+          include,
+        })
+      }
+
+      const partnerRowMap = new Map(
+        partnerRows.map((row) => [String(row.hotel_id), row]),
+      )
+      const partnerItems = orderedPartnerHotelIds
+        .map((hotelId) => partnerRowMap.get(String(hotelId)))
+        .filter(Boolean)
         .map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit }))
         .filter(Boolean)
+
+      const fillerLimit = Math.max(0, perSection - partnerItems.length)
+      let fillerItems = []
+      if (fillerLimit > 0) {
+        const fillerWhere = {
+          city_code: code,
+          ...(orderedPartnerHotelIds.length
+            ? {
+                hotel_id: { [Op.notIn]: orderedPartnerHotelIds },
+              }
+            : {}),
+        }
+        const fillerRows = await models.WebbedsHotel.findAll({
+          where: fillerWhere,
+          attributes,
+          include,
+          order: [["priority", "DESC"], ["rating", "DESC"], ["name", "ASC"]],
+          limit: fillerLimit,
+        })
+        fillerItems = fillerRows
+          .map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit }))
+          .filter(Boolean)
+      }
+
+      let items = [...partnerItems, ...fillerItems]
       items = await attachPartnerProgramToHotelItems(items)
-      items = sortPartnerFirstWithFallback(
+      items = reorderCityCarouselItemsWithPartnersFirst(
         items,
-        (a, b) =>
-          Number(b?.priority ?? 0) - Number(a?.priority ?? 0) ||
-          String(a?.name || "").localeCompare(String(b?.name || "")),
+        orderedPartnerHotelIds,
       )
       if (!items.length) continue
       const cityLabel = entry.cityName || entry.countryName || "Explore"
@@ -2496,6 +2743,7 @@ export const listExploreCollections = async (req, res, next) => {
           country: entry.countryName || null,
         },
         data: items,
+        _partnerHotelIds: orderedPartnerHotelIds,
       })
     }
 
@@ -2510,11 +2758,19 @@ export const listExploreCollections = async (req, res, next) => {
           engagementById,
           coords: coords ? { lat: Number(coords.lat), lng: Number(coords.lng) } : null,
           debug: rankingVariant.debug,
-        })
+        }).map((section) => ({
+          ...section,
+          data: reorderCityCarouselItemsWithPartnersFirst(
+            Array.isArray(section?.data) ? section.data : [],
+            section?._partnerHotelIds ?? [],
+          ),
+        }))
       } catch (error) {
         console.warn("[webbeds] listExploreCollections ranking failed", error?.message || error)
       }
     }
+
+    sectionsPayload = sectionsPayload.map(({ _partnerHotelIds, ...section }) => section)
 
     const responsePayload = {
       sections: sectionsPayload,

@@ -19,6 +19,7 @@ import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 import { resolvePoiToCoordinates, getNearbyPlaces, computeDistanceKm } from "../modules/ai/tools/tool.places.js";
 import { resolveSemanticCatalogContext } from "../modules/ai/ai.semanticCatalog.js";
 import { resolveWebbedsCityMatch } from "./webbedsCityResolver.service.js";
+import { attachPartnerProgramToHotelItems } from "./partnerLifecycle.service.js";
 
 const ASSISTANT_SEARCH_MAX_LIMIT = Math.max(
   20,
@@ -4405,6 +4406,7 @@ const runStaticHotelQuery = async (where, options) => {
     limit: fetchLimit,
   });
   let cards = hotels.map(formatStaticHotel).filter(Boolean);
+  cards = await attachPartnerProgramToHotelItems(cards);
   emitSearchTrace(traceSink, "CATALOG_DB_FETCHED", {
     label: `Catalog returned ${cards.length} option${cards.length === 1 ? "" : "s"}`,
     debugLabel: `Static DB fetched ${hotels.length} row(s), ${cards.length} mapped card(s)`,
@@ -4559,7 +4561,7 @@ const mapLiveHotelOptions = async ({
     });
   }
 
-  const cards = records
+  let cards = records
     .map((record) => {
       const card = formatStaticHotel(record);
       if (!card) return null;
@@ -4583,6 +4585,7 @@ const mapLiveHotelOptions = async ({
       });
     })
     .filter(Boolean);
+  cards = await attachPartnerProgramToHotelItems(cards);
 
   let filteredCards = await applyHotelFilters(cards, hotelFilters);
   if (coordinateFilter) {
@@ -5657,6 +5660,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   });
 
   let cards = hotels.map(formatStaticHotel).filter(Boolean);
+  cards = await attachPartnerProgramToHotelItems(cards);
   console.log(`[search:hotels] DB → ${hotels.length} hotels fetched, ${cards.length} mapped OK`);
 
   cards = await applyHotelFilters(cards, normalizedHotelFilters);
@@ -5797,6 +5801,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
     `[search:hotels] strict=0 → relaxed fallback (${hotels.length} DB hotels, dropping preferredOnly only)`,
   );
   let relaxedCards = hotels.map(formatStaticHotel).filter(Boolean);
+  relaxedCards = await attachPartnerProgramToHotelItems(relaxedCards);
   const relaxedHardFilters = {
     ...normalizedHotelFilters,
     preferredOnly: false,
@@ -5906,6 +5911,7 @@ export const searchHotelsForPlan = async (plan = {}, options = {}) => {
   });
 
   let fallbackCardsPool = fallbackHotels.map(formatStaticHotel).filter(Boolean);
+  fallbackCardsPool = await attachPartnerProgramToHotelItems(fallbackCardsPool);
   fallbackCardsPool = await applyHotelFilters(fallbackCardsPool, {
     ...normalizedHotelFilters,
     preferredOnly: false,

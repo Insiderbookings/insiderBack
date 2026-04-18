@@ -8,6 +8,7 @@ import {
   buildPartnerDashboardPayload,
   createPartnerCardCheckout,
   ensurePartnerClaim,
+  hydratePartnerClaimsPerformance,
   listPartnerClaimsForUser,
   logPartnerEmail,
   requestPartnerInvoice,
@@ -17,9 +18,18 @@ import {
   sendPartnerPlanConfirmationEmail,
 } from "../services/partnerLifecycle.service.js";
 import {
+  getPartnerHotelProfileEditorPayload,
+  savePartnerHotelProfileEditorPayload,
+} from "../services/partnerHotelProfile.service.js";
+import {
   getPartnerPlanByCode,
   getPartnerPlans,
 } from "../services/partnerCatalog.service.js";
+import {
+  getOrCreatePartnerVerificationCode,
+  lookupPartnerVerificationCode,
+  markPartnerVerificationCodeClaimed,
+} from "../services/partnerVerification.service.js";
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
 
@@ -50,14 +60,14 @@ const resolveOptionalUserFromRequest = async (req) => {
   }
 };
 
-const ensurePartnerUser = async (req, res) => {
+const ensurePartnerUser = async (req, res, { allowCreate = true } = {}) => {
   const authenticatedUser = await resolveOptionalUserFromRequest(req);
   if (authenticatedUser) return { user: authenticatedUser, issuedSession: null };
 
-  const email = normalizeEmail(req.body?.email);
+  const email = normalizeEmail(req.body?.email || req.body?.contactEmail);
   const password = String(req.body?.password || "");
   const name = normalizeName({
-    name: req.body?.name,
+    name: req.body?.name || req.body?.contactName,
     firstName: req.body?.firstName,
     lastName: req.body?.lastName,
     fallbackEmail: email,
@@ -83,6 +93,11 @@ const ensurePartnerUser = async (req, res) => {
       throw error;
     }
   } else {
+    if (!allowCreate) {
+      const error = new Error("Sign in with the original partner account for this hotel.");
+      error.status = 401;
+      throw error;
+    }
     const passwordHash = await bcrypt.hash(password, 10);
     user = await models.User.create({
       name,
@@ -126,26 +141,85 @@ export const searchPartnerHotelsController = async (req, res, next) => {
   }
 };
 
+export const previewPartnerVerificationCodeController = async (req, res, next) => {
+  try {
+    const currentUser = await resolveOptionalUserFromRequest(req);
+    const lookup = await lookupPartnerVerificationCode({
+      code: req.body?.code ?? req.body?.verificationCode ?? req.query?.code,
+      currentUserId: currentUser?.id || null,
+    });
+    return res.json({
+      item: lookup.item,
+    });
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
 export const claimPartnerHotelController = async (req, res, next) => {
   try {
-    const hotelId = String(req.body?.hotelId || "").trim();
+    const directHotelId = String(req.body?.hotelId || "").trim();
+    const verificationCodeInput = req.body?.verificationCode ?? req.body?.code;
+    let hotelId = directHotelId;
+    let verificationLookup = null;
+    const optionalUser = await resolveOptionalUserFromRequest(req);
+
     if (!hotelId) {
-      return res.status(400).json({ error: "hotelId is required" });
+      verificationLookup = await lookupPartnerVerificationCode({
+        code: verificationCodeInput,
+        currentUserId: optionalUser?.id || null,
+      });
+      hotelId = String(verificationLookup?.item?.hotelId || "").trim();
     }
 
-    const { user, issuedSession } = await ensurePartnerUser(req, res);
+    if (!hotelId) {
+      return res.status(400).json({ error: "hotelId or verificationCode is required" });
+    }
+
+    const { user, issuedSession } = await ensurePartnerUser(req, res, {
+      allowCreate: !verificationLookup?.item?.alreadyClaimed,
+    });
+
+    if (verificationLookup) {
+      verificationLookup = await lookupPartnerVerificationCode({
+        code: verificationLookup.item.code,
+        currentUserId: user.id,
+      });
+    }
+
+    if (
+      verificationLookup &&
+      !verificationLookup.item.canActivate &&
+      !verificationLookup.item.claimedByCurrentUser
+    ) {
+      const message = verificationLookup.item.alreadyClaimed
+        ? "This hotel is already claimed."
+        : "This verification id is not available.";
+      return res.status(409).json({ error: message });
+    }
+
     const { claim, hotel, created } = await ensurePartnerClaim({
       hotelId,
       userId: user.id,
       contactName: normalizeName({
-        name: req.body?.name || user.name,
+        name: req.body?.name || req.body?.contactName || user.name,
         firstName: req.body?.firstName || user.first_name,
         lastName: req.body?.lastName || user.last_name,
         fallbackEmail: user.email,
       }),
-      contactEmail: normalizeEmail(req.body?.email || user.email),
-      contactPhone: req.body?.phone || user.phone || null,
+      contactEmail: normalizeEmail(req.body?.email || req.body?.contactEmail || user.email),
+      contactPhone: req.body?.phone || req.body?.contactPhone || user.phone || null,
     });
+    if (verificationLookup?.record) {
+      await markPartnerVerificationCodeClaimed({
+        record: verificationLookup.record,
+        claim,
+        userId: user.id,
+      });
+    }
 
     const welcomeAlreadySent = Array.isArray(claim?.emailLogs)
       ? claim.emailLogs.some((entry) => entry.email_key === "day_1_welcome")
@@ -165,12 +239,15 @@ export const claimPartnerHotelController = async (req, res, next) => {
         }).catch(() => {});
       });
     }
+    await hydratePartnerClaimsPerformance([claim]);
 
     const safeUser = await loadSafeUser(user.id);
+    const claimPayload = buildPartnerDashboardPayload(claim);
     const response = {
       created,
       user: safeUser,
-      claim: buildPartnerDashboardPayload(claim),
+      claim: claimPayload,
+      item: claimPayload,
     };
     if (issuedSession?.token) response.token = issuedSession.token;
     if (issuedSession?.refreshToken) response.refreshToken = issuedSession.refreshToken;
@@ -215,6 +292,9 @@ export const selectPartnerSubscriptionController = async (req, res, next) => {
     const claim = claims[0] || null;
     if (!claim) return res.status(404).json({ error: "Partner claim not found" });
     const user = await models.User.findByPk(userId);
+    const requestBilling = req.body?.billingDetails && typeof req.body.billingDetails === "object"
+      ? req.body.billingDetails
+      : {};
 
     if (paymentMethod === "invoice") {
       const invoiceResult = await requestPartnerInvoice({
@@ -222,17 +302,35 @@ export const selectPartnerSubscriptionController = async (req, res, next) => {
         user,
         planCode,
         billingDetails: {
-          billingName: req.body?.billingName || claim.contact_name || user?.name || null,
-          billingEmail: req.body?.billingEmail || claim.contact_email || user?.email || null,
-          billingAddress: req.body?.billingAddress || null,
+          billingName:
+            req.body?.billingName ||
+            requestBilling.billingName ||
+            requestBilling.companyName ||
+            claim.contact_name ||
+            user?.name ||
+            null,
+          billingEmail:
+            req.body?.billingEmail ||
+            requestBilling.billingEmail ||
+            claim.contact_email ||
+            user?.email ||
+            null,
+          billingAddress:
+            req.body?.billingAddress ||
+            requestBilling.billingAddress ||
+            requestBilling.notes ||
+            null,
         },
       });
       await sendPartnerInvoiceRequestedEmail({ claim: invoiceResult.claim }).catch(() => {});
+      await hydratePartnerClaimsPerformance([invoiceResult.claim]);
+      const claimPayload = buildPartnerDashboardPayload(invoiceResult.claim);
       return res.json({
         mode: "invoice",
         invoiceId: invoiceResult.invoiceId,
         invoiceUrl: invoiceResult.invoiceUrl,
-        claim: buildPartnerDashboardPayload(invoiceResult.claim),
+        claim: claimPayload,
+        item: claimPayload,
       });
     }
 
@@ -243,11 +341,75 @@ export const selectPartnerSubscriptionController = async (req, res, next) => {
       successUrl: req.body?.successUrl || null,
       cancelUrl: req.body?.cancelUrl || null,
     });
+    if (checkout.claim) {
+      await hydratePartnerClaimsPerformance([checkout.claim]);
+    }
+    const claimPayload = checkout.claim ? buildPartnerDashboardPayload(checkout.claim) : null;
     return res.json({
       mode: checkout.mode,
       checkoutUrl: checkout.url,
-      claim: checkout.claim ? buildPartnerDashboardPayload(checkout.claim) : null,
+      claim: claimPayload,
+      item: claimPayload,
     });
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
+export const getOrCreatePartnerVerificationCodeController = async (req, res, next) => {
+  try {
+    const hotelId = String(req.params?.hotelId || req.body?.hotelId || "").trim();
+    if (!hotelId) {
+      return res.status(400).json({ error: "hotelId is required" });
+    }
+    const result = await getOrCreatePartnerVerificationCode({
+      hotelId,
+    });
+    return res.status(result.created ? 201 : 200).json({
+      created: result.created,
+      item: result.item,
+    });
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
+export const getMyPartnerHotelProfileController = async (req, res, next) => {
+  try {
+    const userId = Number(req.user?.id || 0);
+    const hotelId = String(req.query?.hotelId || "").trim();
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!hotelId) return res.status(400).json({ error: "hotelId is required" });
+
+    const payload = await getPartnerHotelProfileEditorPayload({ userId, hotelId });
+    return res.json(payload);
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
+export const updateMyPartnerHotelProfileController = async (req, res, next) => {
+  try {
+    const userId = Number(req.user?.id || 0);
+    const hotelId = String(req.body?.hotelId || req.query?.hotelId || "").trim();
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!hotelId) return res.status(400).json({ error: "hotelId is required" });
+
+    const payload = await savePartnerHotelProfileEditorPayload({
+      userId,
+      hotelId,
+      payload: req.body || {},
+    });
+    return res.json(payload);
   } catch (error) {
     if (error?.status) {
       return res.status(error.status).json({ error: error.message });
@@ -282,6 +444,7 @@ export const activatePartnerInvoiceController = async (req, res, next) => {
       invoiceId: req.body?.invoiceId || claim.stripe_invoice_id || null,
     });
     await sendPartnerPlanConfirmationEmail({ claim: activated }).catch(() => {});
+    await hydratePartnerClaimsPerformance([activated]);
     return res.json({
       claim: buildPartnerDashboardPayload(activated),
     });

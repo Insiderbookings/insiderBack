@@ -27,34 +27,118 @@ export const PARTNER_BADGES = Object.freeze({
   },
 });
 
+export const PARTNER_CAPABILITIES = Object.freeze({
+  listedInSearch: "listedInSearch",
+  basicProfile: "basicProfile",
+  weeklyStatsEmail: "weeklyStatsEmail",
+  fullProfileEditor: "fullProfileEditor",
+  ranksAboveVerified: "ranksAboveVerified",
+  bookingInquiry: "bookingInquiry",
+  responseTimeBadge: "responseTimeBadge",
+  specialOffers: "specialOffers",
+  destinationEmails: "destinationEmails",
+  topOfSearchResults: "topOfSearchResults",
+  monthlyPdfReport: "monthlyPdfReport",
+  dedicatedAccountManager: "dedicatedAccountManager",
+  reviewBoost: "reviewBoost",
+  competitorInsights: "competitorInsights",
+  upsellCapability: "upsellCapability",
+});
+
+const PARTNER_CAPABILITY_LABELS = Object.freeze({
+  [PARTNER_CAPABILITIES.listedInSearch]: "Listed in BookingGPT search results",
+  [PARTNER_CAPABILITIES.basicProfile]: "Basic profile - photos, description, amenities, contact",
+  [PARTNER_CAPABILITIES.weeklyStatsEmail]: "Weekly stats email - BookingGPT Reach and clicks",
+  [PARTNER_CAPABILITIES.fullProfileEditor]: "Full profile editor",
+  [PARTNER_CAPABILITIES.ranksAboveVerified]: "Ranks above Verified hotels in search",
+  [PARTNER_CAPABILITIES.bookingInquiry]: "Booking inquiry button",
+  [PARTNER_CAPABILITIES.responseTimeBadge]: "Response time badge",
+  [PARTNER_CAPABILITIES.specialOffers]: "Special offers field",
+  [PARTNER_CAPABILITIES.destinationEmails]: "Included in BookingGPT destination emails",
+  [PARTNER_CAPABILITIES.topOfSearchResults]: "Top of all search results",
+  [PARTNER_CAPABILITIES.monthlyPdfReport]: "Monthly PDF performance report",
+  [PARTNER_CAPABILITIES.dedicatedAccountManager]: "Dedicated account manager",
+  [PARTNER_CAPABILITIES.reviewBoost]: "Review boost",
+  [PARTNER_CAPABILITIES.competitorInsights]: "Competitor insights",
+  [PARTNER_CAPABILITIES.upsellCapability]: "Upsell capability",
+});
+
+const PARTNER_PLAN_CAPABILITY_KEYS = Object.freeze({
+  verified: Object.freeze([
+    PARTNER_CAPABILITIES.listedInSearch,
+    PARTNER_CAPABILITIES.basicProfile,
+    PARTNER_CAPABILITIES.weeklyStatsEmail,
+  ]),
+  preferred: Object.freeze([
+    PARTNER_CAPABILITIES.listedInSearch,
+    PARTNER_CAPABILITIES.basicProfile,
+    PARTNER_CAPABILITIES.weeklyStatsEmail,
+    PARTNER_CAPABILITIES.fullProfileEditor,
+    PARTNER_CAPABILITIES.ranksAboveVerified,
+    PARTNER_CAPABILITIES.bookingInquiry,
+    PARTNER_CAPABILITIES.responseTimeBadge,
+    PARTNER_CAPABILITIES.specialOffers,
+    PARTNER_CAPABILITIES.destinationEmails,
+  ]),
+  featured: Object.freeze([
+    PARTNER_CAPABILITIES.listedInSearch,
+    PARTNER_CAPABILITIES.basicProfile,
+    PARTNER_CAPABILITIES.weeklyStatsEmail,
+    PARTNER_CAPABILITIES.fullProfileEditor,
+    PARTNER_CAPABILITIES.ranksAboveVerified,
+    PARTNER_CAPABILITIES.bookingInquiry,
+    PARTNER_CAPABILITIES.responseTimeBadge,
+    PARTNER_CAPABILITIES.specialOffers,
+    PARTNER_CAPABILITIES.destinationEmails,
+    PARTNER_CAPABILITIES.topOfSearchResults,
+    PARTNER_CAPABILITIES.monthlyPdfReport,
+    PARTNER_CAPABILITIES.dedicatedAccountManager,
+    PARTNER_CAPABILITIES.reviewBoost,
+    PARTNER_CAPABILITIES.competitorInsights,
+    PARTNER_CAPABILITIES.upsellCapability,
+  ]),
+});
+
 export const PARTNER_PLANS = Object.freeze({
-  starter: {
-    code: "starter",
-    label: "Starter",
+  verified: {
+    code: "verified",
+    legacyCode: "starter",
+    label: "Verified",
     priceMonthly: 49,
     currency: "USD",
     badgeCode: "verified",
     billingMode: "subscription",
-    stripePriceEnv: "STRIPE_PARTNER_PRICE_STARTER",
+    stripePriceEnvs: ["STRIPE_PARTNER_PRICE_VERIFIED", "STRIPE_PARTNER_PRICE_STARTER"],
   },
-  pro: {
-    code: "pro",
-    label: "Pro",
+  preferred: {
+    code: "preferred",
+    legacyCode: "pro",
+    label: "Preferred",
     priceMonthly: 99,
     currency: "USD",
     badgeCode: "preferred",
     billingMode: "subscription",
-    stripePriceEnv: "STRIPE_PARTNER_PRICE_PRO",
+    stripePriceEnvs: ["STRIPE_PARTNER_PRICE_PREFERRED", "STRIPE_PARTNER_PRICE_PRO"],
   },
-  elite: {
-    code: "elite",
-    label: "Elite",
+  featured: {
+    code: "featured",
+    legacyCode: "elite",
+    label: "Featured",
     priceMonthly: 249,
     currency: "USD",
     badgeCode: "featured",
     billingMode: "subscription",
-    stripePriceEnv: "STRIPE_PARTNER_PRICE_ELITE",
+    stripePriceEnvs: ["STRIPE_PARTNER_PRICE_FEATURED", "STRIPE_PARTNER_PRICE_ELITE"],
   },
+});
+
+const PARTNER_PLAN_CODE_ALIASES = Object.freeze({
+  starter: "verified",
+  verified: "verified",
+  pro: "preferred",
+  preferred: "preferred",
+  elite: "featured",
+  featured: "featured",
 });
 
 export const PARTNER_EMAIL_SEQUENCE = Object.freeze([
@@ -69,14 +153,14 @@ export const PARTNER_EMAIL_SEQUENCE = Object.freeze([
     key: "day_7_report",
     day: 7,
     subject: "Week 1 report for your BookingGPT trial",
-    preview: "Week 1 report. Your views and clicks this week.",
+    preview: "Week 1 report. Your BookingGPT Reach and clicks this week.",
     stopWhenSubscribed: true,
   },
   {
     key: "day_14_report",
     day: 14,
     subject: "Week 2 report for your BookingGPT trial",
-    preview: "Week 2 report. Your views and clicks this week.",
+    preview: "Week 2 report. Your BookingGPT Reach and clicks this week.",
     stopWhenSubscribed: true,
   },
   {
@@ -90,7 +174,7 @@ export const PARTNER_EMAIL_SEQUENCE = Object.freeze([
     key: "day_21_report",
     day: 21,
     subject: "Week 3 report for your BookingGPT trial",
-    preview: "Week 3 report. Your views and clicks this week.",
+    preview: "Week 3 report. Your BookingGPT Reach and clicks this week.",
     stopWhenSubscribed: true,
   },
   {
@@ -162,18 +246,59 @@ export const PARTNER_SUBSCRIPTION_STATUSES = Object.freeze({
   pendingInvoice: "pending_invoice",
 });
 
+export const normalizePartnerPlanCode = (code) =>
+  PARTNER_PLAN_CODE_ALIASES[String(code || "").trim().toLowerCase()] || null;
+
 export const getPartnerPlanByCode = (code) =>
-  PARTNER_PLANS[String(code || "").trim().toLowerCase()] || null;
+  PARTNER_PLANS[normalizePartnerPlanCode(code)] || null;
 
 export const getPartnerBadgeByCode = (code) =>
   PARTNER_BADGES[String(code || "").trim().toLowerCase()] || null;
 
-export const getPartnerPlans = () =>
-  Object.values(PARTNER_PLANS).map((plan) => ({
-    ...plan,
-    badge: getPartnerBadgeByCode(plan.badgeCode),
-    stripePriceId: process.env[plan.stripePriceEnv] || null,
+export const resolvePartnerStripePriceId = (plan) => {
+  const keys = Array.isArray(plan?.stripePriceEnvs)
+    ? plan.stripePriceEnvs
+    : [plan?.stripePriceEnv].filter(Boolean);
+  for (const key of keys) {
+    const value = process.env[key];
+    if (value) return value;
+  }
+  return null;
+};
+
+export const getPartnerPlanCapabilities = (planCode) => {
+  const normalizedCode = normalizePartnerPlanCode(planCode);
+  const enabled = PARTNER_PLAN_CAPABILITY_KEYS[normalizedCode] || [];
+  return Object.values(PARTNER_CAPABILITIES).reduce((acc, key) => {
+    acc[key] = enabled.includes(key);
+    return acc;
+  }, {});
+};
+
+export const getPartnerIncludedFeatures = (planCode) => {
+  const normalizedCode = normalizePartnerPlanCode(planCode);
+  const enabled = PARTNER_PLAN_CAPABILITY_KEYS[normalizedCode] || [];
+  return enabled.map((key) => ({
+    key,
+    label: PARTNER_CAPABILITY_LABELS[key] || key,
   }));
+};
+
+const serializePartnerPlan = (plan) => ({
+  code: plan.code,
+  legacyCode: plan.legacyCode || null,
+  label: plan.label,
+  priceMonthly: plan.priceMonthly,
+  currency: plan.currency,
+  badge: getPartnerBadgeByCode(plan.badgeCode),
+  billingMode: plan.billingMode,
+  capabilities: getPartnerPlanCapabilities(plan.code),
+  includedFeatures: getPartnerIncludedFeatures(plan.code),
+  stripePriceId: resolvePartnerStripePriceId(plan),
+});
+
+export const getPartnerPlans = () =>
+  Object.values(PARTNER_PLANS).map((plan) => serializePartnerPlan(plan));
 
 const normalizeDate = (value) => {
   const date = dayjs(value);
@@ -212,7 +337,7 @@ export const resolvePartnerProgramFromClaim = (claim, now = new Date()) => {
 
   if (trialIsActive) {
     badge = getPartnerBadgeByCode("featured");
-    plan = getPartnerPlanByCode("elite");
+    plan = getPartnerPlanByCode("featured");
     statusLabel = "Trial active";
   } else if (hasActiveSubscription && currentPlan) {
     badge = getPartnerBadgeByCode(currentPlan.badgeCode);
@@ -242,9 +367,12 @@ export const resolvePartnerProgramFromClaim = (claim, now = new Date()) => {
     badgeColorHex: badge?.hex || null,
     badgePriority: badge?.priority || 0,
     planCode: plan?.code || null,
+    planLegacyCode: plan?.legacyCode || null,
     planLabel: plan?.label || null,
     priceMonthly: plan?.priceMonthly ?? null,
     currency: plan?.currency || "USD",
+    capabilities: getPartnerPlanCapabilities(plan?.code),
+    includedFeatures: getPartnerIncludedFeatures(plan?.code),
     trialActive: trialIsActive,
     trialStartedAt: claim.trial_started_at || claim.claimed_at || null,
     trialEndsAt: claim.trial_ends_at || null,
@@ -256,6 +384,7 @@ export const resolvePartnerProgramFromClaim = (claim, now = new Date()) => {
     invoicePaidAt: claim.invoice_paid_at || null,
     billingMethod: claim.billing_method || null,
     pendingPlanCode: pendingPlan?.code || null,
+    pendingPlanLegacyCode: pendingPlan?.legacyCode || null,
     pendingPlanLabel: pendingPlan?.label || null,
   };
 };

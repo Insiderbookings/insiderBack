@@ -98,6 +98,35 @@ const includeForHotelCard = [
   },
 ];
 
+const RECENT_HOTEL_PREVIEW_FETCH_LIMIT = 60;
+const RECENT_HOTEL_GROUP_FETCH_LIMIT = 200;
+
+const mapRecentHotelViewItem = (entry) => {
+  const card = formatStaticHotel(entry?.hotel);
+  if (!card) return null;
+  const hotelId = entry?.hotel_id != null ? String(entry.hotel_id) : null;
+  const viewedAt = entry?.viewed_at ?? null;
+  if (!hotelId || !viewedAt) return null;
+  return {
+    hotelId,
+    viewedAt,
+    card,
+  };
+};
+
+const dedupeRecentHotelViews = (entries = []) => {
+  const seenHotelIds = new Set();
+  const deduped = [];
+  (Array.isArray(entries) ? entries : []).forEach((entry) => {
+    const mapped = mapRecentHotelViewItem(entry);
+    if (!mapped) return;
+    if (seenHotelIds.has(mapped.hotelId)) return;
+    seenHotelIds.add(mapped.hotelId);
+    deduped.push(mapped);
+  });
+  return deduped;
+};
+
 export const listHotelFavoriteLists = async (req, res) => {
   const userId = ensureUser(req, res);
   if (!userId) return;
@@ -163,16 +192,10 @@ export const listHotelFavoriteLists = async (req, res) => {
         },
       ],
       order: [["viewed_at", "DESC"]],
-      limit: 12,
+      limit: RECENT_HOTEL_PREVIEW_FETCH_LIMIT,
     });
 
-    const recent = recentViews
-      .map((view) => ({
-        hotelId: view.hotel_id != null ? String(view.hotel_id) : null,
-        viewedAt: view.viewed_at,
-        card: formatStaticHotel(view.hotel),
-      }))
-      .filter((entry) => entry.card);
+    const recent = dedupeRecentHotelViews(recentViews).slice(0, 12);
 
     res.json({
       lists: mappedLists,
@@ -281,19 +304,17 @@ export const getHotelRecentViews = async (req, res) => {
         },
       ],
       order: [["viewed_at", "DESC"]],
-      limit: 100,
+      limit: RECENT_HOTEL_GROUP_FETCH_LIMIT,
     });
 
     const grouped = {};
-    recents.forEach((entry) => {
-      const card = formatStaticHotel(entry.hotel);
-      if (!card) return;
-      const key = entry.viewed_at.toISOString().slice(0, 10);
+    dedupeRecentHotelViews(recents).forEach((entry) => {
+      const key = entry.viewedAt.toISOString().slice(0, 10);
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push({
-        hotelId: entry.hotel_id != null ? String(entry.hotel_id) : null,
-        viewedAt: entry.viewed_at,
-        card,
+        hotelId: entry.hotelId,
+        viewedAt: entry.viewedAt,
+        card: entry.card,
       });
     });
 
@@ -426,14 +447,11 @@ export const recordHotelRecentView = async (req, res) => {
     return;
   }
   try {
-    const [entry, created] = await models.HotelRecentView.findOrCreate({
-      where: { user_id: userId, hotel_id: hotelId },
-      defaults: { user_id: userId, hotel_id: hotelId, viewed_at: new Date() },
+    await models.HotelRecentView.create({
+      user_id: userId,
+      hotel_id: hotelId,
+      viewed_at: new Date(),
     });
-    if (!created) {
-      entry.viewed_at = new Date();
-      await entry.save();
-    }
     res.json({ recorded: true });
   } catch (err) {
     console.error("[hotel-favorites] recordHotelRecentView error:", err);

@@ -2,6 +2,7 @@ import transporter from "./transporter.js";
 import { getBaseEmailTemplate } from "../emailTemplates/base-template.js";
 import {
   PARTNER_EMAIL_SEQUENCE,
+  getPartnerPlanByCode,
   resolvePartnerProgramFromClaim,
 } from "./partnerCatalog.service.js";
 
@@ -120,7 +121,7 @@ const resolveSequenceTemplate = ({ emailKey, claim, hotel }) => {
         subject: `${hotelName}: your weekly BookingGPT trial report`,
         intro: `Your hotel is still live with the Featured badge. This report email is part of the launch sequence described in the partners spec.`,
         bullets: [
-          "Views and clicks summary placeholder is ready in the email flow.",
+          "BookingGPT Reach and clicks summary placeholder is ready in the email flow.",
           "The dashboard route is included so the hotel can review status.",
           "The live analytics panel can be expanded later without changing the sequence.",
         ],
@@ -168,7 +169,7 @@ const resolveSequenceTemplate = ({ emailKey, claim, hotel }) => {
         subject: `${hotelName}: tomorrow your badge disappears`,
         intro: "This is the final warning before badge removal.",
         bullets: [
-          "Choose Starter, Pro or Elite today.",
+          "Choose Verified, Preferred or Featured today.",
           "Card payments activate immediately.",
           "A second manual call attempt is scheduled.",
         ],
@@ -192,9 +193,9 @@ const resolveSequenceTemplate = ({ emailKey, claim, hotel }) => {
         subject: `${hotelName}: restore your BookingGPT badge`,
         intro: "Your hotel is still listed without a badge.",
         bullets: [
-          "Starter restores Verified.",
-          "Pro restores Preferred.",
-          "Elite restores Featured.",
+          "Verified restores your Verified badge.",
+          "Preferred restores your Preferred badge.",
+          "Featured restores your Featured badge.",
         ],
         ctaLabel: "Restore my badge",
         ctaUrl: dashboardUrl,
@@ -265,11 +266,16 @@ export const sendPartnerLifecycleEmail = async ({ claim, hotel, emailKey }) => {
 export const sendPartnerInternalInvoiceAlert = async ({ claim, hotel, billingDetails }) => {
   const hotelName = hotel?.name || `Hotel ${claim?.hotel_id || ""}`.trim();
   const dashboardUrl = resolveDashboardUrl(claim?.hotel_id);
+  const requestedPlan =
+    getPartnerPlanByCode(claim?.pending_plan_code || claim?.current_plan_code)?.label ||
+    claim?.pending_plan_code ||
+    claim?.current_plan_code ||
+    "-";
   const rows = [
     ["Hotel", hotelName],
     ["Hotel ID", claim?.hotel_id],
     ["Claim ID", claim?.id],
-    ["Requested plan", claim?.pending_plan_code || claim?.current_plan_code || "-"],
+    ["Requested plan", requestedPlan],
     ["Billing name", billingDetails?.billingName || "-"],
     ["Billing email", billingDetails?.billingEmail || claim?.contact_email || "-"],
     ["Billing address", billingDetails?.billingAddress || "-"],
