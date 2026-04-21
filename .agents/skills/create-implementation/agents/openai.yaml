@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Implementation"
+  short_description: "Draft structured implementation plans"
+  default_prompt: "Use $create-implementation to turn this scope into a prioritized implementation plan with delivery blocks."
