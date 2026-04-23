@@ -1,0 +1,1379 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Implementacion de IA - BookingGPT</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm; }
+
+    :root {
+      --brand: #ff385c;
+      --ink: #141416;
+      --muted: #5f626b;
+      --line: #e8e8ec;
+      --soft: #f7f7f9;
+      --soft-2: #fff4f6;
+      --green: #0f766e;
+      --blue: #1d4ed8;
+      --amber: #b45309;
+      --purple: #6d28d9;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #fff;
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      font-size: 10.4pt;
+      line-height: 1.48;
+    }
+
+    .cover {
+      min-height: 248mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      page-break-after: always;
+      padding: 4mm 0 0;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+    }
+
+    .brand-mark {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      letter-spacing: .02em;
+    }
+
+    .logo-dot {
+      width: 34px; height: 34px;
+      border-radius: 8px;
+      background: var(--brand);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+    }
+
+    .doc-meta { color: var(--muted); text-align: right; font-size: 9pt; }
+
+    .hero { padding: 34mm 0 18mm; }
+
+    .eyebrow {
+      color: var(--brand);
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      font-size: 8.6pt;
+      margin-bottom: 14px;
+    }
+
+    h1 { font-size: 32pt; line-height: 1.02; margin: 0; max-width: 720px; letter-spacing: -.02em; }
+
+    .subtitle { font-size: 13pt; color: var(--muted); max-width: 650px; margin-top: 18px; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .summary-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: var(--soft);
+      min-height: 96px;
+    }
+
+    .summary-card strong { display: block; font-size: 10.8pt; margin-bottom: 6px; }
+    .summary-card span { color: var(--muted); font-size: 9pt; }
+
+    .cover-note {
+      border-left: 4px solid var(--brand);
+      padding: 12px 16px;
+      background: var(--soft-2);
+      color: #3c3034;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .toc { page-break-after: always; }
+
+    h2 {
+      font-size: 18pt;
+      line-height: 1.15;
+      margin: 0 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h3 { font-size: 12.2pt; margin: 20px 0 8px; color: #202125; }
+    h4 { font-size: 10.8pt; margin: 14px 0 6px; color: #33343a; }
+
+    p { margin: 0 0 9px; }
+
+    ul { margin: 8px 0 12px; padding-left: 18px; }
+    li { margin: 4px 0; }
+
+    code {
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 8.8pt;
+      background: #f0f1f4;
+      border: 1px solid #e3e4e8;
+      border-radius: 5px;
+      padding: 1px 5px;
+    }
+
+    pre {
+      background: #f5f6f9;
+      border: 1px solid #e3e4e8;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 8.4pt;
+      line-height: 1.5;
+      overflow-x: auto;
+      margin: 10px 0 14px;
+    }
+
+    .section { page-break-inside: avoid; margin-bottom: 18px; }
+
+    .flow { display: grid; grid-template-columns: 1fr; gap: 8px; margin: 12px 0 18px; }
+
+    .flow-step {
+      display: grid;
+      grid-template-columns: 30px 1fr;
+      gap: 10px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+    }
+
+    .num {
+      width: 24px; height: 24px;
+      border-radius: 7px;
+      background: var(--brand);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 8pt;
+      font-weight: 800;
+    }
+
+    .badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 8.4pt;
+      color: #33343a;
+      background: #fff;
+    }
+
+    .badge.green { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+    .badge.blue  { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+    .badge.amber { border-color: #fde68a; background: #fffbeb; color: #92400e; }
+    .badge.purple{ border-color: #ddd6fe; background: #f5f3ff; color: #5b21b6; }
+
+    .callout {
+      border: 1px solid #ffd4dc;
+      background: var(--soft-2);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin: 12px 0;
+    }
+
+    .callout strong { color: #b42345; }
+
+    .callout.green { border-color: #bbf7d0; background: #f0fdf4; }
+    .callout.green strong { color: #166534; }
+
+    .callout.blue { border-color: #bfdbfe; background: #eff6ff; }
+    .callout.blue strong { color: #1e40af; }
+
+    .callout.amber { border-color: #fde68a; background: #fffbeb; }
+    .callout.amber strong { color: #92400e; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+    .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 12px 0; }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--soft);
+    }
+
+    .panel h3, .panel h4 { margin-top: 0; }
+
+    .panel.blue  { background: #eff6ff; border-color: #bfdbfe; }
+    .panel.green { background: #f0fdf4; border-color: #bbf7d0; }
+    .panel.amber { background: #fffbeb; border-color: #fde68a; }
+    .panel.purple{ background: #f5f3ff; border-color: #ddd6fe; }
+
+    .table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 9.3pt; }
+
+    .table th, .table td { border: 1px solid var(--line); padding: 8px; vertical-align: top; }
+
+    .table th { background: #f1f2f5; text-align: left; font-weight: 800; }
+
+    .path {
+      color: #40434c;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 8.2pt;
+      word-break: break-all;
+    }
+
+    .tag { font-weight: 800; color: var(--blue); }
+    .tag.green { color: var(--green); }
+    .tag.amber { color: var(--amber); }
+    .tag.purple { color: var(--purple); }
+
+    .page-break { page-break-before: always; }
+
+    .footer-note {
+      margin-top: 22px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 8.8pt;
+    }
+
+    .enum-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 6px;
+      margin: 8px 0 14px;
+    }
+
+    .enum-item {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 8.6pt;
+      background: #fff;
+    }
+
+    .enum-item strong { display: block; font-size: 8pt; color: var(--muted); margin-bottom: 2px; }
+
+    .arch-box {
+      border: 2px solid var(--brand);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin: 12px 0;
+      background: var(--soft-2);
+    }
+
+    .arch-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 6px 0;
+      font-size: 9.4pt;
+    }
+
+    .arch-arrow { color: var(--brand); font-weight: 800; }
+
+    .kv-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 4px 12px;
+      font-size: 9pt;
+      margin: 8px 0 12px;
+    }
+
+    .kv-key { font-weight: 700; color: var(--muted); white-space: nowrap; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════ COVER ═══════════════════════ -->
+<section class="cover">
+  <div class="brand-row">
+    <div class="brand-mark">
+      <div class="logo-dot">AI</div>
+      <div>BookingGPT / Insider</div>
+    </div>
+    <div class="doc-meta">
+      Documento tecnico &mdash; v2<br>
+      Actualizado el 22/04/2026
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="eyebrow">Implementacion actual &mdash; referencia completa</div>
+    <h1>IA en BookingGPT: backend y mobile</h1>
+    <p class="subtitle">
+      Arquitectura completa del sistema de IA: endpoints, seguridad, modelos, herramientas,
+      motor semantico, busqueda hotelera, streaming SSE, integracion mobile y estado conversacional.
+    </p>
+
+    <div class="summary-grid">
+      <div class="summary-card">
+        <strong>Entrada principal</strong>
+        <span>Mobile consume <code>/api/ai/chat/stream</code> via XHR con fallback a fetch. Web usa fetch directo (legacy).</span>
+      </div>
+      <div class="summary-card">
+        <strong>Motor IA</strong>
+        <span>Dos llamadas a OpenAI: Call 1 elige herramienta (tool calling), Call 2 redacta respuesta. Motor semantico corre en paralelo.</span>
+      </div>
+      <div class="summary-card">
+        <strong>Estado persistido</strong>
+        <span>Sesiones, mensajes, plan de busqueda, inventario mostrado, snapshots y feedback se guardan por usuario.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="cover-note">
+    <strong>Idea central:</strong> el modelo no busca hoteles directamente. OpenAI decide la herramienta; el backend valida,
+    ejecuta busquedas, aplica el motor semantico, resuelve lugares, maneja disponibilidad real, ordena carruseles y renderiza
+    la respuesta para la app. Todas las decisiones sensibles de negocio permanecen en servidor.
+  </div>
+</section>
+
+<!-- ═══════════════════════ TOC ═══════════════════════ -->
+<section class="toc">
+  <h2>Indice</h2>
+  <ol>
+    <li>Resumen ejecutivo y arquitectura</li>
+    <li>Endpoints y seguridad</li>
+    <li>Flujo completo de una conversacion</li>
+    <li>Modelos y configuracion</li>
+    <li>Herramientas, intents y acciones</li>
+    <li>Motor semantico</li>
+    <li>Busqueda de hoteles y disponibilidad real</li>
+    <li>Follow-ups, web search y fallback cercano</li>
+    <li>Streaming SSE: protocolo y eventos</li>
+    <li>Integracion mobile en profundidad</li>
+    <li>Estado conversacional y planner</li>
+    <li>Modulos de soporte</li>
+    <li>Persistencia y archivos clave</li>
+  </ol>
+</section>
+
+<main>
+
+<!-- ═══════════════════════ 1. RESUMEN ═══════════════════════ -->
+<section class="section">
+  <h2>1. Resumen Ejecutivo y Arquitectura</h2>
+
+  <p>
+    La IA esta centralizada bajo <code>/api/ai</code>. Mobile usa principalmente
+    <code>/api/ai/chat/stream</code> via SSE. Existe una ruta legacy <code>/api/assistant/search</code>
+    que internamente reutiliza el mismo controller de IA.
+  </p>
+
+  <div class="arch-box">
+    <div class="arch-row">
+      <span>📱 <strong>Mobile (XHR → fetch fallback)</strong></span>
+      <span class="arch-arrow">→</span>
+      <span><code>POST /api/ai/chat/stream</code></span>
+      <span class="arch-arrow">→</span>
+      <span>🔒 Auth + Rate limit + Moderacion</span>
+    </div>
+    <div class="arch-row">
+      <span style="padding-left:24px">🔒 Validacion OK</span>
+      <span class="arch-arrow">→</span>
+      <span>OpenAI <strong>Call 1</strong>: tool selection (gpt-5.4)</span>
+      <span class="arch-arrow">→</span>
+      <span>Backend ejecuta herramienta</span>
+    </div>
+    <div class="arch-row">
+      <span style="padding-left:24px">🔍 Herramienta ejecutada</span>
+      <span class="arch-arrow">→</span>
+      <span>Motor semantico + Busqueda + Carruseles</span>
+      <span class="arch-arrow">→</span>
+      <span>OpenAI <strong>Call 2</strong>: redaccion (gpt-5-mini / gpt-5.4)</span>
+    </div>
+    <div class="arch-row">
+      <span style="padding-left:24px">💬 Respuesta generada</span>
+      <span class="arch-arrow">→</span>
+      <span>SSE stream hacia mobile</span>
+      <span class="arch-arrow">→</span>
+      <span>Persistencia (sesion + snapshots)</span>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Principio de diseno:</strong> el modelo de lenguaje actua como orquestador conversacional.
+    Todas las decisiones de negocio (busqueda, filtros, disponibilidad, fallback geografico, cuotas,
+    moderacion, semantica) se ejecutan en el backend, nunca se delegan al modelo.
+  </div>
+
+  <h3>Flags globales</h3>
+  <table class="table">
+    <thead><tr><th>Flag</th><th>Env var</th><th>Default</th></tr></thead>
+    <tbody>
+      <tr><td><code>chatEnabled</code></td><td><code>AI_CHAT_ENABLED</code></td><td><code>true</code></td></tr>
+      <tr><td><code>contextEnabled</code></td><td><code>AI_CONTEXT_ENABLED</code></td><td><code>false</code></td></tr>
+      <tr><td><code>bookingAssistEnabled</code></td><td><code>AI_BOOKING_ASSIST_ENABLED</code></td><td><code>false</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════════════════ 2. ENDPOINTS ═══════════════════════ -->
+<section class="section page-break">
+  <h2>2. Endpoints y Seguridad</h2>
+  <p class="path">insiderBack/src/routes/ai.routes.js</p>
+
+  <table class="table">
+    <thead><tr><th>Metodo</th><th>Endpoint</th><th>Rate limiter</th><th>Funcion</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/ai/health</code></td><td>—</td><td>Estado del assistant y circuit breaker.</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/ai/chat</code></td><td>aiChatLimiter</td><td>Respuesta no streaming (fallback).</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/ai/chat/stream</code></td><td>aiChatLimiter</td><td>Respuesta streaming SSE. Flujo principal de mobile.</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/ai/chat/cancel</code></td><td>aiChatLimiter</td><td>Cancela un turno activo en la sesion.</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/ai/chats</code></td><td>aiSessionWriteLimiter</td><td>Crea una nueva sesion de chat.</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/ai/chats</code></td><td>aiSessionReadLimiter</td><td>Lista sesiones del usuario (paginado).</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/ai/chats/:sessionId</code></td><td>aiSessionReadLimiter</td><td>Carga una sesion con sus mensajes.</td></tr>
+      <tr><td><code>DELETE</code></td><td><code>/api/ai/chats/:sessionId</code></td><td>aiSessionWriteLimiter</td><td>Elimina una sesion y sus mensajes.</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/ai/chats/:sessionId/messages/:messageId/feedback</code></td><td>aiSessionWriteLimiter</td><td>Guarda feedback (thumbs up/down + razon).</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Rate limits</h3>
+  <table class="table">
+    <thead><tr><th>Limiter</th><th>Env var</th><th>Default</th><th>Rango</th></tr></thead>
+    <tbody>
+      <tr><td>Chat (streaming + no-stream)</td><td><code>AI_RATE_LIMIT_CHAT_PER_MIN</code></td><td>30 req/min</td><td>1–500</td></tr>
+      <tr><td>Session read</td><td><code>AI_RATE_LIMIT_SESSION_READ_PER_MIN</code></td><td>60 req/min</td><td>1–1000</td></tr>
+      <tr><td>Session write</td><td><code>AI_RATE_LIMIT_SESSION_WRITE_PER_MIN</code></td><td>20 req/min</td><td>1–500</td></tr>
+    </tbody>
+  </table>
+  <p>La clave del rate limit es <code>user:&lt;id&gt;</code>. Si no hay usuario autenticado, cae a IP.</p>
+
+  <h3>Limites de payload y cuotas</h3>
+  <div class="two-col">
+    <div class="panel">
+      <h4>Payload por request</h4>
+      <div class="kv-grid">
+        <span class="kv-key">Body max</span><span><code>256kb</code> (<code>AI_CHAT_BODY_LIMIT</code>)</span>
+        <span class="kv-key">Chars por mensaje</span><span><code>4000</code> (<code>AI_CHAT_MAX_MESSAGE_CHARS</code>)</span>
+        <span class="kv-key">Chars de contexto</span><span><code>6000</code> (<code>AI_CHAT_MAX_CONTEXT_CHARS</code>)</span>
+        <span class="kv-key">Mensajes input max</span><span><code>20</code></span>
+        <span class="kv-key">Chats recientes en ctx</span><span><code>8</code> (<code>AI_CHAT_MAX_CONTEXT_CHATS</code>)</span>
+        <span class="kv-key">Turn lock expira</span><span><code>90 segundos</code></span>
+      </div>
+    </div>
+    <div class="panel">
+      <h4>Cuotas por usuario</h4>
+      <div class="kv-grid">
+        <span class="kv-key">Sesiones max</span><span><code>50</code> (<code>AI_CHAT_MAX_SESSIONS_PER_USER</code>)</span>
+        <span class="kv-key">Mensajes max/sesion</span><span><code>500</code> (<code>AI_CHAT_MAX_MESSAGES_PER_SESSION</code>)</span>
+        <span class="kv-key">Historial contexto</span><span><code>60</code> msgs (<code>AI_MAX_MESSAGES</code>)</span>
+        <span class="kv-key">Results max</span><span><code>20</code> (<code>AI_MAX_RESULTS</code>)</span>
+        <span class="kv-key">Tools por turno</span><span><code>3</code> (<code>AI_MAX_TOOLS_PER_TURN</code>)</span>
+        <span class="kv-key">Lista sesiones</span><span>default <code>25</code>, max <code>50</code></span>
+      </div>
+    </div>
+  </div>
+
+  <h3>Autenticacion y moderacion</h3>
+  <p>
+    Todos los endpoints requieren middleware <code>authenticate</code>. Si una sesion ya esta procesando
+    un turno, la API devuelve <code>409 AI_CHAT_TURN_IN_PROGRESS</code>. El lock expira automaticamente
+    a los 90 segundos para evitar bloqueos permanentes.
+  </p>
+  <p>
+    Antes de invocar el modelo, el mensaje pasa por
+    <span class="path">insiderBack/src/services/ai.contentModeration.service.js</span>:
+  </p>
+  <ul>
+    <li><strong>Fase 1 — regex local:</strong> detecta contenido ofensivo claro con patrones predefinidos. Es sincrono y sin latencia.</li>
+    <li><strong>Fase 2 — OpenAI Moderation API:</strong> se invoca si <code>OPENAI_API_KEY</code> esta disponible. Si falla, el sistema <em>no bloquea</em> el mensaje (fail-open intencional para no degradar UX).</li>
+  </ul>
+</section>
+
+<!-- ═══════════════════════ 3. FLUJO ═══════════════════════ -->
+<section class="section page-break">
+  <h2>3. Flujo Completo de una Conversacion</h2>
+
+  <div class="flow">
+    <div class="flow-step"><div class="num">1</div><div>Mobile crea o reutiliza una sesion (<code>POST /api/ai/chats</code> o sessionId existente).</div></div>
+    <div class="flow-step"><div class="num">2</div><div>Envia <code>sessionId</code>, <code>message</code>, <code>context</code> (userName, nationality, confirmedSearch, trip), <code>limits</code> y opcionalmente <code>uiEvent</code>.</div></div>
+    <div class="flow-step"><div class="num">3</div><div>API valida autenticacion, payload, cuota de sesion, lock de turno activo y moderacion de contenido.</div></div>
+    <div class="flow-step"><div class="num">4</div><div>Controller activa lock de turno (90s) y abre conexion SSE. Emite <code>thinking</code> de inmediato.</div></div>
+    <div class="flow-step"><div class="num">5</div><div><strong>OpenAI Call 1</strong> (gpt-5.4): recibe historial + contexto + herramientas disponibles. Decide intent y herramienta via function calling. Emite <code>trace</code> con la decision.</div></div>
+    <div class="flow-step"><div class="num">6</div><div>Backend ejecuta la herramienta seleccionada: busqueda en catalogo, disponibilidad real, detalle de hotel, planning o respuesta sobre resultados previos. Emite eventos de progreso (<code>searching_catalog</code>, <code>searching_live</code>, <code>results_partial</code>).</div></div>
+    <div class="flow-step"><div class="num">7</div><div>Si la herramienta es <code>search_stays</code>: corre el motor semantico, filtra inventario, arma carruseles y calcula scores. Emite <code>results_final</code>.</div></div>
+    <div class="flow-step"><div class="num">8</div><div>Si se necesita redactar: <strong>OpenAI Call 2</strong> (gpt-5-mini o gpt-5.4 segun complejidad) genera texto conversacional en streaming. Emite <code>kickoff_delta</code> y luego chunks de <code>delta</code>.</div></div>
+    <div class="flow-step"><div class="num">9</div><div>Si hay cierre: genera mensaje de cierre streameable (<code>closing_delta</code>, <code>assistant_closing</code>).</div></div>
+    <div class="flow-step"><div class="num">10</div><div>API emite <code>done</code>, libera el lock de turno y persiste respuesta, plan_snapshot, inventory_snapshot y ui_snapshot en base de datos.</div></div>
+  </div>
+
+  <div class="callout blue">
+    <strong>Turn lock:</strong> mientras se procesa un turno, cualquier otro request a la misma sesion
+    devuelve <code>409 AI_CHAT_TURN_IN_PROGRESS</code>. Mobile muestra el error al usuario y ofrece
+    esperar o cancelar via <code>POST /api/ai/chat/cancel</code>.
+  </div>
+</section>
+
+<!-- ═══════════════════════ 4. MODELOS ═══════════════════════ -->
+<section class="section page-break">
+  <h2>4. Modelos y Configuracion</h2>
+  <p class="path">insiderBack/src/modules/ai/ai.service.js &mdash; variables de entorno</p>
+
+  <table class="table">
+    <thead><tr><th>Variable</th><th>Default</th><th>Uso</th></tr></thead>
+    <tbody>
+      <tr><td><code>AI_MODEL_CALL1</code></td><td><code>gpt-5.4</code></td><td>Enrutamiento y tool calling (Call 1). Siempre el modelo mas capaz.</td></tr>
+      <tr><td><code>AI_MODEL_CALL2_DEFAULT</code></td><td><code>gpt-5-mini</code></td><td>Redaccion conversacional normal. Mas rapido y economico.</td></tr>
+      <tr><td><code>AI_MODEL_CALL2_PREMIUM</code></td><td><code>AI_MODEL_CALL1</code></td><td>Redaccion premium: comparaciones, recomendaciones complejas.</td></tr>
+      <tr><td><code>AI_MODEL_ASSISTANT_KICKOFF</code></td><td><code>AI_MODEL_CALL2_DEFAULT</code></td><td>Mensaje inicial mientras carga la busqueda (streaming temprano).</td></tr>
+      <tr><td><code>AI_MODEL_CALL2_WEB_SEARCH</code></td><td><code>gpt-4o-search-preview</code></td><td>Consultas que requieren web search en tiempo real.</td></tr>
+      <tr><td><code>AI_MODEL_SEMANTIC_ENRICHMENT</code></td><td><code>AI_MODEL_CALL1</code></td><td>Enriquecimiento semantico de intent (cuando regex no alcanza).</td></tr>
+      <tr><td><code>AI_MODEL_SEMANTIC_EXPLANATION</code></td><td><code>AI_MODEL_CALL2_PREMIUM</code></td><td>Genera explicaciones semanticas de por que se muestran ciertos hoteles.</td></tr>
+      <tr><td><code>AI_MODEL_SEMANTIC_ORIENTATION</code></td><td><code>AI_MODEL_CALL2_DEFAULT</code></td><td>Orienta busquedas ambiguas antes de lanzar la query.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Timeouts de modelos semanticos</h3>
+  <div class="kv-grid">
+    <span class="kv-key">SEMANTIC_SEARCH_TIMEOUT_MS</span><span><code>8000ms</code> (<code>AI_SEMANTIC_SEARCH_TIMEOUT_MS</code>)</span>
+    <span class="kv-key">SEMANTIC_WEB_RESOLVER_TIMEOUT_MS</span><span><code>6500ms</code> (<code>AI_SEMANTIC_WEB_RESOLVER_TIMEOUT_MS</code>)</span>
+    <span class="kv-key">SEMANTIC_WEB_RESOLVER_CACHE_TTL</span><span><code>30 dias</code> (<code>AI_SEMANTIC_WEB_RESOLVER_CACHE_TTL_SECONDS</code>)</span>
+    <span class="kv-key">AI_SEMANTIC_EXPLANATION_TIMEOUT_MS</span><span><code>1500ms</code> (minimo)</span>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 5. HERRAMIENTAS ═══════════════════════ -->
+<section class="section page-break">
+  <h2>5. Herramientas, Intents y Acciones</h2>
+  <p class="path">insiderBack/src/modules/ai/ai.tools.js &mdash; insiderBack/src/modules/ai/ai.planner.js</p>
+
+  <h3>Herramientas disponibles para Call 1</h3>
+  <table class="table">
+    <thead><tr><th>Tool</th><th>Cuando se usa</th><th>INTENT</th><th>NEXT_ACTION</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>search_stays</code></td>
+        <td>Hoteles, estadias, alojamientos, disponibilidad. Primera mencion de un destino.</td>
+        <td><span class="tag green">SEARCH</span></td>
+        <td><span class="tag green">RUN_SEARCH</span></td>
+      </tr>
+      <tr>
+        <td><code>answer_from_results</code></td>
+        <td>Preguntas sobre hoteles ya mostrados: amenities, precio, comparacion, recomendacion entre los mostrados.</td>
+        <td><span class="tag">QUESTION_ABOUT_LAST_RESULTS</span></td>
+        <td><span class="tag">ANSWER_WITH_LAST_RESULTS</span></td>
+      </tr>
+      <tr>
+        <td><code>get_stay_details</code></td>
+        <td>Detalle especifico de un hotel o home: fotos, descripcion, ubicacion exacta.</td>
+        <td><span class="tag">LOCATION</span></td>
+        <td><span class="tag">RUN_LOCATION</span></td>
+      </tr>
+      <tr>
+        <td><code>plan_trip</code></td>
+        <td>Itinerarios, actividades, organizacion de viaje, que hacer en el destino.</td>
+        <td><span class="tag amber">PLANNING</span></td>
+        <td><span class="tag amber">RUN_PLANNING</span></td>
+      </tr>
+      <tr>
+        <td><code>get_destination_info</code></td>
+        <td>Clima, gastronomia, transporte, informacion general del destino (sin buscar hoteles).</td>
+        <td><span class="tag">LOCATION</span></td>
+        <td><span class="tag">RUN_LOCATION</span></td>
+      </tr>
+      <tr>
+        <td><code>resolve_place_reference</code></td>
+        <td>Lugares ambiguos, referencias a barrios o landmarks antes de lanzar busqueda.</td>
+        <td>—</td>
+        <td>Resuelve y reintenta</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Intents del planner</h3>
+  <div class="badge-row">
+    <span class="badge green">SEARCH</span>
+    <span class="badge">HELP</span>
+    <span class="badge">SMALL_TALK</span>
+    <span class="badge">TRIP</span>
+    <span class="badge amber">PLANNING</span>
+    <span class="badge">LOCATION</span>
+    <span class="badge blue">QUESTION_ABOUT_LAST_RESULTS</span>
+  </div>
+
+  <h3>Next actions completas</h3>
+  <div class="badge-row">
+    <span class="badge">ASK_FOR_DESTINATION</span>
+    <span class="badge">ASK_FOR_DATES</span>
+    <span class="badge">ASK_FOR_GUESTS</span>
+    <span class="badge">ASK_FOR_NATIONALITY</span>
+    <span class="badge">ASK_FOR_PLACE_DISAMBIGUATION</span>
+    <span class="badge green">RUN_SEARCH</span>
+    <span class="badge">RUN_TRIP</span>
+    <span class="badge amber">RUN_PLANNING</span>
+    <span class="badge">RUN_LOCATION</span>
+    <span class="badge blue">ANSWER_WITH_LAST_RESULTS</span>
+    <span class="badge">HELP</span>
+    <span class="badge">SMALL_TALK</span>
+  </div>
+
+  <h3>Stages del flujo conversacional</h3>
+  <table class="table">
+    <thead><tr><th>Stage</th><th>Significado</th></tr></thead>
+    <tbody>
+      <tr><td><code>NEED_DESTINATION</code></td><td>No hay destino todavia. Es el estado inicial.</td></tr>
+      <tr><td><code>NEED_DATES</code></td><td>Hay destino pero faltan fechas para disponibilidad real.</td></tr>
+      <tr><td><code>NEED_GUESTS</code></td><td>Faltan huespedes.</td></tr>
+      <tr><td><code>SHOW_RESULTS</code></td><td>Se mostraron resultados de busqueda.</td></tr>
+      <tr><td><code>DETAILS</code></td><td>El usuario esta viendo detalles de un hotel especifico.</td></tr>
+      <tr><td><code>QUOTE</code></td><td>Se genero un presupuesto.</td></tr>
+      <tr><td><code>READY_TO_BOOK</code></td><td>El usuario esta listo para reservar.</td></tr>
+      <tr><td><code>BOOKED</code></td><td>Reserva completada.</td></tr>
+      <tr><td><code>TRIP_ASSIST</code></td><td>Asistencia post-reserva o de viaje.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Regla de follow-up:</strong> si el usuario dice "de esos", "alguno", "of those" o "any of them",
+    se responde desde <code>lastShownInventorySummary</code> sin lanzar una busqueda nueva,
+    salvo que pida explicitamente disponibilidad o precio real.
+  </div>
+
+  <h3>Policy de booking lock</h3>
+  <p class="path">insiderBack/src/modules/ai/ai.policy.js</p>
+  <p>
+    Si <code>state.locks.bookingFlowLocked === true</code>, cualquier intent <code>SEARCH</code>
+    se redirige a <code>HELP</code> con un aviso <code>BOOKING_LOCKED</code>. Esto impide que
+    el assistant interfiera con un proceso de reserva activo.
+  </p>
+</section>
+
+<!-- ═══════════════════════ 6. MOTOR SEMANTICO ═══════════════════════ -->
+<section class="section page-break">
+  <h2>6. Motor Semantico</h2>
+  <p class="path">insiderBack/src/modules/ai/ai.service.js &mdash; insiderBack/src/modules/ai/ai.semanticCatalog.js</p>
+
+  <p>
+    El motor semantico es la capa que convierte texto libre en intents estructurados para guiar
+    la busqueda y el ranking de hoteles. Corre en dos fases: primero detecta patrones via regex
+    (sin costo de API), luego enriquece con modelo si hay ambiguedad.
+  </p>
+
+  <h3>Fase 1 — Extraccion deterministica (regex)</h3>
+  <p>Cinco funciones corren sobre el mensaje del usuario antes de invocar ningun modelo:</p>
+  <table class="table">
+    <thead><tr><th>Funcion</th><th>Detecta</th><th>Ejemplos de triggers</th></tr></thead>
+    <tbody>
+      <tr><td><code>detectSemanticViewIntent()</code></td><td>Preferencia de vista</td><td>"con vista al mar", "river view", "frente al rio"</td></tr>
+      <tr><td><code>detectSemanticGeoIntent()</code></td><td>Relacion geografica con lugar</td><td>"en Palermo", "cerca del Obelisco", "frente al agua"</td></tr>
+      <tr><td><code>detectSemanticAreaIntent()</code></td><td>Tipo de zona buscada</td><td>"buena zona", "zona tranquila", "en el centro"</td></tr>
+      <tr><td><code>detectSemanticQualityIntent()</code></td><td>Nivel de calidad/precio</td><td>"economico", "lujoso", "mejor relacion precio-calidad"</td></tr>
+      <tr><td><code>detectSemanticAreaTraits()</code></td><td>Caracteristicas del area</td><td>"tranquilo", "familiar", "zona de bares", "seguro"</td></tr>
+    </tbody>
+  </table>
+
+  <p>
+    Si alguna de estas detecciones produce un resultado con suficiente confianza, se evita
+    la llamada al modelo semantico (ahorro de latencia y costo).
+  </p>
+
+  <h3>Fase 2 — Enriquecimiento por modelo</h3>
+  <p>
+    Cuando la extraccion deterministica es ambigua o incompleta, se invoca
+    <code>AI_MODEL_SEMANTIC_ENRICHMENT</code> (default: gpt-5.4) con un schema JSON estricto.
+    Timeout: <code>8000ms</code>. El resultado se normaliza contra los vocabularios controlados
+    antes de ser usado.
+  </p>
+
+  <h3>Vocabularios controlados</h3>
+  <div class="two-col">
+    <div class="panel">
+      <h4>View Intents</h4>
+      <div class="badge-row">
+        <span class="badge blue">RIVER_VIEW</span>
+        <span class="badge blue">WATER_VIEW</span>
+        <span class="badge blue">SEA_VIEW</span>
+        <span class="badge blue">CITY_VIEW</span>
+        <span class="badge blue">LANDMARK_VIEW</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h4>Geo Intents</h4>
+      <div class="badge-row">
+        <span class="badge green">IN_AREA</span>
+        <span class="badge green">NEAR_AREA</span>
+        <span class="badge green">NEAR_LANDMARK</span>
+        <span class="badge green">WATERFRONT</span>
+        <span class="badge green">VIEW_TO</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h4>Area Intents</h4>
+      <div class="badge-row">
+        <span class="badge amber">GOOD_AREA</span>
+        <span class="badge amber">CITY_CENTER</span>
+        <span class="badge amber">QUIET</span>
+        <span class="badge amber">NIGHTLIFE</span>
+        <span class="badge amber">BEACH_COAST</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h4>Quality Intents</h4>
+      <div class="badge-row">
+        <span class="badge purple">BUDGET</span>
+        <span class="badge purple">VALUE</span>
+        <span class="badge purple">LUXURY</span>
+      </div>
+    </div>
+  </div>
+
+  <h4>Area Traits (pueden combinarse)</h4>
+  <div class="badge-row">
+    <span class="badge">GOOD_AREA</span>
+    <span class="badge">SAFE</span>
+    <span class="badge">QUIET</span>
+    <span class="badge">NIGHTLIFE</span>
+    <span class="badge">WALKABLE</span>
+    <span class="badge">FAMILY</span>
+    <span class="badge">LUXURY</span>
+  </div>
+
+  <h4>Place Target Types</h4>
+  <div class="badge-row">
+    <span class="badge">NEIGHBORHOOD</span>
+    <span class="badge">DISTRICT</span>
+    <span class="badge">LANDMARK</span>
+    <span class="badge">AIRPORT</span>
+    <span class="badge">STATION</span>
+    <span class="badge">PORT</span>
+    <span class="badge">VENUE</span>
+    <span class="badge">GENERIC</span>
+    <span class="badge">AREA</span>
+    <span class="badge">WATERFRONT</span>
+  </div>
+
+  <h3>Grounding Modes y Strategies</h3>
+  <p>
+    El intent semantico se mapea a un <em>grounding mode</em> que determina como se ancla
+    la busqueda geograficamente, y a una <em>strategy</em> que indica como se resuelven los lugares.
+  </p>
+
+  <div class="two-col">
+    <div class="panel">
+      <h4>Grounding Modes</h4>
+      <div class="kv-grid">
+        <span class="kv-key">EXPLICIT_GEO</span><span>El usuario nombro un lugar concreto.</span>
+        <span class="kv-key">VIEW_PROFILE</span><span>Busqueda guiada por vista (mar, rio, ciudad).</span>
+        <span class="kv-key">AREA_PROFILE</span><span>Zona o barrio como criterio principal.</span>
+        <span class="kv-key">LIFESTYLE_PROXIMITY</span><span>Cerca de lugares de interes (restaurantes, bares).</span>
+        <span class="kv-key">HYBRID</span><span>Combinacion de geo + perfil.</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h4>Grounding Strategies</h4>
+      <div class="kv-grid">
+        <span class="kv-key">PLACES</span><span>Resolucion via catalogo semantico local.</span>
+        <span class="kv-key">PLACES_THEN_WEB</span><span>Catalogo primero; si falla, web search.</span>
+        <span class="kv-key">WEB_SEARCH</span><span>Resolucion directa via web (clima, eventos).</span>
+        <span class="kv-key">POI_SEARCH</span><span>Busqueda de punto de interes especifico.</span>
+        <span class="kv-key">RANK_ONLY</span><span>Sin resolucion geografica; solo re-rankea.</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>Lifestyle Proximity</h3>
+  <p>Permite queries como "hotel cerca de restaurantes" o "zona con bares concentrados".</p>
+  <div class="two-col">
+    <div class="panel">
+      <h4>Categorias</h4>
+      <div class="badge-row">
+        <span class="badge">RESTAURANT</span>
+        <span class="badge">BAR</span>
+        <span class="badge">CAFE</span>
+        <span class="badge">NIGHTLIFE</span>
+        <span class="badge">FOOD</span>
+        <span class="badge">SHOPPING</span>
+        <span class="badge">ATTRACTION</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h4>Proximity Modes</h4>
+      <div class="badge-row">
+        <span class="badge green">NEARBY</span>
+        <span class="badge amber">CLUSTER</span>
+        <span class="badge purple">DENSE_AREA</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>Catalogo semantico (ai.semanticCatalog.js)</h3>
+  <p>
+    Archivo de 1025 lineas con ~35 ciudades definidas con zonas, landmarks, aliases,
+    coordenadas y traits. Version: <code>2026.03.enterprise.v1</code>.
+    Resuelve referencias locales sin llamar a ningun API externo.
+  </p>
+
+  <p><strong>Ciudades en el catalogo:</strong></p>
+  <div class="badge-row">
+    <span class="badge">Buenos Aires</span><span class="badge">Dubai</span>
+    <span class="badge">Tokyo</span><span class="badge">Kyoto</span><span class="badge">Osaka</span>
+    <span class="badge">New York</span><span class="badge">Miami</span><span class="badge">Los Angeles</span>
+    <span class="badge">San Francisco</span><span class="badge">Las Vegas</span><span class="badge">Orlando</span>
+    <span class="badge">Chicago</span><span class="badge">Boston</span><span class="badge">Washington</span>
+    <span class="badge">Seattle</span><span class="badge">Austin</span><span class="badge">Nashville</span>
+    <span class="badge">New Orleans</span><span class="badge">Honolulu</span><span class="badge">Atlanta</span>
+    <span class="badge">Dallas</span><span class="badge">Houston</span><span class="badge">Philadelphia</span>
+    <span class="badge">Phoenix</span><span class="badge">San Diego</span><span class="badge">Mexico City</span>
+    <span class="badge">Rio de Janeiro</span><span class="badge">Sao Paulo</span><span class="badge">Lima</span>
+    <span class="badge">Bogota</span><span class="badge">Medellin</span><span class="badge">Santiago</span>
+    <span class="badge">Cartagena</span><span class="badge">Punta Cana</span>
+    <span class="badge">Yokohama</span><span class="badge">Fukuoka</span><span class="badge">Sapporo</span>
+  </div>
+
+  <p>
+    Cada ciudad tiene <code>zones</code> (barrios/distritos con coordenadas y radio) y
+    <code>landmarks</code> (monumentos, estaciones, puertos) con sus alias en multiples idiomas.
+    El web resolver cachea resoluciones externas por 30 dias con TTL configurable.
+  </p>
+
+  <div class="callout green">
+    <strong>Regla de abstraccion:</strong> para queries como "tranquilo y caminable" o "buena zona",
+    el sistema llena <code>areaIntent</code> y <code>areaTraits</code> primero.
+    Solo inventa <code>geoIntent</code> o <code>placeTargets</code> si el usuario nombro
+    explicitamente un lugar. Esto evita resultados geograficamente incorrectos.
+  </div>
+</section>
+
+<!-- ═══════════════════════ 7. BUSQUEDA ═══════════════════════ -->
+<section class="section page-break">
+  <h2>7. Busqueda de Hoteles y Disponibilidad Real</h2>
+  <p class="path">insiderBack/src/services/assistantSearch.service.js</p>
+
+  <div class="two-col">
+    <div class="panel green">
+      <h3>Catalog Discovery</h3>
+      <p>Modo exploratorio. Puede buscar sin fechas, huespedes o nacionalidad completa.
+      Sirve para mostrar opciones iniciales y orientar al usuario.</p>
+      <p>Execution mode: <code>CATALOG_DISCOVERY</code></p>
+    </div>
+    <div class="panel blue">
+      <h3>Live Availability</h3>
+      <p>Requiere fechas, huespedes y nacionalidad. Si falta algo, interrumpe y pide
+      los datos via UI estructurada. Consulta disponibilidad y precios reales.</p>
+      <p>Execution mode: <code>LIVE_AVAILABILITY</code></p>
+    </div>
+  </div>
+
+  <h3>Condiciones que fuerzan Live Availability</h3>
+  <ul>
+    <li>Frases en el mensaje: <code>disponibilidad real</code>, <code>precio real</code>, <code>live availability</code>, <code>show live rates</code>.</li>
+    <li><code>uiEvent === "LIVE_AVAILABILITY_ENABLE"</code> enviado por mobile.</li>
+    <li><code>context.forceLiveAvailability === true</code>.</li>
+    <li>Cuando la UI envia fechas y huespedes confirmados para una busqueda existente.</li>
+  </ul>
+
+  <h3>Campos faltantes para Live Availability</h3>
+  <table class="table">
+    <thead><tr><th>Campo faltante</th><th>Next action</th><th>Estado guardado</th></tr></thead>
+    <tbody>
+      <tr><td>Fechas</td><td><code>ASK_FOR_DATES</code></td><td><code>pendingToolCall.missingField = "dateRange"</code></td></tr>
+      <tr><td>Huespedes</td><td><code>ASK_FOR_GUESTS</code></td><td><code>pendingToolCall.missingField = "guestCount"</code></td></tr>
+      <tr><td>Nacionalidad</td><td><code>ASK_FOR_NATIONALITY</code></td><td><code>pendingToolCall.missingField = "nationality"</code></td></tr>
+      <tr><td>Lugar ambiguo</td><td><code>ASK_FOR_PLACE_DISAMBIGUATION</code></td><td><code>pendingToolCall.missingField = "placeDisambiguation"</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Scoring semantico</h3>
+  <p>
+    Cada hotel recibe un <code>semanticScore</code> calculado contra el intent del usuario.
+    El score combina: match de traits de zona (<code>semanticEvidence</code>), match de nombre
+    de hotel (<code>candidateHotelNames</code>), match de zona exacta, y seniority de evidencia.
+  </p>
+  <ul>
+    <li>Con <code>viewIntent</code>: se aplica si <code>strongEvidence</code> o <code>semanticScore &ge; 24</code>.</li>
+    <li>Con <code>qualityIntent</code>: se aplica si <code>semanticScore &ge; 12</code>.</li>
+    <li>Sin intent especial: cualquier score positivo activa el filtro semantico.</li>
+  </ul>
+
+  <h3>Carruseles (ai.carousels.js)</h3>
+  <p>
+    Los resultados se organizan en carruseles por categoria. Max 5 carruseles, 5 items cada uno.
+    Si el inventario total es menor a 12 items, se muestra un unico carrusel de "Recomendaciones"
+    para evitar repeticion. El precio se extrae normalizando multiples campos posibles del hotel
+    (<code>priceFromPerNight</code>, <code>priceFrom</code>, <code>nightlyRate</code>, etc.).
+  </p>
+</section>
+
+<!-- ═══════════════════════ 8. FOLLOWUPS ═══════════════════════ -->
+<section class="section page-break">
+  <h2>8. Follow-Ups, Web Search y Fallback Cercano</h2>
+
+  <h3>Follow-ups sobre resultados previos</h3>
+  <p>
+    Si existe <code>lastShownInventorySummary</code> en el estado de la sesion, el backend puede
+    responder preguntas sobre amenities, precios y comparaciones sin lanzar una busqueda nueva.
+    El inventario raw se cachea por <code>sessionId</code>. El modulo
+    <span class="path">ai.lastResultsFacts.js</span> tiene un catalogo de features detectables
+    por regex: pool, spa, gym, wifi, parking, breakfast, y mas.
+  </p>
+
+  <h3>Web Search</h3>
+  <p class="path">insiderBack/src/modules/ai/ai.webSearchPolicy.js</p>
+
+  <div class="two-col">
+    <div class="panel green">
+      <h4>Se activa cuando...</h4>
+      <ul>
+        <li>El usuario pide fuentes, links, verificar, buscar online o Google.</li>
+        <li>Hechos actuales: hoy, ahora, <em>latest</em>, <em>current</em>, <em>news</em>.</li>
+        <li>Informacion variable: horarios, visa, restricciones, eventos, clima.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h4>No se activa cuando...</h4>
+      <ul>
+        <li>Saludos o preguntas de capacidad del assistant.</li>
+        <li>Recomendaciones locales sobre resultados ya mostrados.</li>
+        <li>Preguntas que el assistant puede responder desde su conocimiento.</li>
+      </ul>
+    </div>
+  </div>
+
+  <p>
+    El modelo usado para web search es <code>gpt-4o-search-preview</code>. Las fuentes de
+    competidores (Booking.com, Expedia, Hotels.com, Kayak, Agoda, Trivago, Airbnb) son filtradas
+    automaticamente, salvo que el usuario las pida explicitamente. La politica de web search
+    es <code>geo_official_first</code>.
+  </p>
+
+  <h3>Fallback Cercano</h3>
+  <p>
+    Si no hay hoteles en el destino exacto, el servicio expande geograficamente alrededor
+    del anchor con tres radios progresivos:
+  </p>
+  <div class="badge-row">
+    <span class="badge green">5.000 m</span>
+    <span class="badge amber">15.000 m</span>
+    <span class="badge" style="border-color:#fca5a5;background:#fff1f2;color:#991b1b">35.000 m</span>
+  </div>
+  <p>
+    El resultado se marca con metadata:
+    <code>nearbyFallbackApplied</code>, <code>nearbyFallbackCities</code> y
+    <code>nearbyFallbackOriginalDestination</code>. El assistant usa esta informacion para
+    explicar que las opciones mostradas son cercanas al destino buscado, no exactamente en el.
+  </p>
+</section>
+
+<!-- ═══════════════════════ 9. STREAMING SSE ═══════════════════════ -->
+<section class="section page-break">
+  <h2>9. Streaming SSE: Protocolo y Eventos</h2>
+
+  <p>
+    El servidor emite eventos SSE con el formato estandar:
+    <code>event: &lt;tipo&gt;\ndata: &lt;JSON&gt;\n\n</code>.
+    El controller es quien escribe directamente en <code>res</code>; el service recibe
+    callbacks (<code>onKickoffChunk</code>, <code>onClosingChunk</code>, <code>emitTrace</code>, etc.)
+    para mantener la separacion de capas.
+  </p>
+
+  <h3>Ciclo de eventos de un turno completo</h3>
+  <table class="table">
+    <thead><tr><th>Evento SSE</th><th>Cuando se emite</th><th>Data relevante</th></tr></thead>
+    <tbody>
+      <tr><td><code>thinking</code></td><td>Inmediato al recibir el mensaje. Antes de Call 1.</td><td><code>{}</code></td></tr>
+      <tr><td><code>trace</code></td><td>Despues de Call 1. Muestra la decision del modelo.</td><td><code>{ code, label, destination, toolName, strategy }</code></td></tr>
+      <tr><td><code>kickoff_delta</code></td><td>Chunks del mensaje inicial de busqueda (streaming temprano).</td><td><code>{ content }</code></td></tr>
+      <tr><td><code>assistant_message</code></td><td>Mensaje introductorio completo antes de resultados.</td><td><code>{ content, nextProgressType }</code></td></tr>
+      <tr><td><code>searching_catalog</code></td><td>Inicio de busqueda en catalogo.</td><td><code>{ destination, total }</code></td></tr>
+      <tr><td><code>searching_live</code></td><td>Inicio de busqueda de disponibilidad real.</td><td><code>{ destination, adults, children }</code></td></tr>
+      <tr><td><code>results_partial</code></td><td>Resultados parciales mientras sigue buscando.</td><td><code>{ items[], total }</code></td></tr>
+      <tr><td><code>results_final</code></td><td>Resultados finales con carruseles y semantica completa.</td><td><code>{ carousels[], items[], semanticEvidence[] }</code></td></tr>
+      <tr><td><code>delta</code></td><td>Chunks de la respuesta conversacional (Call 2 streaming).</td><td><code>{ content }</code></td></tr>
+      <tr><td><code>closing_delta</code></td><td>Chunks del mensaje de cierre.</td><td><code>{ content }</code></td></tr>
+      <tr><td><code>assistant_closing</code></td><td>Mensaje de cierre completo con metadata.</td><td><code>{ text, annotations[] }</code></td></tr>
+      <tr><td><code>done</code></td><td>Fin del turno. Incluye texto completo persistido.</td><td><code>{ text, sessionId, messageId }</code></td></tr>
+      <tr><td><code>error</code></td><td>Error durante el procesamiento.</td><td><code>{ message, code }</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Diferencia Web vs. Mobile</h3>
+  <div class="two-col">
+    <div class="panel">
+      <h3>Web (legacy)</h3>
+      <p class="path">bookingGPTFront/apps/web/src/services/aiAssistant.js</p>
+      <ul>
+        <li>Usa <code>fetch()</code> directamente contra <code>/api/ai/chat/stream</code>.</li>
+        <li>Timeout idle: <code>30000ms</code>.</li>
+        <li>Si el navegador no soporta streaming (<code>ReadableStream</code>), parsea el SSE completo al final.</li>
+        <li><code>Assistant.jsx</code> maneja kickoff, progreso, resultados y cierre.</li>
+        <li>Modo mantenimiento: <code>VITE_AI_CHAT_MAINTENANCE=true</code> o <code>localStorage.bookinggpt_ai_maintenance=1</code>.</li>
+      </ul>
+    </div>
+    <div class="panel blue">
+      <h3>Mobile (principal)</h3>
+      <p class="path">bookingGPTFront/apps/mobile/src/services/aiAssistant.js</p>
+      <ul>
+        <li>Intenta <code>XMLHttpRequest</code> primero (mejor soporte SSE en React Native).</li>
+        <li>Si XHR no esta disponible, cae a <code>fetch()</code>.</li>
+        <li>Idle timeout: <code>30000ms</code> entre chunks.</li>
+        <li>Soporte completo de cancelacion via <code>/api/ai/chat/cancel</code>.</li>
+        <li>Modo mantenimiento: <code>EXPO_PUBLIC_AI_CHAT_MAINTENANCE=true</code>.</li>
+        <li><code>AiAssistantContext.js</code> orquesta todo el estado de UI.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 10. MOBILE ═══════════════════════ -->
+<section class="section page-break">
+  <h2>10. Integracion Mobile en Profundidad</h2>
+  <p class="path">bookingGPTFront/apps/mobile/src/</p>
+
+  <h3>Timeouts del cliente mobile</h3>
+  <table class="table">
+    <thead><tr><th>Constante</th><th>Valor</th><th>Aplica a</th></tr></thead>
+    <tbody>
+      <tr><td><code>AI_CHAT_TIMEOUT_MS</code></td><td>40 000 ms</td><td>Respuesta no-streaming (<code>/api/ai/chat</code>).</td></tr>
+      <tr><td><code>AI_STREAM_IDLE_TIMEOUT_MS</code></td><td>30 000 ms</td><td>Silencio maximo entre chunks SSE antes de abortar.</td></tr>
+      <tr><td><code>AI_HISTORY_TIMEOUT_MS</code></td><td>15 000 ms</td><td>Lista de sesiones y carga de sesion individual.</td></tr>
+      <tr><td><code>AI_CANCEL_TIMEOUT_MS</code></td><td>2 500 ms</td><td>Request de cancelacion de turno.</td></tr>
+      <tr><td><code>AI_FEEDBACK_TIMEOUT_MS</code></td><td>8 000 ms</td><td>Envio de feedback de mensaje.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Payload enviado a /api/ai/chat/stream</h3>
+  <pre>{
+  sessionId: string,          // ID de sesion existente o nueva
+  message:   string,          // Texto del usuario
+  limit?:    object,          // { maxResults: number }
+  context?:  {
+    userName:            string,
+    passengerNationality: string,   // Codigo ISO (AR, US...)
+    confirmedSearch:     {          // Datos confirmados desde UI
+      where: string,
+      whereLat: number,
+      whereLng: number,
+      when: string,
+      who: string,
+      nationality: string,
+      residence: string,
+    },
+    trip?:               object,    // Datos del viaje activo
+    forceLiveAvailability?: boolean
+  },
+  uiEvent?:  string           // Ej: "LIVE_AVAILABILITY_ENABLE"
+}</pre>
+
+  <h3>Manejo de errores mobile</h3>
+  <table class="table">
+    <thead><tr><th>Codigo de error</th><th>Mensaje al usuario</th></tr></thead>
+    <tbody>
+      <tr><td><code>AI_PAYLOAD_TOO_LARGE</code></td><td>Your message is too large for the assistant. Please shorten it and try again.</td></tr>
+      <tr><td><code>AI_INVALID_PAYLOAD</code></td><td>That request could not be processed. Please try again with a simpler message.</td></tr>
+      <tr><td><code>AI_CHAT_TURN_IN_PROGRESS</code></td><td>This chat is already processing a message. Please wait a moment before sending another one.</td></tr>
+      <tr><td><code>AI_CHAT_SESSION_QUOTA_EXCEEDED</code></td><td>Cuota de sesiones superada.</td></tr>
+      <tr><td><code>AI_CHAT_MESSAGE_QUOTA_EXCEEDED</code></td><td>Cuota de mensajes por sesion superada.</td></tr>
+      <tr><td><code>AI_FEEDBACK_SAVE_FAILED</code></td><td>Error al guardar feedback.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>AiAssistantContext.js</h3>
+  <p class="path">bookingGPTFront/apps/mobile/src/context/AiAssistantContext.js</p>
+  <p>
+    Es el corazon del estado de IA en mobile. Expone el hook <code>useAiAssistant()</code>
+    que todas las pantallas y componentes consumen. Responsabilidades:
+  </p>
+  <ul>
+    <li><strong>Gestion de sesiones:</strong> crear, listar, cargar y eliminar sesiones.</li>
+    <li><strong>Streaming SSE:</strong> recibe chunks y actualiza estado reactivamente. Distingue XHR de fetch segun disponibilidad.</li>
+    <li><strong>Progreso de UI:</strong> mapea cada evento SSE a un label localizado (<code>resolveStreamProgressLabel</code>) y a una linea de trace (<code>resolveStreamTraceLine</code>).</li>
+    <li><strong>Trace lines:</strong> acumula traceLines deduplicadas por clave <code>code:label</code> para mostrar el razonamiento interno al usuario.</li>
+    <li><strong>Mensajes:</strong> adapta el formato del servidor al modelo interno de mensajes mobile (<code>adaptServerMessages</code>).</li>
+    <li><strong>Inventario:</strong> detecta si un snapshot tiene datos de hoteles/homes y construye el inventario de UI (<code>buildInventoryFromItems</code>).</li>
+    <li><strong>Carruseles:</strong> detecta si hay datos de carrusel validos (<code>hasCarouselData</code>).</li>
+    <li><strong>Client guard timeout:</strong> <code>AI_CLIENT_GUARD_TIMEOUT_MS = 30000ms</code> como seguridad adicional del lado del cliente.</li>
+    <li><strong>Localizacion:</strong> detecta locale y timezone del dispositivo (<code>resolveLocale</code>, <code>resolveTimeZone</code>).</li>
+    <li><strong>Debug:</strong> <code>EXPO_PUBLIC_DEBUG_AI=true</code> habilita logs detallados en desarrollo.</li>
+  </ul>
+
+  <h3>Progreso SSE — labels en mobile</h3>
+  <table class="table">
+    <thead><tr><th>Evento</th><th>Label mostrado al usuario</th></tr></thead>
+    <tbody>
+      <tr><td><code>thinking</code></td><td>"Thinking..." / "Pensando..."</td></tr>
+      <tr><td><code>searching_catalog</code></td><td>"Searching [destino]..." con total si disponible</td></tr>
+      <tr><td><code>searching_live</code></td><td>"Checking live availability..." con adultos/ninos</td></tr>
+      <tr><td><code>results_partial</code></td><td>"Found [N] options so far..."</td></tr>
+      <tr><td><code>results_final</code></td><td>"Ready" / cierre visual</td></tr>
+      <tr><td><code>kickoff_delta</code></td><td>Texto streaming visible mientras busca</td></tr>
+      <tr><td><code>assistant_message</code></td><td>Activa siguiente tipo de progreso segun <code>nextProgressType</code></td></tr>
+      <tr><td><code>closing_delta</code></td><td>Texto de cierre en streaming</td></tr>
+      <tr><td><code>assistant_closing</code></td><td>Cierre completo con annotations de web search</td></tr>
+    </tbody>
+  </table>
+
+  <h3>useAIChatScreen.js</h3>
+  <p class="path">bookingGPTFront/apps/mobile/src/hooks/useAIChatScreen.js</p>
+  <p>
+    Hook que separa la logica de UI de la pantalla del estado de IA. Responsabilidades:
+  </p>
+  <ul>
+    <li>Maneja <code>searchParams</code> (where, when, who, nationality, residence) en estado local.</li>
+    <li>Sincroniza <code>nationality</code> y <code>residence</code> desde <code>AuthContext</code>.</li>
+    <li>Controla modales de busqueda (<code>activeSearchModal</code>: where, when, who, nationality).</li>
+    <li>Wrappea <code>sendMessage</code> para inyectar el contexto de busqueda actualizado antes de enviar.</li>
+    <li>Maneja el sidebar de historial (<code>isSidebarOpen</code>).</li>
+    <li>Formatea el historial de sesiones con timestamps para display.</li>
+  </ul>
+
+  <h3>AIChatScreen.js</h3>
+  <p class="path">bookingGPTFront/apps/mobile/src/screens/chat/AIChatScreen.js</p>
+  <p>
+    Pantalla principal del chat. Usa BlurView, LinearGradient, expo-image y Animated para
+    transiciones. Integra <code>Swipeable</code> para gestos. Dependencias clave:
+    <code>useAiAssistant</code>, <code>useAIChatScreen</code>, <code>useCurrencyRate</code>,
+    <code>useTheme</code>, <code>useLanguage</code>, <code>PropertyDetailsModal</code>.
+  </p>
+
+  <h3>Componentes AI mobile</h3>
+  <p class="path">bookingGPTFront/apps/mobile/src/components/chat/ai/</p>
+  <table class="table">
+    <thead><tr><th>Componente</th><th>Funcion</th></tr></thead>
+    <tbody>
+      <tr><td><code>AIChatHeader.js</code></td><td>Header con logo, titulo y boton de nuevo chat.</td></tr>
+      <tr><td><code>AIChatHero.js</code></td><td>Estado vacio / pantalla inicial sin mensajes.</td></tr>
+      <tr><td><code>AIChatInput.js</code></td><td>Input de texto con envio, cancelacion y estado de carga.</td></tr>
+      <tr><td><code>AIChatMessageList.js</code></td><td>Lista de mensajes con scroll y virtualizacion.</td></tr>
+      <tr><td><code>AIChatSearchModals.js</code></td><td>Modales para seleccionar destino, fechas, huespedes y nacionalidad.</td></tr>
+      <tr><td><code>AIChatSidebar.js</code></td><td>Panel lateral con historial de sesiones.</td></tr>
+      <tr><td><code>ChatDataCollector.js</code></td><td>UI estructurada para recolectar datos faltantes (fechas, huespedes, etc.).</td></tr>
+      <tr><td><code>DatePickerSheet.js</code></td><td>Bottom sheet para seleccion de fechas.</td></tr>
+      <tr><td><code>GuestPickerSheet.js</code></td><td>Bottom sheet para seleccion de huespedes.</td></tr>
+      <tr><td><code>HotelCard.js</code></td><td>Tarjeta de hotel en el chat con precio, imagen y acciones.</td></tr>
+      <tr><td><code>MessageActionsBar.js</code></td><td>Barra de acciones sobre mensajes (copiar, feedback).</td></tr>
+      <tr><td><code>MessageFeedbackSheet.js</code></td><td>Bottom sheet para thumbs up/down con razon opcional.</td></tr>
+      <tr><td><code>NationalityPickerSheet.js</code></td><td>Selector de nacionalidad/residencia.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout blue">
+    <strong>Funciones de servicio mobile completas:</strong>
+    <code>queryAssistantStream</code> (streaming principal),
+    <code>queryAssistant</code> (no-streaming),
+    <code>createAssistantChatSession</code>,
+    <code>fetchAssistantChatSessions</code>,
+    <code>fetchAssistantChatById</code>,
+    <code>deleteAssistantChatById</code>,
+    <code>cancelAssistantChatTurn</code>,
+    <code>sendAssistantMessageFeedback</code>.
+  </div>
+</section>
+
+<!-- ═══════════════════════ 11. ESTADO CONVERSACIONAL ═══════════════════════ -->
+<section class="section page-break">
+  <h2>11. Estado Conversacional y Planner</h2>
+  <p class="path">insiderBack/src/modules/ai/ai.stateStore.js &mdash; insiderBack/src/modules/ai/ai.planner.js</p>
+
+  <h3>Estado por defecto (getDefaultState)</h3>
+  <pre>{
+  stage:               "NEED_DESTINATION",       // Stage actual del flujo
+  searchExecutionMode: "CATALOG_DISCOVERY",       // o "LIVE_AVAILABILITY"
+  destination:         { name, lat, lon },
+  dates:               { checkIn, checkOut, flexible: true },
+  guests:              { adults, children },
+  budget:              { min, max, currency: "USD" },
+  preferences: {
+    listingTypes:    [],
+    sortBy:          null,
+    areaPreference:  [],
+    nearbyInterest:  null,
+    amenities:       [],
+    propertyType:    [],
+  },
+  searchPlan:          {},            // Plan semantico completo del turno
+  locks:               { bookingFlowLocked: false },
+  tripContext:         null,          // Datos del viaje activo
+  lastShownInventorySummary:   null,  // Resumen del ultimo inventario mostrado
+  lastResultsContext:          null,  // Contexto raw para follow-ups
+  lastReferencedHotelIds:      [],   // IDs de hoteles mencionados
+  lastSearchParams:            null,  // Params de la ultima busqueda
+  currentSearchContextKey:     null,  // Clave de deduplicacion de busqueda
+  pendingToolCall:             null,  // Tool call pausado por datos faltantes
+}</pre>
+
+  <h3>Search Context Key (ai.searchContext.js)</h3>
+  <p>
+    Antes de ejecutar una busqueda, el sistema genera una clave de contexto que combina
+    la firma del destino (ciudad, pais, lat/lng normalizados a 4 decimales) con el perfil
+    semantico (star ratings, traits, zonas, landmarks). Si la clave es identica a la anterior,
+    se evita relanzar la busqueda (deduplicacion).
+  </p>
+
+  <h3>Planner: applyPlanToState</h3>
+  <p>
+    La funcion <code>applyPlanToState(state, plan)</code> hace un merge profundo del plan
+    del turno actual con el estado previo. Prioridades del merge:
+  </p>
+  <ul>
+    <li>Los valores <code>null</code> o <code>undefined</code> del plan entrante no sobreescriben el estado.</li>
+    <li>El <code>destinationName</code> se reconstruye desde <code>city + state + country</code>.</li>
+    <li>Las coordenadas (<code>lat</code>, <code>lon</code>) se normalizan a numeros flotantes.</li>
+    <li>El presupuesto (<code>budget.min</code>, <code>budget.max</code>) se normaliza a numeros.</li>
+    <li>Los adultos y ninos se normalizan y validan antes de guardar.</li>
+  </ul>
+
+  <h3>Funciones del state store</h3>
+  <div class="kv-grid">
+    <span class="kv-key">getDefaultState()</span><span>Retorna el estado inicial limpio de una sesion.</span>
+    <span class="kv-key">loadAssistantState()</span><span>Carga el estado persistido de una sesion desde base de datos.</span>
+    <span class="kv-key">saveAssistantState()</span><span>Persiste el estado actualizado despues de cada turno.</span>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 12. MODULOS DE SOPORTE ═══════════════════════ -->
+<section class="section page-break">
+  <h2>12. Modulos de Soporte</h2>
+
+  <h3>ai.renderer.js</h3>
+  <p>
+    Convierte los resultados de busqueda y el estado semantico en payloads listos para ser
+    consumidos por la app. Funciones principales:
+  </p>
+  <ul>
+    <li><code>renderAssistantPayload()</code>: construye el payload completo del assistant con carruseles, inventario y metadata semantica.</li>
+    <li><code>buildDeterministicSemanticExplanationPlan()</code>: genera el plan de explicacion semantica sin invocar el modelo (rapido).</li>
+    <li><code>getTopInventoryPicksByCategory()</code>: selecciona los mejores hoteles por categoria para mostrar en carruseles.</li>
+  </ul>
+
+  <h3>ai.telemetry.js</h3>
+  <p>
+    Modulo de observabilidad y debug. Controlado por flags de entorno:
+  </p>
+  <div class="kv-grid">
+    <span class="kv-key">AI_EVENT_LOGS</span><span>Activa logging de eventos en consola.</span>
+    <span class="kv-key">AI_FILE_DEBUG</span><span>Escribe debug detallado en archivo <code>./logs/ai-semantic-debug.txt</code>.</span>
+    <span class="kv-key">AI_FILE_DEBUG_PATH</span><span>Ruta del archivo de debug.</span>
+    <span class="kv-key">AI_FILE_DEBUG_MAX_DEPTH</span><span>Profundidad max de serializacion de objetos (default: 6).</span>
+    <span class="kv-key">AI_FILE_DEBUG_MAX_ARRAY_ITEMS</span><span>Items max en arrays serializados (default: 12).</span>
+    <span class="kv-key">AI_FILE_DEBUG_MAX_STRING_LENGTH</span><span>Largo max de strings (default: 1200 chars).</span>
+  </div>
+  <p>El debug se escribe de forma asincrona con cola de escritura para no bloquear el request.</p>
+
+  <h3>ai.webSearchPolicy.js</h3>
+  <p>
+    Decide si una query debe activar web search. Evalua el mensaje del usuario contra una
+    lista de patrones en multiples idiomas. Filtra automaticamente fuentes de competidores.
+    Politica de fuentes: <code>geo_official_first</code>.
+  </p>
+
+  <h3>ai.lastResultsFacts.js</h3>
+  <p>
+    Permite responder preguntas sobre amenities de hoteles ya mostrados sin lanzar una
+    busqueda nueva. Tiene un catalogo de features con deteccion por regex en espanol e ingles:
+    pool/pileta, spa, gym/gimnasio, wifi, parking/estacionamiento, breakfast/desayuno, y mas.
+  </p>
+
+  <h3>ai.carousels.js</h3>
+  <p>
+    Agrupa el inventario de hoteles en carruseles por categoria para display en la app.
+    Normaliza precios desde multiples campos posibles del hotel. Umbral para carrusel unico:
+    menos de 12 items totales.
+  </p>
+
+  <h3>ai.policy.js</h3>
+  <p>
+    Aplica restricciones de negocio sobre el intent. Actualmente: si
+    <code>bookingFlowLocked</code> es true, bloquea nuevas busquedas y redirige al usuario
+    a ayuda general con aviso <code>BOOKING_LOCKED</code>.
+  </p>
+</section>
+
+<!-- ═══════════════════════ 13. PERSISTENCIA ═══════════════════════ -->
+<section class="section page-break">
+  <h2>13. Persistencia y Archivos Clave</h2>
+
+  <h3>Tablas de base de datos</h3>
+  <table class="table">
+    <thead><tr><th>Tabla</th><th>Contenido</th></tr></thead>
+    <tbody>
+      <tr><td><code>ai_chat_session</code></td><td>Metadatos de sesion: userId, titulo, fechas, estado conversacional (JSON).</td></tr>
+      <tr><td><code>ai_chat_message</code></td><td>Mensajes usuario y assistant. Cada mensaje assistant puede guardar <code>plan_snapshot</code>, <code>inventory_snapshot</code> y <code>ui_snapshot</code>.</td></tr>
+      <tr><td><code>ai_chat_message_feedback</code></td><td>Feedback del usuario: value (thumbs up/down), razon, sessionId, messageId.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Snapshots por mensaje</h3>
+  <div class="three-col">
+    <div class="panel">
+      <h4>plan_snapshot</h4>
+      <p>Estado completo del plan semantico en el momento de la respuesta. Incluye intents, placeTargets, preferencias y searchPlan.</p>
+    </div>
+    <div class="panel">
+      <h4>inventory_snapshot</h4>
+      <p>Inventario de hoteles/homes mostrado. Permite reconstruir los resultados que vio el usuario en cualquier mensaje anterior.</p>
+    </div>
+    <div class="panel">
+      <h4>ui_snapshot</h4>
+      <p>Estado de la UI al momento de la respuesta: carruseles, cards destacadas, tipo de visualizacion.</p>
+    </div>
+  </div>
+
+  <h3>Archivos clave del backend</h3>
+  <table class="table">
+    <thead><tr><th>Archivo</th><th>Responsabilidad</th></tr></thead>
+    <tbody>
+      <tr><td class="path">insiderBack/src/controllers/ai.controller.js</td><td>HTTP, SSE, validacion, locks, persistencia y cancelacion de turnos.</td></tr>
+      <tr><td class="path">insiderBack/src/routes/ai.routes.js</td><td>Definicion de rutas, rate limiters y middlewares.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.service.js</td><td>Orquestacion principal (11.310 lineas): OpenAI, tools, search, semantica, follow-ups, estado y render.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.tools.js</td><td>Definicion de herramientas OpenAI y mapeos a acciones del planner.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.systemPrompt.js</td><td>System prompt: reglas de tool calling, redaccion, idioma, fecha y semantica.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.semanticCatalog.js</td><td>Catalogo geografico local: 35+ ciudades con zonas y landmarks (1.025 lineas).</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.planner.js</td><td>INTENTS, NEXT_ACTIONS, STAGES, applyPlanToState y merge de planes.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.stateStore.js</td><td>Carga y persistencia del estado conversacional por sesion.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.searchContext.js</td><td>Generacion de la clave de deduplicacion de busqueda.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.renderer.js</td><td>Construccion del payload final con carruseles, inventario y explicaciones semanticas.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.carousels.js</td><td>Agrupacion de inventario en carruseles por categoria.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.webSearchPolicy.js</td><td>Decision de activacion de web search y filtrado de fuentes.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.policy.js</td><td>Politicas de negocio: booking lock y restricciones de intent.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.telemetry.js</td><td>Logging, debug a archivo y observabilidad del sistema semantico.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.lastResultsFacts.js</td><td>Respuestas sobre amenities de resultados ya mostrados via regex.</td></tr>
+      <tr><td class="path">insiderBack/src/modules/ai/ai.config.js</td><td>Todos los flags, limites, rate limits, cuotas y defaults configurables.</td></tr>
+      <tr><td class="path">insiderBack/src/services/assistantSearch.service.js</td><td>Busqueda hotelera, filtros semanticos, scoring y fallback cercano.</td></tr>
+      <tr><td class="path">insiderBack/src/services/aiAssistantHistory.service.js</td><td>Sesiones, mensajes, snapshots y feedback en base de datos.</td></tr>
+      <tr><td class="path">insiderBack/src/services/ai.contentModeration.service.js</td><td>Moderacion: regex local + OpenAI Moderation API.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Archivos clave del frontend mobile</h3>
+  <table class="table">
+    <thead><tr><th>Archivo</th><th>Responsabilidad</th></tr></thead>
+    <tbody>
+      <tr><td class="path">bookingGPTFront/apps/mobile/src/context/AiAssistantContext.js</td><td>Estado global de IA, streaming SSE, sesiones, mensajes y logica de UI.</td></tr>
+      <tr><td class="path">bookingGPTFront/apps/mobile/src/services/aiAssistant.js</td><td>Funciones de servicio: streaming, sesiones, cancel, feedback. Timeouts.</td></tr>
+      <tr><td class="path">bookingGPTFront/apps/mobile/src/screens/chat/AIChatScreen.js</td><td>Pantalla principal del chat IA.</td></tr>
+      <tr><td class="path">bookingGPTFront/apps/mobile/src/hooks/useAIChatScreen.js</td><td>Logica de UI: searchParams, modales, sidebar, wrapper de sendMessage.</td></tr>
+      <tr><td class="path">bookingGPTFront/apps/mobile/src/components/chat/ai/</td><td>Componentes de UI: header, input, mensajes, cards de hotel, pickers, feedback.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="footer-note">
+    Documento generado desde el estado actual del codigo. Version 2 &mdash; 22/04/2026.
+    Cubre backend completo + integracion mobile. La integracion web (<code>Assistant.jsx</code>) es legacy y tiene menor funcionalidad que mobile.
+  </div>
+</section>
+
+</main>
+</body>
+</html>
