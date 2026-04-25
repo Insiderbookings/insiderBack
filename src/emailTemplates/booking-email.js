@@ -1,4 +1,5 @@
 import { sendMail } from "../helpers/mailer.js"
+import { resolveMailFrom } from "../helpers/mailFrom.js"
 
 import { bufferCertificatePDF } from "../helpers/bookingCertificate.js"
 
@@ -452,23 +453,10 @@ export async function sendBookingEmail(booking, toEmail, options = {}) {
 
   const subject = subjectTemplate ? renderTemplate(subjectTemplate, context) : fallbackSubject
 
-
-
-  const mailFromEnv = process.env.MAIL_FROM || null
-  const fromEmail =
-    branding.fromEmail ||
-    process.env.MAIL_FROM_EMAIL ||
-    (mailFromEnv && !mailFromEnv.includes("<") ? mailFromEnv : null) ||
-    process.env.SMTP_USER ||
-    null
-
-  const fromName = branding.fromName || brandName
-
-  const formattedFrom = fromEmail
-    ? `${fromName} <${fromEmail}>`
-    : mailFromEnv && mailFromEnv.includes("<")
-      ? mailFromEnv
-      : undefined
+  const hasCustomFromEmail = typeof branding.fromEmail === "string" && branding.fromEmail.trim().length > 0
+  const formattedFrom = hasCustomFromEmail
+    ? resolveMailFrom(branding.fromEmail, { fallbackName: branding.fromName || brandName })
+    : resolveMailFrom()
 
 
 

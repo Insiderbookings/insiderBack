@@ -1,5 +1,6 @@
 import transporter from "./transporter.js"
 import { getContractNotificationTemplate } from "../emailTemplates/contract-notification-template.js"
+import { resolveMailFrom } from "../helpers/mailFrom.js"
 
 function resolveClientUrl() {
   const candidates = [
@@ -32,7 +33,7 @@ export default async function sendContractNotificationEmail(user, contract = {})
 
   await transporter.sendMail({
     to: user.email,
-    from: process.env.MAIL_FROM || `"Insider Bookings" <${process.env.SMTP_USER}>`,
+    from: resolveMailFrom(),
     subject: `New Insider contract: ${title}`,
     html: htmlContent,
     text: textContent,

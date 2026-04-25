@@ -1,5 +1,6 @@
 import transporter from "./transporter.js";
 import { getBaseEmailTemplate } from "../emailTemplates/base-template.js";
+import { resolveMailFrom } from "../helpers/mailFrom.js";
 import {
   PARTNER_EMAIL_SEQUENCE,
   getPartnerPlanByCode,
@@ -7,9 +8,7 @@ import {
 } from "./partnerCatalog.service.js";
 
 const PARTNERS_FROM_EMAIL =
-  process.env.PARTNERS_FROM_EMAIL ||
-  process.env.SMTP_FROM ||
-  "partners@insiderbookings.com";
+  resolveMailFrom(process.env.PARTNERS_FROM_EMAIL || process.env.SMTP_FROM || null);
 const PARTNERS_REPLY_TO_EMAIL =
   process.env.PARTNERS_REPLY_TO_EMAIL || "partners@insiderbookings.com";
 const PARTNERS_INTERNAL_EMAIL =

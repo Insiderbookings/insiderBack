@@ -17,6 +17,7 @@ import { emitAdminActivity } from "../websocket/emitter.js";
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 import { buildHostOnboardingState } from "../utils/hostOnboarding.js";
 import { deriveRoleCodes } from "../utils/userCapabilities.js";
+import { resolveMailFrom } from "../helpers/mailFrom.js";
 
 dotenv.config();
 
@@ -981,6 +982,7 @@ export const hireStaff = async (req, res) => {
 
     /* 4 ▸ enviar e-mail */
     await transporter.sendMail({
+      from: resolveMailFrom(),
       to: email,
       subject: "Your new staff account at Insider Hotels",
       html: `
@@ -1437,7 +1439,7 @@ export const requestEmailVerificationCode = async (req, res) => {
     try {
       await transporter.sendMail({
         to: user.email,
-        from: process.env.MAIL_FROM || `"BookingGPT" <${process.env.SMTP_USER}>`,
+        from: resolveMailFrom(),
         subject: "Your BookingGPT verification code",
         html,
       });

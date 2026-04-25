@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken"
 import transporter from "./transporter.js"
 import { getPasswordResetTemplate } from "../emailTemplates/password-reset-template.js"
+import { resolveMailFrom } from "../helpers/mailFrom.js"
 
 function resolveClientUrl() {
   const candidates = [
@@ -40,7 +41,7 @@ export default async function sendPasswordResetEmail(user) {
 
   await transporter.sendMail({
     to: user.email,
-    from: process.env.MAIL_FROM || `"Insider Bookings" <${process.env.SMTP_USER}>`,
+    from: resolveMailFrom(),
     subject: "Reset your Insider Bookings password",
     html: htmlContent,
     text: textContent,
