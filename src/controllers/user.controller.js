@@ -170,6 +170,61 @@ const ensureInfluencerGuestProfile = async ({ userId, transaction }) => {
   return profile
 }
 
+const syncInfluencerIdentityFromStripeIfNeeded = async ({ guestProfile, stripe }) => {
+  if (!guestProfile || !stripe) return guestProfile
+
+  const guestProfilePlain =
+    typeof guestProfile.get === "function" ? guestProfile.get({ plain: true }) : guestProfile
+  if (isInfluencerIdentityVerified(guestProfilePlain)) return guestProfile
+
+  const metadata = asPlainObject(guestProfilePlain.metadata)
+  const identityMeta = asPlainObject(
+    metadata.influencerIdentityVerification || metadata.influencer_identity_verification
+  )
+  const sessionId = String(identityMeta.sessionId || "").trim()
+  if (!sessionId) return guestProfile
+
+  try {
+    const session = await stripe.identity.verificationSessions.retrieve(sessionId)
+    const status = String(session?.status || identityMeta.status || "").trim().toLowerCase()
+    const nextIdentityVerified = status === "verified"
+    const nextMetadata = ensureInfluencerOnboardingMetadata({
+      ...metadata,
+      identityVerified: nextIdentityVerified,
+      identity_verified: nextIdentityVerified,
+      identity_verification_status: status || null,
+      influencerIdentityVerification: {
+        ...identityMeta,
+        sessionId,
+        status: status || identityMeta.status || "requires_input",
+        lastUpdatedAt: new Date().toISOString(),
+        lastVerificationReportId:
+          session?.last_verification_report || identityMeta.lastVerificationReportId || null,
+      },
+    })
+
+    await guestProfile.update({
+      identity_verified: nextIdentityVerified,
+      metadata: nextMetadata,
+    })
+
+    console.log("[users] influencer identity synced on read", {
+      influencerId: guestProfile.user_id,
+      sessionId,
+      status,
+      verifyIdentity: nextMetadata?.influencerOnboarding?.verifyIdentity ?? false,
+    })
+  } catch (error) {
+    console.warn("[users] influencer identity sync on read failed", {
+      influencerId: guestProfile.user_id,
+      sessionId,
+      error: error?.message || error,
+    })
+  }
+
+  return guestProfile
+}
+
 const resolveInfluencerIdentityReturnUrl = () => {
   const explicit = String(
     process.env.STRIPE_INFLUENCER_IDENTITY_RETURN_URL ||
@@ -278,6 +333,15 @@ export const getCurrentUser = async (req, res) => {
       ],
     })
     if (!user) return res.status(404).json({ error: "User not found" })
+    if (user.guestProfile && !isInfluencerIdentityVerified(user.guestProfile)) {
+      const stripe = await getStripeClient().catch(() => null)
+      if (stripe) {
+        await syncInfluencerIdentityFromStripeIfNeeded({
+          guestProfile: user.guestProfile,
+          stripe,
+        })
+      }
+    }
     await ensureDiscountCodeLock(user)
     if (shouldTouchLastLogin(user.last_login_at)) {
       user = await user.update({ last_login_at: new Date() })
