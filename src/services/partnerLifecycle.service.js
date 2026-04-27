@@ -23,6 +23,7 @@ import {
   applyEffectivePartnerProfilesToHotelItems,
   getPartnerClaimsWithProfilesByHotelIds,
 } from "./partnerHotelProfile.service.js";
+import { buildPartnerTrialSimulationDates } from "./partnerTrialSimulation.service.js";
 
 const iLikeOp = getCaseInsensitiveLikeOp();
 
@@ -53,6 +54,7 @@ const PARTNER_DASHBOARD_HOTEL_ATTRIBUTES = Object.freeze([
 const PARTNER_EMAIL_LOG_ATTRIBUTES = Object.freeze([
   "id",
   "email_key",
+  "delivery_status",
   "sent_at",
 ]);
 
@@ -64,6 +66,48 @@ const normalizeCount = (value) => {
 
 const toObject = (value) =>
   value && typeof value === "object" && !Array.isArray(value) ? value : {};
+
+export const PARTNER_CLAIM_SOURCES = Object.freeze({
+  verify: "verify",
+  search: "search",
+});
+
+const normalizePartnerClaimSource = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === PARTNER_CLAIM_SOURCES.verify) return PARTNER_CLAIM_SOURCES.verify;
+  if (
+    [
+      PARTNER_CLAIM_SOURCES.search,
+      "manual",
+      "hotel_search",
+      "selection",
+      "partners_web",
+    ].includes(normalized)
+  ) {
+    return PARTNER_CLAIM_SOURCES.search;
+  }
+  return null;
+};
+
+export const getPartnerClaimReviewState = (claim) => {
+  const meta = toObject(claim?.meta);
+  const review = toObject(meta.review);
+  const source =
+    normalizePartnerClaimSource(review.source || meta.claimSource) ||
+    (claim?.trial_started_at ? PARTNER_CLAIM_SOURCES.verify : PARTNER_CLAIM_SOURCES.search);
+  const requiresManualApproval = Boolean(review.requiresManualApproval);
+  const approvedAt = review.approvedAt || review.approved_at || null;
+  const requestedAt = review.requestedAt || review.requested_at || claim?.claimed_at || null;
+  const blocked = requiresManualApproval && !approvedAt;
+  return {
+    source,
+    requiresManualApproval,
+    approvedAt,
+    requestedAt,
+    approvedByUserId: review.approvedByUserId || review.approved_by_user_id || null,
+    blocked,
+  };
+};
 
 const readNestedMetaNumber = (source, path = []) => {
   let current = source;
@@ -395,6 +439,8 @@ export const ensurePartnerClaim = async ({
   contactName = null,
   contactEmail = null,
   contactPhone = null,
+  claimSource = null,
+  requiresManualApproval = false,
 }) => {
   const resolvedHotelId = String(hotelId || "").trim();
   const resolvedUserId = Number(userId);
@@ -424,6 +470,9 @@ export const ensurePartnerClaim = async ({
   });
 
   const now = toNow();
+  const normalizedSource =
+    normalizePartnerClaimSource(claimSource) ||
+    (requiresManualApproval ? PARTNER_CLAIM_SOURCES.search : PARTNER_CLAIM_SOURCES.verify);
   if (existing && Number(existing.user_id) !== resolvedUserId) {
     const error = new Error("This hotel is already claimed");
     error.status = 409;
@@ -432,15 +481,49 @@ export const ensurePartnerClaim = async ({
 
   if (existing) {
     const updates = {};
+    const nextReviewState = getPartnerClaimReviewState(existing);
+    const nextMeta = {
+      ...toObject(existing.meta),
+      review: {
+        ...toObject(toObject(existing.meta).review),
+        source: nextReviewState.source || normalizedSource,
+        requestedAt: nextReviewState.requestedAt || existing.claimed_at || now,
+        requiresManualApproval: nextReviewState.requiresManualApproval || Boolean(requiresManualApproval),
+        approvedAt:
+          nextReviewState.approvedAt ||
+          (nextReviewState.requiresManualApproval || requiresManualApproval ? null : now.toISOString()),
+        approvedByUserId: nextReviewState.approvedByUserId || null,
+      },
+    };
     if (contactName) updates.contact_name = contactName;
     if (contactEmail) updates.contact_email = String(contactEmail).trim().toLowerCase();
     if (contactPhone) updates.contact_phone = contactPhone;
     if (!existing.claimed_at) updates.claimed_at = now;
-    if (!existing.trial_started_at) updates.trial_started_at = now;
-    if (!existing.trial_ends_at) updates.trial_ends_at = dayjs(now).add(PARTNER_TRIAL_DAYS, "day").toDate();
-    if (!existing.claim_status || existing.claim_status === PARTNER_CLAIM_STATUSES.cancelled) {
-      updates.claim_status = PARTNER_CLAIM_STATUSES.trialActive;
+    if (!existing.trial_started_at && !nextReviewState.requiresManualApproval && !requiresManualApproval) {
+      updates.trial_started_at = now;
     }
+    if (!existing.trial_ends_at && !nextReviewState.requiresManualApproval && !requiresManualApproval) {
+      updates.trial_ends_at = dayjs(now).add(PARTNER_TRIAL_DAYS, "day").toDate();
+    }
+    if (!existing.last_badge_activated_at && !nextReviewState.requiresManualApproval && !requiresManualApproval) {
+      updates.last_badge_activated_at = now;
+    }
+    if (
+      !existing.claim_status ||
+      [PARTNER_CLAIM_STATUSES.cancelled, PARTNER_CLAIM_STATUSES.pendingReview].includes(existing.claim_status)
+    ) {
+      updates.claim_status =
+        nextReviewState.requiresManualApproval || requiresManualApproval
+          ? PARTNER_CLAIM_STATUSES.pendingReview
+          : PARTNER_CLAIM_STATUSES.trialActive;
+    }
+    if (!existing.onboarding_step || existing.onboarding_step === "MANUAL_REVIEW_PENDING") {
+      updates.onboarding_step =
+        nextReviewState.requiresManualApproval || requiresManualApproval
+          ? "MANUAL_REVIEW_PENDING"
+          : "CLAIMED";
+    }
+    updates.meta = nextMeta;
     if (Object.keys(updates).length) await existing.update(updates);
     const refreshed = await models.PartnerHotelClaim.findByPk(existing.id, {
       include: buildClaimInclude(),
@@ -451,15 +534,26 @@ export const ensurePartnerClaim = async ({
   const claim = await models.PartnerHotelClaim.create({
     hotel_id: resolvedHotelId,
     user_id: resolvedUserId,
-    claim_status: PARTNER_CLAIM_STATUSES.trialActive,
-    onboarding_step: "CLAIMED",
+    claim_status: requiresManualApproval
+      ? PARTNER_CLAIM_STATUSES.pendingReview
+      : PARTNER_CLAIM_STATUSES.trialActive,
+    onboarding_step: requiresManualApproval ? "MANUAL_REVIEW_PENDING" : "CLAIMED",
     contact_name: contactName || null,
     contact_email: contactEmail ? String(contactEmail).trim().toLowerCase() : null,
     contact_phone: contactPhone || null,
     claimed_at: now,
-    trial_started_at: now,
-    trial_ends_at: dayjs(now).add(PARTNER_TRIAL_DAYS, "day").toDate(),
-    last_badge_activated_at: now,
+    trial_started_at: requiresManualApproval ? null : now,
+    trial_ends_at: requiresManualApproval ? null : dayjs(now).add(PARTNER_TRIAL_DAYS, "day").toDate(),
+    last_badge_activated_at: requiresManualApproval ? null : now,
+    meta: {
+      review: {
+        source: normalizedSource,
+        requestedAt: now.toISOString(),
+        requiresManualApproval: Boolean(requiresManualApproval),
+        approvedAt: requiresManualApproval ? null : now.toISOString(),
+        approvedByUserId: null,
+      },
+    },
   });
 
   const hydrated = await models.PartnerHotelClaim.findByPk(claim.id, {
@@ -752,6 +846,92 @@ export const listPartnerClaimsForUser = async ({ userId, hotelId = null }) => {
   return claims;
 };
 
+const claimMatchesAdminQuery = (claim, query) => {
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  if (!normalizedQuery) return true;
+  const haystacks = [
+    claim?.id,
+    claim?.hotel_id,
+    claim?.claim_status,
+    claim?.contact_name,
+    claim?.contact_email,
+    claim?.contact_phone,
+    claim?.hotel?.name,
+    claim?.hotel?.city_name,
+    claim?.hotel?.country_name,
+    claim?.user?.id,
+    claim?.user?.name,
+    claim?.user?.email,
+  ];
+  return haystacks.some((value) => String(value || "").toLowerCase().includes(normalizedQuery));
+};
+
+const buildAdminClaimSearchWhere = (query) => {
+  const normalizedQuery = String(query || "").trim();
+  if (!normalizedQuery) return null;
+
+  const likeQuery = `%${normalizedQuery}%`;
+  const numericQuery = Number(normalizedQuery);
+  const orClauses = [
+    { claim_status: { [iLikeOp]: likeQuery } },
+    { contact_name: { [iLikeOp]: likeQuery } },
+    { contact_email: { [iLikeOp]: likeQuery } },
+    { contact_phone: { [iLikeOp]: likeQuery } },
+    { "$hotel.name$": { [iLikeOp]: likeQuery } },
+    { "$hotel.city_name$": { [iLikeOp]: likeQuery } },
+    { "$hotel.country_name$": { [iLikeOp]: likeQuery } },
+    { "$user.name$": { [iLikeOp]: likeQuery } },
+    { "$user.email$": { [iLikeOp]: likeQuery } },
+  ];
+
+  if (Number.isFinite(numericQuery) && numericQuery > 0) {
+    orClauses.push(
+      { id: Math.trunc(numericQuery) },
+      { hotel_id: String(Math.trunc(numericQuery)) },
+      { "$user.id$": Math.trunc(numericQuery) },
+    );
+  }
+
+  return { [Op.or]: orClauses };
+};
+
+export const listPartnerClaimsForAdmin = async ({
+  query = "",
+  status = null,
+  limit = 120,
+} = {}) => {
+  const where = {};
+  const normalizedStatus = String(status || "").trim().toUpperCase();
+  if (normalizedStatus) {
+    where.claim_status = normalizedStatus;
+  }
+  const searchWhere = buildAdminClaimSearchWhere(query);
+  const finalWhere = searchWhere
+    ? {
+        [Op.and]: [where, searchWhere],
+      }
+    : where;
+
+  const claims = await models.PartnerHotelClaim.findAll({
+    where: finalWhere,
+    include: [
+      ...buildClaimInclude(),
+      {
+        model: models.User,
+        as: "user",
+        required: false,
+        attributes: ["id", "name", "email", "role"],
+      },
+    ],
+    subQuery: false,
+    order: [["updated_at", "DESC"], ["id", "DESC"]],
+    limit: Math.max(1, Math.min(Number(limit) || 120, 250)),
+  });
+
+  await hydratePartnerClaimsPerformance(claims);
+  return claims.filter((claim) => claimMatchesAdminQuery(claim, query));
+};
+
 const buildEmailTimeline = (claim) => {
   const sentMap = new Map(
     (Array.isArray(claim?.emailLogs) ? claim.emailLogs : []).map((entry) => [entry.email_key, entry]),
@@ -761,7 +941,8 @@ const buildEmailTimeline = (claim) => {
     day: step.day,
     subject: step.subject,
     preview: step.preview,
-    sent: Boolean(sentMap.has(step.key)),
+    sent: String(sentMap.get(step.key)?.delivery_status || "").toUpperCase() === "SENT",
+    deliveryStatus: sentMap.get(step.key)?.delivery_status || null,
     sentAt: sentMap.get(step.key)?.sent_at || null,
     manualCall: step.day >= 27,
   }));
@@ -770,6 +951,7 @@ const buildEmailTimeline = (claim) => {
 export const buildPartnerDashboardPayload = (claim) => {
   const program = resolvePartnerProgramFromClaim(claim);
   const hotel = claim?.hotel || null;
+  const review = getPartnerClaimReviewState(claim);
   const performance =
     claim?.partnerPerformance || buildPartnerPerformanceSnapshot(resolvePartnerPerformanceAdjustments(claim));
   return {
@@ -791,12 +973,20 @@ export const buildPartnerDashboardPayload = (claim) => {
     },
     claimStatus: claim.claim_status,
     onboardingStep: claim.onboarding_step || null,
+    review: {
+      source: review.source,
+      requestedAt: review.requestedAt,
+      approvedAt: review.approvedAt,
+      requiresManualApproval: review.requiresManualApproval,
+      blocked: review.blocked,
+      managementEnabled: !review.blocked,
+    },
     partnerProgram: program,
     plans: getPartnerPlans(),
     emailTimeline: buildEmailTimeline(claim),
     invoicePending:
       String(claim.claim_status || "").toUpperCase() === PARTNER_CLAIM_STATUSES.invoicePending,
-    canChoosePlan: Boolean(program?.trialActive || claim?.claim_status === PARTNER_CLAIM_STATUSES.expired),
+    canChoosePlan: !review.blocked && Boolean(program?.trialActive || claim?.claim_status === PARTNER_CLAIM_STATUSES.expired),
     performance,
     subscription: {
       billingMethod: claim.billing_method || null,
@@ -926,42 +1116,91 @@ const updateClaimStateBeforeEmails = async (claim, now = new Date()) => {
 const findEmailLog = (claim, emailKey) =>
   (Array.isArray(claim?.emailLogs) ? claim.emailLogs : []).find((entry) => entry.email_key === emailKey) || null;
 
-export const logPartnerEmail = async ({ claim, emailKey, scheduleDay = null, meta = null }) => {
+const syncEmailLogOnClaim = (claim, log) => {
+  if (!claim || !log || !Array.isArray(claim.emailLogs)) return;
+  const nextLogs = claim.emailLogs.filter((entry) => entry.email_key !== log.email_key);
+  nextLogs.push(log);
+  claim.emailLogs = nextLogs;
+  claim.setDataValue("emailLogs", nextLogs);
+};
+
+export const logPartnerEmail = async ({
+  claim,
+  emailKey,
+  scheduleDay = null,
+  deliveryStatus = "SENT",
+  meta = null,
+}) => {
   const existing = await models.PartnerEmailLog.findOne({
     where: { claim_id: claim.id, email_key: emailKey },
+    paranoid: false,
   });
-  if (existing) return existing;
-  return models.PartnerEmailLog.create({
+  const payload = {
     claim_id: claim.id,
     hotel_id: claim.hotel_id,
     user_id: claim.user_id,
     email_key: emailKey,
     schedule_day: scheduleDay,
-    delivery_status: "SENT",
+    delivery_status: deliveryStatus,
     sent_at: toNow(),
     meta,
-  });
+  };
+  if (existing) {
+    const deletedAt = existing.deleted_at || existing.deletedAt || null;
+    if (deletedAt && typeof existing.restore === "function") {
+      await existing.restore();
+    }
+    await existing.update(payload);
+    syncEmailLogOnClaim(claim, existing);
+    return existing;
+  }
+  const created = await models.PartnerEmailLog.create(payload);
+  syncEmailLogOnClaim(claim, created);
+  return created;
 };
 
 export const sendPartnerSequenceEmailIfDue = async ({ claim, hotel, step, now = new Date() }) => {
   const ageDays = resolvePartnerProgramFromClaim(claim, now)?.ageDays;
   if (!Number.isFinite(ageDays) || ageDays < step.day) return { skipped: true, reason: "not-due" };
-  if (findEmailLog(claim, step.key)) return { skipped: true, reason: "already-sent" };
+  const existingLog = findEmailLog(claim, step.key);
+  if (String(existingLog?.delivery_status || "").toUpperCase() === "SENT") {
+    return { skipped: true, reason: "already-sent" };
+  }
 
   const program = resolvePartnerProgramFromClaim(claim, now);
   if (step.stopWhenSubscribed && program?.claimStatus === PARTNER_CLAIM_STATUSES.subscribed) {
     return { skipped: true, reason: "already-subscribed" };
   }
 
-  await sendPartnerLifecycleEmail({ claim, hotel, emailKey: step.key });
-  const log = await logPartnerEmail({
-    claim,
-    emailKey: step.key,
-    scheduleDay: step.day,
-    meta: { automated: true },
-  });
-  if (Array.isArray(claim.emailLogs)) claim.emailLogs.push(log);
-  return { skipped: false };
+  try {
+    const deliveryResult = await sendPartnerLifecycleEmail({ claim, hotel, emailKey: step.key });
+    if (deliveryResult?.skipped) {
+      return {
+        skipped: true,
+        reason: deliveryResult.reason || "delivery-skipped",
+      };
+    }
+    await logPartnerEmail({
+      claim,
+      emailKey: step.key,
+      scheduleDay: step.day,
+      deliveryStatus: "SENT",
+      meta: { automated: true },
+    });
+    return { skipped: false };
+  } catch (error) {
+    await logPartnerEmail({
+      claim,
+      emailKey: step.key,
+      scheduleDay: step.day,
+      deliveryStatus: "FAILED",
+      meta: {
+        automated: true,
+        errorMessage: String(error?.message || "Email delivery failed"),
+      },
+    }).catch(() => {});
+    throw error;
+  }
 };
 
 export const sendPartnerPlanConfirmationEmail = async ({ claim }) => {
@@ -1062,30 +1301,29 @@ export const handlePartnerStripeEvent = async ({ eventType, object }) => {
   return { handled: false };
 };
 
-export const runPartnerLifecycleSweep = async ({ now = new Date() } = {}) => {
-  const claims = await models.PartnerHotelClaim.findAll({
-    include: buildClaimInclude(),
-    order: [["id", "ASC"]],
-  });
+export const runPartnerLifecycleForClaim = async ({ claim, now = new Date() }) => {
+  if (!claim) {
+    return {
+      processed: 0,
+      emailsSent: 0,
+      badgesRemoved: 0,
+    };
+  }
 
-  let processed = 0;
+  const previousStatus = claim.claim_status;
+  await updateClaimStateBeforeEmails(claim, now);
+
   let emailsSent = 0;
-  let badgesRemoved = 0;
+  const badgesRemoved =
+    previousStatus !== PARTNER_CLAIM_STATUSES.expired &&
+    claim.claim_status === PARTNER_CLAIM_STATUSES.expired
+      ? 1
+      : 0;
 
-  for (const claim of claims) {
-    processed += 1;
-    const previousStatus = claim.claim_status;
-    await updateClaimStateBeforeEmails(claim, now);
-    if (
-      previousStatus !== PARTNER_CLAIM_STATUSES.expired &&
-      claim.claim_status === PARTNER_CLAIM_STATUSES.expired
-    ) {
-      badgesRemoved += 1;
-    }
+  await hydratePartnerClaimsPerformance([claim], { now });
 
-    const program = resolvePartnerProgramFromClaim(claim, now);
-    if (program?.claimStatus === PARTNER_CLAIM_STATUSES.subscribed) continue;
-
+  const program = resolvePartnerProgramFromClaim(claim, now);
+  if (program?.claimStatus !== PARTNER_CLAIM_STATUSES.subscribed) {
     for (const step of PARTNER_EMAIL_SEQUENCE) {
       const result = await sendPartnerSequenceEmailIfDue({
         claim,
@@ -1098,8 +1336,216 @@ export const runPartnerLifecycleSweep = async ({ now = new Date() } = {}) => {
   }
 
   return {
+    processed: 1,
+    emailsSent,
+    badgesRemoved,
+    claim,
+  };
+};
+
+export const buildPartnerAdminClaimPayload = (claim) => {
+  const payload = buildPartnerDashboardPayload(claim);
+  return {
+    ...payload,
+    claimedAt: claim?.claimed_at || null,
+    trialStartedAt: claim?.trial_started_at || null,
+    trialEndsAt: claim?.trial_ends_at || null,
+    updatedAt: claim?.updated_at || null,
+    owner: claim?.user
+      ? {
+          userId: Number(claim.user.id || 0) || null,
+          name: claim.user.name || null,
+          email: claim.user.email || null,
+          role: claim.user.role ?? null,
+        }
+      : null,
+  };
+};
+
+export const approvePendingPartnerClaim = async ({
+  claim,
+  approvedByUserId = null,
+  now = new Date(),
+} = {}) => {
+  if (!claim) {
+    const error = new Error("Partner claim not found");
+    error.status = 404;
+    throw error;
+  }
+
+  const reviewState = getPartnerClaimReviewState(claim);
+  if (!reviewState.blocked && String(claim.claim_status || "").toUpperCase() !== PARTNER_CLAIM_STATUSES.pendingReview) {
+    const refreshed = await models.PartnerHotelClaim.findByPk(claim.id, {
+      include: buildClaimInclude(),
+    });
+    return refreshed;
+  }
+
+  const nextMeta = {
+    ...toObject(claim.meta),
+    review: {
+      ...toObject(toObject(claim.meta).review),
+      source: reviewState.source || PARTNER_CLAIM_SOURCES.search,
+      requestedAt: reviewState.requestedAt || claim.claimed_at || now,
+      requiresManualApproval: false,
+      approvedAt: now.toISOString(),
+      approvedByUserId: Number(approvedByUserId || 0) || null,
+    },
+  };
+
+  await claim.update({
+    claim_status: PARTNER_CLAIM_STATUSES.trialActive,
+    onboarding_step: "CLAIMED",
+    trial_started_at: claim.trial_started_at || now,
+    trial_ends_at: claim.trial_ends_at || dayjs(now).add(PARTNER_TRIAL_DAYS, "day").toDate(),
+    last_badge_activated_at: claim.last_badge_activated_at || now,
+    badge_removed_at: null,
+    meta: nextMeta,
+  });
+
+  const refreshed = await models.PartnerHotelClaim.findByPk(claim.id, {
+    include: buildClaimInclude(),
+  });
+
+  const hotel = refreshed?.hotel || (await models.WebbedsHotel.findByPk(refreshed.hotel_id));
+  const welcomeAlreadySent = Array.isArray(refreshed?.emailLogs)
+    ? refreshed.emailLogs.some((entry) => entry.email_key === "day_1_welcome")
+    : false;
+  if (!welcomeAlreadySent) {
+    await sendPartnerSequenceEmailIfDue({
+      claim: refreshed,
+      hotel,
+      step: { key: "day_1_welcome", day: 1, stopWhenSubscribed: true },
+      now,
+    }).catch(() => {});
+  }
+
+  return refreshed;
+};
+
+export const simulatePartnerClaimTrial = async ({
+  claimId,
+  targetDay,
+  resetEmailTimeline = false,
+  runLifecycle = true,
+  now = new Date(),
+} = {}) => {
+  const resolvedClaimId = Number(claimId);
+  if (!Number.isFinite(resolvedClaimId) || resolvedClaimId <= 0) {
+    const error = new Error("claimId is required");
+    error.status = 400;
+    throw error;
+  }
+
+  const claim = await models.PartnerHotelClaim.findByPk(resolvedClaimId, {
+    include: buildClaimInclude(),
+  });
+  if (!claim) {
+    const error = new Error("Partner claim not found");
+    error.status = 404;
+    throw error;
+  }
+
+  const claimStatus = String(claim.claim_status || "").toUpperCase();
+  const subscriptionStatus = String(claim.subscription_status || "").toLowerCase();
+  const billingLocked =
+    claimStatus === PARTNER_CLAIM_STATUSES.subscribed ||
+    claimStatus === PARTNER_CLAIM_STATUSES.invoicePending ||
+    [
+      PARTNER_SUBSCRIPTION_STATUSES.active,
+      PARTNER_SUBSCRIPTION_STATUSES.trialing,
+      PARTNER_SUBSCRIPTION_STATUSES.pendingInvoice,
+    ].includes(subscriptionStatus);
+  if (billingLocked) {
+    const error = new Error(
+      "This claim is already in a paid subscription or invoice flow. Use a trial claim to simulate lifecycle days.",
+    );
+    error.status = 409;
+    throw error;
+  }
+
+  const simulation = buildPartnerTrialSimulationDates({
+    now,
+    targetDay,
+    trialDays: PARTNER_TRIAL_DAYS,
+  });
+
+  await claim.update({
+    claimed_at: simulation.claimedAt,
+    trial_started_at: simulation.trialStartedAt,
+    trial_ends_at: simulation.trialEndsAt,
+    claim_status: PARTNER_CLAIM_STATUSES.trialActive,
+    badge_removed_at: null,
+    last_badge_activated_at: now,
+  });
+
+  if (resetEmailTimeline) {
+    await models.PartnerEmailLog.destroy({
+      where: { claim_id: claim.id },
+      force: true,
+    });
+    claim.setDataValue("emailLogs", []);
+    claim.emailLogs = [];
+  }
+
+  let lifecycleResult = {
+    processed: 0,
+    emailsSent: 0,
+    badgesRemoved: 0,
+  };
+  if (runLifecycle) {
+    lifecycleResult = await runPartnerLifecycleForClaim({ claim, now });
+  }
+
+  await hydratePartnerClaimsPerformance([claim], { now });
+
+  return {
+    claim,
+    simulation: {
+      targetDay: simulation.targetDay,
+      simulatedNow: now,
+      resetEmailTimeline: Boolean(resetEmailTimeline),
+      runLifecycle: Boolean(runLifecycle),
+    },
+    lifecycle: {
+      processed: lifecycleResult.processed,
+      emailsSent: lifecycleResult.emailsSent,
+      badgesRemoved: lifecycleResult.badgesRemoved,
+    },
+  };
+};
+
+export const runPartnerLifecycleSweep = async ({ now = new Date() } = {}) => {
+  const claims = await models.PartnerHotelClaim.findAll({
+    include: buildClaimInclude(),
+    order: [["id", "ASC"]],
+  });
+
+  let processed = 0;
+  let emailsSent = 0;
+  let badgesRemoved = 0;
+  const failures = [];
+
+  for (const claim of claims) {
+    try {
+      const result = await runPartnerLifecycleForClaim({ claim, now });
+      processed += result.processed;
+      emailsSent += result.emailsSent;
+      badgesRemoved += result.badgesRemoved;
+    } catch (error) {
+      failures.push({
+        claimId: claim.id,
+        hotelId: claim.hotel_id != null ? String(claim.hotel_id) : null,
+        message: String(error?.message || "Partner lifecycle sweep failed"),
+      });
+    }
+  }
+
+  return {
     processed,
     emailsSent,
     badgesRemoved,
+    failedClaims: failures.length,
+    failures,
   };
 };

@@ -227,6 +227,7 @@ export const PARTNER_PAYMENT_METHODS = Object.freeze({
 });
 
 export const PARTNER_CLAIM_STATUSES = Object.freeze({
+  pendingReview: "PENDING_REVIEW",
   trialActive: "TRIAL_ACTIVE",
   trialEnding: "TRIAL_ENDING",
   paymentDue: "PAYMENT_DUE",
@@ -346,6 +347,10 @@ export const resolvePartnerProgramFromClaim = (claim, now = new Date()) => {
     badge = null;
     plan = pendingPlan;
     statusLabel = "Invoice pending";
+  } else if (String(claim?.claim_status || "").toUpperCase() === PARTNER_CLAIM_STATUSES.pendingReview) {
+    badge = null;
+    plan = null;
+    statusLabel = "Review pending";
   } else if (String(claim?.claim_status || "").toUpperCase() === PARTNER_CLAIM_STATUSES.expired) {
     badge = null;
     statusLabel = "Badge removed";
