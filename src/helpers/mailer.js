@@ -1,5 +1,6 @@
 // src/helpers/mailer.js
 import nodemailer from "nodemailer"
+import { resolveMailFrom } from "./mailFrom.js"
 
 function asBool(v, def = false) {
   if (v == null) return def
@@ -71,7 +72,7 @@ export async function sendMail({
       `[mail] sending to ${Array.isArray(to) ? to.join(', ') : to || '(no recipient)'}${smtp ? ' (custom SMTP)' : ''}`
     )
   }
-  const fromAddr = from || process.env.MAIL_FROM || "no-reply@insiderbookings.com"
+  const fromAddr = resolveMailFrom(from)
   const headerBag = {
     ...(headers || {}),
   }

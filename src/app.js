@@ -162,6 +162,7 @@ app.use(
   cors({
     origin: resolveCorsOrigin,
     credentials: true,
+    exposedHeaders: ["X-Debug-Trace", "Server-Timing", "X-Cache"],
   }),
 );
 app.use("/api/ai", aiJsonParser);

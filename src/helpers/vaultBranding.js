@@ -174,10 +174,6 @@ export async function resolveVaultBranding({ tenantDomain, fallbackName, fallbac
     bcc: normalizeList(mailer.bcc || overrides.bcc),
   }
 
-  if (!branding.fromEmail && process.env.MAIL_FROM) {
-    branding.fromEmail = process.env.MAIL_FROM
-  }
-
   if (cacheKey) cache.set(cacheKey, branding)
 
   return { ...DEFAULT_BRAND, ...branding, ...(overrides || {}) }

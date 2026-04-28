@@ -1,6 +1,7 @@
 import models from "../models/index.js";
 import transporter from "../services/transporter.js";
 import { Op } from "sequelize";
+import { resolveMailFrom } from "../helpers/mailFrom.js";
 
 const { ErrorLog, ErrorConfig } = models;
 
@@ -97,7 +98,7 @@ export const testAlert = async (req, res) => {
         }
 
         const mailOptions = {
-            from: `"Insider Error Alert" <${process.env.SMTP_USER}>`,
+            from: resolveMailFrom(),
             to: emails.join(", "),
             subject: `[TEST] Insider System Alert`,
             html: `

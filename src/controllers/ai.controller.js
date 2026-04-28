@@ -1,10 +1,17 @@
 import {
+  buildAssistantResponsePayload,
+  buildAssistantUiSnapshot,
+  getAiClientType,
+} from "../modules/ai/ai.contract.js";
+import {
   AI_CHAT_HISTORY_LIMITS,
   AI_CHAT_REQUEST_LIMITS,
 } from "../modules/ai/ai.config.js";
 import { runAiTurn } from "../modules/ai/ai.service.js";
-import { filterWebSourcesForPolicy } from "../modules/ai/ai.webSearchPolicy.js";
-import { circuitBreaker } from "../modules/ai/ai.telemetry.js";
+import {
+  circuitBreaker,
+  logAiParityEvent,
+} from "../modules/ai/ai.telemetry.js";
 import { saveAssistantState } from "../modules/ai/ai.stateStore.js";
 import { isAssistantEnabled } from "../services/aiAssistant.service.js";
 import {
@@ -68,6 +75,14 @@ const trySendKnownAiError = (res, err) => {
   }
   res.status(status).json(payload);
   return true;
+};
+
+const logWebParityBreadcrumb = (req, label, payload = {}) => {
+  if (getAiClientType(req) !== "web") return;
+  logAiParityEvent(label, {
+    clientType: "web",
+    ...(payload && typeof payload === "object" ? payload : { value: payload }),
+  });
 };
 
 const normalizeMessagesInput = (messages) => {
@@ -449,6 +464,34 @@ const getUiEventPayload = (uiEvent) => {
 const isRetryResponseUiEvent = (uiEvent) =>
   normalizeUiEventId(uiEvent) === "RETRY_RESPONSE";
 
+const buildTurnTelemetryPayload = ({
+  transport,
+  sessionId,
+  uiEvent,
+  retryResponseRequested,
+  searchContext,
+  payload,
+  cancelled,
+  errorCode,
+} = {}) => ({
+  transport,
+  sessionId: sessionId || null,
+  hasSessionId: Boolean(sessionId),
+  hasUiEvent: Boolean(uiEvent),
+  uiEventId: normalizeUiEventId(uiEvent) || null,
+  retryResponseRequested: Boolean(retryResponseRequested),
+  hasSearchContext: Boolean(searchContext),
+  nextAction: payload?.nextAction || null,
+  followUpKind: payload?.followUpKind || null,
+  replyMode: payload?.replyMode || null,
+  webSearchUsed: Boolean(payload?.webSearchUsed),
+  hotelCount: Number(payload?.counts?.hotels) || 0,
+  homeCount: Number(payload?.counts?.homes) || 0,
+  cancelled:
+    typeof cancelled === "boolean" ? Boolean(cancelled) : undefined,
+  errorCode: errorCode || undefined,
+});
+
 const buildMessagesForRetry = (storedMessages, uiEvent) => {
   const messages = Array.isArray(storedMessages) ? [...storedMessages] : [];
   const payload = getUiEventPayload(uiEvent);
@@ -655,39 +698,6 @@ const buildItemsFromInventory = (inventory) => {
   return items.filter((i) => i.id);
 };
 
-const normalizeAssistantWebSources = (
-  sources = [],
-  { allowCompetitors = false } = {},
-) => {
-  const normalizedSources = Array.isArray(sources)
-    ? sources
-        .map((source) => {
-          const title =
-            typeof source?.title === "string" ? source.title.trim() : "";
-          const url = typeof source?.url === "string" ? source.url.trim() : "";
-          if (!url) return null;
-          return { title, url };
-        })
-        .filter(Boolean)
-    : [];
-  return filterWebSourcesForPolicy(normalizedSources, { allowCompetitors })
-    .safeSources;
-};
-
-const buildAssistantUiSnapshot = (ui, webSources = [], options = {}) => {
-  const normalizedWebSources = normalizeAssistantWebSources(
-    webSources,
-    options,
-  );
-  const baseUi = ui && typeof ui === "object" && !Array.isArray(ui) ? ui : null;
-  if (!baseUi && !normalizedWebSources.length) return null;
-  if (!normalizedWebSources.length) return baseUi;
-  return {
-    ...(baseUi || {}),
-    webSources: normalizedWebSources,
-  };
-};
-
 export const handleAiChat = async (req, res) => {
   const userId = getAuthenticatedUserId(req);
   if (!userId) {
@@ -742,6 +752,28 @@ export const handleAiChat = async (req, res) => {
     }
   }
 
+  logWebParityBreadcrumb(
+    req,
+    "chat.requested",
+    buildTurnTelemetryPayload({
+      transport: "stream",
+      sessionId: conversationId,
+      uiEvent,
+      retryResponseRequested,
+    }),
+  );
+
+  logWebParityBreadcrumb(
+    req,
+    "chat.requested",
+    buildTurnTelemetryPayload({
+      transport: "sync",
+      sessionId: conversationId,
+      uiEvent,
+      retryResponseRequested,
+    }),
+  );
+
   try {
     if (!conversationId) {
       const session = await createAssistantSessionForUser(userId);
@@ -755,6 +787,17 @@ export const handleAiChat = async (req, res) => {
 
   const turnToken = tryAcquireSessionTurn(conversationId);
   if (!turnToken) {
+    logWebParityBreadcrumb(
+      req,
+      "chat.rejected",
+      buildTurnTelemetryPayload({
+        transport: "sync",
+        sessionId: conversationId,
+        uiEvent,
+        retryResponseRequested,
+        errorCode: "AI_CHAT_TURN_IN_PROGRESS",
+      }),
+    );
     return trySendKnownAiError(res, buildTurnInProgressError());
   }
 
@@ -917,52 +960,49 @@ export const handleAiChat = async (req, res) => {
         homes: (result.inventory?.homes || []).slice(0, 30),
       };
       const items = buildItemsFromInventory(cappedInventory);
-      res.removeListener("close", onClientClose);
-      return res.json({
-        ok: true,
+      const responsePayload = buildAssistantResponsePayload({
         conversationId,
-        sessionId: conversationId,
-        message: replyText,
-        assistant: result.assistant || {
-          text: replyText,
-          tone: "neutral",
-          disclaimers: [],
-        },
-        ui: result.ui,
-        state: result.state,
-        plan: result.plan,
-        carousels: Array.isArray(result.carousels) ? result.carousels : [],
-        trip: result.trip,
+        replyText,
+        result,
         counts,
-        webSources: normalizeAssistantWebSources(result.webSources, {
-          allowCompetitors: Boolean(result.allowCompetitorWebSources),
-        }),
-        searchContext: searchContext || undefined,
+        searchContext,
         sections,
-        quick_replies,
+        quickReplies: quick_replies,
         items,
-        intent: result.intent,
-        nextAction: result.nextAction,
-        followUpKind:
-          result.followUpKind || result.ui?.meta?.followUpKind || null,
-        replyMode: result.replyMode || result.ui?.meta?.replyMode || null,
-        referencedHotelIds: Array.isArray(result.referencedHotelIds)
-          ? result.referencedHotelIds
-          : Array.isArray(result.ui?.meta?.referencedHotelIds)
-            ? result.ui.meta.referencedHotelIds
-            : [],
-        webSearchUsed: Boolean(
-          result.webSearchUsed || result.ui?.meta?.webSearchUsed,
-        ),
-        assistantReady: isAssistantEnabled(),
         quickStartPrompts: QUICK_START_PROMPTS,
+        assistantReady: isAssistantEnabled(),
       });
+      res.removeListener("close", onClientClose);
+      logWebParityBreadcrumb(
+        req,
+        "chat.completed",
+        buildTurnTelemetryPayload({
+          transport: "sync",
+          sessionId: conversationId,
+          uiEvent,
+          retryResponseRequested,
+          searchContext,
+          payload: responsePayload,
+        }),
+      );
+      return res.json(responsePayload);
     } catch (err) {
       if (trySendKnownAiError(res, err)) return;
       const isAborted =
         err?.name === "AbortError" || err?.code === "ERR_CANCELED";
       if (isAborted) {
         // Client disconnected — don't send response (headers may already be sent)
+        logWebParityBreadcrumb(
+          req,
+          "chat.aborted",
+          buildTurnTelemetryPayload({
+            transport: "sync",
+            sessionId: conversationId,
+            uiEvent,
+            retryResponseRequested,
+            errorCode: err?.code || err?.name || "ABORTED",
+          }),
+        );
         console.info("[ai] turn aborted (client disconnected)", {
           sessionId: conversationId,
           userId,
@@ -983,6 +1023,17 @@ export const handleAiChat = async (req, res) => {
         error: err?.message,
         code: err?.code,
       });
+      logWebParityBreadcrumb(
+        req,
+        "chat.failed",
+        buildTurnTelemetryPayload({
+          transport: "sync",
+          sessionId: conversationId,
+          uiEvent,
+          retryResponseRequested,
+          errorCode: err?.code || err?.name || "AI_CHAT_FAILED",
+        }),
+      );
       if (trySendKnownAiError(res, err)) return;
       return res
         .status(500)
@@ -1071,6 +1122,17 @@ export const handleAiChatStream = async (req, res) => {
 
   const turnToken = tryAcquireSessionTurn(conversationId);
   if (!turnToken) {
+    logWebParityBreadcrumb(
+      req,
+      "chat.rejected",
+      buildTurnTelemetryPayload({
+        transport: "stream",
+        sessionId: conversationId,
+        uiEvent,
+        retryResponseRequested,
+        errorCode: "AI_CHAT_TURN_IN_PROGRESS",
+      }),
+    );
     sendEvent("error", {
       message: "This chat is already processing another request. Please wait.",
       code: "AI_CHAT_TURN_IN_PROGRESS",
@@ -1240,47 +1302,33 @@ export const handleAiChatStream = async (req, res) => {
       searchContext: searchContext || undefined,
     });
 
-    sendEvent("done", {
-      ok: true,
+    const donePayload = buildAssistantResponsePayload({
       conversationId,
-      sessionId: conversationId,
-      reply: replyText,
-      message: replyText,
-      assistant: result.assistant || {
-        text: replyText,
-        tone: "neutral",
-        disclaimers: [],
-      },
-      ui: result.ui,
-      state: result.state,
-      plan: result.plan,
-      carousels: Array.isArray(result.carousels) ? result.carousels : [],
-      trip: result.trip,
+      replyText,
+      result,
       counts,
-      webSources: normalizeAssistantWebSources(result.webSources, {
-        allowCompetitors: Boolean(result.allowCompetitorWebSources),
-      }),
-      searchContext: searchContext || undefined,
+      searchContext,
       sections,
-      quick_replies,
+      quickReplies: quick_replies,
       items,
-      intent: result.intent,
-      nextAction: result.nextAction,
-      followUpKind:
-        result.followUpKind || result.ui?.meta?.followUpKind || null,
-      replyMode: result.replyMode || result.ui?.meta?.replyMode || null,
-      referencedHotelIds: Array.isArray(result.referencedHotelIds)
-        ? result.referencedHotelIds
-        : Array.isArray(result.ui?.meta?.referencedHotelIds)
-          ? result.ui.meta.referencedHotelIds
-          : [],
-      webSearchUsed: Boolean(
-        result.webSearchUsed || result.ui?.meta?.webSearchUsed,
-      ),
-      assistantReady: isAssistantEnabled(),
       quickStartPrompts: QUICK_START_PROMPTS,
+      assistantReady: isAssistantEnabled(),
       closingMessage: accumulatedClosingText || result.closingMessage || null,
     });
+
+    sendEvent("done", donePayload);
+    logWebParityBreadcrumb(
+      req,
+      "chat.completed",
+      buildTurnTelemetryPayload({
+        transport: "stream",
+        sessionId: conversationId,
+        uiEvent,
+        retryResponseRequested,
+        searchContext,
+        payload: donePayload,
+      }),
+    );
     detachCloseListeners();
     releaseTurn();
 
@@ -1349,6 +1397,17 @@ export const handleAiChatStream = async (req, res) => {
       err?.code === "ERR_CANCELED" ||
       err?.message === "Request was aborted.";
     if (isAborted) {
+      logWebParityBreadcrumb(
+        req,
+        "chat.aborted",
+        buildTurnTelemetryPayload({
+          transport: "stream",
+          sessionId: conversationId,
+          uiEvent,
+          retryResponseRequested,
+          errorCode: err?.code || err?.name || "ABORTED",
+        }),
+      );
       console.info("[ai] stream: turn aborted", {
         sessionId: conversationId,
         userId,
@@ -1360,6 +1419,17 @@ export const handleAiChatStream = async (req, res) => {
       userId,
       error: err?.message,
     });
+    logWebParityBreadcrumb(
+      req,
+      "chat.failed",
+      buildTurnTelemetryPayload({
+        transport: "stream",
+        sessionId: conversationId,
+        uiEvent,
+        retryResponseRequested,
+        errorCode: err?.code || err?.name || "AI_CHAT_FAILED",
+      }),
+    );
     sendEvent("error", {
       message: "Unable to process assistant query right now",
     });
@@ -1382,6 +1452,10 @@ export const createAiChat = async (req, res) => {
     const messages = await fetchAssistantMessages(session.id, userId, {
       limit: AI_CHAT_HISTORY_LIMITS.contextDefault,
     });
+    logWebParityBreadcrumb(req, "session.created", {
+      sessionId: session.id,
+      messageCount: Array.isArray(messages) ? messages.length : 0,
+    });
     return res.status(201).json({ ok: true, session, messages });
   } catch (err) {
     if (trySendKnownAiError(res, err)) return;
@@ -1399,6 +1473,10 @@ export const listAiChats = async (req, res) => {
     const limit =
       Number(req.query?.limit) || AI_CHAT_HISTORY_LIMITS.listDefault;
     const chats = await listAssistantSessionsForUser(userId, { limit });
+    logWebParityBreadcrumb(req, "session.list_loaded", {
+      requestedLimit: limit,
+      chatCount: Array.isArray(chats) ? chats.length : 0,
+    });
     return res.json({ ok: true, chats });
   } catch (err) {
     if (trySendKnownAiError(res, err)) return;
@@ -1421,6 +1499,11 @@ export const getAiChat = async (req, res) => {
       Number(req.query?.limit) || AI_CHAT_HISTORY_LIMITS.detailDefault;
     const payload = await getAssistantSessionWithMessages(sessionId, userId, {
       limit,
+    });
+    logWebParityBreadcrumb(req, "session.loaded", {
+      sessionId,
+      requestedLimit: limit,
+      messageCount: Array.isArray(payload?.messages) ? payload.messages.length : 0,
     });
     return res.json({ ok: true, ...payload });
   } catch (err) {
@@ -1468,6 +1551,10 @@ export const cancelAiChatTurn = async (req, res) => {
   }
 
   const cancelled = cancelSessionTurn(sessionId);
+  logWebParityBreadcrumb(req, "chat.cancelled", {
+    sessionId,
+    cancelled,
+  });
   return res.json({ ok: true, cancelled });
 };
 
@@ -1503,6 +1590,12 @@ export const submitAiMessageFeedback = async (req, res) => {
         metadata,
       },
     );
+    logWebParityBreadcrumb(req, "feedback.saved", {
+      sessionId,
+      messageId: feedback?.messageId || messageId,
+      value: feedback?.value || null,
+      reason: feedback?.reason || null,
+    });
     return res.json({ ok: true, feedback });
   } catch (err) {
     if (trySendKnownAiError(res, err)) return;

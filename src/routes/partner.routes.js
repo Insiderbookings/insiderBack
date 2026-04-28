@@ -2,15 +2,18 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import {
   activatePartnerInvoiceController,
+  approvePartnerClaimReviewController,
   claimPartnerHotelController,
   getOrCreatePartnerVerificationCodeController,
   getMyPartnerHotelProfileController,
   getMyPartnerClaimsController,
+  listPartnerClaimsAdminController,
   listPartnerPlans,
   partnerControllerMiddleware,
   previewPartnerVerificationCodeController,
   searchPartnerHotelsController,
   selectPartnerSubscriptionController,
+  simulatePartnerClaimTrialController,
   updateMyPartnerHotelProfileController,
 } from "../controllers/partner.controller.js";
 
@@ -55,6 +58,24 @@ router.post(
   partnerControllerMiddleware.authenticate,
   partnerControllerMiddleware.authorizeAdmin,
   activatePartnerInvoiceController,
+);
+router.post(
+  "/admin/claims/:claimId/approve-review",
+  partnerControllerMiddleware.authenticate,
+  partnerControllerMiddleware.authorizeAdmin,
+  approvePartnerClaimReviewController,
+);
+router.get(
+  "/admin/claims",
+  partnerControllerMiddleware.authenticate,
+  partnerControllerMiddleware.authorizeAdmin,
+  listPartnerClaimsAdminController,
+);
+router.post(
+  "/admin/claims/:claimId/simulate-trial",
+  partnerControllerMiddleware.authenticate,
+  partnerControllerMiddleware.authorizeAdmin,
+  simulatePartnerClaimTrialController,
 );
 
 export default router;

@@ -1,6 +1,7 @@
 // src/controllers/subscriber.controller.js
 import models from "../models/index.js"
 import { sendMail } from "../helpers/mailer.js"
+import { getDefaultMailFromEmail } from "../helpers/mailFrom.js"
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase()
@@ -92,7 +93,7 @@ export async function adminBroadcastEmail(req, res, next) {
     for (let i = 0; i < emails.length; i += batchSize) {
       const slice = emails.slice(i, i + batchSize)
       try {
-        await sendMail({ to: process.env.MAIL_FROM || "no-reply@insiderbookings.com", subject, html, text, bcc: slice })
+        await sendMail({ to: getDefaultMailFromEmail(), subject, html, text, bcc: slice })
         sent += slice.length
         batches += 1
       } catch (e) {
@@ -104,4 +105,3 @@ export async function adminBroadcastEmail(req, res, next) {
     return res.json({ sent, batches, totalRecipients: emails.length })
   } catch (err) { return next(err) }
 }
-

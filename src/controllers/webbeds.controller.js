@@ -22,6 +22,7 @@ import { pipeline } from "stream/promises"
 
 import { resolveEnabledCurrency } from "../services/currencySettings.service.js"
 import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js"
+import { createRequestTimer } from "../utils/requestTiming.js"
 import {
   EXPLORE_RANKING_VERSION,
   fetchHotelExploreEngagementStats,
@@ -2167,6 +2168,7 @@ export const exportInventoryDirectory = async (req, res, next) => {
 
 
 export const listStaticHotels = async (req, res, next) => {
+  const timer = createRequestTimer(req, "webbeds.static-hotels")
   try {
     const {
       cityCode,
@@ -2210,7 +2212,10 @@ export const listStaticHotels = async (req, res, next) => {
     const safeImagesLimit = Number.isFinite(imagesLimitValue)
       ? Math.max(0, Math.min(imagesLimitValue, 200))
       : (useLite ? 1 : null)
-    const partnerProfileCacheVersion = await getPartnerHotelProfileCacheVersion()
+    const partnerProfileCacheVersion = await timer.track(
+      "partner.profileCacheVersion",
+      () => getPartnerHotelProfileCacheVersion(),
+    )
 
     const cacheKey = STATIC_HOTELS_CACHE_DISABLED
       ? null
@@ -2229,35 +2234,50 @@ export const listStaticHotels = async (req, res, next) => {
       })
 
     if (cacheKey) {
-      const cached = await cache.get(cacheKey)
+      const cached = await timer.track("cache.get", () => cache.get(cacheKey))
       if (cached) {
         res.set("Cache-Control", `private, max-age=${STATIC_HOTELS_CACHE_TTL_SECONDS}`)
         res.set("X-Cache", "HIT")
+        timer.flush(res, {
+          cache: "HIT",
+          items: Array.isArray(cached?.items) ? cached.items.length : null,
+          total: cached?.pagination?.total ?? null,
+          hotelId: hotelId ? String(hotelId).trim() : null,
+          hotelIds: hotelIdList.length,
+        })
         return res.json(cached)
       }
     }
 
-    const { rows, count } = await models.WebbedsHotel.findAndCountAll({
-      where,
-      attributes: getStaticHotelAttributes(useLite),
-      include: getStaticHotelIncludes(),
-      distinct: true,
-      col: "hotel_id",
-      order: [
-        ["priority", "DESC"],
-        ["name", "ASC"],
-      ],
-      limit: safeLimit,
-      offset: safeOffset,
-    })
+    const { rows, count } = await timer.track("db.staticHotels.findAndCount", () =>
+      models.WebbedsHotel.findAndCountAll({
+        where,
+        attributes: getStaticHotelAttributes(useLite),
+        include: getStaticHotelIncludes(),
+        distinct: true,
+        col: "hotel_id",
+        order: [
+          ["priority", "DESC"],
+          ["name", "ASC"],
+        ],
+        limit: safeLimit,
+        offset: safeOffset,
+      }),
+    )
 
-    let items = rows.map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit }))
-    items = await attachPartnerProgramToHotelItems(items)
-    items = sortPartnerFirstWithFallback(
-      items,
-      (a, b) =>
-        Number(b?.priority ?? 0) - Number(a?.priority ?? 0) ||
-        String(a?.name || "").localeCompare(String(b?.name || "")),
+    let items = timer.trackSync("format.items", () =>
+      rows.map((row) => formatStaticHotel(row, { imageLimit: safeImagesLimit })),
+    )
+    items = await timer.track("partner.attach", () =>
+      attachPartnerProgramToHotelItems(items),
+    )
+    items = timer.trackSync("partner.sort", () =>
+      sortPartnerFirstWithFallback(
+        items,
+        (a, b) =>
+          Number(b?.priority ?? 0) - Number(a?.priority ?? 0) ||
+          String(a?.name || "").localeCompare(String(b?.name || "")),
+      ),
     )
 
     const responsePayload = {
@@ -2270,12 +2290,22 @@ export const listStaticHotels = async (req, res, next) => {
     }
 
     if (cacheKey) {
-      await cache.set(cacheKey, responsePayload, STATIC_HOTELS_CACHE_TTL_SECONDS)
+      await timer.track("cache.set", () =>
+        cache.set(cacheKey, responsePayload, STATIC_HOTELS_CACHE_TTL_SECONDS),
+      )
     }
     res.set("Cache-Control", `private, max-age=${STATIC_HOTELS_CACHE_TTL_SECONDS}`)
     res.set("X-Cache", "MISS")
+    timer.flush(res, {
+      cache: cacheKey ? "MISS" : "BYPASS",
+      items: items.length,
+      total: count,
+      hotelId: hotelId ? String(hotelId).trim() : null,
+      hotelIds: hotelIdList.length,
+    })
     return res.json(responsePayload)
   } catch (error) {
+    timer.flush(res, { error: error?.message || "listStaticHotels failed" })
     return next(error)
   }
 }
@@ -2563,6 +2593,7 @@ export const listExploreHotels = async (req, res, next) => {
 }
 
 export const listExploreCollections = async (req, res, next) => {
+  const timer = createRequestTimer(req, "webbeds.explore-collections")
   try {
     const {
       sections,
@@ -2604,7 +2635,10 @@ export const listExploreCollections = async (req, res, next) => {
     const bucketLng = coords
       ? roundCoordinate(coords.lng, EXPLORE_GEO_BUCKET_PRECISION)
       : null
-    const partnerProfileCacheVersion = await getPartnerHotelProfileCacheVersion()
+    const partnerProfileCacheVersion = await timer.track(
+      "partner.profileCacheVersion",
+      () => getPartnerHotelProfileCacheVersion(),
+    )
 
     const fallbackCodes = parseCsvList(fallbackCities).length
       ? parseCsvList(fallbackCities)
@@ -2630,10 +2664,15 @@ export const listExploreCollections = async (req, res, next) => {
       })
 
     if (cacheKey) {
-      const cached = await cache.get(cacheKey)
+      const cached = await timer.track("cache.get", () => cache.get(cacheKey))
       if (cached) {
         res.set("Cache-Control", `private, max-age=${EXPLORE_COLLECTIONS_CACHE_TTL_SECONDS}`)
         res.set("X-Cache", "HIT")
+        timer.flush(res, {
+          cache: "HIT",
+          sections: Array.isArray(cached?.sections) ? cached.sections.length : null,
+          source: cached?.meta?.source ?? null,
+        })
         return res.json(cached)
       }
     }
@@ -2649,32 +2688,51 @@ export const listExploreCollections = async (req, res, next) => {
       cityBuckets.push(entry)
     }
 
-    const nearbyCities = await getNearbyCityBuckets(coords, safeRadius, safeSections)
+    const nearbyCities = await timer.track("cities.nearby", () =>
+      getNearbyCityBuckets(coords, safeRadius, safeSections),
+    )
     nearbyCities.forEach(pushCity)
 
     if (cityBuckets.length < safeSections && fallbackCodes.length) {
+      const fallbackStartedAt = performance.now()
       for (const code of fallbackCodes) {
         if (cityBuckets.length >= safeSections) break
         const meta = await fetchCityMetaByCode(code)
         if (meta) pushCity(meta)
       }
+      timer.record(
+        "cities.fallbackList",
+        performance.now() - fallbackStartedAt,
+        `${fallbackCodes.length} candidates`,
+      )
     }
 
     if (cityBuckets.length < safeSections && resolvedFallbackCity) {
+      const fallbackStartedAt = performance.now()
       const meta = await fetchCityMetaByCode(resolvedFallbackCity)
       if (meta) pushCity(meta)
+      timer.record(
+        "cities.defaultFallback",
+        performance.now() - fallbackStartedAt,
+        resolvedFallbackCity,
+      )
     }
 
     if (cityBuckets.length < safeSections) {
+      const globalStartedAt = performance.now()
       const globalCities = await getTopGlobalCities(safeSections)
       globalCities.forEach(pushCity)
+      timer.record("cities.globalFallback", performance.now() - globalStartedAt)
     }
 
     const attributes = getStaticHotelAttributes(useLite)
     const include = getStaticHotelIncludes()
     let sectionsPayload = []
+    const cityBreakdown = []
+    const buildSectionsStartedAt = performance.now()
 
     for (const entry of cityBuckets.slice(0, safeSections)) {
+      const cityStartedAt = performance.now()
       const code = String(entry.cityCode).trim()
       if (!code) continue
       const partnerClaims = await getCityActivePartnerClaims(code)
@@ -2745,7 +2803,18 @@ export const listExploreCollections = async (req, res, next) => {
         data: items,
         _partnerHotelIds: orderedPartnerHotelIds,
       })
+      cityBreakdown.push({
+        cityCode: code,
+        partnerHotels: orderedPartnerHotelIds.length,
+        items: items.length,
+        durationMs: Math.round((performance.now() - cityStartedAt) * 10) / 10,
+      })
     }
+    timer.record(
+      "cities.buildSections",
+      performance.now() - buildSectionsStartedAt,
+      `${cityBreakdown.length} cities`,
+    )
 
     if (rankingVariant.applied && sectionsPayload.length) {
       try {
@@ -2753,24 +2822,30 @@ export const listExploreCollections = async (req, res, next) => {
           .flatMap((section) => (Array.isArray(section?.data) ? section.data : []))
           .map((item) => item?.id)
           .filter(Boolean)
-        const engagementById = await fetchHotelExploreEngagementStats(hotelIds)
-        sectionsPayload = rankHotelSectionsForExplore(sectionsPayload, {
-          engagementById,
-          coords: coords ? { lat: Number(coords.lat), lng: Number(coords.lng) } : null,
-          debug: rankingVariant.debug,
-        }).map((section) => ({
-          ...section,
-          data: reorderCityCarouselItemsWithPartnersFirst(
-            Array.isArray(section?.data) ? section.data : [],
-            section?._partnerHotelIds ?? [],
-          ),
-        }))
+        const engagementById = await timer.track("ranking.fetchEngagement", () =>
+          fetchHotelExploreEngagementStats(hotelIds),
+        )
+        sectionsPayload = timer.trackSync("ranking.sections", () =>
+          rankHotelSectionsForExplore(sectionsPayload, {
+            engagementById,
+            coords: coords ? { lat: Number(coords.lat), lng: Number(coords.lng) } : null,
+            debug: rankingVariant.debug,
+          }).map((section) => ({
+            ...section,
+            data: reorderCityCarouselItemsWithPartnersFirst(
+              Array.isArray(section?.data) ? section.data : [],
+              section?._partnerHotelIds ?? [],
+            ),
+          })),
+        )
       } catch (error) {
         console.warn("[webbeds] listExploreCollections ranking failed", error?.message || error)
       }
     }
 
-    sectionsPayload = sectionsPayload.map(({ _partnerHotelIds, ...section }) => section)
+    sectionsPayload = timer.trackSync("sections.finalize", () =>
+      sectionsPayload.map(({ _partnerHotelIds, ...section }) => section),
+    )
 
     const responsePayload = {
       sections: sectionsPayload,
@@ -2797,12 +2872,21 @@ export const listExploreCollections = async (req, res, next) => {
     }
 
     if (cacheKey) {
-      await cache.set(cacheKey, responsePayload, EXPLORE_COLLECTIONS_CACHE_TTL_SECONDS)
+      await timer.track("cache.set", () =>
+        cache.set(cacheKey, responsePayload, EXPLORE_COLLECTIONS_CACHE_TTL_SECONDS),
+      )
     }
     res.set("Cache-Control", `private, max-age=${EXPLORE_COLLECTIONS_CACHE_TTL_SECONDS}`)
     res.set("X-Cache", "MISS")
+    timer.flush(res, {
+      cache: cacheKey ? "MISS" : "BYPASS",
+      source: responsePayload?.meta?.source ?? null,
+      sections: sectionsPayload.length,
+      cityBreakdown,
+    })
     return res.json(responsePayload)
   } catch (error) {
+    timer.flush(res, { error: error?.message || "listExploreCollections failed" })
     return next(error)
   }
 }
@@ -3198,6 +3282,7 @@ const fetchImageWithTimeoutAndRetry = async (url) => {
 }
 
 export const proxyWebbedsImage = async (req, res) => {
+  const timer = createRequestTimer(req, "webbeds.image-proxy")
   try {
     const rawUrl = String(req.query?.url || "").trim()
     if (!rawUrl) {
@@ -3214,9 +3299,19 @@ export const proxyWebbedsImage = async (req, res) => {
     if (parsed.protocol !== "https:" || !WEBBEDS_IMAGE_HOSTS.has(parsed.hostname)) {
       return res.status(403).json({ error: "Host not allowed" })
     }
+    if (timer.enabled && timer.traceId && !res.headersSent) {
+      res.set("X-Debug-Trace", timer.traceId)
+    }
 
-    const response = await fetchImageWithTimeoutAndRetry(parsed.toString())
+    const response = await timer.track("image.fetch", () =>
+      fetchImageWithTimeoutAndRetry(parsed.toString()),
+    )
     if (!response.ok) {
+      timer.flush(res, {
+        status: response.status,
+        transformed: false,
+        host: parsed.hostname,
+      })
       return res.status(response.status).end()
     }
 
@@ -3244,14 +3339,31 @@ export const proxyWebbedsImage = async (req, res) => {
       )
 
       if (!response.body) {
+        timer.flush(res, {
+          status: 502,
+          transformed: false,
+          host: parsed.hostname,
+        })
         return res.status(502).json({ error: "Empty image response" })
       }
 
+      const streamStartedAt = performance.now()
       await pipeline(Readable.fromWeb(response.body), res)
+      timer.record("image.stream", performance.now() - streamStartedAt)
+      timer.flush(res, {
+        status: 200,
+        transformed: false,
+        host: parsed.hostname,
+      })
       return
     }
 
     if (!response.body) {
+      timer.flush(res, {
+        status: 502,
+        transformed: true,
+        host: parsed.hostname,
+      })
       return res.status(502).json({ error: "Empty image response" })
     }
 
@@ -3304,7 +3416,17 @@ export const proxyWebbedsImage = async (req, res) => {
       "Cache-Control",
       "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400, stale-if-error=86400"
     )
+    const transformStartedAt = performance.now()
     await pipeline(sourceStream, transformer, res)
+    timer.record("image.transform", performance.now() - transformStartedAt)
+    timer.flush(res, {
+      status: 200,
+      transformed: true,
+      format: resolvedFormat,
+      width,
+      height,
+      host: parsed.hostname,
+    })
     return
   } catch (error) {
     const errorCode = String(error?.code || "")
@@ -3320,6 +3442,9 @@ export const proxyWebbedsImage = async (req, res) => {
     }
     console.error("[webbeds] image proxy failed", error)
     if (!res.headersSent) {
+      timer.flush(res, {
+        error: error?.message || "Image proxy failed",
+      })
       return res.status(500).json({ error: "Image proxy failed" })
     }
     return

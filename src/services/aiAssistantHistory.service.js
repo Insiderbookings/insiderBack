@@ -3,6 +3,11 @@ import {
   AI_CHAT_HISTORY_LIMITS,
   AI_CHAT_QUOTAS,
 } from "../modules/ai/ai.config.js";
+import {
+  mapAssistantHistoryMessage,
+  mapAssistantMessageFeedback,
+  parseAiJsonField,
+} from "../modules/ai/ai.historyContract.js";
 
 export const DEFAULT_ASSISTANT_GREETING =
   "Hi there! I am your Insider assistant. Tell me what kind of hotel you're looking for and I'll find it.";
@@ -29,18 +34,6 @@ const buildPreview = (value, max = 140) => {
   const sanitized = sanitizeContent(value);
   if (!sanitized) return "";
   return sanitized.replace(/\s+/g, " ").slice(0, max).trim();
-};
-
-const parseJsonField = (value) => {
-  if (!value) return null;
-  if (typeof value === "string") {
-    try {
-      return JSON.parse(value);
-    } catch (_) {
-      return null;
-    }
-  }
-  return value;
 };
 
 const hasInventorySnapshot = (snapshot) => {
@@ -91,49 +84,7 @@ const mapSession = (session, { includeMetadata = true } = {}) => {
     createdAt: data.created_at,
     updatedAt: data.updated_at,
     messageCount: data.message_count ?? 0,
-    metadata: includeMetadata ? parseJsonField(data.metadata) || null : null,
-  };
-};
-
-const mapMessage = (message) => {
-  if (!message) return null;
-  const data = message.get({ plain: true });
-  const ui = parseJsonField(data.ui_snapshot) || null;
-  return {
-    id: data.id,
-    sessionId: data.session_id,
-    role: data.role,
-    content: data.content,
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
-    planSnapshot: parseJsonField(data.plan_snapshot) || null,
-    inventorySnapshot: parseJsonField(data.inventory_snapshot) || null,
-    ui,
-    nextAction: ui?.meta?.nextAction || null,
-    followUpKind: ui?.meta?.followUpKind || null,
-    replyMode: ui?.meta?.replyMode || null,
-    referencedHotelIds: Array.isArray(ui?.meta?.referencedHotelIds)
-      ? ui.meta.referencedHotelIds
-      : [],
-    webSearchUsed: Boolean(ui?.meta?.webSearchUsed),
-    webSources: Array.isArray(ui?.webSources) ? ui.webSources : [],
-    feedback: null,
-  };
-};
-
-const mapFeedback = (feedback) => {
-  if (!feedback) return null;
-  const data =
-    typeof feedback.get === "function" ? feedback.get({ plain: true }) : feedback;
-  return {
-    id: data.id,
-    sessionId: data.session_id,
-    messageId: data.message_id,
-    value: data.value,
-    reason: data.reason ?? null,
-    metadata: parseJsonField(data.metadata) || null,
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
+    metadata: includeMetadata ? parseAiJsonField(data.metadata) || null : null,
   };
 };
 
@@ -156,7 +107,7 @@ const attachFeedbackToMessages = async (messages, userId) => {
 
   const feedbackByMessageId = new Map();
   feedbackRows.forEach((feedbackRow) => {
-    const normalized = mapFeedback(feedbackRow);
+    const normalized = mapAssistantMessageFeedback(feedbackRow);
     if (normalized?.messageId) {
       feedbackByMessageId.set(normalized.messageId, normalized);
     }
@@ -273,7 +224,7 @@ export const getAssistantSessionWithMessages = async (
     }),
   });
   const messages = await attachFeedbackToMessages(
-    rows.reverse().map(mapMessage),
+    rows.reverse().map(mapAssistantHistoryMessage),
     userId,
   );
   return {
@@ -296,7 +247,10 @@ export const fetchAssistantMessages = async (
       max: AI_CHAT_HISTORY_LIMITS.contextMax,
     }),
   });
-  return attachFeedbackToMessages(rows.reverse().map(mapMessage), userId);
+  return attachFeedbackToMessages(
+    rows.reverse().map(mapAssistantHistoryMessage),
+    userId,
+  );
 };
 
 export const appendAssistantChatMessage = async (
@@ -359,7 +313,7 @@ export const appendAssistantChatMessage = async (
       updates.title = preview;
     }
 
-    const existingMetadata = parseJsonField(session.metadata) || {};
+    const existingMetadata = parseAiJsonField(session.metadata) || {};
     if (normalizedRole === "assistant") {
       const metadata = { ...existingMetadata };
       let metadataChanged = false;
@@ -379,7 +333,7 @@ export const appendAssistantChatMessage = async (
     await session.update(updates, { transaction });
     await session.increment("message_count", { by: 1, transaction });
 
-    return mapMessage(message);
+    return mapAssistantHistoryMessage(message);
   });
 };
 
@@ -491,7 +445,7 @@ export const replaceAssistantChatMessage = async (
       );
     }
 
-    return mapMessage(message);
+    return mapAssistantHistoryMessage(message);
   });
 };
 
@@ -585,7 +539,7 @@ export const saveAssistantMessageFeedback = async (
         },
         { transaction },
       );
-      return mapFeedback(existing);
+      return mapAssistantMessageFeedback(existing);
     }
 
     const created = await models.AiChatMessageFeedback.create(
@@ -600,6 +554,6 @@ export const saveAssistantMessageFeedback = async (
       { transaction },
     );
 
-    return mapFeedback(created);
+    return mapAssistantMessageFeedback(created);
   });
 };

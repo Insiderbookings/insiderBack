@@ -10,6 +10,7 @@ import {
     SUPPORT_AGENT_ROLE_CODES,
     SUPPORT_MANAGER_ROLE_CODES,
 } from "../utils/userCapabilities.js";
+import { resolveMailFrom } from "../helpers/mailFrom.js";
 
 // Helper to broadcast support events
 const emitSupportEvent = (event, payload) => {
@@ -1415,7 +1416,7 @@ export const reportIssue = async (req, res) => {
 
         await transporter.sendMail({
             to: "partners@insiderbookings.com",
-            from: process.env.MAIL_FROM || `"BookingGPT" <${process.env.SMTP_USER}>`,
+            from: resolveMailFrom(),
             subject,
             text: lines.join("\n"),
             html,
