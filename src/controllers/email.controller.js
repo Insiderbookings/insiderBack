@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer"
 import db         from "../models/index.js"   // adjust if your path differs
+import { resolveMailFrom } from "../helpers/mailFrom.js"
 
 
 /* ─────────────────────────────────────
@@ -97,7 +98,7 @@ export const sendReservationEmail = async (req, res) => {
     })
 
     await transporter.sendMail({
-      from   : `"Insider Bookings" <${process.env.SMTP_USER}>`,
+      from   : resolveMailFrom(),
       to     : email,
       subject: `Please confirm your stay at ${hotel}`,
       html,

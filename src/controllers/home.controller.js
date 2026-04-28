@@ -18,6 +18,7 @@ import {
   rankHomesForExplore,
   resolveExploreRankingVariant,
 } from "../services/exploreRanking.service.js"
+import { createRequestTimer } from "../utils/requestTiming.js"
 
 function asBool(value, fallback = false) {
   if (value == null) return fallback;
@@ -394,6 +395,7 @@ const buildExploreSections = (items) => {
 };
 
 export const listExploreHomes = async (req, res) => {
+  const timer = createRequestTimer(req, "homes.explore")
   try {
     const rankingVariant = resolveExploreRankingVariant(req)
     const queryLat = parseCoordinateValue(req.query?.lat, -90, 90)
@@ -414,88 +416,92 @@ export const listExploreHomes = async (req, res) => {
         ? Math.min(limitParam, 60)
         : 40;
 
-    const homes = await models.Home.findAll({
-      where: {
-        status: "PUBLISHED",
-        is_visible: true,
-      },
-      attributes: [
-        "id",
-        "title",
-        "space_type",
-        "max_guests",
-        "bedrooms",
-        "beds",
-        "bathrooms",
-        "marketing_tags",
-        "updated_at",
-        "host_id",
-      ],
-      include: [
-        {
-          model: models.HomeAddress,
-          as: "address",
-          attributes: [
-            "address_line1",
-            "city",
-            "state",
-            "country",
-            "latitude",
-            "longitude",
-          ],
+    const homes = await timer.track("db.homes.findAll", () =>
+      models.Home.findAll({
+        where: {
+          status: "PUBLISHED",
+          is_visible: true,
         },
-        {
-          model: models.HomePricing,
-          as: "pricing",
-          attributes: ["currency", "base_price"],
-        },
-        {
-          model: models.HomeMedia,
-          as: "media",
-          attributes: ["id", "url", "is_cover", "order"],
-          separate: true,
-          limit: 6,
-          order: [
-            ["is_cover", "DESC"],
-            ["order", "ASC"],
-            ["id", "ASC"],
-          ],
-        },
-        {
-          model: models.User,
-          as: "host",
-          attributes: ["id", "name", "email", "avatar_url", "role", "created_at"],
-        },
-      ],
-      order: [
-        ["updated_at", "DESC"],
-        ["id", "DESC"],
-      ],
-      limit,
-    });
+        attributes: [
+          "id",
+          "title",
+          "space_type",
+          "max_guests",
+          "bedrooms",
+          "beds",
+          "bathrooms",
+          "marketing_tags",
+          "updated_at",
+          "host_id",
+        ],
+        include: [
+          {
+            model: models.HomeAddress,
+            as: "address",
+            attributes: [
+              "address_line1",
+              "city",
+              "state",
+              "country",
+              "latitude",
+              "longitude",
+            ],
+          },
+          {
+            model: models.HomePricing,
+            as: "pricing",
+            attributes: ["currency", "base_price"],
+          },
+          {
+            model: models.HomeMedia,
+            as: "media",
+            attributes: ["id", "url", "is_cover", "order"],
+            separate: true,
+            limit: 6,
+            order: [
+              ["is_cover", "DESC"],
+              ["order", "ASC"],
+              ["id", "ASC"],
+            ],
+          },
+          {
+            model: models.User,
+            as: "host",
+            attributes: ["id", "name", "email", "avatar_url", "role", "created_at"],
+          },
+        ],
+        order: [
+          ["updated_at", "DESC"],
+          ["id", "DESC"],
+        ],
+        limit,
+      }),
+    )
 
-    let cards = homes
-      .map(mapHomeToExploreCard)
-      .filter((item) => item && item.coverImage);
+    let cards = timer.trackSync("map.cards", () =>
+      homes.map(mapHomeToExploreCard).filter((item) => item && item.coverImage),
+    )
 
     if (rankingVariant.applied && cards.length) {
       try {
-        const engagementById = await fetchHomeExploreEngagementStats(
-          cards.map((item) => item?.id),
+        const engagementById = await timer.track("ranking.fetchEngagement", () =>
+          fetchHomeExploreEngagementStats(cards.map((item) => item?.id)),
         )
-        cards = rankHomesForExplore(cards, {
-          engagementById,
-          coords: coords ? { lat: Number(coords.lat), lng: Number(coords.lng) } : null,
-          debug: rankingVariant.debug,
-        })
+        cards = timer.trackSync("ranking.cards", () =>
+          rankHomesForExplore(cards, {
+            engagementById,
+            coords: coords ? { lat: Number(coords.lat), lng: Number(coords.lng) } : null,
+            debug: rankingVariant.debug,
+          }),
+        )
       } catch (error) {
         console.warn("[listExploreHomes] ranking failed", error?.message || error)
       }
     }
 
-    const sections = buildExploreSections(cards);
+    const sections = timer.trackSync("sections.build", () => buildExploreSections(cards))
 
-    return res.json({
+    const responsePayload = {
       sections,
       total: cards.length,
       meta: {
@@ -513,8 +519,17 @@ export const listExploreHomes = async (req, res) => {
           }
           : null,
       },
-    });
+    }
+
+    timer.flush(res, {
+      limit,
+      total: cards.length,
+      locationSource: coords?.source || null,
+      ranked: rankingVariant.applied,
+    })
+    return res.json(responsePayload)
   } catch (err) {
+    timer.flush(res, { error: err?.message || "Failed to load homes" })
     console.error("[listExploreHomes]", err);
     return res.status(500).json({ error: "Failed to load homes" });
   }

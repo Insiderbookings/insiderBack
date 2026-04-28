@@ -102,6 +102,69 @@ Expected plan behavior:
   - dates
   - message
 
+Expected product behavior:
+
+- Show the inquiry CTA only when the hotel has the `bookingInquiry` capability active.
+- Minimum active tiers:
+  - `Preferred`
+  - `Featured`
+- Hide the CTA for:
+  - `Verified`
+  - no badge
+  - expired badge states
+- The CTA should use the partner hotel's effective contact destination, not a hardcoded internal address.
+- If the hotel does not have a usable inquiry destination configured, the CTA should stay hidden or show a blocked state in the dashboard, not fail at send time.
+
+Traveler-facing scope:
+
+- The inquiry entry should exist on partner-enabled public hotel surfaces where it makes sense:
+  - search result cards
+  - map result cards
+  - explore cards
+  - hotel detail page
+- The interaction should open a premium inquiry modal or side panel.
+- Minimum traveler payload from the latest PDF:
+  - traveler name
+  - stay dates
+  - message
+- Operationally, the implementation may also include reply contact info if needed for a usable hotel follow-up flow, but the visible scope must stay simple.
+
+Delivery behavior:
+
+- Submit through a backend endpoint owned by the partner system.
+- Backend validates:
+  - hotel eligibility by tier/capability
+  - active claim state
+  - usable hotel destination email/contact channel
+  - basic payload completeness
+- On success:
+  - send the inquiry to the hotel's configured partner contact email
+  - optionally send an internal copy to BookingGPT for visibility
+  - return a clean success state to the traveler
+- On failure:
+  - do not expose raw transport errors
+  - show safe user-facing feedback
+
+Dashboard requirements:
+
+- The dashboard should show whether inquiry is:
+  - locked by tier
+  - available but missing contact setup
+  - fully ready
+- The hotel should understand from the dashboard which contact field powers inquiry delivery.
+
+Suggested implementation boundary:
+
+- This is a lead-capture and routed-email feature, not a full messaging product.
+- No threaded inbox, real-time chat, CRM pipeline, or traveler/hotel conversation center is required in this phase.
+- The first implementation should focus on:
+  - capability gating
+  - public CTA exposure
+  - modal UX
+  - backend validation
+  - reliable email delivery
+  - clear success/error states
+
 ### 12. Destination Email Inclusion
 
 - Include eligible partner hotels in BookingGPT destination emails according to tier rules.
@@ -115,8 +178,9 @@ Expected plan behavior:
 
 ### 14. Soft Pressure Counter
 
-- Add the listing-level soft-pressure element:
-  - `X travelers viewed today`
+- Keep `X travelers viewed today` as a partner-facing metric only.
+- Do not expose this counter on traveler-facing public hotel surfaces.
+- If used in the product, it should live in partner analytics/performance contexts rather than public cards or hotel detail.
 
 ### 15. Review Boost
 
@@ -535,7 +599,6 @@ Partner-related elements to support there:
 
 - badge rendering
 - tier-aware ordering
-- soft-pressure counter
 - response time badge
 - special offers
 - booking inquiry button

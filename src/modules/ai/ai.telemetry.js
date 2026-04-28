@@ -13,6 +13,8 @@ const isTruthyEnvFlag = (value) =>
   );
 
 const AI_EVENT_LOGS_ENABLED = isTruthyEnvFlag(process.env.AI_EVENT_LOGS);
+const AI_WEB_PARITY_LOGS_ENABLED =
+  isTruthyEnvFlag(process.env.AI_WEB_PARITY_LOGS) || AI_EVENT_LOGS_ENABLED;
 export const logAiFileDebug = () => {};
 
 /**
@@ -24,6 +26,13 @@ export const logAiEvent = (label, payload = {}) => {
   const safePayload =
     payload && typeof payload === "object" ? payload : { value: payload };
   console.log(`[ai] ${label}`, toSafeString(safePayload));
+};
+
+export const logAiParityEvent = (label, payload = {}) => {
+  if (!AI_WEB_PARITY_LOGS_ENABLED) return;
+  const safePayload =
+    payload && typeof payload === "object" ? payload : { value: payload };
+  console.log(`[ai][parity] ${label}`, toSafeString(safePayload));
 };
 
 // Circuit breaker

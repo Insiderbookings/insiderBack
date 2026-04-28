@@ -5,17 +5,20 @@ import { issueUserSession, loadSafeUser } from "./auth.controller.js";
 import { authenticate, authorizeRoles } from "../middleware/auth.js";
 import {
   activatePartnerClaimPlan,
+  approvePendingPartnerClaim,
+  buildPartnerAdminClaimPayload,
   buildPartnerDashboardPayload,
   createPartnerCardCheckout,
   ensurePartnerClaim,
-  hydratePartnerClaimsPerformance,
+  getPartnerClaimReviewState,
+  listPartnerClaimsForAdmin,
   listPartnerClaimsForUser,
-  logPartnerEmail,
   requestPartnerInvoice,
   searchPartnerHotels,
   sendPartnerSequenceEmailIfDue,
   sendPartnerInvoiceRequestedEmail,
   sendPartnerPlanConfirmationEmail,
+  simulatePartnerClaimTrial,
 } from "../services/partnerLifecycle.service.js";
 import {
   getPartnerHotelProfileEditorPayload,
@@ -30,10 +33,19 @@ import {
   lookupPartnerVerificationCode,
   markPartnerVerificationCodeClaimed,
 } from "../services/partnerVerification.service.js";
+import { sendPartnerInternalManualReviewAlert } from "../services/partnerEmail.service.js";
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
 
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const parseBooleanFlag = (value, fallback = false) => {
+  if (typeof value === "boolean") return value;
+  if (value == null || value === "") return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+};
 const normalizeName = ({ name, firstName, lastName, fallbackEmail }) => {
   const explicit = String(name || "").trim();
   if (explicit) return explicit;
@@ -45,19 +57,47 @@ const normalizeName = ({ name, firstName, lastName, fallbackEmail }) => {
   return String(fallbackEmail || "Partner").split("@")[0] || "Partner";
 };
 
-const resolveOptionalUserFromRequest = async (req) => {
+const getBearerTokenFromRequest = (req) => {
   const header = String(req.headers?.authorization || "");
   if (!header.startsWith("Bearer ")) return null;
   const token = header.slice(7).trim();
-  if (!token) return null;
-  try {
-    const payload = jwt.verify(token, ACCESS_SECRET);
-    const userId = Number(payload?.id || 0);
-    if (!userId) return null;
-    return models.User.findByPk(userId);
-  } catch {
+  return token || null;
+};
+
+const resolveOptionalUserTokenPayload = (req) => {
+  if (Object.prototype.hasOwnProperty.call(req, "_partnerOptionalUserTokenPayload")) {
+    return req._partnerOptionalUserTokenPayload;
+  }
+  const token = getBearerTokenFromRequest(req);
+  if (!token) {
+    req._partnerOptionalUserTokenPayload = null;
     return null;
   }
+  try {
+    req._partnerOptionalUserTokenPayload = jwt.verify(token, ACCESS_SECRET);
+  } catch {
+    req._partnerOptionalUserTokenPayload = null;
+  }
+  return req._partnerOptionalUserTokenPayload;
+};
+
+const resolveOptionalUserIdFromRequest = (req) => {
+  const payload = resolveOptionalUserTokenPayload(req);
+  const userId = Number(payload?.id || 0);
+  return Number.isFinite(userId) && userId > 0 ? userId : null;
+};
+
+const resolveOptionalUserFromRequest = async (req) => {
+  if (Object.prototype.hasOwnProperty.call(req, "_partnerOptionalResolvedUser")) {
+    return req._partnerOptionalResolvedUser;
+  }
+  const userId = resolveOptionalUserIdFromRequest(req);
+  if (!userId) {
+    req._partnerOptionalResolvedUser = null;
+    return null;
+  }
+  req._partnerOptionalResolvedUser = await models.User.findByPk(userId);
+  return req._partnerOptionalResolvedUser;
 };
 
 const ensurePartnerUser = async (req, res, { allowCreate = true } = {}) => {
@@ -143,10 +183,9 @@ export const searchPartnerHotelsController = async (req, res, next) => {
 
 export const previewPartnerVerificationCodeController = async (req, res, next) => {
   try {
-    const currentUser = await resolveOptionalUserFromRequest(req);
     const lookup = await lookupPartnerVerificationCode({
       code: req.body?.code ?? req.body?.verificationCode ?? req.query?.code,
-      currentUserId: currentUser?.id || null,
+      currentUserId: resolveOptionalUserIdFromRequest(req),
     });
     return res.json({
       item: lookup.item,
@@ -165,12 +204,11 @@ export const claimPartnerHotelController = async (req, res, next) => {
     const verificationCodeInput = req.body?.verificationCode ?? req.body?.code;
     let hotelId = directHotelId;
     let verificationLookup = null;
-    const optionalUser = await resolveOptionalUserFromRequest(req);
 
     if (!hotelId) {
       verificationLookup = await lookupPartnerVerificationCode({
         code: verificationCodeInput,
-        currentUserId: optionalUser?.id || null,
+        currentUserId: resolveOptionalUserIdFromRequest(req),
       });
       hotelId = String(verificationLookup?.item?.hotelId || "").trim();
     }
@@ -212,6 +250,8 @@ export const claimPartnerHotelController = async (req, res, next) => {
       }),
       contactEmail: normalizeEmail(req.body?.email || req.body?.contactEmail || user.email),
       contactPhone: req.body?.phone || req.body?.contactPhone || user.phone || null,
+      claimSource: verificationLookup ? "verify" : req.body?.claimSource || "search",
+      requiresManualApproval: !verificationLookup,
     });
     if (verificationLookup?.record) {
       await markPartnerVerificationCodeClaimed({
@@ -221,25 +261,26 @@ export const claimPartnerHotelController = async (req, res, next) => {
       });
     }
 
+    const review = getPartnerClaimReviewState(claim);
     const welcomeAlreadySent = Array.isArray(claim?.emailLogs)
       ? claim.emailLogs.some((entry) => entry.email_key === "day_1_welcome")
       : false;
-    if (!welcomeAlreadySent) {
+    if (!review.blocked && !welcomeAlreadySent) {
       await sendPartnerSequenceEmailIfDue({
         claim,
         hotel,
         step: { key: "day_1_welcome", day: 1, stopWhenSubscribed: true },
         now: new Date(),
-      }).catch(async () => {
-        await logPartnerEmail({
-          claim,
-          emailKey: "day_1_welcome",
-          scheduleDay: 1,
-          meta: { skippedByError: true },
-        }).catch(() => {});
-      });
+      }).catch(() => {});
     }
-    await hydratePartnerClaimsPerformance([claim]);
+    if (created && review.blocked) {
+      await sendPartnerInternalManualReviewAlert({
+        claim,
+        hotel,
+        user,
+        review,
+      }).catch(() => {});
+    }
 
     const safeUser = await loadSafeUser(user.id);
     const claimPayload = buildPartnerDashboardPayload(claim);
@@ -274,6 +315,31 @@ export const getMyPartnerClaimsController = async (req, res, next) => {
   }
 };
 
+const assertPartnerClaimManagementEnabled = (claim, actionLabel = "manage this hotel") => {
+  const review = getPartnerClaimReviewState(claim);
+  if (!review.blocked) return;
+  const error = new Error(
+    `This hotel claim is pending manual review. We will unlock the dashboard after the partners team verifies the request, so you cannot ${actionLabel} yet.`,
+  );
+  error.status = 403;
+  throw error;
+};
+
+export const listPartnerClaimsAdminController = async (req, res, next) => {
+  try {
+    const claims = await listPartnerClaimsForAdmin({
+      query: req.query?.q ?? req.query?.query,
+      status: req.query?.status,
+      limit: req.query?.limit,
+    });
+    return res.json({
+      items: claims.map((claim) => buildPartnerAdminClaimPayload(claim)),
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const selectPartnerSubscriptionController = async (req, res, next) => {
   try {
     const userId = Number(req.user?.id || 0);
@@ -291,6 +357,7 @@ export const selectPartnerSubscriptionController = async (req, res, next) => {
     const claims = await listPartnerClaimsForUser({ userId, hotelId });
     const claim = claims[0] || null;
     if (!claim) return res.status(404).json({ error: "Partner claim not found" });
+    assertPartnerClaimManagementEnabled(claim, "change the subscription");
     const user = await models.User.findByPk(userId);
     const requestBilling = req.body?.billingDetails && typeof req.body.billingDetails === "object"
       ? req.body.billingDetails
@@ -386,6 +453,10 @@ export const getMyPartnerHotelProfileController = async (req, res, next) => {
     const hotelId = String(req.query?.hotelId || "").trim();
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     if (!hotelId) return res.status(400).json({ error: "hotelId is required" });
+    const claims = await listPartnerClaimsForUser({ userId, hotelId });
+    const claim = claims[0] || null;
+    if (!claim) return res.status(404).json({ error: "Partner claim not found" });
+    assertPartnerClaimManagementEnabled(claim, "edit the hotel profile");
 
     const payload = await getPartnerHotelProfileEditorPayload({ userId, hotelId });
     return res.json(payload);
@@ -403,6 +474,10 @@ export const updateMyPartnerHotelProfileController = async (req, res, next) => {
     const hotelId = String(req.body?.hotelId || req.query?.hotelId || "").trim();
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     if (!hotelId) return res.status(400).json({ error: "hotelId is required" });
+    const claims = await listPartnerClaimsForUser({ userId, hotelId });
+    const claim = claims[0] || null;
+    if (!claim) return res.status(404).json({ error: "Partner claim not found" });
+    assertPartnerClaimManagementEnabled(claim, "edit the hotel profile");
 
     const payload = await savePartnerHotelProfileEditorPayload({
       userId,
@@ -449,6 +524,55 @@ export const activatePartnerInvoiceController = async (req, res, next) => {
       claim: buildPartnerDashboardPayload(activated),
     });
   } catch (error) {
+    return next(error);
+  }
+};
+
+export const approvePartnerClaimReviewController = async (req, res, next) => {
+  try {
+    const claimId = Number(req.params?.claimId || 0);
+    if (!claimId) return res.status(400).json({ error: "claimId is required" });
+    const claim = await models.PartnerHotelClaim.findByPk(claimId, {
+      include: [
+        { model: models.WebbedsHotel, as: "hotel", required: false },
+        { model: models.PartnerEmailLog, as: "emailLogs", required: false },
+      ],
+    });
+    if (!claim) return res.status(404).json({ error: "Partner claim not found" });
+    const approved = await approvePendingPartnerClaim({
+      claim,
+      approvedByUserId: req.user?.id || null,
+    });
+    await hydratePartnerClaimsPerformance([approved]);
+    return res.json({
+      claim: buildPartnerDashboardPayload(approved),
+    });
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
+export const simulatePartnerClaimTrialController = async (req, res, next) => {
+  try {
+    const claimId = Number(req.params?.claimId || 0);
+    const result = await simulatePartnerClaimTrial({
+      claimId,
+      targetDay: req.body?.targetDay ?? req.body?.day,
+      resetEmailTimeline: parseBooleanFlag(req.body?.resetEmailTimeline, false),
+      runLifecycle: parseBooleanFlag(req.body?.runLifecycle, true),
+    });
+    return res.json({
+      claim: buildPartnerDashboardPayload(result.claim),
+      simulation: result.simulation,
+      lifecycle: result.lifecycle,
+    });
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
     return next(error);
   }
 };

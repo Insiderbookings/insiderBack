@@ -1,6 +1,7 @@
 import models from "../models/index.js";
 import transporter from "../services/transporter.js";
 import { getIO } from "../websocket/emitter.js";
+import { resolveMailFrom } from "../helpers/mailFrom.js";
 
 const { ErrorLog, ErrorConfig } = models;
 
@@ -73,7 +74,7 @@ const globalErrorHandler = async (err, req, res, next) => {
                     const toAddress = Array.from(recipients).join(", ");
 
                     const mailOptions = {
-                        from: `"Insider Error Alert" <${process.env.SMTP_USER}>`,
+                        from: resolveMailFrom(),
                         to: toAddress,
                         subject: `[ALERT] ${statusCode} on ${req.method} ${req.originalUrl}`,
                         html: `
