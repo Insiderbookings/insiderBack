@@ -11,7 +11,6 @@ import {
   createPartnerCardCheckout,
   ensurePartnerClaim,
   getPartnerClaimReviewState,
-  hydratePartnerClaimsPerformance,
   listPartnerClaimsForAdmin,
   listPartnerClaimsForUser,
   requestPartnerInvoice,
@@ -58,19 +57,47 @@ const normalizeName = ({ name, firstName, lastName, fallbackEmail }) => {
   return String(fallbackEmail || "Partner").split("@")[0] || "Partner";
 };
 
-const resolveOptionalUserFromRequest = async (req) => {
+const getBearerTokenFromRequest = (req) => {
   const header = String(req.headers?.authorization || "");
   if (!header.startsWith("Bearer ")) return null;
   const token = header.slice(7).trim();
-  if (!token) return null;
-  try {
-    const payload = jwt.verify(token, ACCESS_SECRET);
-    const userId = Number(payload?.id || 0);
-    if (!userId) return null;
-    return models.User.findByPk(userId);
-  } catch {
+  return token || null;
+};
+
+const resolveOptionalUserTokenPayload = (req) => {
+  if (Object.prototype.hasOwnProperty.call(req, "_partnerOptionalUserTokenPayload")) {
+    return req._partnerOptionalUserTokenPayload;
+  }
+  const token = getBearerTokenFromRequest(req);
+  if (!token) {
+    req._partnerOptionalUserTokenPayload = null;
     return null;
   }
+  try {
+    req._partnerOptionalUserTokenPayload = jwt.verify(token, ACCESS_SECRET);
+  } catch {
+    req._partnerOptionalUserTokenPayload = null;
+  }
+  return req._partnerOptionalUserTokenPayload;
+};
+
+const resolveOptionalUserIdFromRequest = (req) => {
+  const payload = resolveOptionalUserTokenPayload(req);
+  const userId = Number(payload?.id || 0);
+  return Number.isFinite(userId) && userId > 0 ? userId : null;
+};
+
+const resolveOptionalUserFromRequest = async (req) => {
+  if (Object.prototype.hasOwnProperty.call(req, "_partnerOptionalResolvedUser")) {
+    return req._partnerOptionalResolvedUser;
+  }
+  const userId = resolveOptionalUserIdFromRequest(req);
+  if (!userId) {
+    req._partnerOptionalResolvedUser = null;
+    return null;
+  }
+  req._partnerOptionalResolvedUser = await models.User.findByPk(userId);
+  return req._partnerOptionalResolvedUser;
 };
 
 const ensurePartnerUser = async (req, res, { allowCreate = true } = {}) => {
@@ -156,10 +183,9 @@ export const searchPartnerHotelsController = async (req, res, next) => {
 
 export const previewPartnerVerificationCodeController = async (req, res, next) => {
   try {
-    const currentUser = await resolveOptionalUserFromRequest(req);
     const lookup = await lookupPartnerVerificationCode({
       code: req.body?.code ?? req.body?.verificationCode ?? req.query?.code,
-      currentUserId: currentUser?.id || null,
+      currentUserId: resolveOptionalUserIdFromRequest(req),
     });
     return res.json({
       item: lookup.item,
@@ -178,12 +204,11 @@ export const claimPartnerHotelController = async (req, res, next) => {
     const verificationCodeInput = req.body?.verificationCode ?? req.body?.code;
     let hotelId = directHotelId;
     let verificationLookup = null;
-    const optionalUser = await resolveOptionalUserFromRequest(req);
 
     if (!hotelId) {
       verificationLookup = await lookupPartnerVerificationCode({
         code: verificationCodeInput,
-        currentUserId: optionalUser?.id || null,
+        currentUserId: resolveOptionalUserIdFromRequest(req),
       });
       hotelId = String(verificationLookup?.item?.hotelId || "").trim();
     }
@@ -256,7 +281,6 @@ export const claimPartnerHotelController = async (req, res, next) => {
         review,
       }).catch(() => {});
     }
-    await hydratePartnerClaimsPerformance([claim]);
 
     const safeUser = await loadSafeUser(user.id);
     const claimPayload = buildPartnerDashboardPayload(claim);

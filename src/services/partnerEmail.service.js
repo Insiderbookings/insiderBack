@@ -62,13 +62,19 @@ const formatCount = (value) => {
   }).format(Math.round(numeric));
 };
 
-export const resolvePartnerDashboardUrl = (hotelId = null) => {
+export const resolvePartnerDashboardUrl = (hotelId = null, extraParams = {}) => {
   const base =
     process.env.PARTNERS_CLIENT_URL ||
     process.env.CLIENT_URL ||
     "https://bookinggpt.app";
   const url = new URL("/partners/dashboard", base);
   if (hotelId) url.searchParams.set("hotelId", String(hotelId));
+  Object.entries(extraParams || {}).forEach(([key, value]) => {
+    if (value == null) return;
+    const normalized = String(value).trim();
+    if (!normalized) return;
+    url.searchParams.set(key, normalized);
+  });
   return url.toString();
 };
 
@@ -336,6 +342,9 @@ export const resolvePartnerLifecycleTemplate = ({
   const program = resolvePartnerProgramFromClaim(claim, now);
   const hotelName = hotel?.name || `Hotel ${claim?.hotel_id || ""}`.trim();
   const dashboardUrl = resolvePartnerDashboardUrl(claim?.hotel_id);
+  const subscriptionDashboardUrl = resolvePartnerDashboardUrl(claim?.hotel_id, {
+    section: "subscription",
+  });
   const trialEndLabel = formatDate(program?.trialEndsAt);
   const trialDaysLeft = Number(program?.trialDaysLeft || 0);
   const requestedPlan = getRequestedPlanLabel(claim);
@@ -421,7 +430,7 @@ export const resolvePartnerLifecycleTemplate = ({
         outro:
           "If no plan is selected, the badge is removed automatically on day 30 and the hotel continues without premium partner visibility.",
         ctaLabel: "Choose a plan",
-        ctaUrl: dashboardUrl,
+        ctaUrl: subscriptionDashboardUrl,
       };
     case "day_27_urgent":
       return {
@@ -437,7 +446,7 @@ export const resolvePartnerLifecycleTemplate = ({
         outro:
           "If you still want partner visibility on BookingGPT, now is the right time to choose the plan that fits this property.",
         ctaLabel: "Keep my badge",
-        ctaUrl: dashboardUrl,
+        ctaUrl: subscriptionDashboardUrl,
       };
     case "day_28_final_warning":
       return {
@@ -453,7 +462,7 @@ export const resolvePartnerLifecycleTemplate = ({
         outro:
           "Once the trial expires, the hotel remains listed on BookingGPT but without the premium partner badge.",
         ctaLabel: "Restore before removal",
-        ctaUrl: dashboardUrl,
+        ctaUrl: subscriptionDashboardUrl,
       };
     case "day_30_removed":
       return {
@@ -469,7 +478,7 @@ export const resolvePartnerLifecycleTemplate = ({
         outro:
           "If you want to keep discovery momentum and premium partner treatment, restore the badge now.",
         ctaLabel: "Restore my badge",
-        ctaUrl: dashboardUrl,
+        ctaUrl: subscriptionDashboardUrl,
       };
     case "day_32_restore":
       return {
@@ -485,7 +494,7 @@ export const resolvePartnerLifecycleTemplate = ({
         outro:
           "Open the dashboard when you are ready to reactivate the plan that fits this property.",
         ctaLabel: "Restore my badge",
-        ctaUrl: dashboardUrl,
+        ctaUrl: subscriptionDashboardUrl,
       };
     case "day_37_last_message":
       return {
@@ -501,7 +510,7 @@ export const resolvePartnerLifecycleTemplate = ({
         outro:
           "If this hotel still wants premium partner visibility on BookingGPT, the next step is simply selecting the right plan in the dashboard.",
         ctaLabel: "Choose a plan",
-        ctaUrl: dashboardUrl,
+        ctaUrl: subscriptionDashboardUrl,
       };
     case "plan_confirmation":
       return {

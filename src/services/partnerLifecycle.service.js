@@ -842,7 +842,12 @@ export const listPartnerClaimsForUser = async ({ userId, hotelId = null }) => {
     include: buildClaimInclude(),
     order: [["created_at", "ASC"]],
   });
-  await hydratePartnerClaimsPerformance(claims);
+  const claimsNeedingPerformance = claims.filter(
+    (claim) => !getPartnerClaimReviewState(claim).blocked,
+  );
+  if (claimsNeedingPerformance.length) {
+    await hydratePartnerClaimsPerformance(claimsNeedingPerformance);
+  }
   return claims;
 };
 
