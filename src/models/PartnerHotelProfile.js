@@ -50,6 +50,23 @@ export default (sequelize) => {
         type: DataTypes.STRING(255),
         allowNull: true,
       },
+      inquiry_enabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      inquiry_email: {
+        type: DataTypes.STRING(150),
+        allowNull: true,
+      },
+      inquiry_phone: {
+        type: DataTypes.STRING(40),
+        allowNull: true,
+      },
+      inquiry_notes: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
       response_time_badge_enabled: {
         type: DataTypes.BOOLEAN,
         allowNull: false,

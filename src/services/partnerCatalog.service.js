@@ -63,7 +63,15 @@ const PARTNER_CAPABILITY_LABELS = Object.freeze({
   [PARTNER_CAPABILITIES.upsellCapability]: "Upsell capability",
 });
 
-const PARTNER_PLAN_CAPABILITY_KEYS = Object.freeze({
+const PARTNER_PLAN_SEQUENCE = Object.freeze(["verified", "preferred", "featured"]);
+
+const PARTNER_PLAN_PARENT_CODES = Object.freeze({
+  verified: null,
+  preferred: "verified",
+  featured: "preferred",
+});
+
+const PARTNER_PLAN_ADDITIONAL_CAPABILITY_KEYS = Object.freeze({
   verified: Object.freeze([
     PARTNER_CAPABILITIES.listedInSearch,
     PARTNER_CAPABILITIES.basicProfile,
@@ -97,6 +105,30 @@ const PARTNER_PLAN_CAPABILITY_KEYS = Object.freeze({
     PARTNER_CAPABILITIES.competitorInsights,
     PARTNER_CAPABILITIES.upsellCapability,
   ]),
+});
+
+const PARTNER_PLAN_UI_COPY = Object.freeze({
+  verified: Object.freeze({
+    summary: "Base visibility with a public badge and a clean hotel profile.",
+    bestFor: "Hotels that want verified presence without advanced sales tooling.",
+    landingBody: "Base visibility + public profile",
+    landingNote: "",
+    ctaLabel: "Choose Verified",
+  }),
+  preferred: Object.freeze({
+    summary: "Adds stronger placement and direct lead-generation tools.",
+    bestFor: "Hotels that want more control over presentation and traveler contact.",
+    landingBody: "Boosted placement + direct lead capture",
+    landingNote: "",
+    ctaLabel: "Choose Preferred",
+  }),
+  featured: Object.freeze({
+    summary: "Maximum visibility with premium reporting and strategic partner tools.",
+    bestFor: "Hotels that want top placement and higher-touch support.",
+    landingBody: "Top placement + premium reporting",
+    landingNote: "30 days free",
+    ctaLabel: "Start 30-day trial",
+  }),
 });
 
 export const PARTNER_PLANS = Object.freeze({
@@ -267,9 +299,61 @@ export const resolvePartnerStripePriceId = (plan) => {
   return null;
 };
 
-export const getPartnerPlanCapabilities = (planCode) => {
+export const getPartnerPlanParentCode = (planCode) => {
   const normalizedCode = normalizePartnerPlanCode(planCode);
-  const enabled = PARTNER_PLAN_CAPABILITY_KEYS[normalizedCode] || [];
+  return normalizedCode ? PARTNER_PLAN_PARENT_CODES[normalizedCode] || null : null;
+};
+
+export const getPartnerPlanCapabilityKeys = (planCode) => {
+  const normalizedCode = normalizePartnerPlanCode(planCode);
+  if (!normalizedCode) return [];
+
+  const enabled = [];
+  const seen = new Set();
+  for (const code of PARTNER_PLAN_SEQUENCE) {
+    const nextKeys = PARTNER_PLAN_ADDITIONAL_CAPABILITY_KEYS[code] || [];
+    for (const key of nextKeys) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      enabled.push(key);
+    }
+    if (code === normalizedCode) break;
+  }
+  return enabled;
+};
+
+export const getPartnerPlanNewFeatureKeys = (planCode) => {
+  const normalizedCode = normalizePartnerPlanCode(planCode);
+  if (!normalizedCode) return [];
+  return [...(PARTNER_PLAN_ADDITIONAL_CAPABILITY_KEYS[normalizedCode] || [])];
+};
+
+const getCapabilityIntroducedInPlanCode = (capabilityKey) => {
+  for (const code of PARTNER_PLAN_SEQUENCE) {
+    if ((PARTNER_PLAN_ADDITIONAL_CAPABILITY_KEYS[code] || []).includes(capabilityKey)) {
+      return code;
+    }
+  }
+  return null;
+};
+
+const serializePartnerFeature = (key, { planCode = null } = {}) => {
+  const introducedInPlanCode = getCapabilityIntroducedInPlanCode(key);
+  return {
+    key,
+    label: PARTNER_CAPABILITY_LABELS[key] || key,
+    introducedInPlanCode,
+    inherited: Boolean(planCode && introducedInPlanCode && introducedInPlanCode !== planCode),
+  };
+};
+
+const getPartnerPlanUiCopy = (planCode) => {
+  const normalizedCode = normalizePartnerPlanCode(planCode);
+  return normalizedCode ? PARTNER_PLAN_UI_COPY[normalizedCode] || null : null;
+};
+
+export const getPartnerPlanCapabilities = (planCode) => {
+  const enabled = getPartnerPlanCapabilityKeys(planCode);
   return Object.values(PARTNER_CAPABILITIES).reduce((acc, key) => {
     acc[key] = enabled.includes(key);
     return acc;
@@ -278,25 +362,38 @@ export const getPartnerPlanCapabilities = (planCode) => {
 
 export const getPartnerIncludedFeatures = (planCode) => {
   const normalizedCode = normalizePartnerPlanCode(planCode);
-  const enabled = PARTNER_PLAN_CAPABILITY_KEYS[normalizedCode] || [];
-  return enabled.map((key) => ({
-    key,
-    label: PARTNER_CAPABILITY_LABELS[key] || key,
-  }));
+  const enabled = getPartnerPlanCapabilityKeys(normalizedCode);
+  return enabled.map((key) => serializePartnerFeature(key, { planCode: normalizedCode }));
 };
 
-const serializePartnerPlan = (plan) => ({
-  code: plan.code,
-  legacyCode: plan.legacyCode || null,
-  label: plan.label,
-  priceMonthly: plan.priceMonthly,
-  currency: plan.currency,
-  badge: getPartnerBadgeByCode(plan.badgeCode),
-  billingMode: plan.billingMode,
-  capabilities: getPartnerPlanCapabilities(plan.code),
-  includedFeatures: getPartnerIncludedFeatures(plan.code),
-  stripePriceId: resolvePartnerStripePriceId(plan),
-});
+export const getPartnerNewFeatures = (planCode) => {
+  const normalizedCode = normalizePartnerPlanCode(planCode);
+  const enabled = getPartnerPlanNewFeatureKeys(normalizedCode);
+  return enabled.map((key) => serializePartnerFeature(key, { planCode: normalizedCode }));
+};
+
+const serializePartnerPlan = (plan) => {
+  const uiCopy = getPartnerPlanUiCopy(plan.code) || {};
+  return {
+    code: plan.code,
+    legacyCode: plan.legacyCode || null,
+    label: plan.label,
+    priceMonthly: plan.priceMonthly,
+    currency: plan.currency,
+    badge: getPartnerBadgeByCode(plan.badgeCode),
+    billingMode: plan.billingMode,
+    inheritsFrom: getPartnerPlanParentCode(plan.code),
+    capabilities: getPartnerPlanCapabilities(plan.code),
+    includedFeatures: getPartnerIncludedFeatures(plan.code),
+    newFeatures: getPartnerNewFeatures(plan.code),
+    summary: uiCopy.summary || null,
+    bestFor: uiCopy.bestFor || null,
+    landingBody: uiCopy.landingBody || null,
+    landingNote: uiCopy.landingNote || null,
+    ctaLabel: uiCopy.ctaLabel || null,
+    stripePriceId: resolvePartnerStripePriceId(plan),
+  };
+};
 
 export const getPartnerPlans = () =>
   Object.values(PARTNER_PLANS).map((plan) => serializePartnerPlan(plan));
@@ -376,8 +473,10 @@ export const resolvePartnerProgramFromClaim = (claim, now = new Date()) => {
     planLabel: plan?.label || null,
     priceMonthly: plan?.priceMonthly ?? null,
     currency: plan?.currency || "USD",
+    inheritsFrom: getPartnerPlanParentCode(plan?.code),
     capabilities: getPartnerPlanCapabilities(plan?.code),
     includedFeatures: getPartnerIncludedFeatures(plan?.code),
+    newFeatures: getPartnerNewFeatures(plan?.code),
     trialActive: trialIsActive,
     trialStartedAt: claim.trial_started_at || claim.claimed_at || null,
     trialEndsAt: claim.trial_ends_at || null,

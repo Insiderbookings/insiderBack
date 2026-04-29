@@ -1,5 +1,6 @@
 import models from "../models/index.js";
 import { Op } from "sequelize";
+import cache from "./cache.js";
 
 const FALLBACK_RATES = {
   USD: 1,
@@ -15,10 +16,28 @@ const FALLBACK_RATES = {
 
 const FX_BASE_CURRENCY = String(process.env.FX_RATES_BASE_CURRENCY || "USD").trim().toUpperCase();
 const FX_PROVIDER = String(process.env.FX_RATES_PROVIDER || "apilayer").trim().toLowerCase();
+const CURRENCY_RATE_CACHE_TTL_SECONDS = Math.max(
+  30,
+  Number(process.env.CURRENCY_RATE_CACHE_TTL_SECONDS || 300),
+);
 
 const normalizeCode = (value, fallback = "USD") => {
   const code = String(value || "").trim().toUpperCase().slice(0, 3);
   return code || fallback;
+};
+
+const buildExchangeRateCacheKey = ({ baseCurrency, quoteCurrency, provider }) =>
+  `currency:rate-meta:${baseCurrency}:${quoteCurrency}:${provider}`;
+
+const buildFallbackExchangeRateMeta = (target) => {
+  const fallback = Number(FALLBACK_RATES[target] || 1);
+  return {
+    rate: fallback,
+    date: null,
+    source: "fallback",
+    currency: target,
+    missing: true,
+  };
 };
 
 const findLatestEnabledRate = async ({ baseCurrency, quoteCurrency, provider }) => {
@@ -55,30 +74,43 @@ export const getExchangeRateMeta = async (toCurrency = "USD") => {
     return { rate: 1, date: null, source: "base", currency: target, missing: false };
   }
 
-  const row = await findLatestEnabledRate({
+  const cacheKey = buildExchangeRateCacheKey({
     baseCurrency,
     quoteCurrency: target,
     provider: FX_PROVIDER,
   });
+  const cached = await cache.get(cacheKey);
+  if (cached) return cached;
 
-  if (!row) {
-    const fallback = Number(FALLBACK_RATES[target] || 1);
-    return {
-      rate: fallback,
-      date: null,
-      source: "fallback",
-      currency: target === "USD" ? "USD" : target,
-      missing: true,
-    };
+  try {
+    const row = await findLatestEnabledRate({
+      baseCurrency,
+      quoteCurrency: target,
+      provider: FX_PROVIDER,
+    });
+
+    const meta = row
+      ? {
+          rate: Number(row.rate),
+          date: row.rateDate || null,
+          source: "fx_rates",
+          currency: target,
+          missing: false,
+        }
+      : buildFallbackExchangeRateMeta(target);
+
+    await cache.set(cacheKey, meta, CURRENCY_RATE_CACHE_TTL_SECONDS);
+    return meta;
+  } catch (error) {
+    console.warn("[currency] exchange rate lookup degraded to fallback", error?.message || error);
+    const fallbackMeta = buildFallbackExchangeRateMeta(target);
+    await cache.set(
+      cacheKey,
+      fallbackMeta,
+      Math.min(CURRENCY_RATE_CACHE_TTL_SECONDS, 60),
+    );
+    return fallbackMeta;
   }
-
-  return {
-    rate: Number(row.rate),
-    date: row.rateDate || null,
-    source: "fx_rates",
-    currency: target,
-    missing: false,
-  };
 };
 
 export const convertCurrency = async (amountInBase, targetCurrency) => {

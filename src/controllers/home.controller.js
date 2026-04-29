@@ -19,6 +19,27 @@ import {
   resolveExploreRankingVariant,
 } from "../services/exploreRanking.service.js"
 import { createRequestTimer } from "../utils/requestTiming.js"
+import cache from "../services/cache.js"
+
+const HOMES_EXPLORE_CACHE_DISABLED = process.env.HOMES_EXPLORE_CACHE_DISABLED === "true"
+const HOMES_EXPLORE_CACHE_TTL_SECONDS = Math.max(
+  15,
+  Number(process.env.HOMES_EXPLORE_CACHE_TTL_SECONDS || 90),
+)
+const HOMES_EXPLORE_GEO_BUCKET_PRECISION = Math.min(
+  4,
+  Math.max(0, Number(process.env.HOMES_EXPLORE_GEO_BUCKET_PRECISION || 2)),
+)
+
+const roundExploreCacheCoordinate = (value) => {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return null
+  const factor = 10 ** HOMES_EXPLORE_GEO_BUCKET_PRECISION
+  return Math.round(numeric * factor) / factor
+}
+
+const buildHomesExploreCacheKey = (payload = {}) =>
+  `homes:explore:${JSON.stringify(payload)}`
 
 function asBool(value, fallback = false) {
   if (value == null) return fallback;
@@ -415,6 +436,33 @@ export const listExploreHomes = async (req, res) => {
       Number.isFinite(limitParam) && limitParam > 0
         ? Math.min(limitParam, 60)
         : 40;
+    const bucketLat = coords ? roundExploreCacheCoordinate(coords.lat) : null
+    const bucketLng = coords ? roundExploreCacheCoordinate(coords.lng) : null
+    const cacheKey = HOMES_EXPLORE_CACHE_DISABLED
+      ? null
+      : buildHomesExploreCacheKey({
+          lat: bucketLat,
+          lng: bucketLng,
+          limit,
+          rankingVariant: rankingVariant.variant,
+          rankingPercent: rankingVariant.percent,
+        })
+
+    if (cacheKey) {
+      const cached = await timer.track("cache.get", () => cache.get(cacheKey))
+      if (cached) {
+        res.set("Cache-Control", `private, max-age=${HOMES_EXPLORE_CACHE_TTL_SECONDS}`)
+        res.set("X-Cache", "HIT")
+        timer.flush(res, {
+          cache: "HIT",
+          limit,
+          total: Number(cached?.total || 0),
+          locationSource: coords?.source || null,
+          ranked: rankingVariant.applied,
+        })
+        return res.json(cached)
+      }
+    }
 
     const homes = await timer.track("db.homes.findAll", () =>
       models.Home.findAll({
@@ -521,7 +569,16 @@ export const listExploreHomes = async (req, res) => {
       },
     }
 
+    if (cacheKey) {
+      await timer.track("cache.set", () =>
+        cache.set(cacheKey, responsePayload, HOMES_EXPLORE_CACHE_TTL_SECONDS),
+      )
+    }
+
+    res.set("Cache-Control", `private, max-age=${HOMES_EXPLORE_CACHE_TTL_SECONDS}`)
+    res.set("X-Cache", "MISS")
     timer.flush(res, {
+      cache: cacheKey ? "MISS" : "BYPASS",
       limit,
       total: cards.length,
       locationSource: coords?.source || null,

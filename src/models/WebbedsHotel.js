@@ -117,6 +117,20 @@ export default (sequelize) => {
         as: "partnerHotelProfile",
       })
     }
+    if (models.PartnerHotelInquiry) {
+      WebbedsHotel.hasMany(models.PartnerHotelInquiry, {
+        foreignKey: "hotel_id",
+        sourceKey: "hotel_id",
+        as: "partnerInquiries",
+      })
+    }
+    if (models.PartnerHotelVerificationCode) {
+      WebbedsHotel.hasOne(models.PartnerHotelVerificationCode, {
+        foreignKey: "hotel_id",
+        sourceKey: "hotel_id",
+        as: "partnerVerificationCode",
+      })
+    }
     if (models.WebbedsHotelRoomType) {
       WebbedsHotel.hasMany(models.WebbedsHotelRoomType, {
         foreignKey: "hotel_id",

@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import {
   PARTNER_CLAIM_STATUSES,
   PARTNER_SUBSCRIPTION_STATUSES,
+  getPartnerIncludedFeatures,
+  getPartnerNewFeatures,
   getPartnerPlanByCode,
+  getPartnerPlanCapabilities,
+  getPartnerPlans,
   resolvePartnerBadgePriority,
   resolvePartnerProgramFromClaim,
 } from "../../src/services/partnerCatalog.service.js";
@@ -49,6 +53,50 @@ test("legacy plan aliases still resolve to canonical partner plans", () => {
   assert.equal(getPartnerPlanByCode("starter")?.code, "verified");
   assert.equal(getPartnerPlanByCode("pro")?.code, "preferred");
   assert.equal(getPartnerPlanByCode("elite")?.code, "featured");
+});
+
+test("plan capabilities resolve cumulatively across verified, preferred, and featured", () => {
+  const verified = getPartnerPlanCapabilities("verified");
+  const preferred = getPartnerPlanCapabilities("preferred");
+  const featured = getPartnerPlanCapabilities("featured");
+
+  assert.equal(verified.listedInSearch, true);
+  assert.equal(verified.fullProfileEditor, false);
+  assert.equal(preferred.basicProfile, true);
+  assert.equal(preferred.fullProfileEditor, true);
+  assert.equal(preferred.topOfSearchResults, false);
+  assert.equal(featured.fullProfileEditor, true);
+  assert.equal(featured.bookingInquiry, true);
+  assert.equal(featured.topOfSearchResults, true);
+  assert.equal(featured.monthlyPdfReport, true);
+});
+
+test("plan feature metadata marks inherited and new benefits correctly", () => {
+  const preferredIncluded = getPartnerIncludedFeatures("preferred");
+  const featuredNew = getPartnerNewFeatures("featured");
+
+  const inheritedVerifiedFeature = preferredIncluded.find((feature) => feature.key === "basicProfile");
+  const nativePreferredFeature = preferredIncluded.find((feature) => feature.key === "bookingInquiry");
+  const featuredOnlyFeature = featuredNew.find((feature) => feature.key === "monthlyPdfReport");
+
+  assert.equal(inheritedVerifiedFeature?.introducedInPlanCode, "verified");
+  assert.equal(inheritedVerifiedFeature?.inherited, true);
+  assert.equal(nativePreferredFeature?.introducedInPlanCode, "preferred");
+  assert.equal(nativePreferredFeature?.inherited, false);
+  assert.equal(featuredOnlyFeature?.introducedInPlanCode, "featured");
+  assert.equal(featuredOnlyFeature?.inherited, false);
+});
+
+test("serialized plans expose inheritance metadata and landing copy", () => {
+  const plans = getPartnerPlans();
+  const featured = plans.find((plan) => plan.code === "featured");
+  const preferred = plans.find((plan) => plan.code === "preferred");
+
+  assert.equal(preferred?.inheritsFrom, "verified");
+  assert.equal(featured?.inheritsFrom, "preferred");
+  assert.equal(featured?.landingNote, "30 days free");
+  assert.match(String(featured?.summary || ""), /Maximum visibility/i);
+  assert.ok(Array.isArray(featured?.newFeatures) && featured.newFeatures.length > 0);
 });
 
 test("expired claims resolve without badge and partner priority falls back to zero", () => {

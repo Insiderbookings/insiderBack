@@ -2,6 +2,16 @@ import { Op } from "sequelize";
 import models, { sequelize } from "../models/index.js";
 import { formatStaticHotel } from "../utils/webbedsMapper.js";
 import { resolvePartnerProgramFromClaim } from "./partnerCatalog.service.js";
+import {
+  buildPublicPartnerInquiryPayload,
+  getPartnerInquirySummaryForClaim,
+  resolvePartnerInquiryStatus,
+} from "./partnerInquiry.service.js";
+import {
+  buildPartnerHotelProfileAssociation,
+  buildPartnerHotelProfileQueryOptions,
+  filterPartnerHotelProfileWritePayload,
+} from "./partnerHotelProfileSchema.service.js";
 import cache from "./cache.js";
 
 export const PARTNER_HOTEL_PROFILE_STATUS = Object.freeze({
@@ -104,20 +114,7 @@ const normalizeAmenityCategory = (value) => {
   return normalizeTrimmedString(value, 32);
 };
 
-const buildProfileInclude = () => [
-  {
-    model: models.PartnerHotelProfileImage,
-    as: "profileImages",
-    required: false,
-  },
-  {
-    model: models.PartnerHotelProfileAmenity,
-    as: "profileAmenities",
-    required: false,
-  },
-];
-
-const buildClaimInclude = ({ includeHotel = true, includeProfile = false } = {}) => {
+const buildClaimInclude = async ({ includeHotel = true, includeProfile = false } = {}) => {
   const include = [
     ...(includeHotel
       ? [
@@ -130,12 +127,11 @@ const buildClaimInclude = ({ includeHotel = true, includeProfile = false } = {})
       : []),
   ];
   if (includeProfile) {
-    include.push({
-      model: models.PartnerHotelProfile,
-      as: "hotelProfile",
-      required: false,
-      include: buildProfileInclude(),
-    });
+    include.push(
+      await buildPartnerHotelProfileAssociation({
+        includeCollections: true,
+      }),
+    );
   }
   return include;
 };
@@ -157,15 +153,19 @@ const sortProfileAmenities = (items = []) =>
   });
 
 const canEditBasicProfile = (partnerProgram) =>
-  Boolean(
-    partnerProgram?.capabilities?.basicProfile || partnerProgram?.capabilities?.fullProfileEditor,
-  );
+  Boolean(partnerProgram?.capabilities?.basicProfile);
+
+const canUseFullProfileEditor = (partnerProgram) =>
+  Boolean(partnerProgram?.capabilities?.fullProfileEditor);
 
 const canUseResponseTimeBadge = (partnerProgram) =>
   Boolean(partnerProgram?.capabilities?.responseTimeBadge);
 
 const canUseSpecialOffers = (partnerProgram) =>
   Boolean(partnerProgram?.capabilities?.specialOffers);
+
+const canUseBookingInquiry = (partnerProgram) =>
+  Boolean(partnerProgram?.capabilities?.bookingInquiry);
 
 const shouldApplyPublicProfileOverrides = ({ partnerProgram, profile }) =>
   canEditBasicProfile(partnerProgram) &&
@@ -188,6 +188,10 @@ const serializePartnerHotelProfile = (profile) => {
     contactEmail: plain.contact_email || null,
     contactPhone: plain.contact_phone || null,
     website: plain.website || null,
+    inquiryEnabled: Boolean(plain.inquiry_enabled),
+    inquiryEmail: plain.inquiry_email || null,
+    inquiryPhone: plain.inquiry_phone || null,
+    inquiryNotes: plain.inquiry_notes || null,
     responseTimeBadgeEnabled: Boolean(plain.response_time_badge_enabled),
     responseTimeBadgeLabel: plain.response_time_badge_label || null,
     specialOffersEnabled: Boolean(plain.special_offers_enabled),
@@ -386,23 +390,33 @@ const buildBaseAmenitiesFromItem = (item) => {
     .filter(Boolean);
 };
 
-const buildEffectiveGallery = ({ item, profile, applyPublicOverrides }) => {
+const buildEffectiveGallery = ({
+  item,
+  profile,
+  applyPublicOverrides,
+  allowFullEditorOverrides = false,
+}) => {
   const profileImages = sortProfileImages(profile?.profileImages || [])
     .map((entry, index) => serializeProfileImage(entry, index))
     .filter(Boolean);
   const activeProfileImages = profileImages.filter((entry) => entry.isActive);
-  if (applyPublicOverrides && activeProfileImages.length) {
+  if (applyPublicOverrides && allowFullEditorOverrides && activeProfileImages.length) {
     return activeProfileImages;
   }
   return buildBaseGalleryFromItem(item);
 };
 
-const buildEffectiveAmenities = ({ item, profile, applyPublicOverrides }) => {
+const buildEffectiveAmenities = ({
+  item,
+  profile,
+  applyPublicOverrides,
+  allowFullEditorOverrides = false,
+}) => {
   const profileAmenities = sortProfileAmenities(profile?.profileAmenities || [])
     .map((entry, index) => serializeProfileAmenity(entry, index))
     .filter(Boolean);
   const activeProfileAmenities = profileAmenities.filter((entry) => entry.isActive);
-  if (applyPublicOverrides && activeProfileAmenities.length) {
+  if (applyPublicOverrides && allowFullEditorOverrides && activeProfileAmenities.length) {
     return activeProfileAmenities;
   }
   return buildBaseAmenitiesFromItem(item);
@@ -433,6 +447,7 @@ const buildContactPayload = ({ item, profile, applyPublicOverrides }) => {
 
 export const buildEffectivePartnerHotelProfile = ({
   item,
+  claim = null,
   profile,
   partnerProgram,
   includeSavedDraft = false,
@@ -440,15 +455,18 @@ export const buildEffectivePartnerHotelProfile = ({
   const plainProfile = profile ? toPlain(profile) : null;
   const applyPublicOverrides =
     includeSavedDraft || shouldApplyPublicProfileOverrides({ partnerProgram, profile: plainProfile });
+  const allowFullEditorOverrides = canUseFullProfileEditor(partnerProgram);
   const galleryItems = buildEffectiveGallery({
     item,
     profile: plainProfile,
     applyPublicOverrides,
+    allowFullEditorOverrides,
   });
   const amenityItems = buildEffectiveAmenities({
     item,
     profile: plainProfile,
     applyPublicOverrides,
+    allowFullEditorOverrides,
   });
   const publicGallery = buildImageObjectsForPublicPayload(galleryItems);
   const explicitCover =
@@ -494,6 +512,12 @@ export const buildEffectivePartnerHotelProfile = ({
         }
       : null;
 
+  const bookingInquiry = buildPublicPartnerInquiryPayload({
+    claim,
+    profile: plainProfile,
+    partnerProgram,
+  });
+
   return {
     hotelId:
       item?.hotelId ??
@@ -529,6 +553,7 @@ export const buildEffectivePartnerHotelProfile = ({
     contact,
     responseTimeBadge,
     specialOffers,
+    bookingInquiry,
     profileCompletion: Number(plainProfile?.profile_completion) || 0,
     publishedAt: plainProfile?.published_at || null,
   };
@@ -564,6 +589,7 @@ const applyEffectiveProfileToItem = ({ item, effectiveProfile }) => {
               : item.hotelDetails.contact,
           responseTimeBadge: effectiveProfile.responseTimeBadge || null,
           specialOffers: effectiveProfile.specialOffers || null,
+          bookingInquiry: effectiveProfile.bookingInquiry || null,
         }
       : item?.hotelDetails;
 
@@ -583,6 +609,7 @@ const applyEffectiveProfileToItem = ({ item, effectiveProfile }) => {
         : item.contact,
     responseTimeBadge: effectiveProfile.responseTimeBadge || null,
     specialOffers: effectiveProfile.specialOffers || null,
+    bookingInquiry: effectiveProfile.bookingInquiry || null,
     effectivePartnerProfile: effectiveProfile,
     hotelDetails,
   };
@@ -702,7 +729,7 @@ const normalizeAmenityInput = (items = []) => {
   }));
 };
 
-const hasOverrideContent = ({ profile, galleryItems, amenityItems }) =>
+const hasOverrideContent = ({ profile, galleryItems, amenityItems, partnerProgram }) =>
   Boolean(
     profile?.headline ||
       profile?.description_override ||
@@ -710,11 +737,23 @@ const hasOverrideContent = ({ profile, galleryItems, amenityItems }) =>
       profile?.contact_email ||
       profile?.contact_phone ||
       profile?.website ||
-      (profile?.response_time_badge_enabled && profile?.response_time_badge_label) ||
-      (profile?.special_offers_enabled &&
+      (canUseBookingInquiry(partnerProgram) &&
+        (profile?.inquiry_enabled ||
+          profile?.inquiry_email ||
+          profile?.inquiry_phone ||
+          profile?.inquiry_notes)) ||
+      (canUseResponseTimeBadge(partnerProgram) &&
+        profile?.response_time_badge_enabled &&
+        profile?.response_time_badge_label) ||
+      (canUseSpecialOffers(partnerProgram) &&
+        profile?.special_offers_enabled &&
         (profile?.special_offers_title || profile?.special_offers_body)) ||
-      (Array.isArray(galleryItems) && galleryItems.length > 0) ||
-      (Array.isArray(amenityItems) && amenityItems.length > 0),
+      (canUseFullProfileEditor(partnerProgram) &&
+        Array.isArray(galleryItems) &&
+        galleryItems.length > 0) ||
+      (canUseFullProfileEditor(partnerProgram) &&
+        Array.isArray(amenityItems) &&
+        amenityItems.length > 0),
   );
 
 const computeProfileCompletion = ({ profile, galleryItems, amenityItems, partnerProgram }) => {
@@ -723,9 +762,11 @@ const computeProfileCompletion = ({ profile, galleryItems, amenityItems, partner
     Boolean(
       profile?.contact_name || profile?.contact_email || profile?.contact_phone || profile?.website,
     ),
-    Boolean(Array.isArray(galleryItems) && galleryItems.length > 0),
-    Boolean(Array.isArray(amenityItems) && amenityItems.length > 0),
   ];
+  if (canUseFullProfileEditor(partnerProgram)) {
+    checkpoints.push(Boolean(Array.isArray(galleryItems) && galleryItems.length > 0));
+    checkpoints.push(Boolean(Array.isArray(amenityItems) && amenityItems.length > 0));
+  }
   if (canUseResponseTimeBadge(partnerProgram)) {
     checkpoints.push(
       Boolean(profile?.response_time_badge_enabled && profile?.response_time_badge_label),
@@ -737,6 +778,11 @@ const computeProfileCompletion = ({ profile, galleryItems, amenityItems, partner
         profile?.special_offers_enabled &&
           (profile?.special_offers_title || profile?.special_offers_body),
       ),
+    );
+  }
+  if (canUseBookingInquiry(partnerProgram)) {
+    checkpoints.push(
+      Boolean(profile?.inquiry_enabled && (profile?.inquiry_email || profile?.contact_email)),
     );
   }
   if (!checkpoints.length) return 0;
@@ -763,6 +809,25 @@ const buildProfileFieldUpdates = ({ profile, payload, partnerProgram }) => {
   }
   if (hasOwn(payload, "website")) {
     updates.website = normalizeUrl(payload.website);
+  }
+
+  if (canUseBookingInquiry(partnerProgram)) {
+    if (hasOwn(payload, "inquiryEnabled")) {
+      updates.inquiry_enabled = normalizeBoolean(
+        payload.inquiryEnabled,
+        Boolean(profile?.inquiry_enabled),
+      );
+    }
+    if (hasOwn(payload, "inquiryEmail")) {
+      updates.inquiry_email = normalizeEmail(payload.inquiryEmail);
+    }
+    if (hasOwn(payload, "inquiryPhone")) {
+      updates.inquiry_phone = normalizeTrimmedString(payload.inquiryPhone, 40);
+    }
+    if (hasOwn(payload, "inquiryNotes")) {
+      const inquiryNotes = normalizeMultilineText(payload.inquiryNotes);
+      updates.inquiry_notes = inquiryNotes ? inquiryNotes.slice(0, 500) : null;
+    }
   }
 
   if (canUseResponseTimeBadge(partnerProgram)) {
@@ -822,7 +887,7 @@ const requireOwnedPartnerClaim = async ({
       user_id: resolvedUserId,
       hotel_id: resolvedHotelId,
     },
-    include: buildClaimInclude({ includeProfile }),
+    include: await buildClaimInclude({ includeProfile }),
     transaction,
   });
   if (!claim) {
@@ -834,27 +899,31 @@ const requireOwnedPartnerClaim = async ({
 };
 
 const ensureProfileForClaim = async ({ claim, userId, transaction = null }) => {
+  const profileQueryOptions = await buildPartnerHotelProfileQueryOptions({
+    includeCollections: true,
+  });
   const existing =
     claim?.hotelProfile ||
     (await models.PartnerHotelProfile.findOne({
       where: { claim_id: claim.id },
-      include: buildProfileInclude(),
+      ...profileQueryOptions,
       transaction,
     }));
   if (existing) return existing;
 
-  const created = await models.PartnerHotelProfile.create(
-    {
-      hotel_id: claim.hotel_id,
-      claim_id: claim.id,
-      status: PARTNER_HOTEL_PROFILE_STATUS.draft,
-      updated_by_user_id: Number(userId) || null,
-      profile_completion: 0,
-    },
-    { transaction },
-  );
+  const createPayload = await filterPartnerHotelProfileWritePayload({
+    hotel_id: claim.hotel_id,
+    claim_id: claim.id,
+    status: PARTNER_HOTEL_PROFILE_STATUS.draft,
+    updated_by_user_id: Number(userId) || null,
+    profile_completion: 0,
+  });
+  const created = await models.PartnerHotelProfile.create(createPayload, {
+    fields: Object.keys(createPayload),
+    transaction,
+  });
   return models.PartnerHotelProfile.findByPk(created.id, {
-    include: buildProfileInclude(),
+    ...profileQueryOptions,
     transaction,
   });
 };
@@ -921,7 +990,15 @@ const buildEditorCollections = ({
   providerImages,
   providerAmenities,
   profile,
+  partnerProgram,
 }) => {
+  if (!canUseFullProfileEditor(partnerProgram)) {
+    return {
+      galleryItems: providerImages,
+      amenityItems: providerAmenities,
+    };
+  }
+
   const profileImages = sortProfileImages(profile?.profileImages || [])
     .map((entry, index) => serializeProfileImage(entry, index))
     .filter(Boolean);
@@ -941,18 +1018,28 @@ const buildDashboardProfilePayload = ({
   partnerProgram,
   providerImages,
   providerAmenities,
+  inquirySummary = null,
 }) => {
   const baseHotel = claim?.hotel ? formatStaticHotel(claim.hotel) : null;
   const editor = buildEditorCollections({
     providerImages,
     providerAmenities,
     profile,
+    partnerProgram,
   });
   const effectiveProfile = buildEffectivePartnerHotelProfile({
     item: baseHotel || {},
+    claim,
     profile,
     partnerProgram,
     includeSavedDraft: false,
+  });
+  const inquiryStatus = resolvePartnerInquiryStatus({
+    claim,
+    profile,
+    partnerProgram,
+    latestInquiry: inquirySummary?.latestInquiry || null,
+    metrics: inquirySummary?.metrics || null,
   });
 
   return {
@@ -967,8 +1054,11 @@ const buildDashboardProfilePayload = ({
       amenityItems: providerAmenities,
     },
     effectiveProfile,
+    inquiryStatus,
     fieldAccess: {
       basicProfile: canEditBasicProfile(partnerProgram),
+      fullProfileEditor: canUseFullProfileEditor(partnerProgram),
+      bookingInquiry: canUseBookingInquiry(partnerProgram),
       responseTimeBadge: canUseResponseTimeBadge(partnerProgram),
       specialOffers: canUseSpecialOffers(partnerProgram),
     },
@@ -984,6 +1074,7 @@ export const getPartnerHotelProfileEditorPayload = async ({ userId, hotelId }) =
   const profile = await ensureProfileForClaim({ claim, userId });
   const partnerProgram = resolvePartnerProgramFromClaim(claim);
   const { providerImages, providerAmenities } = await loadProviderEditorCollections(claim.hotel_id);
+  const inquirySummary = await getPartnerInquirySummaryForClaim({ claimId: claim.id });
 
   return buildDashboardProfilePayload({
     claim,
@@ -991,6 +1082,7 @@ export const getPartnerHotelProfileEditorPayload = async ({ userId, hotelId }) =
     partnerProgram,
     providerImages,
     providerAmenities,
+    inquirySummary,
   });
 };
 
@@ -1015,11 +1107,13 @@ export const savePartnerHotelProfileEditorPayload = async ({ userId, hotelId, pa
       transaction,
     });
 
-    const updates = buildProfileFieldUpdates({
-      profile: toPlain(profile),
-      payload,
-      partnerProgram,
-    });
+    const updates = await filterPartnerHotelProfileWritePayload(
+      buildProfileFieldUpdates({
+        profile: toPlain(profile),
+        payload,
+        partnerProgram,
+      }),
+    );
     if (Object.keys(updates).length) {
       updates.updated_by_user_id = Number(userId) || null;
       await profile.update(updates, { transaction });
@@ -1032,7 +1126,7 @@ export const savePartnerHotelProfileEditorPayload = async ({ userId, hotelId, pa
       .map((entry, index) => serializeProfileAmenity(entry, index))
       .filter(Boolean);
 
-    if (hasOwn(payload, "galleryItems")) {
+    if (canUseFullProfileEditor(partnerProgram) && hasOwn(payload, "galleryItems")) {
       const normalizedGallery = normalizeGalleryInput(payload.galleryItems);
       await models.PartnerHotelProfileImage.destroy({
         where: { partner_hotel_profile_id: profile.id },
@@ -1056,7 +1150,7 @@ export const savePartnerHotelProfileEditorPayload = async ({ userId, hotelId, pa
       nextGalleryItems = normalizedGallery;
     }
 
-    if (hasOwn(payload, "amenityItems")) {
+    if (canUseFullProfileEditor(partnerProgram) && hasOwn(payload, "amenityItems")) {
       const normalizedAmenities = normalizeAmenityInput(payload.amenityItems);
       await models.PartnerHotelProfileAmenity.destroy({
         where: { partner_hotel_profile_id: profile.id },
@@ -1095,6 +1189,7 @@ export const savePartnerHotelProfileEditorPayload = async ({ userId, hotelId, pa
       profile: profilePlain,
       galleryItems: nextGalleryItems.filter((entry) => entry.isActive),
       amenityItems: nextAmenityItems.filter((entry) => entry.isActive),
+      partnerProgram,
     });
     await profile.update(
       {
@@ -1123,6 +1218,7 @@ export const savePartnerHotelProfileEditorPayload = async ({ userId, hotelId, pa
       partnerProgram: resolvePartnerProgramFromClaim(refreshedClaim),
       providerImages,
       providerAmenities,
+      inquirySummary: await getPartnerInquirySummaryForClaim({ claimId: refreshedClaim.id }),
     });
   });
   await bumpPartnerHotelProfileCacheVersion();
@@ -1148,6 +1244,7 @@ export const applyEffectivePartnerProfilesToHotelItems = async (items = [], clai
 
     const effectiveProfile = buildEffectivePartnerHotelProfile({
       item,
+      claim,
       profile: claim.hotelProfile,
       partnerProgram: item?.partnerProgram || resolvePartnerProgramFromClaim(claim),
       includeSavedDraft: false,
@@ -1170,6 +1267,6 @@ export const getPartnerClaimsWithProfilesByHotelIds = async (hotelIds = []) => {
     where: {
       hotel_id: { [Op.in]: targetIds },
     },
-    include: buildClaimInclude({ includeHotel: false, includeProfile: true }),
+    include: await buildClaimInclude({ includeHotel: false, includeProfile: true }),
   });
 };

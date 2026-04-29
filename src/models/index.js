@@ -137,6 +137,9 @@ import PartnerEmailLogModel from "./PartnerEmailLog.js";
 import PartnerHotelProfileModel from "./PartnerHotelProfile.js";
 import PartnerHotelProfileImageModel from "./PartnerHotelProfileImage.js";
 import PartnerHotelProfileAmenityModel from "./PartnerHotelProfileAmenity.js";
+import PartnerHotelInquiryModel from "./PartnerHotelInquiry.js";
+import PartnerHotelVerificationCodeModel from "./PartnerHotelVerificationCode.js";
+import PartnerMonthlyReportModel from "./PartnerMonthlyReport.js";
 
 /* ---------- Construir objetos ---------- */
 const Stay = StayModel(sequelize);
@@ -281,6 +284,9 @@ const models = {
   PartnerHotelProfile: PartnerHotelProfileModel(sequelize),
   PartnerHotelProfileImage: PartnerHotelProfileImageModel(sequelize),
   PartnerHotelProfileAmenity: PartnerHotelProfileAmenityModel(sequelize),
+  PartnerHotelInquiry: PartnerHotelInquiryModel(sequelize),
+  PartnerHotelVerificationCode: PartnerHotelVerificationCodeModel(sequelize),
+  PartnerMonthlyReport: PartnerMonthlyReportModel(sequelize),
 };
 
 /* ---------- Ejecutar asociaciones ---------- */
