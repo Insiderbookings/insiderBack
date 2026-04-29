@@ -45,6 +45,7 @@ import {
   resolveHotelCanonicalPricing,
   resolveHotelPricingRole,
 } from "../utils/hotelPricing.js"
+import { buildBookingInviteUrl } from "../helpers/appUrls.js"
 /* ──────────────── Helper – count nights ───────────── */
 const diffDays = (from, to) =>
     Math.ceil((new Date(to) - new Date(from)) / 86_400_000)
@@ -425,35 +426,6 @@ const normalizePhone = (value) => {
   if (!value) return null
   const normalized = String(value).trim()
   return normalized || null
-}
-
-const resolveClientUrl = () => {
-  const candidates = [
-    process.env.CLIENT_URL,
-    process.env.WEBAPP_URL,
-    process.env.FRONTEND_URL,
-  ]
-  const url = candidates.find((value) => value && String(value).trim().length > 0)
-  if (!url) return "https://app.insiderbookings.com"
-  return String(url).replace(/\/$/, "")
-}
-
-const resolveInviteBaseUrl = () => {
-  const candidates = [
-    process.env.BOOKING_INVITE_APP_URL,
-    process.env.APP_DEEPLINK_URL,
-    process.env.MOBILE_APP_URL,
-    process.env.APP_URL,
-  ]
-  const url = candidates.find((value) => value && String(value).trim().length > 0)
-  if (url) return String(url).replace(/\/$/, "")
-  return "https://bookinggpt.app"
-}
-
-const buildBookingInviteUrl = (token) => {
-  if (!token) return null
-  const baseUrl = resolveInviteBaseUrl()
-  return `${baseUrl}/booking-invite?token=${encodeURIComponent(token)}`
 }
 
 const mapBookingMember = (member) => {

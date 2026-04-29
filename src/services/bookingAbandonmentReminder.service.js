@@ -3,6 +3,7 @@ import models, { sequelize } from "../models/index.js";
 import { sendMail } from "../helpers/mailer.js";
 import { sendPushToUser } from "./pushNotifications.service.js";
 import { getBookingAbandonmentEmailTemplate } from "../emailTemplates/booking-abandonment-email.js";
+import { buildBookingGptUrl } from "../helpers/appUrls.js";
 
 const FLOW_ACTIVE_STATUSES = new Set([
   "BLOCKED",
@@ -73,17 +74,6 @@ const resolveReminderChannel = (clientType) =>
 
 const isUniqueConstraintError = (error) =>
   String(error?.name || "").toLowerCase().includes("uniqueconstraint");
-
-const resolveClientUrl = () => {
-  const candidates = [
-    process.env.CLIENT_URL,
-    process.env.WEBAPP_URL,
-    process.env.FRONTEND_URL,
-  ];
-  const url = candidates.find((value) => value && String(value).trim().length > 0);
-  if (!url) return "https://app.insiderbookings.com";
-  return String(url).replace(/\/$/, "");
-};
 
 const resolveHotelName = (flow) => {
   const searchContext = flow?.search_context || {};
@@ -167,8 +157,7 @@ const buildReminderPayload = ({ flow, reminderKey, hotelName, hotelId, guests })
 });
 
 const buildHotelDetailUrl = ({ flow, hotelId }) => {
-  const baseUrl = resolveClientUrl();
-  if (!hotelId) return `${baseUrl}/explore`;
+  if (!hotelId) return buildBookingGptUrl("explore");
   const params = new URLSearchParams();
   const searchContext = flow?.search_context || {};
   const rooms = resolveSearchRooms(flow);
@@ -188,7 +177,7 @@ const buildHotelDetailUrl = ({ flow, hotelId }) => {
     params.set("residence", String(searchContext.passengerCountryOfResidence));
   }
   params.set("autoCheckRates", "1");
-  return `${baseUrl}/hotels/${encodeURIComponent(String(hotelId))}?${params.toString()}`;
+  return buildBookingGptUrl(`hotels/${encodeURIComponent(String(hotelId))}`, params);
 };
 
 const buildReminderDeliveryKey = ({ flowId, userId, reminderKey, channel }) =>

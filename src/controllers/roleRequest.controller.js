@@ -4,6 +4,11 @@ import { Op } from "sequelize"
 import models from "../models/index.js"
 import { sendMail } from "../helpers/mailer.js"
 import { presignIfS3Url } from '../utils/s3Presign.js'
+import {
+  buildBookingGptUrl,
+  buildInsiderUrl,
+  resolveOperatorPanelUrl,
+} from "../helpers/appUrls.js"
 
 /* -------------------------- Shared email templates ------------------------- */
 function wrapEmail({ title, body, ctaLabel, ctaHref }) {
@@ -398,7 +403,7 @@ export async function adminApproveInitial(req, res, next) {
     try {
       const user = await models.User.findByPk(reqRow.user_id)
       if (user?.email) {
-        const clientUrl = process.env.CLIENT_URL || "http://localhost:5173"
+        const verificationUrl = buildInsiderUrl("complete-info")
         const isHost = Number(reqRow.role_requested) === 6
         const subject = isHost
           ? "Host application: complete verification"
@@ -432,13 +437,13 @@ export async function adminApproveInitial(req, res, next) {
           title: isHost ? "Host verification required" : "Vault Operator Onboarding - Step 1",
           body,
           ctaLabel: "Open verification",
-          ctaHref: `${clientUrl}/complete-info`,
+          ctaHref: verificationUrl,
         })
         await sendMail({
           to: user.email,
           subject,
           html,
-          text: `${subject}. Continue at ${clientUrl}/complete-info`,
+          text: `${subject}. Continue at ${verificationUrl}`,
         })
       }
     } catch (e) {
@@ -484,7 +489,7 @@ export async function adminApproveKyc(req, res, next) {
     try {
       const user = await models.User.findByPk(reqRow.user_id)
       if (user?.email) {
-        const clientUrl = process.env.CLIENT_URL || "http://localhost:5173"
+        const verificationUrl = buildInsiderUrl("complete-info")
         const subject = "KYC approved — Continue with Step 2"
         const body = `
           <p>Hi ${user.name || ''},</p>
@@ -499,8 +504,8 @@ export async function adminApproveKyc(req, res, next) {
           </ul>
           <p>You can switch between steps at any time and review what you have uploaded.</p>
         `
-        const html = wrapEmail({ title: "Vault Operator — Step 2 Available", body, ctaLabel: "Continue to Step 2", ctaHref: `${clientUrl}/complete-info` })
-        await sendMail({ to: user.email, subject, html, text: `KYC approved — continue at ${clientUrl}/complete-info` })
+        const html = wrapEmail({ title: "Vault Operator — Step 2 Available", body, ctaLabel: "Continue to Step 2", ctaHref: verificationUrl })
+        await sendMail({ to: user.email, subject, html, text: `KYC approved — continue at ${verificationUrl}` })
       }
     } catch (e) {
       console.warn('adminApproveKyc: failed to send user mail:', e?.message || e)
@@ -543,14 +548,14 @@ export async function adminApproveFinal(req, res, next) {
       try {
         if (user?.email) {
           const subject = "Vault Operator - Approved"
-          const clientUrl = process.env.CLIENT_URL || "http://localhost:5173"
+          const operatorUrl = resolveOperatorPanelUrl()
           const body = `
             <p>Hi ${user.name || ''},</p>
             <p><strong>Congratulations!</strong> Your Vault Operator role has been approved.</p>
             <p>You can now access your Operator Panel directly from Insider Bookings using your existing login (no additional account required).</p>
           `
-          const html = wrapEmail({ title: "Access your Operator Panel", body, ctaLabel: "Open Operator Panel", ctaHref: `${clientUrl}/operator` })
-          await sendMail({ to: user.email, subject, html, text: `Operator role approved. Go to ${clientUrl}/operator` })
+          const html = wrapEmail({ title: "Access your Operator Panel", body, ctaLabel: "Open Operator Panel", ctaHref: operatorUrl })
+          await sendMail({ to: user.email, subject, html, text: `Operator role approved. Go to ${operatorUrl}` })
         }
       } catch (e) {
         console.warn('adminApproveFinal: failed to send final user mail:', e?.message || e)
@@ -560,13 +565,13 @@ export async function adminApproveFinal(req, res, next) {
       try {
         if (user?.email) {
           const subject = "Host application approved"
-          const clientUrl = process.env.CLIENT_URL || "http://localhost:5173"
+          const hostToolsUrl = buildBookingGptUrl("host")
           const body = `
             <p>Hi ${user.name || ''},</p>
             <p><strong>Welcome!</strong> Your host application has been approved.</p>
             <p>You can now switch to host mode and access your host tools.</p>
           `
-          const html = wrapEmail({ title: "You're now a Host", body, ctaLabel: "Open host tools", ctaHref: `${clientUrl}/` })
+          const html = wrapEmail({ title: "You're now a Host", body, ctaLabel: "Open host tools", ctaHref: hostToolsUrl })
           await sendMail({ to: user.email, subject, html, text: `Host role approved. Sign in to start hosting.` })
         }
       } catch (e) {

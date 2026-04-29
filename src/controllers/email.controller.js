@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer"
 import db         from "../models/index.js"   // adjust if your path differs
 import { resolveMailFrom } from "../helpers/mailFrom.js"
+import { buildInsiderUrl } from "../helpers/appUrls.js"
 
 
 /* ─────────────────────────────────────
@@ -180,7 +181,7 @@ const reservationTemplate = ({
                 </tr>
                 <tr>
                   <td align="center" style="padding-bottom:24px;">
-                    <a href="${process.env.CLIENT_URL}/fast-checkin?booking=${bookingConfirmation}"
+                    <a href="${buildInsiderUrl("fast-checkin", { booking: bookingConfirmation })}"
                        style="background:#007aff;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:4px;font-weight:bold;display:inline-block;"
                        target="_blank">
                       Confirm reservation — $2

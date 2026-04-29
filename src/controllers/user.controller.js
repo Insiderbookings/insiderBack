@@ -11,6 +11,10 @@ import {
   ensureInfluencerOnboardingMetadata,
   isInfluencerIdentityVerified,
 } from "../utils/influencerOnboarding.js"
+import {
+  isBookingGptHost,
+  resolveInfluencerIdentityReturnUrl as resolveInfluencerIdentityReturnTarget,
+} from "../helpers/appUrls.js"
 
 const DISCOUNT_REMINDER_GRACE_DAYS = 1
 const LOGIN_TOUCH_INTERVAL_MS = 5 * 60 * 1000
@@ -101,7 +105,7 @@ const USER_CODE_LENGTH =
     ? Math.trunc(USER_CODE_LENGTH_RAW)
     : INFLUENCER_CODE_MAX_LENGTH
 
-const DEFAULT_INFLUENCER_IDENTITY_RETURN_URL = "https://bookinggpt.app/influencer-identity/complete"
+const DEFAULT_INFLUENCER_IDENTITY_RETURN_URL = resolveInfluencerIdentityReturnTarget()
 const normalizeInfluencerCode = (value) => String(value || "").trim().toUpperCase()
 const isValidInfluencerCode = (value) =>
   INFLUENCER_CODE_PATTERN.test(normalizeInfluencerCode(value))
@@ -160,16 +164,6 @@ const ensureInfluencerGuestProfile = async ({ userId, transaction }) => {
   return profile
 }
 
-const resolveInfluencerIdentityReturnUrl = () => {
-  const explicit = String(
-    process.env.STRIPE_INFLUENCER_IDENTITY_RETURN_URL ||
-      process.env.STRIPE_IDENTITY_RETURN_URL ||
-      ""
-  ).trim()
-  if (explicit) return explicit
-  return DEFAULT_INFLUENCER_IDENTITY_RETURN_URL
-}
-
 const normalizeInfluencerIdentityReturnUrl = (value) => {
   const raw = String(value || "").trim()
   if (!raw) return null
@@ -181,7 +175,7 @@ const normalizeInfluencerIdentityReturnUrl = (value) => {
     if (isProd && protocol !== "https:") return null
 
     const host = String(parsed.hostname || "").toLowerCase()
-    const isBookingHost = host === "bookinggpt.app" || host.endsWith(".bookinggpt.app")
+    const isBookingHost = isBookingGptHost(host)
     const isLocalHost =
       host === "localhost" ||
       host === "127.0.0.1" ||
@@ -956,7 +950,7 @@ export const createInfluencerIdentityVerificationSession = async (req, res) => {
     }
     const returnUrl =
       normalizeInfluencerIdentityReturnUrl(req.body?.returnUrl) ||
-      resolveInfluencerIdentityReturnUrl()
+      resolveInfluencerIdentityReturnTarget()
     if (returnUrl) params.return_url = returnUrl
 
     const session = await stripe.identity.verificationSessions.create(params)
