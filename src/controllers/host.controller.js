@@ -12,6 +12,10 @@ import {
 } from "../services/phoneVerification.service.js";
 import { createCurrencyConverter } from "../services/currency.service.js";
 import { computeHomeFinancialsFromStay } from "../utils/homePricing.js";
+import {
+  isBookingGptHost,
+  resolveHostIdentityReturnUrl,
+} from "../helpers/appUrls.js";
 
 // Format YYYY-MM-DD using local time to avoid timezone off-by-one errors
 const formatDate = (date) => {
@@ -155,9 +159,7 @@ const maskPhone = (value) => {
 };
 
 const resolveIdentityReturnUrl = () => {
-  const explicit = String(process.env.STRIPE_IDENTITY_RETURN_URL || "").trim();
-  if (explicit) return explicit;
-  return "https://bookinggpt.app/host-identity/complete";
+  return resolveHostIdentityReturnUrl();
 };
 
 const normalizeIdentityReturnUrl = (value) => {
@@ -171,7 +173,7 @@ const normalizeIdentityReturnUrl = (value) => {
     if (isProd && protocol !== "https:") return null;
 
     const host = String(parsed.hostname || "").toLowerCase();
-    const isBookingHost = host === "bookinggpt.app" || host.endsWith(".bookinggpt.app");
+    const isBookingHost = isBookingGptHost(host);
     const isLocalHost =
       host === "localhost" ||
       host === "127.0.0.1" ||

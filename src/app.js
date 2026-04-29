@@ -139,6 +139,21 @@ if (isProduction) {
     "SWAGGER_PASSWORD",
   ]);
   ensureHttpsUrl("CLIENT_URL", process.env.CLIENT_URL);
+  [
+    "BOOKINGGPT_CLIENT_URL",
+    "PARTNERS_CLIENT_URL",
+    "PARTNERS_CHECKOUT_SUCCESS_URL",
+    "PARTNERS_CHECKOUT_CANCEL_URL",
+    "OPERATOR_PANEL_URL",
+    "STRIPE_CONNECT_RETURN_URL",
+    "STRIPE_CONNECT_REFRESH_URL",
+    "HOST_PAYOUT_RETURN_URL",
+    "HOST_PAYOUT_REFRESH_URL",
+    "INFLUENCER_PAYOUT_RETURN_URL",
+    "INFLUENCER_PAYOUT_REFRESH_URL",
+    "HOST_IDENTITY_RETURN_URL",
+    "INFLUENCER_IDENTITY_RETURN_URL",
+  ].forEach((key) => ensureHttpsUrl(key, process.env[key]));
   allowedOrigins.forEach((origin) => ensureHttpsUrl("CORS_ALLOWED_ORIGINS", origin));
 }
 

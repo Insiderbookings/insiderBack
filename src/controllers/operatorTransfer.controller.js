@@ -2,6 +2,7 @@ import models from "../models/index.js";
 import { Op } from "sequelize";
 import Stripe from "stripe";
 import { notifyOperatorsNewTransfer } from "../helpers/operatorNotifications.js";
+import { resolveOperatorPanelUrl } from "../helpers/appUrls.js";
 
 const stripeKey = process.env.STRIPE_SECRET_KEY;
 const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: "2022-11-15" }) : null;
@@ -483,7 +484,7 @@ export async function createOperatorTransferIntent(req, res) {
     const amountCents = Math.round(amountNum * 100);
 
     const rawReturnUrl = typeof body.returnUrl === "string" ? body.returnUrl.trim() : "";
-    const panelBase = process.env.OPERATOR_PANEL_URL || process.env.CLIENT_URL || "https://app.insiderbookings.com/operator";
+    const panelBase = resolveOperatorPanelUrl();
     const hostHeader = req.headers["x-tenant-domain"] || req.query.host || null;
 
     const ensureReturnUrl = (base) => {

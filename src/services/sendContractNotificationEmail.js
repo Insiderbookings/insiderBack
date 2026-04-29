@@ -1,22 +1,12 @@
 import transporter from "./transporter.js"
 import { getContractNotificationTemplate } from "../emailTemplates/contract-notification-template.js"
 import { resolveMailFrom } from "../helpers/mailFrom.js"
-
-function resolveClientUrl() {
-  const candidates = [
-    process.env.CLIENT_URL,
-    process.env.WEBAPP_URL,
-    process.env.FRONTEND_URL,
-  ]
-  const url = candidates.find((value) => value && String(value).trim().length > 0)
-  if (!url) return "https://app.insiderbookings.com"
-  return String(url).replace(/\/$/, "")
-}
+import { buildInsiderUrl } from "../helpers/appUrls.js"
 
 export default async function sendContractNotificationEmail(user, contract = {}) {
   if (!user?.email) throw new Error("User email is required")
 
-  const contractsLink = `${resolveClientUrl()}/contracts`
+  const contractsLink = buildInsiderUrl("contracts")
   const firstName = (user?.name || "").split(" ")[0] || "there"
   const title = contract?.title || "New contract"
 

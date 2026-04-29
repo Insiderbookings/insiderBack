@@ -1,6 +1,7 @@
 import transporter from "./transporter.js";
 import { getBaseEmailTemplate } from "../emailTemplates/base-template.js";
 import { resolveMailFrom } from "../helpers/mailFrom.js";
+import { buildPartnerPortalUrl } from "../helpers/appUrls.js";
 import {
   PARTNER_EMAIL_SEQUENCE,
   getPartnerPlanByCode,
@@ -63,19 +64,9 @@ const formatCount = (value) => {
 };
 
 export const resolvePartnerDashboardUrl = (hotelId = null, extraParams = {}) => {
-  const base =
-    process.env.PARTNERS_CLIENT_URL ||
-    process.env.CLIENT_URL ||
-    "https://bookinggpt.app";
-  const url = new URL("/partners/dashboard", base);
-  if (hotelId) url.searchParams.set("hotelId", String(hotelId));
-  Object.entries(extraParams || {}).forEach(([key, value]) => {
-    if (value == null) return;
-    const normalized = String(value).trim();
-    if (!normalized) return;
-    url.searchParams.set(key, normalized);
-  });
-  return url.toString();
+  const params = { ...extraParams };
+  if (hotelId) params.hotelId = String(hotelId);
+  return buildPartnerPortalUrl("dashboard", params);
 };
 
 const buildCta = (label, url) =>

@@ -1,21 +1,12 @@
 import models from "../models/index.js";
 import { sendMail } from "./mailer.js";
 import { getBaseEmailTemplate } from "../emailTemplates/base-template.js";
-
-const PANEL_FALLBACK_URL = "https://app.insiderbookings.com/operator";
+import { resolveOperatorPanelUrl } from "./appUrls.js";
 const TRANSFER_TIMEOUT_HOURS = 12;
 const DATE_TIME_FORMATTER =
   typeof Intl !== "undefined" && Intl.DateTimeFormat
     ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" })
     : null;
-
-function resolveOperatorPanelUrl() {
-  const envUrl = process.env.OPERATOR_PANEL_URL || process.env.CLIENT_URL;
-  if (!envUrl) return PANEL_FALLBACK_URL;
-  const trimmed = envUrl.replace(/\/+$/g, "");
-  if (trimmed.toLowerCase().endsWith("/operator")) return trimmed;
-  return `${trimmed}/operator`;
-}
 
 function firstName(name) {
   if (!name) return "";

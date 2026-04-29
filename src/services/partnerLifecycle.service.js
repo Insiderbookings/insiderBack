@@ -19,6 +19,7 @@ import {
   sendPartnerInternalInvoiceAlert,
   sendPartnerLifecycleEmail,
 } from "./partnerEmail.service.js";
+import { resolvePartnerClientUrl } from "../helpers/appUrls.js";
 import {
   applyEffectivePartnerProfilesToHotelItems,
   getPartnerClaimsWithProfilesByHotelIds,
@@ -591,9 +592,7 @@ const buildSuccessUrl = ({ hotelId, success }) => {
   const base =
     success ||
     process.env.PARTNERS_CHECKOUT_SUCCESS_URL ||
-    process.env.PARTNERS_CLIENT_URL ||
-    process.env.CLIENT_URL ||
-    "https://bookinggpt.app/partners";
+    resolvePartnerClientUrl();
   const url = new URL(base);
   if (hotelId) url.searchParams.set("hotelId", String(hotelId));
   url.searchParams.set("checkout", "success");
@@ -604,9 +603,7 @@ const buildCancelUrl = ({ hotelId, cancel }) => {
   const base =
     cancel ||
     process.env.PARTNERS_CHECKOUT_CANCEL_URL ||
-    process.env.PARTNERS_CLIENT_URL ||
-    process.env.CLIENT_URL ||
-    "https://bookinggpt.app/partners";
+    resolvePartnerClientUrl();
   const url = new URL(base);
   if (hotelId) url.searchParams.set("hotelId", String(hotelId));
   url.searchParams.set("checkout", "cancelled");

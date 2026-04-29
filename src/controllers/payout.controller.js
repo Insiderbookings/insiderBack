@@ -3,6 +3,11 @@ import { Op } from "sequelize";
 import { sendPayout, getStripeClient } from "../services/payoutProviders.js";
 import { createCurrencyConverter } from "../services/currency.service.js";
 import { computeHomeFinancialsFromStay } from "../utils/homePricing.js";
+import {
+  isBookingGptHost,
+  resolvePayoutAudienceFromRequest,
+  resolveStripeConnectDefaultUrls,
+} from "../helpers/appUrls.js";
 
 const DEFAULT_GRACE_HOURS = 72;
 const DEFAULT_STRIPE_COUNTRY = "US";
@@ -10,9 +15,6 @@ const DEFAULT_BATCH_REPORT_CURRENCY = String(process.env.PAYOUT_BATCH_REPORT_CUR
 const CLAIMABLE_PAYOUT_STATUSES = ["PENDING", "QUEUED"];
 const READY_PAYOUT_ACCOUNT_STATUSES = ["READY", "VERIFIED"];
 const UPCOMING_PAYOUT_STATUSES = ["PENDING", "QUEUED", "PROCESSING", "ON_HOLD"];
-const DEFAULT_CONNECT_RETURN_URL = "https://bookinggpt.app/payout/complete";
-const DEFAULT_CONNECT_REFRESH_URL = "https://bookinggpt.app/payout/refresh";
-
 const getGraceHours = () => {
   const raw = Number(process.env.PAYOUT_GRACE_HOURS || DEFAULT_GRACE_HOURS);
   return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_GRACE_HOURS;
@@ -35,11 +37,7 @@ const normalizeStripeConnectRedirectUrl = (value) => {
     if (isProd && protocol !== "https:") return null;
 
     const host = String(parsed.hostname || "").toLowerCase();
-    const isBookingHost =
-      host === "bookinggpt.app" ||
-      host.endsWith(".bookinggpt.app") ||
-      host === "insiderbookings.com" ||
-      host.endsWith(".insiderbookings.com");
+    const isBookingHost = isBookingGptHost(host);
     const isLocalHost =
       host === "localhost" ||
       host === "127.0.0.1" ||
@@ -53,23 +51,17 @@ const normalizeStripeConnectRedirectUrl = (value) => {
 };
 
 const resolveStripeConnectUrls = (req) => {
-  const defaultRefresh =
-    process.env.STRIPE_CONNECT_REFRESH_URL ||
-    process.env.CLIENT_URL ||
-    DEFAULT_CONNECT_REFRESH_URL;
-  const defaultReturn =
-    process.env.STRIPE_CONNECT_RETURN_URL ||
-    process.env.CLIENT_URL ||
-    DEFAULT_CONNECT_RETURN_URL;
+  const audience = resolvePayoutAudienceFromRequest(req);
+  const defaults = resolveStripeConnectDefaultUrls({ audience });
 
   const refreshUrl =
     normalizeStripeConnectRedirectUrl(req.body?.refreshUrl) ||
-    normalizeStripeConnectRedirectUrl(defaultRefresh) ||
-    DEFAULT_CONNECT_REFRESH_URL;
+    normalizeStripeConnectRedirectUrl(defaults.refreshUrl) ||
+    defaults.refreshUrl;
   const returnUrl =
     normalizeStripeConnectRedirectUrl(req.body?.returnUrl) ||
-    normalizeStripeConnectRedirectUrl(defaultReturn) ||
-    DEFAULT_CONNECT_RETURN_URL;
+    normalizeStripeConnectRedirectUrl(defaults.returnUrl) ||
+    defaults.returnUrl;
 
   return { refreshUrl, returnUrl };
 };
