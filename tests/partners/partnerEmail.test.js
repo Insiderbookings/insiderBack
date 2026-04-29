@@ -5,7 +5,9 @@ import {
   buildPartnerLifecycleEmailText,
   resolvePartnerDashboardUrl,
   resolvePartnerLifecycleTemplate,
+  sendPartnerMonthlyReportEmail,
 } from "../../src/services/partnerEmail.service.js";
+import transporter from "../../src/services/transporter.js";
 
 const buildTrialClaim = (overrides = {}) => ({
   hotel_id: "335115",
@@ -113,4 +115,56 @@ test("renders a plain-text lifecycle fallback with highlights and CTA", () => {
     assert.match(text, /Key points/);
     assert.match(text, /Review dashboard: https:\/\/bookinggpt\.app\/partners\/dashboard\?hotelId=335115/);
   });
+});
+
+test("monthly report emails include the PDF attachment and performance summary", async () => {
+  const originalSendMail = transporter.sendMail;
+  const sentPayloads = [];
+  const pdfBuffer = Buffer.from("fake-pdf");
+  transporter.sendMail = async (payload) => {
+    sentPayloads.push(payload);
+    return { messageId: "monthly-report-test" };
+  };
+
+  try {
+    await withPartnerClientUrl("https://bookinggpt.app", async () => {
+      await sendPartnerMonthlyReportEmail({
+        claim: buildTrialClaim(),
+        hotel: { name: "474 Buenos Aires Hotel" },
+        report: {
+          report_month: "2026-03-01",
+          metrics: {
+            reportMonthLabel: "March 2026",
+            visibility: {
+              trackedViews: { current: 420 },
+              clicksSnapshot: 31,
+            },
+            favorites: {
+              newThisMonth: { current: 9 },
+            },
+            inquiries: {
+              total: { current: 4 },
+              delivered: 3,
+            },
+          },
+          summary: {
+            highlights: ["420 tracked views were recorded in March 2026."],
+          },
+        },
+        pdfBuffer,
+        destinationEmail: "team@hotel.example",
+      });
+    });
+
+    assert.equal(sentPayloads.length, 1);
+    assert.equal(sentPayloads[0].to, "team@hotel.example");
+    assert.match(String(sentPayloads[0].subject || ""), /march 2026 pdf performance report/i);
+    assert.equal(Array.isArray(sentPayloads[0].attachments), true);
+    assert.equal(sentPayloads[0].attachments.length, 1);
+    assert.equal(sentPayloads[0].attachments[0].content, pdfBuffer);
+    assert.match(String(sentPayloads[0].attachments[0].filename || ""), /2026-03\.pdf$/i);
+    assert.match(String(sentPayloads[0].text || ""), /Tracked views: 420/);
+  } finally {
+    transporter.sendMail = originalSendMail;
+  }
 });

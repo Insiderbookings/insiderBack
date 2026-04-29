@@ -734,3 +734,184 @@ export const sendPartnerInternalInvoiceAlert = async ({ claim, hotel, billingDet
     text,
   });
 };
+
+export const sendPartnerHotelInquiryEmail = async ({
+  claim,
+  hotel,
+  inquiry,
+  destinationEmail,
+} = {}) => {
+  const toEmail = String(destinationEmail || "").trim().toLowerCase();
+  if (!toEmail) {
+    throw new Error("Missing inquiry destination email");
+  }
+
+  const hotelName = hotel?.name || `Hotel ${claim?.hotel_id || ""}`.trim();
+  const dashboardUrl = resolvePartnerDashboardUrl(claim?.hotel_id, {
+    section: "profile",
+  });
+  const travelerName = inquiry?.traveler_name || "Traveler";
+  const travelerEmail = inquiry?.traveler_email || "-";
+  const travelerPhone = inquiry?.traveler_phone || "-";
+  const checkIn = formatDate(inquiry?.check_in);
+  const checkOut = formatDate(inquiry?.check_out);
+  const guestsSummary = inquiry?.guests_summary || "-";
+  const inquiryMessage = inquiry?.inquiry_message || "-";
+  const sourceSurface = String(inquiry?.source_surface || "hotel_detail")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+
+  const rows = [
+    ["Traveler", travelerName],
+    ["Email", travelerEmail],
+    ["Phone", travelerPhone],
+    ["Check-in", checkIn || "-"],
+    ["Check-out", checkOut || "-"],
+    ["Guests", guestsSummary],
+    ["Source", sourceSurface],
+  ];
+
+  const html = getBaseEmailTemplate(
+    `
+      <p style="font-size:14px;color:#475569;margin:0 0 8px;">Traveler inquiry</p>
+      <h2 style="margin:0 0 16px;font-size:28px;line-height:1.15;color:#0f172a;">New inquiry for ${escapeHtml(
+        hotelName,
+      )}</h2>
+      <p style="margin:0 0 18px;color:#334155;font-size:15px;line-height:1.7;">
+        A traveler sent a direct inquiry from BookingGPT and expects the hotel to reply directly.
+      </p>
+      <table style="width:100%;border-collapse:collapse;">
+        ${rows
+          .map(
+            ([label, value]) =>
+              `<tr><td style="padding:6px 0;color:#64748b;width:160px;">${escapeHtml(
+                label,
+              )}</td><td style="padding:6px 0;color:#0f172a;">${escapeHtml(value)}</td></tr>`,
+          )
+          .join("")}
+      </table>
+      <div style="margin:24px 0 0;padding:16px 18px;border:1px solid #e2e8f0;border-radius:16px;background:#f8fafc;">
+        <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;font-weight:700;margin-bottom:8px;">Traveler message</div>
+        <div style="font-size:15px;line-height:1.7;color:#0f172a;white-space:pre-wrap;">${escapeHtml(
+          inquiryMessage,
+        )}</div>
+      </div>
+      ${buildCta("Open partner dashboard", dashboardUrl)}
+    `,
+    `New inquiry for ${hotelName}`,
+    {
+      brandName: "BookingGPT",
+      headerTitle: "BookingGPT Partners",
+      headerSubtitle: "Direct traveler inquiry",
+      primaryColor: "#0f172a",
+      accentColor: "#1877F2",
+      backgroundColor: "#f8fafc",
+      bodyBackground: "#ffffff",
+      supportText: "Reply directly to the traveler to continue the conversation.",
+      footerText: `Copyright ${new Date().getFullYear()} BookingGPT. All rights reserved.`,
+      preheader: `${travelerName} sent a direct inquiry for ${hotelName}.`,
+      socialLinks: [],
+    },
+  );
+  const text = [
+    `New inquiry for ${hotelName}`,
+    "",
+    ...rows.map(([label, value]) => `${label}: ${value}`),
+    "",
+    "Traveler message",
+    inquiryMessage,
+    "",
+    `Open partner dashboard: ${dashboardUrl}`,
+  ].join("\n");
+
+  await transporter.sendMail({
+    from: PARTNERS_FROM_EMAIL,
+    replyTo: travelerEmail,
+    to: toEmail,
+    subject: `New inquiry for ${hotelName}`,
+    html,
+    text,
+  });
+};
+
+export const sendPartnerMonthlyReportEmail = async ({
+  claim,
+  hotel,
+  report,
+  pdfBuffer,
+  destinationEmail,
+} = {}) => {
+  const toEmail = String(destinationEmail || "").trim().toLowerCase();
+  if (!toEmail) {
+    throw new Error("Missing monthly report destination email");
+  }
+
+  const metrics = report?.metrics || {};
+  const summary = report?.summary || {};
+  const hotelName = hotel?.name || `Hotel ${claim?.hotel_id || ""}`.trim();
+  const monthLabel = metrics?.reportMonthLabel || "Monthly";
+  const dashboardUrl = resolvePartnerDashboardUrl(claim?.hotel_id, {
+    section: "performance",
+  });
+  const stats = [
+    {
+      label: "Tracked views",
+      value: formatCount(metrics?.visibility?.trackedViews?.current || 0),
+      note: `${monthLabel} in-app visibility`,
+    },
+    {
+      label: "New favorites",
+      value: formatCount(metrics?.favorites?.newThisMonth?.current || 0),
+      note: "favorites added by travelers",
+    },
+    {
+      label: "Traveler inquiries",
+      value: formatCount(metrics?.inquiries?.total?.current || 0),
+      note: `${formatCount(metrics?.inquiries?.delivered || 0)} delivered to the hotel`,
+    },
+    {
+      label: "Click snapshot",
+      value: formatCount(metrics?.visibility?.clicksSnapshot || 0),
+      note: "current partner-reported click total",
+    },
+  ];
+
+  const html = buildPartnerEmailHtml({
+    subject: `${hotelName}: your ${monthLabel.toLowerCase()} PDF performance report`,
+    preheader: `${monthLabel} partner summary for ${hotelName}, with the PDF report attached.`,
+    eyebrow: "Monthly partner report",
+    intro: `The ${monthLabel} BookingGPT partner report for ${hotelName} is attached as a PDF and ready to share internally.`,
+    stats,
+    bullets: Array.isArray(summary?.highlights) ? summary.highlights : [],
+    outro:
+      "Open the dashboard to review the latest partner setup, download past reports, and keep the listing current before the next monthly cycle closes.",
+    ctaLabel: "Open dashboard",
+    ctaUrl: dashboardUrl,
+  });
+  const text = buildPartnerLifecycleEmailText({
+    subject: `${hotelName}: your ${monthLabel} PDF performance report`,
+    intro: `The ${monthLabel} BookingGPT partner report for ${hotelName} is attached as a PDF and ready to share internally.`,
+    stats,
+    bullets: Array.isArray(summary?.highlights) ? summary.highlights : [],
+    outro:
+      "Open the partner dashboard to review the latest setup, download past reports, and keep the listing current before the next monthly cycle closes.",
+    ctaLabel: "Open dashboard",
+    ctaUrl: dashboardUrl,
+  });
+
+  await transporter.sendMail({
+    from: PARTNERS_FROM_EMAIL,
+    replyTo: PARTNERS_REPLY_TO_EMAIL,
+    to: toEmail,
+    subject: `${hotelName}: your ${monthLabel} PDF performance report`,
+    html,
+    text,
+    attachments: [
+      {
+        filename: `bookinggpt-${String(claim?.hotel_id || "hotel")}-${String(report?.report_month || monthLabel).slice(0, 7)}.pdf`,
+        content: pdfBuffer,
+        contentType: "application/pdf",
+      },
+    ],
+  });
+};

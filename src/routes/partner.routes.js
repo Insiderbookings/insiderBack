@@ -4,8 +4,11 @@ import {
   activatePartnerInvoiceController,
   approvePartnerClaimReviewController,
   claimPartnerHotelController,
+  createPartnerInquiryController,
+  downloadMyPartnerMonthlyReportController,
   getOrCreatePartnerVerificationCodeController,
   getMyPartnerHotelProfileController,
+  getMyPartnerMonthlyReportsController,
   getMyPartnerClaimsController,
   listPartnerClaimsAdminController,
   listPartnerPlans,
@@ -30,12 +33,23 @@ router.get("/plans", listPartnerPlans);
 router.get("/hotels/search", partnerPublicLimiter, searchPartnerHotelsController);
 router.post("/verification/lookup", partnerPublicLimiter, previewPartnerVerificationCodeController);
 router.post("/claim", partnerPublicLimiter, claimPartnerHotelController);
+router.post("/inquiries", partnerPublicLimiter, createPartnerInquiryController);
 
 router.get("/me", partnerControllerMiddleware.authenticate, getMyPartnerClaimsController);
 router.get(
   "/me/profile",
   partnerControllerMiddleware.authenticate,
   getMyPartnerHotelProfileController,
+);
+router.get(
+  "/me/reports/monthly",
+  partnerControllerMiddleware.authenticate,
+  getMyPartnerMonthlyReportsController,
+);
+router.get(
+  "/me/reports/monthly/:reportMonth/download",
+  partnerControllerMiddleware.authenticate,
+  downloadMyPartnerMonthlyReportController,
 );
 router.put(
   "/me/profile",

@@ -2,206 +2,124 @@
 
 ## Source Scope
 
-This document organizes the implementation work derived from:
+This document organizes the remaining partner-program implementation work derived from:
 
 - `partenrsUpdate-primero.pdf`
 - `partnersUpdate.pdf`
+- current backend partner flow in `insiderBack/src/routes/partner.routes.js`
+- current plan capability source in `insiderBack/src/services/partnerCatalog.service.js`
+- current dashboard/public entry flow in:
+  - `bookingGPTFront/apps/web/src/pages/Partners.jsx`
+  - `bookingGPTFront/apps/web/src/pages/PartnerVerify.jsx`
+  - `bookingGPTFront/apps/web/src/pages/PartnersDashboard.jsx`
+- current public hotel partner surfaces in:
+  - `bookingGPTFront/apps/web/src/components/explore/HomeCard.jsx`
+  - `bookingGPTFront/apps/web/src/pages/Maps.jsx`
+  - `bookingGPTFront/apps/web/src/pages/HotelDetail.jsx`
+  - `bookingGPTFront/apps/web/src/components/hotels/detail/HotelOverviewSection.jsx`
+  - `bookingGPTFront/apps/web/src/utils/exploreMapper.js`
 
-It focuses on the latest required scope, while keeping the existing system state in mind.
+## Current Scope and Assumptions
 
-## Implementation Points
+- `Block 1` foundation work is already shipped and should not be replanned from zero.
+- `Featured` must inherit every `Preferred` capability, and `Preferred` must inherit every `Verified` capability.
+- `insiderBack/src/services/partnerCatalog.service.js` should remain the canonical source of truth for plan capability resolution.
+- `insiderBack/src/models/PartnerHotelProfile.js` currently stores:
+  - core profile/contact fields
+  - `inquiry_*`
+  - `special_offers_*`
+  - legacy `response_time_badge_*` fields may still exist in code/schema, but this feature is no longer product scope and should not be expanded
+  - but not first-class destination-email readiness, upsell payloads, or monthly report artifacts
+- `insiderBack/src/routes/partner.routes.js` and `bookingGPTFront/apps/web/src/services/partners.js` currently expose:
+  - plans
+  - hotel search
+  - verification lookup
+  - claim
+  - public partner inquiry submission
+  - my claims
+  - my profile
+  - subscription select
+  - admin QA actions
+  - but not dedicated destination-email, premium analytics, or reporting endpoints
+- `BookingGPT Reach` and `softPressure` are already computed in `insiderBack/src/services/partnerLifecycle.service.js`.
+- Public traveler-facing soft-pressure copy has already been removed from web surfaces and must stay partner-only.
+- `bookingInquiry` core flow is already live end-to-end for dashboard readiness plus the first traveler-facing surface in hotel detail.
+- `specialOffers` is already partially live on public hotel surfaces. The remaining work is to finish the still-missing or still-partial benefits.
+- `responseTimeBadge` is out of scope and should be treated as deprecated product work, even if some legacy fields remain in the repo.
+- This plan targets `insiderBack` plus `bookingGPTFront/apps/web`. Native mobile parity is out of scope unless requested separately.
 
-### 1. Global Plan Rename
+## Implementation Tasks Ordered by Importance
 
-- Replace `Starter / Pro / Elite` with `Verified / Preferred / Featured`.
-- Apply the rename in:
-  - Stripe-visible names
-  - dashboard UI
-  - emails
-  - frontend labels
-  - backend-visible plan naming where applicable
+### 1. Lock the cumulative tier contract and plan surfaces
 
-### 2. Plan Benefits UI
+- Refactor `insiderBack/src/services/partnerCatalog.service.js` so capabilities are defined cumulatively instead of repeating full arrays per tier.
+- Make `Featured = Verified + Preferred additions + Featured additions` an enforced backend rule, not only a product assumption.
+- Drive `/partners/plans`, dashboard modules, emails, and partner-facing copy from that same resolved capability set.
+- Why it matters: the current system still risks drift between the PDFs, the public plan matrix, and effective backend gating.
+- Primary owner: `insiderBack` + `bookingGPTFront`
 
-- Show the final benefits for each plan based on the latest PDF.
-- Make the plan comparison reflect the real product behavior, not placeholder copy.
+### 2. Restore the real VRF verification and activation flow
 
-### 3. Metrics Label Update
+- Replace the temporary numeric hotel-id verification in `insiderBack/src/services/partnerVerification.service.js` with the PDF format:
+  - `VRF` + 4 digits + 1 random letter
+- Persist verification codes as first-class partner data with uniqueness per hotel and no expiry.
+- Keep `/verify` and `/partners` converged into the same trial-start logic, while preserving the difference between:
+  - verification-based activation
+  - search-based manual-review claim flow
+- Why it matters: verification is a core activation path and should not keep depending on internal Webbeds IDs.
+- Primary owner: `insiderBack` + `bookingGPTFront`
 
-- Replace `Views` with `BookingGPT Reach` in all user-facing partner surfaces where the metric is shown.
+### 3. Close `Booking inquiry` as the first real Preferred+ operational feature
 
-### 4. Fix Current `/partners` Contract
+- Keep the partner-owned inquiry endpoint, validation flow, delivery service, and audit trail as the canonical Preferred+ lead-capture path.
+- Surface the CTA only when the hotel:
+  - has the effective capability
+  - has an active usable claim state
+  - has a valid inquiry destination configured
+- Reflect readiness inside `/partners/dashboard` with the shipped operational states:
+  - locked
+  - missing setup
+  - ready
+  - delivery issue
+- Treat `Hotel Detail` as the required first traveler-facing surface for this phase. Additional public placements are optional follow-up work, not part of the closeout criteria.
+- Why it matters: this is the first direct lead-capture feature hotels expect once they move beyond `Verified`.
+- Primary owner: `insiderBack` + `bookingGPTFront`
 
-- Align frontend and backend payloads/responses for the current partners flow.
-- Remove current contract mismatches before adding more features.
+### 4. Finish the remaining `Preferred` capability set and inherited `Featured` behavior without `responseTimeBadge`
 
-### 5. Central Plan Capabilities Matrix
+- Differentiate `fullProfileEditor` from the current `basicProfile` path inside:
+  - `insiderBack/src/services/partnerHotelProfile.service.js`
+  - `bookingGPTFront/apps/web/src/pages/PartnersDashboard.jsx`
+- Keep `specialOffers` as the only public-facing premium merchandising field in this phase.
+- Remove `responseTimeBadge` from the remaining product scope, rollout criteria, and UI expectations instead of investing more backend/frontend work into it.
+- Add `destinationEmails` readiness and eligibility management so `Preferred` and `Featured` hotels can actually participate in destination campaigns instead of only seeing a locked dashboard tile.
+- Why it matters: `Featured` cannot be considered complete until every inherited `Preferred` capability is truly live.
+- Primary owner: `insiderBack` + `bookingGPTFront`
 
-- Define a single source of truth for what each plan can do.
-- This matrix should control:
-  - dashboard access
-  - editable profile fields
-  - listing features
-  - search ranking behavior
-  - email/reporting access
+### 5. Finish partner-only metrics, lifecycle outputs, and `Review boost`
 
-### 6. Final Tier Ordering in Search and Listings
+- Keep `BookingGPT Reach` as the canonical partner-facing headline metric.
+- Decide and encode whether the hotel-facing UI should show:
+  - one combined reach number only
+  - or one combined headline number plus a secondary breakdown module
+- Keep soft-pressure strictly partner-only and never traveler-facing.
+- Make `reviewBoost` claim-aware and tier-gated by integrating:
+  - `insiderBack/src/services/reviewReminder.service.js`
+  - `insiderBack/src/cronjobs/reviewReminderPush.job.js`
+  - the desired hotel review-follow-up delivery path
+- Why it matters: lifecycle and reporting primitives already exist, so the remaining work is to make them match the promised product without leaking internal metrics publicly.
+- Primary owner: `insiderBack` + `bookingGPTFront`
 
-- Enforce final ranking order:
-  - `Featured`
-  - `Preferred`
-  - `Verified`
-  - no badge
+### 6. Deliver the `Featured` premium reporting and intelligence modules
 
-### 7. Partner Dashboard and Hotel Profile Editing
-
-- Build or complete the real dashboard behavior by tier.
-- Hotel profile editing belongs here.
-
-Expected plan behavior:
-
-- `Verified`
-  - basic profile editing
-  - photos
-  - description
-  - amenities
-  - contact
-- `Preferred`
-  - everything in `Verified`
-  - full profile editor
-- `Featured`
-  - everything in `Preferred`
-
-### 8. New `/verify` Frontend Entry
-
-- Add `bookinggpt.app/verify`.
-- Make `/verify` and `/partners` converge into the same trial-start logic.
-
-### 9. VRF Verification Code System
-
-- Generate and store codes with format:
-  - `VRF` + 4 random numbers + 1 random letter
-- Requirements:
-  - unique per hotel
-  - stored in system
-  - no expiry
-  - activates the partner onboarding flow
-
-### 10. New Tier-Based Listing and Dashboard Fields
-
-- Add the premium fields/features introduced in the latest PDF:
-  - `response time badge`
-  - `special offers`
-  - other plan-gated listing/dashboard fields
-
-### 11. Booking Inquiry Button
-
-- Allow traveler-to-hotel inquiry for `Preferred+`.
-- Traveler sends:
-  - name
-  - dates
-  - message
-
-Expected product behavior:
-
-- Show the inquiry CTA only when the hotel has the `bookingInquiry` capability active.
-- Minimum active tiers:
-  - `Preferred`
-  - `Featured`
-- Hide the CTA for:
-  - `Verified`
-  - no badge
-  - expired badge states
-- The CTA should use the partner hotel's effective contact destination, not a hardcoded internal address.
-- If the hotel does not have a usable inquiry destination configured, the CTA should stay hidden or show a blocked state in the dashboard, not fail at send time.
-
-Traveler-facing scope:
-
-- The inquiry entry should exist on partner-enabled public hotel surfaces where it makes sense:
-  - search result cards
-  - map result cards
-  - explore cards
-  - hotel detail page
-- The interaction should open a premium inquiry modal or side panel.
-- Minimum traveler payload from the latest PDF:
-  - traveler name
-  - stay dates
-  - message
-- Operationally, the implementation may also include reply contact info if needed for a usable hotel follow-up flow, but the visible scope must stay simple.
-
-Delivery behavior:
-
-- Submit through a backend endpoint owned by the partner system.
-- Backend validates:
-  - hotel eligibility by tier/capability
-  - active claim state
-  - usable hotel destination email/contact channel
-  - basic payload completeness
-- On success:
-  - send the inquiry to the hotel's configured partner contact email
-  - optionally send an internal copy to BookingGPT for visibility
-  - return a clean success state to the traveler
-- On failure:
-  - do not expose raw transport errors
-  - show safe user-facing feedback
-
-Dashboard requirements:
-
-- The dashboard should show whether inquiry is:
-  - locked by tier
-  - available but missing contact setup
-  - fully ready
-- The hotel should understand from the dashboard which contact field powers inquiry delivery.
-
-Suggested implementation boundary:
-
-- This is a lead-capture and routed-email feature, not a full messaging product.
-- No threaded inbox, real-time chat, CRM pipeline, or traveler/hotel conversation center is required in this phase.
-- The first implementation should focus on:
-  - capability gating
-  - public CTA exposure
-  - modal UX
-  - backend validation
-  - reliable email delivery
-  - clear success/error states
-
-### 12. Destination Email Inclusion
-
-- Include eligible partner hotels in BookingGPT destination emails according to tier rules.
-
-### 13. Real `BookingGPT Reach`
-
-- Build the real combined metric:
-  - tracked in-app views
-  - admin-added social/manual views
-- Expose it as one combined hotel-facing number.
-
-### 14. Soft Pressure Counter
-
-- Keep `X travelers viewed today` as a partner-facing metric only.
-- Do not expose this counter on traveler-facing public hotel surfaces.
-- If used in the product, it should live in partner analytics/performance contexts rather than public cards or hotel detail.
-
-### 15. Review Boost
-
-- Add post-checkout automatic email prompting guest Google review for that hotel.
-
-### 16. Monthly PDF Report
-
-- Generate and email the monthly partner PDF report automatically.
-
-### 17. Competitor Insights
-
-- Show average views/clicks for similar hotels in the same city.
-- No competitor hotel names should be exposed.
-
-### 18. Upsell Capability
-
-- Support partner upsells such as:
-  - early check-in
-  - packages
-  - upgrades
-- Hotel keeps 100%, with no fees or commission according to the PDF.
+- Build:
+  - `monthlyPdfReport`
+  - `competitorInsights`
+  - `upsellCapability`
+  - `dedicatedAccountManager` operational state
+- Keep these explicitly `Featured`-only while inheriting every `Preferred` capability automatically.
+- Why it matters: these are the last premium differentiators once activation, lead capture, and profile tooling are stable.
+- Primary owner: `insiderBack` + `bookingGPTFront`
 
 ## Operational Delivery Blocks
 
@@ -210,451 +128,455 @@ Suggested implementation boundary:
 Status:
 
 - completed
-- implemented across `bookingGPTFront/apps/web` and `insiderBack`
-- includes points `1`, `3`, `4`, and `5`
+- already applied across `insiderBack` and `bookingGPTFront/apps/web`
 
-Points included:
+Tasks included:
+
+- prior rename and contract stabilization work
+- current capability-matrix baseline
+- `BookingGPT Reach` label adoption
+- public removal of partner-only soft-pressure copy
+
+Scope:
+
+- plan naming cleanup
+- shared plan contract base
+- partner lifecycle baseline
+- public/private metrics separation
+
+Deliverable:
+
+- stable base for the remaining partner benefits
+
+Why this block stays closed:
+
+- the remaining work should extend this base, not replan it from scratch
+
+### Block 2. Cumulative Tier Contract and Real Verification
+
+Status:
+
+- completed
+- applied across `insiderBack` and `bookingGPTFront/apps/web`
+
+Tasks included:
 
 - `1`
+- `2`
+
+Scope:
+
+- cumulative capability inheritance (`Featured = Preferred + Verified`)
+- public plan matrix cleanup
+- email and dashboard plan-copy alignment
+- real VRF code generation, storage, lookup, and activation
+
+Deliverable:
+
+- one trustworthy plan contract everywhere
+- verification no longer depends on raw `hotel_id`
+
+Why this block mattered:
+
+- every later feature depends on stable tier inheritance and a trustworthy activation path
+
+### Block 3. Preferred Operational Value
+
+Status:
+
+- active closing pass
+- `bookingInquiry`, `specialOffers`, and `fullProfileEditor` differentiation are already live in the core backend/web flows
+- the remaining work to close this block is `destinationEmails` readiness plus removing `responseTimeBadge` from the leftover rollout assumptions and UI copy
+
+Tasks included:
+
 - `3`
 - `4`
-- `5`
-
-Scope:
-
-- global plan rename
-- surface-level metrics relabeling
-- `/partners` contract alignment
-- central plan capabilities matrix
-
-Deliverable:
-
-- stable naming
-- stable frontend/backend contract
-- shared business-rule foundation for all next blocks
-
-### Block 2. Dashboard, Profile Editing, and Visible Tier Rules
-
-Points included:
-
-- `2`
-- `6`
-- `7`
-- `10`
-
-Scope:
-
-- plan benefits UI
-- final ranking behavior in search/listings
-- dashboard behavior by tier
-- hotel profile editing
-- premium fields like response time and special offers
-
-Deliverable:
-
-- hotels can manage their profile according to their tier
-- benefits are reflected in actual UI behavior
-- tier effects are visible in listing/search surfaces
-
-### Block 3. Verification-Based Entry Flow
-
-Points included:
-
-- `8`
-- `9`
-
-Scope:
-
-- `/verify` route
-- VRF code generation, storage, validation, and onboarding activation
-
-Deliverable:
-
-- new verification-letter onboarding flow works end-to-end
-
-### Block 4. Operational Growth Features
-
-Points included:
-
-- `11`
-- `12`
-- `13`
-- `14`
-- `15`
 
 Scope:
 
 - booking inquiry
-- destination email inclusion
-- real BookingGPT Reach
-- daily social-proof counter
-- review boost
+- inquiry readiness and routing
+- full profile editor differentiation
+- special offers as the active public merchandising field
+- destination email eligibility
 
 Deliverable:
 
-- partner program becomes operationally useful beyond badge + billing
+- `Preferred` becomes a real operational tier, not only a ranking upgrade
+- `Featured` automatically benefits from the inherited `Preferred` scope
 
-### Block 5. Advanced Premium Features
+Why this block comes now:
 
-Points included:
+- it unlocks the first clear upgrade value after activation and billing
 
-- `16`
-- `17`
-- `18`
+### Block 4. Partner Metrics and Review Output Completion
+
+Status:
+
+- proposed
+- lifecycle and performance primitives exist, but some outputs still diverge from the PDF
+
+Tasks included:
+
+- `5`
+
+Scope:
+
+- final `BookingGPT Reach` presentation
+- strict partner-only soft-pressure handling
+- review boost gating and delivery
+- partner lifecycle/reporting cleanup tied to the real benefit set
+
+Deliverable:
+
+- hotels see the right partner metrics and follow-up automation
+- public traveler surfaces stay clean and safe
+
+Why this block comes now:
+
+- it reuses the existing lifecycle and dashboard foundation without blocking the core Preferred tools
+
+### Block 5. Featured Premium Modules
+
+Status:
+
+- proposed
+
+Tasks included:
+
+- `6`
 
 Scope:
 
 - monthly PDF report
 - competitor insights
 - upsell capability
+- dedicated account manager operational state
 
 Deliverable:
 
-- advanced `Featured`-tier functionality
-- reporting and intelligence layer completed
+- `Featured` has its own premium layer on top of inherited `Preferred` capabilities
 
-## Notes
+Why this block comes last:
 
-- Hotel profile editing is mainly part of `Block 2`.
-- The latest PDF benefits matrix must be treated as real feature gating, not only marketing copy.
-- `Block 1` is already completed.
-- `Block 1` had to be completed before the heavier product work so later implementation would not build on inconsistent contracts or outdated naming.
+- these modules depend on the earlier capability contract, verification path, and performance data being stable
 
-## Frontend Plan
+## Repo Ownership and Contract Impact
+
+### Frontend Ownership
+
+- `bookingGPTFront/apps/web/src/pages/Partners.jsx`
+  - replace any drifted or hardcoded plan-comparison copy with backend-driven cumulative capabilities
+- `bookingGPTFront/apps/web/src/pages/PartnerVerify.jsx`
+  - swap the temporary numeric verification UX for VRF format and new claimed/active states
+- `bookingGPTFront/apps/web/src/pages/PartnersDashboard.jsx`
+  - add readiness modules for inquiry, destination emails, review boost, monthly report, competitor insights, and dedicated account manager
+  - separate `Verified` core profile editing from the true `Preferred` full editor
+- `bookingGPTFront/apps/web/src/services/partners.js`
+  - add new calls for inquiry status, destination-email readiness, report fetches, insight fetches, and any new profile fields
+- public hotel surfaces
+  - `bookingGPTFront/apps/web/src/components/explore/HomeCard.jsx`
+  - `bookingGPTFront/apps/web/src/pages/Maps.jsx`
+  - `bookingGPTFront/apps/web/src/pages/HotelDetail.jsx`
+  - `bookingGPTFront/apps/web/src/components/hotels/detail/HotelOverviewSection.jsx`
+  - `bookingGPTFront/apps/web/src/utils/exploreMapper.js`
+  - render only public-safe partner signals:
+    - tier badge
+    - special offers
+    - inquiry CTA when eligible
+
+### Backend Ownership
+
+- `insiderBack/src/services/partnerCatalog.service.js`
+  - derive cumulative capability sets and expose them consistently to plans, claims, and profile access rules
+- `insiderBack/src/services/partnerVerification.service.js`
+  - own VRF code generation, lookup, uniqueness, and claim-state integration
+- `insiderBack/src/routes/partner.routes.js`
+  - add partner inquiry, destination-email readiness, report, and insight routes
+- `insiderBack/src/controllers/partner.controller.js`
+  - wire new payload validation, auth, and response contracts
+- `insiderBack/src/services/partnerHotelProfile.service.js`
+  - extend profile access, persistence, serialization, and public hotel payload application
+- `insiderBack/src/services/partnerLifecycle.service.js`
+  - finalize partner-facing performance payloads and monthly/reporting data builders
+- `insiderBack/src/services/partnerEmail.service.js`
+  - handle inquiry delivery, monthly report delivery, and premium partner communications
+- `insiderBack/src/services/reviewReminder.service.js`
+  - gate `reviewBoost` behavior by claim/tier instead of sending generic reminders only
+- `insiderBack/src/cronjobs/reviewReminderPush.job.js`
+  - execute the gated review-boost follow-up schedule
+- models
+  - extend `insiderBack/src/models/PartnerHotelProfile.js`
+  - extend or reuse `insiderBack/src/models/PartnerEmailLog.js`
+  - likely add a new `PartnerHotelInquiry` model for inquiry auditability and resend/error handling
+  - add a dedicated verification model or equivalent persisted table if VRF codes should exist independently from claims
+
+### Shared Contract Changes
+
+- `/partners/plans`
+  - response must expose cumulative benefits in a way the web can render without duplicating tier logic
+- `/partners/verification/lookup`
+  - switch from numeric hotel-id validation to VRF lookup and clear `ACTIVE / CLAIMED / CLAIMED_BY_ME` outcomes
+- `/partners/me/profile`
+  - extend payloads for inquiry contact readiness, destination-email eligibility/status, and future upsell fields
+- new partner endpoints
+  - `POST /partners/inquiries`
+  - `GET /partners/me/inquiry-status`
+  - `GET /partners/me/destination-email-status`
+  - `GET /partners/me/reports/monthly`
+  - `GET /partners/me/insights/competitors`
+- exact paths can be adjusted, but these capabilities need first-class contracts instead of remaining dashboard placeholders
+
+## Backend Plan
+
+### Capability and Plan Inheritance
+
+- Replace the repeated `PARTNER_PLAN_CAPABILITY_KEYS` arrays with a compositional structure:
+  - `verifiedBaseCapabilities`
+  - `preferredAdditionalCapabilities`
+  - `featuredAdditionalCapabilities`
+- Build cumulative capability sets from that structure and add tests that enforce:
+  - `Preferred` is a superset of `Verified`
+  - `Featured` is a superset of `Preferred`
+- Make `listPartnerPlans`, claim serializers, and profile-access helpers consume the same resolved capability map.
+
+### Verification and Claim Activation
+
+- Introduce real VRF code persistence with uniqueness per hotel and no expiry.
+- Keep verification ownership in the partner domain instead of overloading `webbeds_hotel.hotel_id`.
+- Update search-claim vs verification-claim review logic inside `insiderBack/src/services/partnerLifecycle.service.js` so verified claims can still activate immediately while search-based claims may remain blocked for manual review.
+
+### Booking Inquiry and Contact Routing
+
+- Add an inquiry write path with:
+  - hotel eligibility validation by effective capability set
+  - claim status validation
+  - contact destination resolution from the effective profile
+  - rate limiting / abuse protection for public submission
+  - delivery logging and safe error responses
+- Persist inquiry events so the team can inspect send failures without relying only on SMTP logs.
+- Reuse `insiderBack/src/services/partnerEmail.service.js` for outbound hotel delivery and optional internal BookingGPT copies.
+
+### Preferred / Featured Profile and Outbound Placement
+
+- Extend `PartnerHotelProfile` to store the fields needed for:
+  - inquiry destination or inquiry override
+  - destination email opt-in/readiness
+  - true full-editor-only content
+  - future upsell copy/config
+- Do not expand `responseTimeBadge`; treat any remaining related fields as legacy cleanup, not product scope.
+- Keep `specialOffers` as-is where it already works, but stop treating `basicProfile` and `fullProfileEditor` as effectively the same access level.
+- Add a partner-aware traveler destination-email placement service or integration point. The current review did not identify an existing destination-campaign engine, so this should be treated as a real backend work item rather than assumed infrastructure.
+
+### Metrics, Review Boost, and Reporting
+
+- Keep `insiderBack/src/services/partnerLifecycle.service.js` as the owner of partner performance snapshots.
+- Normalize whether the partner UI receives:
+  - one combined `BookingGPT Reach` number only
+  - or one combined headline number plus an internal breakdown for secondary modules
+- Gate `reviewBoost` by effective plan and define the delivery path explicitly:
+  - partner-aware email reminder
+  - Google review CTA / external review handoff
+  - or both, depending on policy and legal review
+- Extend the lifecycle/report data builder so monthly aggregation can feed both dashboard summaries and PDF generation.
+
+### Featured-Only Premium Modules
+
+- Monthly PDF report
+  - generate from the same monthly metrics source used by the dashboard
+  - store send history and delivery status
+  - avoid creating a second metrics pipeline just for PDF output
+- Competitor insights
+  - aggregate market benchmarks by city + hotel segment without exposing competitor names
+  - fail closed when the comparison set is too small
+- Upsell capability
+  - first phase should clarify whether this is:
+    - profile-level merchandising only
+    - lead capture of upgrade interest
+    - or real purchasable upsells tied to checkout
+  - the current repo has generic `UpsellCode` / payment routes elsewhere, but they are not yet part of the partner-hotel dashboard contract
+- Dedicated account manager
+  - implement as operational state first:
+    - assigned
+    - pending assignment
+    - not included
+  - no full chat or CRM workstream is required in this phase
+
+## Frontend / UI Plan
 
 ### Scope
 
-- Partners frontend is `web only` for now.
-- No dedicated mobile partners interface is included in this phase.
-- The frontend plan applies to:
+- public partner acquisition routes
   - `/partners`
   - `/verify`
+- authenticated partner dashboard
   - `/partners/dashboard`
-  - web hotel/search/listing surfaces affected by partner features
+- traveler-facing hotel surfaces that can expose partner signals
+  - explore cards
+  - map cards
+  - hotel detail
+- shared partner payload mapping from backend hotel responses
 
-### Frontend Product Goals
+### Product Goals
 
-- The experience must feel premium, modern, and visually strong.
-- The interface should sell the value of the partner program while remaining operationally clear.
-- The design should avoid generic dashboard patterns and should feel closer to luxury hospitality software than a default SaaS admin panel.
+- `Verified` should feel like a clean baseline, not a broken version of `Preferred`.
+- `Preferred` should visibly unlock operational tools that hotels can use immediately.
+- `Featured` should read as `Preferred + premium reporting/intelligence`, not as a disconnected concept.
+- Traveler-facing surfaces should show only the partner signals that help booking confidence or lead capture, never internal performance counters.
 
 ### Visual Direction
 
-- Use a premium hospitality B2B visual language.
-- Prioritize:
-  - strong typography hierarchy
-  - refined spacing
-  - elegant cards and surfaces
-  - deliberate shadows and depth
-  - smooth but restrained motion
-  - clearly differentiated plan treatments for `Verified`, `Preferred`, and `Featured`
-- The UI should not be built as "functional first, beautiful later".
-- The wow factor must be part of the first implementation pass.
+- Preserve the existing premium editorial partner language already present in `/partners` and `/partners/dashboard`.
+- Do not redesign the entire partner system while implementing these gaps.
+- New readiness modules should feel like part of the current control-center UI:
+  - clear state chips
+  - locked/ready/missing-setup cards
+  - minimal operational copy
+- Inquiry entry on public hotel surfaces should feel light and hospitality-oriented:
+  - refined button or secondary CTA
+  - compact modal / sheet
+  - no raw admin language
 
-### Frontend Route Map
-
-#### Public Routes
+### Route Map
 
 - `/partners`
-  - public landing page
-  - plan comparison
-  - onboarding entry point
-  - hotel claim flow entry
+  - backend-driven plan comparison
+  - cumulative tier messaging
+  - correct trial fallthrough copy
 - `/verify`
-  - public verification-code entry
-  - VRF-based onboarding flow
-
-#### Authenticated Route
-
+  - VRF input and lookup
+  - active vs already claimed vs claimed-by-me states
+  - seamless handoff into the same dashboard/trial flow
 - `/partners/dashboard`
-  - single dashboard route
-  - no separate nested dashboard URLs required for now
-  - internal navigation handled inside the page through a modern sidebar layout
-
-### Core Web Screens
-
-#### 1. Partners Landing
-
-Route:
-
-- `/partners`
-
-Purpose:
-
-- present the partner program
-- communicate plan value
-- drive the hotel into claim or verify onboarding
-
-Main content:
-
-- premium hero section
-- benefits overview
-- plan comparison
-- badge/value explanation
-- trust/value blocks
-- CTA to start hotel claim
-- optional CTA for verification-code entry
-
-#### 2. Hotel Search and Claim Flow
-
-Route:
-
-- `/partners`
-
-Implementation style:
-
-- multi-step experience inside the same route
-
-Internal steps:
-
-- hotel search
-- hotel selection
-- contact/account details
-- review and confirmation
-- trial activation success
-
-Purpose:
-
-- keep the onboarding flow elegant and focused
-- avoid route fragmentation during claim
-
-#### 3. Verification Flow
-
-Route:
-
-- `/verify`
-
-Implementation style:
-
-- multi-step experience inside the same route
-
-Internal steps:
-
-- code entry
-- code validation
-- hotel preview
-- account creation or login bridge
-- activation success
-
-Purpose:
-
-- support the verification-letter workflow from the latest PDF
-
-#### 4. Partner Dashboard
-
-Route:
-
-- `/partners/dashboard`
-
-Implementation style:
-
-- one single route
-- left sidebar navigation
-- large primary content area
-- contextual header
-- animated section transitions
-
-Reasoning:
-
-- creates a premium and cohesive control-center feeling
-- avoids over-fragmentation into many routes
-- keeps navigation elegant and controlled
-
-### Dashboard Information Architecture
-
-The dashboard should contain a sidebar with internal sections:
-
-- `Overview`
-- `Hotel Profile`
-- `Subscription`
-- `Performance`
-- `Partner Tools`
-
-#### Overview
-
-Purpose:
-
-- give the hotel a clean summary of current status
-
-Content:
-
-- current badge
-- current plan
-- trial state
-- next billing state
-- BookingGPT Reach
-- important alerts
-- primary actions
-
-#### Hotel Profile
-
-Purpose:
-
-- manage the partner hotel listing
-
-Content:
-
-- photos
-- description
-- amenities
-- contact information
-- plan-gated profile capabilities
-- premium fields:
-  - response time
-  - special offers
-
-This is the main home for hotel profile editing.
-
-#### Subscription
-
-Purpose:
-
-- manage billing and plan decisions
-
-Content:
-
-- current plan
-- plan comparison
-- upgrade and downgrade actions
-- pay by card
-- request invoice
-- invoice pending state
-- billing and renewal messaging
-
-#### Performance
-
-Purpose:
-
-- show the hotel's visibility and engagement metrics
-
-Content:
-
-- BookingGPT Reach
-- views
-- clicks
-- weekly progress
-- trend modules
-- later premium insights when enabled
-
-#### Partner Tools
-
-Purpose:
-
-- group the advanced partner features in one premium operational area
-
-Content:
-
-- review boost
-- competitor insights
-- monthly PDF report
-- upsell capability
-- any future premium partner modules
-
-### Dashboard UX Rules
-
-- The sidebar should feel premium and intentional, not like a default admin template.
-- Navigation should be clear, spacious, and visually elevated.
-- Section switches should feel smooth and polished.
-- The dashboard should support strong empty, locked, pending, and success states.
-- Locked premium features should look aspirational, not broken.
-
-### Frontend States That Must Be Designed
-
-- trial active
-- trial ending
-- no badge
-- expired badge
-- invoice pending
-- subscribed
-- payment failure
-- already claimed hotel
-- invalid verification code
-- plan unavailable because Stripe config is missing
-
-These states must be visually designed, not left as raw alerts or plain fallback boxes.
-
-### Modals and Overlay UX
-
-The web frontend should include premium supporting overlays where useful:
-
-- claim review modal
-- invoice request modal or side panel
-- plan comparison or upgrade modal
-- booking inquiry modal
-
-These should feel like part of the product design system, not generic browser-like popups.
-
-### Frontend Changes Outside Partners Screens
-
-Even though the main interface is web-only and centered on `/partners` and `/partners/dashboard`, partner features also affect existing public hotel surfaces.
-
-The following web surfaces must support partner visuals and behavior where applicable:
-
-- search result cards
-- map result cards
-- explore cards
-- hotel detail page
-
-Partner-related elements to support there:
-
-- badge rendering
-- tier-aware ordering
-- response time badge
-- special offers
-- booking inquiry button
-
-### Frontend Component Strategy
-
-The interface should be built from reusable partner-specific primitives where possible:
-
-- plan card
-- badge chip
-- metrics card
-- locked feature card
-- dashboard sidebar item
-- section shell
-- empty and success states
-- premium CTA blocks
-
-This helps keep the experience visually coherent across landing, verify, dashboard, and listing surfaces.
+  - existing shell stays
+  - add benefit-specific readiness modules and live states
+- public hotel surfaces
+  - same routes as today
+  - add inquiry CTA only when the effective payload says it is live
+
+### Core Screens
+
+- Public plan comparison
+  - every row should match the backend capability matrix
+  - `Featured` rows must visually include inherited `Preferred` value
+- Verification flow
+  - accept VRF code format
+  - resolve errors clearly without showing raw hotel-id language
+- Dashboard overview / subscription
+  - show which capabilities are included, locked, or pending setup
+  - call out missing setup for inquiry and destination emails
+- Hotel profile editor
+  - keep `Verified` fields lean
+  - unlock the true expanded editor only for `Preferred+`
+  - keep `specialOffers` inside the premium modules
+- Traveler inquiry flow
+  - CTA
+  - modal/sheet
+  - sending state
+  - success state
+  - safe failure state
+- Featured reporting modules
+  - monthly report card
+  - competitor benchmark module
+  - upsell readiness block
+  - account manager status block
+
+### States That Must Be Designed
+
+- plan-locked
+- included but not configured
+- ready / live
+- verification code not found
+- verification already claimed
+- verification claimed by current user
+- inquiry sending
+- inquiry sent
+- inquiry failed safely
+- destination email eligible but awaiting campaign slot
+- no monthly report data yet
+- competitor insights unavailable due to low comparison volume
+
+### Component Strategy
+
+- keep using `PartnerTierBadge` and the existing partner dashboard shell
+- add a reusable capability-state card pattern inside `bookingGPTFront/apps/web/src/pages/PartnersDashboard.jsx`
+- add a shared inquiry CTA + modal component that can be reused by:
+  - `HomeCard.jsx`
+  - `Maps.jsx`
+  - `HotelDetail.jsx`
+  - `HotelOverviewSection.jsx`
+- extend `bookingGPTFront/apps/web/src/utils/exploreMapper.js` so partner public signals arrive in one normalized shape instead of surface-by-surface parsing
+- keep soft-pressure mapping internal to partner dashboard views only
 
 ### Frontend Delivery Recommendation by Block
 
-#### Block 1 Frontend Focus
+- Block 2
+  - update `/partners`
+  - update `/verify`
+  - switch web to cumulative plan payloads
+- Block 3
+  - build dashboard readiness states
+  - add inquiry CTA + modal
+  - wire full-editor differentiation and destination-email readiness
+- Block 4
+  - simplify partner-facing reach presentation
+  - add review-boost status surfaces
+- Block 5
+  - add premium `Featured` dashboard modules for reports, insights, upsells, and manager assignment
 
-- rename plans in UI
-- fix `/partners` frontend-backend contract
-- prepare shared plan-capability awareness in the frontend
+### Non-Goals
 
-#### Block 2 Frontend Focus
+- no traveler-to-hotel threaded inbox
+- no new general CRM
+- no public display of partner performance counts
+- no broad redesign of the partner acquisition experience beyond copy/contract corrections
 
-- rebuild `/partners`
-- build the premium dashboard shell
-- add sidebar-based dashboard
-- implement hotel profile editing
-- implement plan comparison and gated partner UI
+## Testing and Validation Plan
 
-#### Block 3 Frontend Focus
+- Backend unit tests
+  - capability inheritance resolver in `insiderBack/src/services/partnerCatalog.service.js`
+  - verification code normalization and uniqueness in `insiderBack/src/services/partnerVerification.service.js`
+  - inquiry eligibility and contact resolution in partner profile / inquiry services
+  - partner performance snapshot rules in `insiderBack/src/services/partnerLifecycle.service.js`
+- Backend integration tests
+  - `/partners/plans`
+  - `/partners/verification/lookup`
+  - `/partners/me/profile`
+  - new inquiry/report/insight routes
+- Frontend validation
+  - `/partners` matrix matches backend payload exactly
+  - `/verify` works for active, claimed, and invalid states
+  - `/partners/dashboard` renders locked vs missing-setup vs ready modules correctly
+  - public hotel surfaces show inquiry only when allowed
+  - public hotel surfaces never show soft-pressure copy
+- Operational QA
+  - SMTP / delivery logs for inquiry and monthly reports
+  - cron validation for lifecycle and review boost
+  - admin QA for search-claim vs verification-claim activation differences
 
-- build `/verify`
-- build verification success states
+## Risks and Open Questions
 
-#### Block 4 Frontend Focus
+- The current review did not surface an existing traveler destination-email campaign engine. This plan assumes a new partner-aware placement layer must be created or integrated.
+- `Review boost` needs a policy decision on the final channel:
+  - BookingGPT email
+  - Google review redirect
+  - or a combined flow
+- `Upsell capability` needs a clear phase boundary:
+  - merchandising only
+  - lead capture only
+  - or monetized upsell checkout
+- `Competitor insights` must define its comparison dimensions explicitly:
+  - city only
+  - city + star class
+  - city + partner segment
+- Monthly PDF generation needs a renderer/storage choice and a retention policy for past reports.
+- Dedicated account manager should not accidentally expand into a full support system unless that scope is approved separately.
 
-- booking inquiry UI
-- Reach-related surfaces
-- partner listing signals
-- traveler-facing partner feature presentation
+## Rollout Recommendation
 
-#### Block 5 Frontend Focus
-
-- premium report center modules
-- advanced Featured-tier cards and experiences
-
-### Frontend Non-Goals For This Phase
-
-- no mobile partners dashboard
-- no mobile verification flow
-- no separate multi-route dashboard architecture for now
-- no low-effort admin-template styling
-
+- Ship backend cumulative capability resolution and VRF persistence first, then move the web routes to the corrected payloads.
+- Release booking inquiry behind the resolved capability gate and only enable the public CTA after hotel contact readiness has passed QA.
+- Keep destination email inclusion and review boost dark-launched until the outbound delivery paths are verified with internal seed hotels.
+- Release `Featured` reporting modules last, using real monthly data from the earlier metrics block rather than placeholder dashboard cards.
+- Do not reintroduce partner-only performance signals on traveler-facing surfaces during rollout or future UI refreshes.

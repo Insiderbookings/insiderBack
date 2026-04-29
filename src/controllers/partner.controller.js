@@ -33,6 +33,11 @@ import {
   lookupPartnerVerificationCode,
   markPartnerVerificationCodeClaimed,
 } from "../services/partnerVerification.service.js";
+import { submitPartnerHotelInquiry } from "../services/partnerInquiry.service.js";
+import {
+  getPartnerMonthlyReportOverviewForClaim,
+  getPartnerMonthlyReportPdfDownloadForClaim,
+} from "../services/partnerMonthlyReport.service.js";
 import { sendPartnerInternalManualReviewAlert } from "../services/partnerEmail.service.js";
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
@@ -235,7 +240,7 @@ export const claimPartnerHotelController = async (req, res, next) => {
     ) {
       const message = verificationLookup.item.alreadyClaimed
         ? "This hotel is already claimed."
-        : "This verification id is not available.";
+        : "This verification code is not available.";
       return res.status(409).json({ error: message });
     }
 
@@ -293,6 +298,29 @@ export const claimPartnerHotelController = async (req, res, next) => {
     if (issuedSession?.token) response.token = issuedSession.token;
     if (issuedSession?.refreshToken) response.refreshToken = issuedSession.refreshToken;
     return res.status(created ? 201 : 200).json(response);
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
+export const createPartnerInquiryController = async (req, res, next) => {
+  try {
+    const result = await submitPartnerHotelInquiry({
+      hotelId: req.body?.hotelId,
+      travelerUserId: resolveOptionalUserIdFromRequest(req),
+      travelerName: req.body?.travelerName ?? req.body?.name,
+      travelerEmail: req.body?.travelerEmail ?? req.body?.email,
+      travelerPhone: req.body?.travelerPhone ?? req.body?.phone,
+      checkIn: req.body?.checkIn,
+      checkOut: req.body?.checkOut,
+      guestsSummary: req.body?.guestsSummary ?? req.body?.guests,
+      message: req.body?.message,
+      sourceSurface: req.body?.sourceSurface,
+    });
+    return res.status(201).json(result);
   } catch (error) {
     if (error?.status) {
       return res.status(error.status).json({ error: error.message });
@@ -434,6 +462,7 @@ export const getOrCreatePartnerVerificationCodeController = async (req, res, nex
     }
     const result = await getOrCreatePartnerVerificationCode({
       hotelId,
+      createdByUserId: req.user?.id || null,
     });
     return res.status(result.created ? 201 : 200).json({
       created: result.created,
@@ -460,6 +489,55 @@ export const getMyPartnerHotelProfileController = async (req, res, next) => {
 
     const payload = await getPartnerHotelProfileEditorPayload({ userId, hotelId });
     return res.json(payload);
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
+export const getMyPartnerMonthlyReportsController = async (req, res, next) => {
+  try {
+    const userId = Number(req.user?.id || 0);
+    const hotelId = String(req.query?.hotelId || "").trim();
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!hotelId) return res.status(400).json({ error: "hotelId is required" });
+    const claims = await listPartnerClaimsForUser({ userId, hotelId });
+    const claim = claims[0] || null;
+    if (!claim) return res.status(404).json({ error: "Partner claim not found" });
+    assertPartnerClaimManagementEnabled(claim, "review monthly reports");
+
+    const payload = await getPartnerMonthlyReportOverviewForClaim({ claim });
+    return res.json(payload);
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
+export const downloadMyPartnerMonthlyReportController = async (req, res, next) => {
+  try {
+    const userId = Number(req.user?.id || 0);
+    const hotelId = String(req.query?.hotelId || "").trim();
+    const reportMonth = String(req.params?.reportMonth || req.query?.reportMonth || "").trim();
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!hotelId) return res.status(400).json({ error: "hotelId is required" });
+    if (!reportMonth) return res.status(400).json({ error: "reportMonth is required" });
+    const claims = await listPartnerClaimsForUser({ userId, hotelId });
+    const claim = claims[0] || null;
+    if (!claim) return res.status(404).json({ error: "Partner claim not found" });
+    assertPartnerClaimManagementEnabled(claim, "download monthly reports");
+
+    const result = await getPartnerMonthlyReportPdfDownloadForClaim({
+      claim,
+      reportMonth,
+    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename=${result.filename}`);
+    return res.end(result.buffer);
   } catch (error) {
     if (error?.status) {
       return res.status(error.status).json({ error: error.message });

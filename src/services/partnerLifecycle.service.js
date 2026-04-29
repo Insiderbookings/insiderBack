@@ -23,6 +23,7 @@ import {
   applyEffectivePartnerProfilesToHotelItems,
   getPartnerClaimsWithProfilesByHotelIds,
 } from "./partnerHotelProfile.service.js";
+import { sendPartnerMonthlyReportIfDueForClaim } from "./partnerMonthlyReport.service.js";
 import { buildPartnerTrialSimulationDates } from "./partnerTrialSimulation.service.js";
 
 const iLikeOp = getCaseInsensitiveLikeOp();
@@ -1311,6 +1312,7 @@ export const runPartnerLifecycleForClaim = async ({ claim, now = new Date() }) =
     return {
       processed: 0,
       emailsSent: 0,
+      monthlyReportsSent: 0,
       badgesRemoved: 0,
     };
   }
@@ -1319,6 +1321,7 @@ export const runPartnerLifecycleForClaim = async ({ claim, now = new Date() }) =
   await updateClaimStateBeforeEmails(claim, now);
 
   let emailsSent = 0;
+  let monthlyReportsSent = 0;
   const badgesRemoved =
     previousStatus !== PARTNER_CLAIM_STATUSES.expired &&
     claim.claim_status === PARTNER_CLAIM_STATUSES.expired
@@ -1340,9 +1343,20 @@ export const runPartnerLifecycleForClaim = async ({ claim, now = new Date() }) =
     }
   }
 
+  const monthlyReportResult = await sendPartnerMonthlyReportIfDueForClaim({
+    claim,
+    now,
+  }).catch((error) => ({
+    skipped: false,
+    sent: false,
+    error,
+  }));
+  if (monthlyReportResult?.sent) monthlyReportsSent += 1;
+
   return {
     processed: 1,
     emailsSent,
+    monthlyReportsSent,
     badgesRemoved,
     claim,
   };
@@ -1528,6 +1542,7 @@ export const runPartnerLifecycleSweep = async ({ now = new Date() } = {}) => {
 
   let processed = 0;
   let emailsSent = 0;
+  let monthlyReportsSent = 0;
   let badgesRemoved = 0;
   const failures = [];
 
@@ -1536,6 +1551,7 @@ export const runPartnerLifecycleSweep = async ({ now = new Date() } = {}) => {
       const result = await runPartnerLifecycleForClaim({ claim, now });
       processed += result.processed;
       emailsSent += result.emailsSent;
+      monthlyReportsSent += Number(result.monthlyReportsSent || 0);
       badgesRemoved += result.badgesRemoved;
     } catch (error) {
       failures.push({
@@ -1549,6 +1565,7 @@ export const runPartnerLifecycleSweep = async ({ now = new Date() } = {}) => {
   return {
     processed,
     emailsSent,
+    monthlyReportsSent,
     badgesRemoved,
     failedClaims: failures.length,
     failures,

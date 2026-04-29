@@ -7,18 +7,18 @@ import {
   normalizePartnerVerificationCodeInput,
 } from "../../src/services/partnerVerification.service.js";
 
-test("normalizes hotel verification ids from user-entered formatting", () => {
-  assert.equal(normalizePartnerVerificationCodeInput(" hotel-001234 "), "001234");
+test("normalizes partner verification codes from user-entered formatting", () => {
+  assert.equal(normalizePartnerVerificationCodeInput(" vrf-4821k "), "VRF4821K");
 });
 
-test("hotel ids are validated as numeric verification codes", () => {
-  assert.match("123456", PARTNER_VERIFICATION_CODE_PATTERN);
-  assert.doesNotMatch("VRF1234A", PARTNER_VERIFICATION_CODE_PATTERN);
+test("verification codes use the VRF plus digits plus letter format", () => {
+  assert.match("VRF1234A", PARTNER_VERIFICATION_CODE_PATTERN);
+  assert.doesNotMatch("123456", PARTNER_VERIFICATION_CODE_PATTERN);
 });
 
-test("active unused hotel ids can activate the partner flow", () => {
+test("active unused verification codes can activate the partner flow", () => {
   const payload = buildPartnerVerificationPayload({
-    code: "88",
+    code: "VRF4821K",
     hotel: {
       hotel_id: 88,
       name: "Ocean View",
@@ -36,7 +36,7 @@ test("active unused hotel ids can activate the partner flow", () => {
 test("claimed verification codes only remain reusable for the same current user", () => {
   const claimedByCurrentUser = buildPartnerVerificationPayload(
     {
-      code: "91",
+      code: "VRF4821K",
       hotel: {
         hotel_id: 91,
       },
@@ -51,7 +51,7 @@ test("claimed verification codes only remain reusable for the same current user"
 
   const claimedByAnotherUser = buildPartnerVerificationPayload(
     {
-      code: "91",
+      code: "VRF4821K",
       hotel: {
         hotel_id: 91,
       },
@@ -66,6 +66,8 @@ test("claimed verification codes only remain reusable for the same current user"
 
   assert.equal(claimedByCurrentUser.canActivate, true);
   assert.equal(claimedByCurrentUser.claimedByCurrentUser, true);
+  assert.equal(claimedByCurrentUser.status, "CLAIMED_BY_ME");
   assert.equal(claimedByAnotherUser.canActivate, false);
   assert.equal(claimedByAnotherUser.claimedByCurrentUser, false);
+  assert.equal(claimedByAnotherUser.status, "CLAIMED");
 });

@@ -339,6 +339,25 @@ export default (sequelize) => {
         onDelete: "SET NULL",
       });
     }
+    if (models.PartnerHotelVerificationCode) {
+      User.hasMany(models.PartnerHotelVerificationCode, {
+        foreignKey: "created_by_user_id",
+        as: "createdPartnerVerificationCodes",
+        onDelete: "SET NULL",
+      });
+      User.hasMany(models.PartnerHotelVerificationCode, {
+        foreignKey: "claimed_by_user_id",
+        as: "claimedPartnerVerificationCodes",
+        onDelete: "SET NULL",
+      });
+    }
+    if (models.PartnerHotelInquiry) {
+      User.hasMany(models.PartnerHotelInquiry, {
+        foreignKey: "traveler_user_id",
+        as: "travelerPartnerInquiries",
+        onDelete: "SET NULL",
+      });
+    }
     if (models.SupportTicketAssignee && models.SupportTicket) {
       User.hasMany(models.SupportTicketAssignee, {
         foreignKey: "user_id",

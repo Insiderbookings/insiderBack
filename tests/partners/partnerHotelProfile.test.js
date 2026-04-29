@@ -25,9 +25,14 @@ const baseItem = {
 test("active partner profile overrides public description, gallery, and premium fields", () => {
   const effective = buildEffectivePartnerHotelProfile({
     item: baseItem,
+    claim: {
+      claim_status: "SUBSCRIBED",
+    },
     partnerProgram: {
       capabilities: {
         basicProfile: true,
+        fullProfileEditor: true,
+        bookingInquiry: true,
         responseTimeBadge: true,
         specialOffers: true,
       },
@@ -38,6 +43,7 @@ test("active partner profile overrides public description, gallery, and premium 
       headline: "Partner headline",
       description_override: "Partner description",
       contact_email: "sales@partner.example",
+      inquiry_enabled: true,
       response_time_badge_enabled: true,
       response_time_badge_label: "Usually replies in under 1 hour",
       special_offers_enabled: true,
@@ -83,6 +89,7 @@ test("active partner profile overrides public description, gallery, and premium 
   assert.equal(effective.gallery[0].url, "https://provider.example/cover.jpg");
   assert.equal(effective.amenities[0].label, "Infinity pool");
   assert.equal(effective.contact.email, "sales@partner.example");
+  assert.equal(effective.bookingInquiry?.ctaLabel, "Send inquiry");
   assert.equal(effective.responseTimeBadge?.label, "Usually replies in under 1 hour");
   assert.equal(effective.specialOffers?.title, "Spring package");
 });
@@ -134,6 +141,56 @@ test("public surfaces fall back to provider content when the current plan does n
   assert.equal(effective.coverImage, "https://provider.example/cover.jpg");
   assert.equal(effective.gallery.length, 2);
   assert.equal(effective.amenities[0].label, "Pool");
+  assert.equal(effective.bookingInquiry, null);
   assert.equal(effective.responseTimeBadge, null);
   assert.equal(effective.specialOffers, null);
+});
+
+test("verified keeps story/contact overrides but does not unlock the full gallery and amenity editor", () => {
+  const effective = buildEffectivePartnerHotelProfile({
+    item: baseItem,
+    partnerProgram: {
+      capabilities: {
+        basicProfile: true,
+        fullProfileEditor: false,
+        responseTimeBadge: false,
+        specialOffers: false,
+      },
+    },
+    profile: {
+      id: 3,
+      status: "ACTIVE",
+      headline: "Verified headline",
+      description_override: "Verified description",
+      contact_email: "frontdesk@verified.example",
+      profileImages: [
+        {
+          source_type: "provider",
+          provider_image_url: "https://provider.example/gallery-2.jpg",
+          image_url: "https://provider.example/gallery-2.jpg",
+          caption: "Hidden custom gallery",
+          sort_order: 0,
+          is_cover: true,
+          is_active: true,
+        },
+      ],
+      profileAmenities: [
+        {
+          source_type: "provider",
+          provider_category: "General",
+          label: "Hidden custom amenity",
+          sort_order: 0,
+          is_highlighted: true,
+          is_active: true,
+        },
+      ],
+    },
+  });
+
+  assert.equal(effective.headline, "Verified headline");
+  assert.equal(effective.description, "Verified description");
+  assert.equal(effective.contact.email, "frontdesk@verified.example");
+  assert.equal(effective.gallery.length, 2);
+  assert.equal(effective.gallery[0].url, "https://provider.example/cover.jpg");
+  assert.equal(effective.amenities[0].label, "Pool");
 });

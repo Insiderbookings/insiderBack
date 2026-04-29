@@ -115,6 +115,19 @@ const buildExploreHotelsCacheKey = (payload = {}) =>
   `webbeds:explore-hotels:${JSON.stringify(payload)}`
 const buildExploreCollectionsCacheKey = (payload = {}) =>
   `webbeds:explore-collections:${JSON.stringify(payload)}`
+const buildExploreCityMetaCacheKey = (cityCode) =>
+  `webbeds:explore-city-meta:${String(cityCode || "").trim()}`
+const buildExploreGlobalCitiesCacheKey = (limit) =>
+  `webbeds:explore-global-cities:${Math.max(1, Number(limit) || 1)}`
+const WEBBEDS_COUNTRIES_CACHE_KEY = "webbeds:countries:v1"
+const WEBBEDS_COUNTRIES_CACHE_TTL_SECONDS = Math.max(
+  60,
+  Number(process.env.WEBBEDS_COUNTRIES_CACHE_TTL_SECONDS || 900),
+)
+const WEBBEDS_EXPLORE_META_CACHE_TTL_SECONDS = Math.max(
+  60,
+  Number(process.env.WEBBEDS_EXPLORE_META_CACHE_TTL_SECONDS || 900),
+)
 const getStripeClient = async () => {
   const { default: Stripe } = await import("stripe")
   return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" })
@@ -2316,18 +2329,44 @@ const resolveFallbackCityCodes = () => {
 }
 
 const fetchCityMetaByCode = async (cityCode) => {
-  if (!cityCode) return null
-  const row = await models.WebbedsHotel.findOne({
-    where: { city_code: String(cityCode).trim() },
+  const resolvedCityCode = String(cityCode || "").trim()
+  if (!resolvedCityCode) return null
+
+  const cacheKey = buildExploreCityMetaCacheKey(resolvedCityCode)
+  const cached = await cache.get(cacheKey)
+  if (cached) return cached
+
+  const cityRow = await models.WebbedsCity.findByPk(resolvedCityCode, {
+    attributes: ["code", "name", "country_name"],
+  })
+
+  const cityMeta = cityRow
+    ? {
+        cityCode: String(cityRow.code),
+        cityName: cityRow.name || null,
+        countryName: cityRow.country_name || null,
+      }
+    : null
+
+  if (cityMeta) {
+    await cache.set(cacheKey, cityMeta, WEBBEDS_EXPLORE_META_CACHE_TTL_SECONDS)
+    return cityMeta
+  }
+
+  const hotelFallback = await models.WebbedsHotel.findOne({
+    where: { city_code: resolvedCityCode },
     attributes: ["city_code", "city_name", "country_name"],
     order: [["priority", "DESC"]],
   })
-  if (!row) return null
-  return {
-    cityCode: String(row.city_code),
-    cityName: row.city_name || null,
-    countryName: row.country_name || null,
+  if (!hotelFallback) return null
+
+  const fallbackMeta = {
+    cityCode: String(hotelFallback.city_code),
+    cityName: hotelFallback.city_name || null,
+    countryName: hotelFallback.country_name || null,
   }
+  await cache.set(cacheKey, fallbackMeta, WEBBEDS_EXPLORE_META_CACHE_TTL_SECONDS)
+  return fallbackMeta
 }
 
 const getNearbyCityBuckets = async (coords, radiusKm, limit) => {
@@ -2365,6 +2404,10 @@ const getNearbyCityBuckets = async (coords, radiusKm, limit) => {
 }
 
 const getTopGlobalCities = async (limit) => {
+  const cacheKey = buildExploreGlobalCitiesCacheKey(limit)
+  const cached = await cache.get(cacheKey)
+  if (cached && Array.isArray(cached)) return cached
+
   const rows = await models.WebbedsHotel.findAll({
     attributes: [
       "city_code",
@@ -2377,13 +2420,15 @@ const getTopGlobalCities = async (limit) => {
     order: [[literal("priority_score"), "DESC"], [literal("hotel_count"), "DESC"]],
     limit: Math.max(limit * 2, limit),
   })
-  return rows
+  const cities = rows
     .map((row) => ({
       cityCode: row.city_code ? String(row.city_code) : null,
       cityName: row.city_name || null,
       countryName: row.country_name || null,
     }))
     .filter((item) => item.cityCode)
+  await cache.set(cacheKey, cities, WEBBEDS_EXPLORE_META_CACHE_TTL_SECONDS)
+  return cities
 }
 
 export const listExploreHotels = async (req, res, next) => {
@@ -2893,6 +2938,13 @@ export const listExploreCollections = async (req, res, next) => {
 
 export const listCountries = async (_req, res, next) => {
   try {
+    const cached = await cache.get(WEBBEDS_COUNTRIES_CACHE_KEY)
+    if (cached?.items && Array.isArray(cached.items)) {
+      res.set("Cache-Control", `private, max-age=${WEBBEDS_COUNTRIES_CACHE_TTL_SECONDS}`)
+      res.set("X-Cache", "HIT")
+      return res.json(cached)
+    }
+
     const rows = await models.WebbedsCountry.findAll({
       attributes: ["code", "name"],
       order: [["name", "ASC"]],
@@ -2901,7 +2953,15 @@ export const listCountries = async (_req, res, next) => {
       code: row.code != null ? String(row.code) : null,
       name: row.name,
     }))
-    return res.json({ items })
+    const responsePayload = { items }
+    await cache.set(
+      WEBBEDS_COUNTRIES_CACHE_KEY,
+      responsePayload,
+      WEBBEDS_COUNTRIES_CACHE_TTL_SECONDS,
+    )
+    res.set("Cache-Control", `private, max-age=${WEBBEDS_COUNTRIES_CACHE_TTL_SECONDS}`)
+    res.set("X-Cache", "MISS")
+    return res.json(responsePayload)
   } catch (error) {
     return next(error)
   }
