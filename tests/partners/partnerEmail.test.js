@@ -82,22 +82,28 @@ test("builds weekly lifecycle copy with real metrics and no placeholder language
 });
 
 test("builds plan selection emails from the live catalog prices", () => {
-  const template = resolvePartnerLifecycleTemplate({
-    emailKey: "day_25_choose_plan",
-    claim: buildTrialClaim(),
-    hotel: { name: "474 Buenos Aires Hotel" },
-    now: new Date("2026-04-27T20:27:42.917Z"),
-  });
+  return withPartnerClientUrl("https://bookinggpt.app", async () => {
+    const template = resolvePartnerLifecycleTemplate({
+      emailKey: "day_25_choose_plan",
+      claim: buildTrialClaim(),
+      hotel: { name: "474 Buenos Aires Hotel" },
+      now: new Date("2026-04-27T20:27:42.917Z"),
+    });
 
-  const priceStats = template.stats.slice(1);
-  assert.deepEqual(
-    priceStats.map((item) => [item.label, item.value]),
-    [
-      ["Verified", "$49"],
-      ["Preferred", "$99"],
-      ["Featured", "$249"],
-    ],
-  );
+    const priceStats = template.stats.slice(1);
+    assert.equal(
+      template.ctaUrl,
+      "https://bookinggpt.app/partners/dashboard?section=subscription&focus=plans&hotelId=335115",
+    );
+    assert.deepEqual(
+      priceStats.map((item) => [item.label, item.value]),
+      [
+        ["Verified", "$49"],
+        ["Preferred", "$99"],
+        ["Featured", "$249"],
+      ],
+    );
+  });
 });
 
 test("renders a plain-text lifecycle fallback with highlights and CTA", () => {
