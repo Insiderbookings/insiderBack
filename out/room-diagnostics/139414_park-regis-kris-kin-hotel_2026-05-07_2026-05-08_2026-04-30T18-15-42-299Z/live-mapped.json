@@ -1,0 +1,2899 @@
+{
+  "currency": "USD",
+  "hotel": {
+    "id": "139414",
+    "name": "Park Regis Kris Kin Hotel",
+    "allowBook": true,
+    "rooms": [
+      {
+        "runno": "0",
+        "count": 5,
+        "adults": 1,
+        "children": 0,
+        "childrenAges": "",
+        "extrabeds": 0,
+        "lookedForText": "Room Number 1: 1 adult/s",
+        "from": null,
+        "fromFormatted": null,
+        "roomTypes": [
+          {
+            "runno": "0",
+            "roomTypeCode": "383594",
+            "name": "SUPERIOR ROOM",
+            "twin": false,
+            "roomInfo": {
+              "maxOccupancy": 3,
+              "maxAdultWithChildren": 2,
+              "minChildAge": 0,
+              "maxChildAge": 11,
+              "maxAdults": 2,
+              "maxExtraBed": 0,
+              "maxChildren": 1
+            },
+            "specialsCount": 4,
+            "specials": [
+              "FREE ROOM UPGRADE"
+            ],
+            "rateBases": [
+              {
+                "id": "0",
+                "description": "Room Only",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B3",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-27 13:15:42",
+                    "fromDateDetails": "Mon, 27 Apr 2026 13:15:42",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": true,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "39.16"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "39.16"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "39.16",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "39.16",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "39.16",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "promotionSummary": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialPromotions": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialsApplied": [
+                  0
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 0,
+                    "type": "freeUpgradePromotion",
+                    "specialName": "FREE ROOM UPGRADE",
+                    "condition": null,
+                    "description": "Free upgrade to DELUXE ROOM",
+                    "notes": null,
+                    "stay": null,
+                    "pay": null,
+                    "discount": null,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": "383574",
+                    "label": "FREE ROOM UPGRADE"
+                  }
+                ],
+                "includedMeals": [],
+                "includedMeal": null,
+                "mealPlan": null,
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 39.16,
+                    "priceFormatted": "39.16",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": []
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B4",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-27 13:15:42",
+                    "fromDateDetails": "Mon, 27 Apr 2026 13:15:42",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": true,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "54.22"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "54.22"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "54.22",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "54.22",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "54.22",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "promotionSummary": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialPromotions": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialsApplied": [
+                  1
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 1,
+                    "type": "freeUpgradePromotion",
+                    "specialName": "FREE ROOM UPGRADE",
+                    "condition": null,
+                    "description": "Free upgrade to DELUXE ROOM",
+                    "notes": null,
+                    "stay": null,
+                    "pay": null,
+                    "discount": null,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": "383574",
+                    "label": "FREE ROOM UPGRADE"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Set Meals",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Set Meals",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Set Meals",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 54.22,
+                    "priceFormatted": "54.22",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Set Meals",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B5",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-27 13:15:42",
+                    "fromDateDetails": "Mon, 27 Apr 2026 13:15:42",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": true,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "66.87"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "66.87"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "66.87",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "66.87",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "66.87",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "promotionSummary": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialPromotions": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialsApplied": [
+                  2
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 2,
+                    "type": "freeUpgradePromotion",
+                    "specialName": "FREE ROOM UPGRADE",
+                    "condition": null,
+                    "description": "Free upgrade to DELUXE ROOM",
+                    "notes": null,
+                    "stay": null,
+                    "pay": null,
+                    "discount": null,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": "383574",
+                    "label": "FREE ROOM UPGRADE"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 66.87,
+                    "priceFormatted": "66.87",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1335",
+                "description": "Full Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B6",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-27 13:15:42",
+                    "fromDateDetails": "Mon, 27 Apr 2026 13:15:42",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": true,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "79.52"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "79.52"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "79.52",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "79.52",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "79.52",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "promotionSummary": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialPromotions": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialsApplied": [
+                  3
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 3,
+                    "type": "freeUpgradePromotion",
+                    "specialName": "FREE ROOM UPGRADE",
+                    "condition": null,
+                    "description": "Free upgrade to DELUXE ROOM",
+                    "notes": null,
+                    "stay": null,
+                    "pay": null,
+                    "discount": null,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": "383574",
+                    "label": "FREE ROOM UPGRADE"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Full Board",
+                    "mealTypeName": "Full Board",
+                    "mealTypeCode": "1335"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Full Board",
+                  "mealTypeName": "Full Board",
+                  "mealTypeCode": "1335"
+                },
+                "mealPlan": "Full Board",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 79.52,
+                    "priceFormatted": "79.52",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Full Board",
+                        "mealTypeName": "Full Board",
+                        "mealTypeCode": "1335"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B0",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "129.53"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "129.53"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "129.53",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "129.53",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "129.53",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Buffet",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Buffet",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Buffet",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 129.53,
+                    "priceFormatted": "129.53",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Buffet",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B1",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "159.65"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "159.65"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "159.65",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "159.65",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "159.65",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 159.65,
+                    "priceFormatted": "159.65",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1335",
+                "description": "Full Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B2",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "189.77"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "189.77"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "189.77",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "189.77",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "189.77",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Full Board",
+                    "mealTypeName": "Full Board",
+                    "mealTypeCode": "1335"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Full Board",
+                  "mealTypeName": "Full Board",
+                  "mealTypeCode": "1335"
+                },
+                "mealPlan": "Full Board",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 189.77,
+                    "priceFormatted": "189.77",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Full Board",
+                        "mealTypeName": "Full Board",
+                        "mealTypeCode": "1335"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              }
+            ]
+          },
+          {
+            "runno": "1",
+            "roomTypeCode": "171251905",
+            "name": "SUPERIOR TWIN ROOM",
+            "twin": false,
+            "roomInfo": {
+              "maxOccupancy": 2,
+              "maxAdultWithChildren": 0,
+              "minChildAge": 0,
+              "maxChildAge": 12,
+              "maxAdults": 2,
+              "maxExtraBed": 0,
+              "maxChildren": 0
+            },
+            "specialsCount": 4,
+            "specials": [
+              "FREE ROOM UPGRADE"
+            ],
+            "rateBases": [
+              {
+                "id": "0",
+                "description": "Room Only",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B10",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-27 13:15:42",
+                    "fromDateDetails": "Mon, 27 Apr 2026 13:15:42",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": true,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "39.16"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "39.16"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "39.16",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "39.16",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "39.16",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "promotionSummary": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialPromotions": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialsApplied": [
+                  0
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 0,
+                    "type": "freeUpgradePromotion",
+                    "specialName": "FREE ROOM UPGRADE",
+                    "condition": null,
+                    "description": "Free upgrade to DELUXE TWIN",
+                    "notes": null,
+                    "stay": null,
+                    "pay": null,
+                    "discount": null,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": "171252165",
+                    "label": "FREE ROOM UPGRADE"
+                  }
+                ],
+                "includedMeals": [],
+                "includedMeal": null,
+                "mealPlan": null,
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 39.16,
+                    "priceFormatted": "39.16",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": []
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B11",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-27 13:15:42",
+                    "fromDateDetails": "Mon, 27 Apr 2026 13:15:42",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": true,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "54.22"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "54.22"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "54.22",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "54.22",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "54.22",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "promotionSummary": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialPromotions": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialsApplied": [
+                  1
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 1,
+                    "type": "freeUpgradePromotion",
+                    "specialName": "FREE ROOM UPGRADE",
+                    "condition": null,
+                    "description": "Free upgrade to DELUXE TWIN",
+                    "notes": null,
+                    "stay": null,
+                    "pay": null,
+                    "discount": null,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": "171252165",
+                    "label": "FREE ROOM UPGRADE"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Set Meals",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Set Meals",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Set Meals",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 54.22,
+                    "priceFormatted": "54.22",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Set Meals",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B12",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-27 13:15:42",
+                    "fromDateDetails": "Mon, 27 Apr 2026 13:15:42",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": true,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "66.87"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "66.87"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "66.87",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "66.87",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "66.87",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "promotionSummary": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialPromotions": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialsApplied": [
+                  2
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 2,
+                    "type": "freeUpgradePromotion",
+                    "specialName": "FREE ROOM UPGRADE",
+                    "condition": null,
+                    "description": "Free upgrade to DELUXE TWIN",
+                    "notes": null,
+                    "stay": null,
+                    "pay": null,
+                    "discount": null,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": "171252165",
+                    "label": "FREE ROOM UPGRADE"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 66.87,
+                    "priceFormatted": "66.87",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1335",
+                "description": "Full Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B13",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-27 13:15:42",
+                    "fromDateDetails": "Mon, 27 Apr 2026 13:15:42",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": true,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "79.52"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "79.52"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "79.52",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "79.52",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "79.52",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "promotionSummary": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialPromotions": [
+                  "FREE ROOM UPGRADE"
+                ],
+                "specialsApplied": [
+                  3
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 3,
+                    "type": "freeUpgradePromotion",
+                    "specialName": "FREE ROOM UPGRADE",
+                    "condition": null,
+                    "description": "Free upgrade to DELUXE TWIN",
+                    "notes": null,
+                    "stay": null,
+                    "pay": null,
+                    "discount": null,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": "171252165",
+                    "label": "FREE ROOM UPGRADE"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Full Board",
+                    "mealTypeName": "Full Board",
+                    "mealTypeCode": "1335"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Full Board",
+                  "mealTypeName": "Full Board",
+                  "mealTypeCode": "1335"
+                },
+                "mealPlan": "Full Board",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 79.52,
+                    "priceFormatted": "79.52",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Full Board",
+                        "mealTypeName": "Full Board",
+                        "mealTypeCode": "1335"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B7",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "129.53"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "129.53"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "129.53",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "129.53",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "129.53",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Buffet",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Buffet",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Buffet",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 129.53,
+                    "priceFormatted": "129.53",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Buffet",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B8",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "159.65"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "159.65"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "159.65",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "159.65",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "159.65",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 159.65,
+                    "priceFormatted": "159.65",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1335",
+                "description": "Full Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B9",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "189.77"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "189.77"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "189.77",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "189.77",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "189.77",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Full Board",
+                    "mealTypeName": "Full Board",
+                    "mealTypeCode": "1335"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Full Board",
+                  "mealTypeName": "Full Board",
+                  "mealTypeCode": "1335"
+                },
+                "mealPlan": "Full Board",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 189.77,
+                    "priceFormatted": "189.77",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Full Board",
+                        "mealTypeName": "Full Board",
+                        "mealTypeCode": "1335"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              }
+            ]
+          },
+          {
+            "runno": "2",
+            "roomTypeCode": "383574",
+            "name": "DELUXE ROOM",
+            "twin": false,
+            "roomInfo": {
+              "maxOccupancy": 3,
+              "maxAdultWithChildren": 2,
+              "minChildAge": 0,
+              "maxChildAge": 11,
+              "maxAdults": 2,
+              "maxExtraBed": 0,
+              "maxChildren": 1
+            },
+            "specialsCount": 0,
+            "specials": [],
+            "rateBases": [
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B14",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "159.65"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "159.65"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "159.65",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "159.65",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "159.65",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Buffet",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Buffet",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Buffet",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 159.65,
+                    "priceFormatted": "159.65",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Buffet",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B15",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "189.77"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "189.77"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "189.77",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "189.77",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "189.77",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 189.77,
+                    "priceFormatted": "189.77",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1335",
+                "description": "Full Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B16",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "219.89"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "219.89"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "219.89",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "219.89",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "219.89",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Full Board",
+                    "mealTypeName": "Full Board",
+                    "mealTypeCode": "1335"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Full Board",
+                  "mealTypeName": "Full Board",
+                  "mealTypeCode": "1335"
+                },
+                "mealPlan": "Full Board",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 219.89,
+                    "priceFormatted": "219.89",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Full Board",
+                        "mealTypeName": "Full Board",
+                        "mealTypeCode": "1335"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              }
+            ]
+          },
+          {
+            "runno": "3",
+            "roomTypeCode": "171252165",
+            "name": "DELUXE TWIN",
+            "twin": false,
+            "roomInfo": {
+              "maxOccupancy": 2,
+              "maxAdultWithChildren": 0,
+              "minChildAge": 0,
+              "maxChildAge": 12,
+              "maxAdults": 2,
+              "maxExtraBed": 0,
+              "maxChildren": 0
+            },
+            "specialsCount": 0,
+            "specials": [],
+            "rateBases": [
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B20",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "159.65"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "159.65"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "159.65",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "159.65",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "159.65",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Buffet",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Buffet",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Buffet",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 159.65,
+                    "priceFormatted": "159.65",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Buffet",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B21",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "189.77"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "189.77"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "189.77",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "189.77",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "189.77",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 189.77,
+                    "priceFormatted": "189.77",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1335",
+                "description": "Full Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B22",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "219.89"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "219.89"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "219.89",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "219.89",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "219.89",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Full Board",
+                    "mealTypeName": "Full Board",
+                    "mealTypeCode": "1335"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Full Board",
+                  "mealTypeName": "Full Board",
+                  "mealTypeCode": "1335"
+                },
+                "mealPlan": "Full Board",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 219.89,
+                    "priceFormatted": "219.89",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Full Board",
+                        "mealTypeName": "Full Board",
+                        "mealTypeCode": "1335"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              }
+            ]
+          },
+          {
+            "runno": "4",
+            "roomTypeCode": "383604",
+            "name": "SUITE ROOM",
+            "twin": false,
+            "roomInfo": {
+              "maxOccupancy": 3,
+              "maxAdultWithChildren": 2,
+              "minChildAge": 0,
+              "maxChildAge": 11,
+              "maxAdults": 2,
+              "maxExtraBed": 0,
+              "maxChildren": 1
+            },
+            "specialsCount": 0,
+            "specials": [],
+            "rateBases": [
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B17",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "250.02"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "250.02"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "250.02",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "250.02",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "250.02",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Buffet",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Buffet",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Buffet",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 250.02,
+                    "priceFormatted": "250.02",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Buffet",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B18",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "280.14"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "280.14"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "280.14",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "280.14",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "280.14",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 280.14,
+                    "priceFormatted": "280.14",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              },
+              {
+                "id": "1335",
+                "description": "Full Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777572942000003B1000B19",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": "2026-04-20 06:00:00",
+                    "fromDateDetails": "Mon, 20 Apr 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "310.26"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "310.26"
+                  }
+                ],
+                "withinCancellationDeadline": true,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "310.26",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "310.26",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "310.26",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [],
+                "promotionSummary": [],
+                "specialPromotions": [],
+                "specialsApplied": [],
+                "appliedSpecials": [],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Full Board",
+                    "mealTypeName": "Full Board",
+                    "mealTypeCode": "1335"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Full Board",
+                  "mealTypeName": "Full Board",
+                  "mealTypeCode": "1335"
+                },
+                "mealPlan": "Full Board",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 310.26,
+                    "priceFormatted": "310.26",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Full Board",
+                        "mealTypeName": "Full Board",
+                        "mealTypeCode": "1335"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nNo show &amp; early departure will have extra charges. No date, name &amp; room change allowed.\nBookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.\nExisting reservation cannot be cancelled &amp; rebooked under lower promotion.\nCompulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.\nDuring Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.\nHalf Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch \nIftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.\nDouble, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.\nReservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm\n\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\n\nPlease note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.\n\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.\n\nPlease note that the breakfast venue has been moved to a new location."
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "extraMeals": []
+  }
+}

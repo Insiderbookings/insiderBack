@@ -1,0 +1,285 @@
+{
+  "generatedAt": "2026-04-30T17:35:11.244Z",
+  "input": {
+    "hotelId": "139414",
+    "hotelName": "Park Regis Kris Kin Hotel",
+    "checkIn": "2026-05-07",
+    "checkOut": "2026-05-08",
+    "occupancies": "1|0",
+    "currency": "520",
+    "nationality": "102",
+    "residence": "102",
+    "requestId": "rooms-diag-139414-1777570510029"
+  },
+  "hotel": {
+    "hotelId": "139414",
+    "name": "Park Regis Kris Kin Hotel",
+    "city": "DUBAI",
+    "country": "UNITED ARAB EMIRATES"
+  },
+  "provider": {
+    "metadata": {
+      "command": "getrooms",
+      "transactionId": "1777570512100001",
+      "elapsedTime": "0.3016619682312",
+      "ip": "179.36.65.1",
+      "timestamp": "2026-04-30 17:35:12"
+    }
+  },
+  "staticRawSummary": {
+    "totalRows": 1017,
+    "uniqueCodes": 1017,
+    "rowsWithImages": 50,
+    "rowsWithoutImages": 967,
+    "rowsWithDescription": 3,
+    "rowsWithoutDescription": 1014
+  },
+  "staticFormattedSummary": {
+    "roomTypesCount": 1017,
+    "roomTypesWithImages": 735,
+    "roomTypesWithDescription": 11
+  },
+  "liveSummary": {
+    "roomsCount": 1,
+    "roomTypesCount": 5,
+    "rateBasesCount": 23,
+    "currency": "USD"
+  },
+  "issues": [
+    {
+      "level": "medium",
+      "code": "missing_static_descriptions",
+      "message": "4/5 live roomTypeCode(s) have no raw static description."
+    },
+    {
+      "level": "medium",
+      "code": "sparse_static_image_coverage",
+      "message": "Only 50/1017 static room rows have images."
+    },
+    {
+      "level": "medium",
+      "code": "sparse_static_description_coverage",
+      "message": "Only 3/1017 static room rows have descriptions."
+    }
+  ],
+  "comparison": [
+    {
+      "live": {
+        "roomTypeCode": "383594",
+        "name": "SUPERIOR ROOM",
+        "twin": false,
+        "rateBasesCount": 7,
+        "roomInfo": {
+          "maxOccupancy": 3,
+          "maxAdultWithChildren": 2,
+          "minChildAge": 0,
+          "maxChildAge": 11,
+          "maxAdults": 2,
+          "maxExtraBed": 0,
+          "maxChildren": 1
+        }
+      },
+      "staticRaw": {
+        "exists": true,
+        "matchCount": 1,
+        "roomTypeCode": "383594",
+        "name": "SUPERIOR ROOM",
+        "imagesCount": 1,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/d95479ad-c211-417c-b140-5f313e56491e.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null
+      },
+      "staticFormatted": {
+        "exists": true,
+        "roomTypeCode": "383594",
+        "name": "SUPERIOR ROOM",
+        "imagesCount": 1,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/d95479ad-c211-417c-b140-5f313e56491e.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null,
+        "imageInheritance": null,
+        "imageInheritanceSource": null
+      }
+    },
+    {
+      "live": {
+        "roomTypeCode": "171251905",
+        "name": "SUPERIOR TWIN ROOM",
+        "twin": false,
+        "rateBasesCount": 7,
+        "roomInfo": {
+          "maxOccupancy": 2,
+          "maxAdultWithChildren": 0,
+          "minChildAge": 0,
+          "maxChildAge": 12,
+          "maxAdults": 2,
+          "maxExtraBed": 0,
+          "maxChildren": 0
+        }
+      },
+      "staticRaw": {
+        "exists": true,
+        "matchCount": 1,
+        "roomTypeCode": "171251905",
+        "name": "SUPERIOR TWIN ROOM",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/3948cf9e-6e70-464a-8c96-656a0acffb9f.jpg",
+          "https://static-images.webbeds.com/0/image/a81a69c0-a9e2-4e82-b708-ce13267fac6f.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null
+      },
+      "staticFormatted": {
+        "exists": true,
+        "roomTypeCode": "171251905",
+        "name": "SUPERIOR TWIN ROOM",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/3948cf9e-6e70-464a-8c96-656a0acffb9f.jpg",
+          "https://static-images.webbeds.com/0/image/a81a69c0-a9e2-4e82-b708-ce13267fac6f.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null,
+        "imageInheritance": null,
+        "imageInheritanceSource": null
+      }
+    },
+    {
+      "live": {
+        "roomTypeCode": "383574",
+        "name": "DELUXE ROOM",
+        "twin": false,
+        "rateBasesCount": 3,
+        "roomInfo": {
+          "maxOccupancy": 3,
+          "maxAdultWithChildren": 2,
+          "minChildAge": 0,
+          "maxChildAge": 11,
+          "maxAdults": 2,
+          "maxExtraBed": 0,
+          "maxChildren": 1
+        }
+      },
+      "staticRaw": {
+        "exists": true,
+        "matchCount": 1,
+        "roomTypeCode": "383574",
+        "name": "DELUXE ROOM",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/ae3685a0-b8a8-4cdc-b4b4-c540489c45ae.jpeg",
+          "https://static-images.webbeds.com/0/image/e89a0387-eddb-4b2e-81d8-2501689aef08.jpeg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null
+      },
+      "staticFormatted": {
+        "exists": true,
+        "roomTypeCode": "383574",
+        "name": "DELUXE ROOM",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/ae3685a0-b8a8-4cdc-b4b4-c540489c45ae.jpeg",
+          "https://static-images.webbeds.com/0/image/e89a0387-eddb-4b2e-81d8-2501689aef08.jpeg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null,
+        "imageInheritance": null,
+        "imageInheritanceSource": null
+      }
+    },
+    {
+      "live": {
+        "roomTypeCode": "171252165",
+        "name": "DELUXE TWIN",
+        "twin": false,
+        "rateBasesCount": 3,
+        "roomInfo": {
+          "maxOccupancy": 2,
+          "maxAdultWithChildren": 0,
+          "minChildAge": 0,
+          "maxChildAge": 12,
+          "maxAdults": 2,
+          "maxExtraBed": 0,
+          "maxChildren": 0
+        }
+      },
+      "staticRaw": {
+        "exists": true,
+        "matchCount": 1,
+        "roomTypeCode": "171252165",
+        "name": "DELUXE TWIN",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/0e73d455-b597-4c62-b63a-8ffb0fa99612.jpg",
+          "https://static-images.webbeds.com/0/image/0097663d-5bd8-47b5-b360-088847f95687.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null
+      },
+      "staticFormatted": {
+        "exists": true,
+        "roomTypeCode": "171252165",
+        "name": "DELUXE TWIN",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/0e73d455-b597-4c62-b63a-8ffb0fa99612.jpg",
+          "https://static-images.webbeds.com/0/image/0097663d-5bd8-47b5-b360-088847f95687.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null,
+        "imageInheritance": null,
+        "imageInheritanceSource": null
+      }
+    },
+    {
+      "live": {
+        "roomTypeCode": "383604",
+        "name": "SUITE ROOM",
+        "twin": false,
+        "rateBasesCount": 3,
+        "roomInfo": {
+          "maxOccupancy": 3,
+          "maxAdultWithChildren": 2,
+          "minChildAge": 0,
+          "maxChildAge": 11,
+          "maxAdults": 2,
+          "maxExtraBed": 0,
+          "maxChildren": 1
+        }
+      },
+      "staticRaw": {
+        "exists": true,
+        "matchCount": 1,
+        "roomTypeCode": "383604",
+        "name": "SUITE ROOM",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/19d46b1e-6fb4-4aaf-87d6-79323a7690a5.jpg",
+          "https://static-images.webbeds.com/0/image/45ca1402-249b-4a99-b687-8a7fd8525497.jpg"
+        ],
+        "hasDescription": true,
+        "descriptionPreview": "Located on floors 1 to 10, this suite features a king-size bed, large living area with sofa and coffee table, a workspace, safe, iron and ironing board, and complimentary Wi-Fi. The bathroom includes a bathtub, shower, b"
+      },
+      "staticFormatted": {
+        "exists": true,
+        "roomTypeCode": "383604",
+        "name": "SUITE ROOM",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/19d46b1e-6fb4-4aaf-87d6-79323a7690a5.jpg",
+          "https://static-images.webbeds.com/0/image/45ca1402-249b-4a99-b687-8a7fd8525497.jpg"
+        ],
+        "hasDescription": true,
+        "descriptionPreview": "Located on floors 1 to 10, this suite features a king-size bed, large living area with sofa and coffee table, a workspace, safe, iron and ironing board, and complimentary Wi-Fi. The bathroom includes a bathtub, shower, b",
+        "imageInheritance": null,
+        "imageInheritanceSource": null
+      }
+    }
+  ]
+}

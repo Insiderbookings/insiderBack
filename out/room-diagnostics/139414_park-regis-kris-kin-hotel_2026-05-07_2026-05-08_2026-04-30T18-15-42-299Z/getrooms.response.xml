@@ -1,0 +1,438 @@
+<?xml version="1.0" encoding="UTF-8"?><result command="getrooms" tID="1777572942100005" ip="179.36.65.1"  date="2026-04-30 18:15:43" version="4.0" elapsedTime="0.60267901420593"><currencyShort>USD</currencyShort><hotel id="139414" name="Park Regis Kris Kin Hotel"><allowBook>yes</allowBook><rooms count="1"><room runno="0" count="5" adults="1" children="0" childrenages="" extrabeds="0"><roomType runno="0" roomtypecode="383594"><name>SUPERIOR ROOM</name><twin>no</twin><roomInfo><maxOccupancy>3</maxOccupancy><maxAdultWithChildren>2</maxAdultWithChildren><minChildAge>0</minChildAge><maxChildAge>11</maxChildAge><maxAdult>2</maxAdult><maxExtraBed>0</maxExtraBed><maxChildren>1</maxChildren></roomInfo><specials count="4"><special runno="0"><type>freeUpgradePromotion</type><specialName>FREE ROOM UPGRADE</specialName><upgradeToRoomId>383574</upgradeToRoomId><description>Free upgrade to DELUXE ROOM</description></special><special runno="1"><type>freeUpgradePromotion</type><specialName>FREE ROOM UPGRADE</specialName><upgradeToRoomId>383574</upgradeToRoomId><description>Free upgrade to DELUXE ROOM</description></special><special runno="2"><type>freeUpgradePromotion</type><specialName>FREE ROOM UPGRADE</specialName><upgradeToRoomId>383574</upgradeToRoomId><description>Free upgrade to DELUXE ROOM</description></special><special runno="3"><type>freeUpgradePromotion</type><specialName>FREE ROOM UPGRADE</specialName><upgradeToRoomId>383574</upgradeToRoomId><description>Free upgrade to DELUXE ROOM</description></special></specials><rateBases count="7"><rateBasis runno="0" id="0" description="Room Only"><status>unchecked</status><specialsApplied><special>0</special></specialsApplied><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B3</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-27 13:15:42</fromDate><fromDateDetails>Mon, 27 Apr 2026 13:15:42</fromDateDetails><amendRestricted>true</amendRestricted><cancelCharge>39.1591<formatted>39.16</formatted></cancelCharge><charge>39.1591<formatted>39.16</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>39.1591<formatted>39.16</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>39.1591<formatted>39.16</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>39.1591<formatted>39.16</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="0"></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="1" id="1331" description="Breakfast"><status>unchecked</status><specialsApplied><special>1</special></specialsApplied><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B4</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-27 13:15:42</fromDate><fromDateDetails>Mon, 27 Apr 2026 13:15:42</fromDateDetails><amendRestricted>true</amendRestricted><cancelCharge>54.2203<formatted>54.22</formatted></cancelCharge><charge>54.2203<formatted>54.22</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>54.2203<formatted>54.22</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>54.2203<formatted>54.22</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>54.2203<formatted>54.22</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Set Meals</mealName><mealType code="1331">Breakfast</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="2" id="1334" description="Half Board"><status>unchecked</status><specialsApplied><special>2</special></specialsApplied><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B5</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-27 13:15:42</fromDate><fromDateDetails>Mon, 27 Apr 2026 13:15:42</fromDateDetails><amendRestricted>true</amendRestricted><cancelCharge>66.8717<formatted>66.87</formatted></cancelCharge><charge>66.8717<formatted>66.87</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>66.8717<formatted>66.87</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>66.8717<formatted>66.87</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>66.8717<formatted>66.87</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Breakfast + Dinner</mealName><mealType code="1334">Half Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="3" id="1335" description="Full Board"><status>unchecked</status><specialsApplied><special>3</special></specialsApplied><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B6</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-27 13:15:42</fromDate><fromDateDetails>Mon, 27 Apr 2026 13:15:42</fromDateDetails><amendRestricted>true</amendRestricted><cancelCharge>79.523<formatted>79.52</formatted></cancelCharge><charge>79.523<formatted>79.52</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>79.523<formatted>79.52</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>79.523<formatted>79.52</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>79.523<formatted>79.52</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Full Board</mealName><mealType code="1335">Full Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="4" id="1331" description="Breakfast"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B0</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>129.5262<formatted>129.53</formatted></amendCharge><cancelCharge>129.5262<formatted>129.53</formatted></cancelCharge><charge>129.5262<formatted>129.53</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>129.5262<formatted>129.53</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>129.5262<formatted>129.53</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>129.5262<formatted>129.53</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Buffet</mealName><mealType code="1331">Breakfast</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="5" id="1334" description="Half Board"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B1</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>159.6485<formatted>159.65</formatted></amendCharge><cancelCharge>159.6485<formatted>159.65</formatted></cancelCharge><charge>159.6485<formatted>159.65</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>159.6485<formatted>159.65</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>159.6485<formatted>159.65</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>159.6485<formatted>159.65</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Breakfast + Dinner</mealName><mealType code="1334">Half Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="6" id="1335" description="Full Board"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B2</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>189.7709<formatted>189.77</formatted></amendCharge><cancelCharge>189.7709<formatted>189.77</formatted></cancelCharge><charge>189.7709<formatted>189.77</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>189.7709<formatted>189.77</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>189.7709<formatted>189.77</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>189.7709<formatted>189.77</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Full Board</mealName><mealType code="1335">Full Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis></rateBases></roomType><roomType runno="1" roomtypecode="171251905"><name>SUPERIOR TWIN ROOM</name><twin>no</twin><roomInfo><maxOccupancy>2</maxOccupancy><maxAdultWithChildren>0</maxAdultWithChildren><minChildAge>0</minChildAge><maxChildAge>12</maxChildAge><maxAdult>2</maxAdult><maxExtraBed>0</maxExtraBed><maxChildren>0</maxChildren></roomInfo><specials count="4"><special runno="0"><type>freeUpgradePromotion</type><specialName>FREE ROOM UPGRADE</specialName><upgradeToRoomId>171252165</upgradeToRoomId><description>Free upgrade to DELUXE TWIN</description></special><special runno="1"><type>freeUpgradePromotion</type><specialName>FREE ROOM UPGRADE</specialName><upgradeToRoomId>171252165</upgradeToRoomId><description>Free upgrade to DELUXE TWIN</description></special><special runno="2"><type>freeUpgradePromotion</type><specialName>FREE ROOM UPGRADE</specialName><upgradeToRoomId>171252165</upgradeToRoomId><description>Free upgrade to DELUXE TWIN</description></special><special runno="3"><type>freeUpgradePromotion</type><specialName>FREE ROOM UPGRADE</specialName><upgradeToRoomId>171252165</upgradeToRoomId><description>Free upgrade to DELUXE TWIN</description></special></specials><rateBases count="7"><rateBasis runno="0" id="0" description="Room Only"><status>unchecked</status><specialsApplied><special>0</special></specialsApplied><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B10</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-27 13:15:42</fromDate><fromDateDetails>Mon, 27 Apr 2026 13:15:42</fromDateDetails><amendRestricted>true</amendRestricted><cancelCharge>39.1591<formatted>39.16</formatted></cancelCharge><charge>39.1591<formatted>39.16</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>39.1591<formatted>39.16</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>39.1591<formatted>39.16</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>39.1591<formatted>39.16</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="0"></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="1" id="1331" description="Breakfast"><status>unchecked</status><specialsApplied><special>1</special></specialsApplied><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B11</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-27 13:15:42</fromDate><fromDateDetails>Mon, 27 Apr 2026 13:15:42</fromDateDetails><amendRestricted>true</amendRestricted><cancelCharge>54.2203<formatted>54.22</formatted></cancelCharge><charge>54.2203<formatted>54.22</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>54.2203<formatted>54.22</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>54.2203<formatted>54.22</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>54.2203<formatted>54.22</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Set Meals</mealName><mealType code="1331">Breakfast</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="2" id="1334" description="Half Board"><status>unchecked</status><specialsApplied><special>2</special></specialsApplied><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B12</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-27 13:15:42</fromDate><fromDateDetails>Mon, 27 Apr 2026 13:15:42</fromDateDetails><amendRestricted>true</amendRestricted><cancelCharge>66.8717<formatted>66.87</formatted></cancelCharge><charge>66.8717<formatted>66.87</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>66.8717<formatted>66.87</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>66.8717<formatted>66.87</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>66.8717<formatted>66.87</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Breakfast + Dinner</mealName><mealType code="1334">Half Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="3" id="1335" description="Full Board"><status>unchecked</status><specialsApplied><special>3</special></specialsApplied><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B13</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-27 13:15:42</fromDate><fromDateDetails>Mon, 27 Apr 2026 13:15:42</fromDateDetails><amendRestricted>true</amendRestricted><cancelCharge>79.523<formatted>79.52</formatted></cancelCharge><charge>79.523<formatted>79.52</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>79.523<formatted>79.52</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>79.523<formatted>79.52</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>79.523<formatted>79.52</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Full Board</mealName><mealType code="1335">Full Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="4" id="1331" description="Breakfast"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B7</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>129.5262<formatted>129.53</formatted></amendCharge><cancelCharge>129.5262<formatted>129.53</formatted></cancelCharge><charge>129.5262<formatted>129.53</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>129.5262<formatted>129.53</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>129.5262<formatted>129.53</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>129.5262<formatted>129.53</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Buffet</mealName><mealType code="1331">Breakfast</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="5" id="1334" description="Half Board"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B8</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>159.6485<formatted>159.65</formatted></amendCharge><cancelCharge>159.6485<formatted>159.65</formatted></cancelCharge><charge>159.6485<formatted>159.65</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>159.6485<formatted>159.65</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>159.6485<formatted>159.65</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>159.6485<formatted>159.65</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Breakfast + Dinner</mealName><mealType code="1334">Half Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="6" id="1335" description="Full Board"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B9</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>189.7709<formatted>189.77</formatted></amendCharge><cancelCharge>189.7709<formatted>189.77</formatted></cancelCharge><charge>189.7709<formatted>189.77</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>189.7709<formatted>189.77</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>189.7709<formatted>189.77</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>189.7709<formatted>189.77</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Full Board</mealName><mealType code="1335">Full Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis></rateBases></roomType><roomType runno="2" roomtypecode="383574"><name>DELUXE ROOM</name><twin>no</twin><roomInfo><maxOccupancy>3</maxOccupancy><maxAdultWithChildren>2</maxAdultWithChildren><minChildAge>0</minChildAge><maxChildAge>11</maxChildAge><maxAdult>2</maxAdult><maxExtraBed>0</maxExtraBed><maxChildren>1</maxChildren></roomInfo><specials count="0"></specials><rateBases count="3"><rateBasis runno="0" id="1331" description="Breakfast"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B14</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>159.6485<formatted>159.65</formatted></amendCharge><cancelCharge>159.6485<formatted>159.65</formatted></cancelCharge><charge>159.6485<formatted>159.65</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>159.6485<formatted>159.65</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>159.6485<formatted>159.65</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>159.6485<formatted>159.65</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Buffet</mealName><mealType code="1331">Breakfast</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="1" id="1334" description="Half Board"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B15</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>189.7709<formatted>189.77</formatted></amendCharge><cancelCharge>189.7709<formatted>189.77</formatted></cancelCharge><charge>189.7709<formatted>189.77</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>189.7709<formatted>189.77</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>189.7709<formatted>189.77</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>189.7709<formatted>189.77</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Breakfast + Dinner</mealName><mealType code="1334">Half Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="2" id="1335" description="Full Board"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B16</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>219.8933<formatted>219.89</formatted></amendCharge><cancelCharge>219.8933<formatted>219.89</formatted></cancelCharge><charge>219.8933<formatted>219.89</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>219.8933<formatted>219.89</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>219.8933<formatted>219.89</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>219.8933<formatted>219.89</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Full Board</mealName><mealType code="1335">Full Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis></rateBases></roomType><roomType runno="3" roomtypecode="171252165"><name>DELUXE TWIN</name><twin>no</twin><roomInfo><maxOccupancy>2</maxOccupancy><maxAdultWithChildren>0</maxAdultWithChildren><minChildAge>0</minChildAge><maxChildAge>12</maxChildAge><maxAdult>2</maxAdult><maxExtraBed>0</maxExtraBed><maxChildren>0</maxChildren></roomInfo><specials count="0"></specials><rateBases count="3"><rateBasis runno="0" id="1331" description="Breakfast"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B20</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>159.6485<formatted>159.65</formatted></amendCharge><cancelCharge>159.6485<formatted>159.65</formatted></cancelCharge><charge>159.6485<formatted>159.65</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>159.6485<formatted>159.65</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>159.6485<formatted>159.65</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>159.6485<formatted>159.65</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Buffet</mealName><mealType code="1331">Breakfast</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="1" id="1334" description="Half Board"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B21</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>189.7709<formatted>189.77</formatted></amendCharge><cancelCharge>189.7709<formatted>189.77</formatted></cancelCharge><charge>189.7709<formatted>189.77</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>189.7709<formatted>189.77</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>189.7709<formatted>189.77</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>189.7709<formatted>189.77</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Breakfast + Dinner</mealName><mealType code="1334">Half Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="2" id="1335" description="Full Board"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B22</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>219.8933<formatted>219.89</formatted></amendCharge><cancelCharge>219.8933<formatted>219.89</formatted></cancelCharge><charge>219.8933<formatted>219.89</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>219.8933<formatted>219.89</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>219.8933<formatted>219.89</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>219.8933<formatted>219.89</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Full Board</mealName><mealType code="1335">Full Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis></rateBases></roomType><roomType runno="4" roomtypecode="383604"><name>SUITE ROOM</name><twin>no</twin><roomInfo><maxOccupancy>3</maxOccupancy><maxAdultWithChildren>2</maxAdultWithChildren><minChildAge>0</minChildAge><maxChildAge>11</maxChildAge><maxAdult>2</maxAdult><maxExtraBed>0</maxExtraBed><maxChildren>1</maxChildren></roomInfo><specials count="0"></specials><rateBases count="3"><rateBasis runno="0" id="1331" description="Breakfast"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B17</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>250.0156<formatted>250.02</formatted></amendCharge><cancelCharge>250.0156<formatted>250.02</formatted></cancelCharge><charge>250.0156<formatted>250.02</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>250.0156<formatted>250.02</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>250.0156<formatted>250.02</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>250.0156<formatted>250.02</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Buffet</mealName><mealType code="1331">Breakfast</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="1" id="1334" description="Half Board"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B18</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>280.138<formatted>280.14</formatted></amendCharge><cancelCharge>280.138<formatted>280.14</formatted></cancelCharge><charge>280.138<formatted>280.14</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>280.138<formatted>280.14</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>280.138<formatted>280.14</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>280.138<formatted>280.14</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Breakfast + Dinner</mealName><mealType code="1334">Half Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis><rateBasis runno="2" id="1335" description="Full Board"><status>unchecked</status><passengerNamesRequiredForBooking>1</passengerNamesRequiredForBooking><rateType currencyid="520" currencyshort="USD" description= "XML">1</rateType><allowsExtraMeals>true</allowsExtraMeals><allowsSpecialRequests>true</allowsSpecialRequests><allowsBeddingPreference>true</allowsBeddingPreference><allocationDetails>1777572942000003B1000B19</allocationDetails><minStay></minStay><dateApplyMinStay></dateApplyMinStay><cancellationRules count="2"><rule runno="0"><fromDate>2026-04-20 06:00:00</fromDate><fromDateDetails>Mon, 20 Apr 2026 06:00:00</fromDateDetails><amendCharge>310.2604<formatted>310.26</formatted></amendCharge><cancelCharge>310.2604<formatted>310.26</formatted></cancelCharge><charge>310.2604<formatted>310.26</formatted></charge></rule><rule runno="1"><fromDate>2026-05-07 15:00:00</fromDate><fromDateDetails>Thu, 07 May 2026 15:00:00</fromDateDetails><noShowPolicy>true</noShowPolicy><charge>310.2604<formatted>310.26</formatted></charge></rule></cancellationRules><withinCancellationDeadline>yes</withinCancellationDeadline><tariffNotes><![CDATA[Rate Notes:
+
+Hotel Tariff Notes:
+No show &amp; early departure will have extra charges. No date, name &amp; room change allowed.
+Bookings including children will be based on sharing parents bedding, but no separate bed provided unless otherwise stated.
+Existing reservation cannot be cancelled &amp; rebooked under lower promotion.
+Compulsory Tourism Dirham Fee to be paid directly to the hotel per room/night.
+During Ramadan, restrictions may apply for the operations of the restaurants &amp; bars of the hotel as per the UAE Law.
+Half Board Package includes Breakfast &amp; 3course set menu for Dinner or Lunch 
+Iftar Buffet is not including in Half Board packages and is available at add. cost per person per meal.
+Double, Twin, &amp; Triple bed will remain subject to availability upon booking confirmation.
+Reservation Dept. is open as follows: Sun to Thu: 8am-8pm &amp; Fri to Sat: 9am-8pm
+
+Please note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.
+
+Please note that Half Board (Dinner) and Full Board are NOT available during New Year’s Eve on 31st December. However, Half Board Lunch is available on 31st December.
+
+The Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate.
+
+Please note that the breakfast venue has been moved to a new location.]]></tariffNotes><isBookable>yes</isBookable><onRequest>0</onRequest><total>310.2604<formatted>310.26</formatted></total><dates count="1"><date runno="0" datetime="2026-05-07" day="May, 07 2026" wday="Thursday" ><price>310.2604<formatted>310.26</formatted></price><freeStay>no</freeStay><dayOnRequest>0</dayOnRequest><including count="1"><includedMeal runno="0"><mealName>Full Board</mealName><mealType code="1335">Full Board</mealType></includedMeal></including></date></dates><leftToSell>9999</leftToSell></rateBasis></rateBases></roomType><lookedForText>Room Number 1: 1 adult/s</lookedForText></room></rooms><extraMeals count="0"></extraMeals></hotel><successful>TRUE</successful></result>

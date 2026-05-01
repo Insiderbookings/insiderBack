@@ -11,6 +11,7 @@
     "hotels:export:csv": "node src/scripts/exportHotelsToCsv.js",
     "hotels:export:xlsx": "node src/scripts/exportHotelsToXlsx.js",
     "hotels:report:us-cities": "node src/scripts/reportUsCitiesWithHotels.js",
+    "rooms:diagnose": "node src/scripts/diagnoseHotelRooms.js",
     "webbeds:cities:sync-by-country": "node src/scripts/syncWebbedsCitiesByCountry.js",
     "webbeds:cities:backfill-coords": "node src/scripts/backfillWebbedsCityCoordinates.js"
   },
