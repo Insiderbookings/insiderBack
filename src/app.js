@@ -23,6 +23,7 @@ import { ensureDefaultCurrencySettings } from "./services/currencySettings.servi
 import { startJobScheduler } from "./services/jobScheduler.service.js";
 import { startTripHubPackWorker } from "./services/tripHubPacksQueue.service.js";
 import ensureHomeFavoriteIndexes from "./utils/ensureHomeFavoriteIndexes.js";
+import ensurePartnerHotelVerificationCodeSchema from "./utils/ensurePartnerHotelVerificationCodeSchema.js";
 import { initSocketServer } from "./websocket/index.js";
 import diagnoseForeignKeyError from "./utils/diagnoseForeignKeyError.js";
 import { warmSalutationsCache } from "./providers/webbeds/salutations.js";
@@ -269,6 +270,7 @@ const PORT = process.env.PORT || 3000;
     if (!allowAlter && ["1", "true", "yes"].includes(alterEnv)) {
       console.warn('[sequelize] alter sync was requested but ignored in this environment');
     }
+    await ensurePartnerHotelVerificationCodeSchema();
     await sequelize.sync({ alter: allowAlter });
     await ensureHomeFavoriteIndexes();
     await ensureDefaultPlatforms();

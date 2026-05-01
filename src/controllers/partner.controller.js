@@ -392,6 +392,12 @@ export const selectPartnerSubscriptionController = async (req, res, next) => {
       : {};
 
     if (paymentMethod === "invoice") {
+      const accountManagerEmail = normalizeEmail(
+        req.body?.accountManagerEmail ||
+          requestBilling.accountManagerEmail ||
+          requestBilling.accountManager ||
+          "",
+      );
       const invoiceResult = await requestPartnerInvoice({
         claim,
         user,
@@ -415,6 +421,7 @@ export const selectPartnerSubscriptionController = async (req, res, next) => {
             requestBilling.billingAddress ||
             requestBilling.notes ||
             null,
+          accountManagerEmail: accountManagerEmail || null,
         },
       });
       await sendPartnerInvoiceRequestedEmail({ claim: invoiceResult.claim }).catch(() => {});

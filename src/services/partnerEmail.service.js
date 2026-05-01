@@ -66,7 +66,20 @@ const formatCount = (value) => {
 export const resolvePartnerDashboardUrl = (hotelId = null, extraParams = {}) => {
   const params = { ...extraParams };
   if (hotelId) params.hotelId = String(hotelId);
-  return buildPartnerPortalUrl("dashboard", params);
+  let dashboardPath = "partners/dashboard";
+  try {
+    const portalBase = new URL(buildPartnerPortalUrl());
+    const baseSegments = portalBase.pathname
+      .split("/")
+      .map((segment) => segment.trim().toLowerCase())
+      .filter(Boolean);
+    if (baseSegments.includes("partners")) {
+      dashboardPath = "dashboard";
+    }
+  } catch {
+    dashboardPath = "partners/dashboard";
+  }
+  return buildPartnerPortalUrl(dashboardPath, params);
 };
 
 const buildCta = (label, url) =>
@@ -335,6 +348,7 @@ export const resolvePartnerLifecycleTemplate = ({
   const dashboardUrl = resolvePartnerDashboardUrl(claim?.hotel_id);
   const subscriptionDashboardUrl = resolvePartnerDashboardUrl(claim?.hotel_id, {
     section: "subscription",
+    focus: "plans",
   });
   const trialEndLabel = formatDate(program?.trialEndsAt);
   const trialDaysLeft = Number(program?.trialDaysLeft || 0);
@@ -681,6 +695,7 @@ export const sendPartnerInternalInvoiceAlert = async ({ claim, hotel, billingDet
     ["Requested plan", requestedPlan],
     ["Billing name", billingDetails?.billingName || "-"],
     ["Billing email", billingDetails?.billingEmail || claim?.contact_email || "-"],
+    ["Account manager email", billingDetails?.accountManagerEmail || "-"],
     ["Billing address", billingDetails?.billingAddress || "-"],
   ];
   const html = getBaseEmailTemplate(
