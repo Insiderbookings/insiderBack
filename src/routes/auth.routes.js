@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { body } from "express-validator";
 import rateLimit from "express-rate-limit";
+import { normalizePhoneE164 } from "../utils/phone.js";
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -26,6 +27,89 @@ const passwordResetLimiter = rateLimit({
   message: { error: "Too many reset attempts, please try again later" },
 });
 
+const normalizePhoneLimiterValue = (req) => {
+  const normalized = normalizePhoneE164(req.body?.phoneNumber || req.body?.phone || null);
+  if (normalized) return normalized;
+  const fallback = String(req.body?.phoneNumber || req.body?.phone || "").trim();
+  return fallback ? fallback.slice(0, 40) : "unknown-phone";
+};
+
+const normalizeDeviceLimiterValue = (req) => {
+  const value = String(req.headers?.["x-device-id"] || "").trim();
+  return value ? value.slice(0, 80) : "unknown-device";
+};
+
+const buildPhoneLimiterKey = (req, prefix) =>
+  [
+    prefix,
+    req.ip || "unknown-ip",
+    normalizePhoneLimiterValue(req),
+    normalizeDeviceLimiterValue(req),
+  ].join("|");
+
+const phoneRequestLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: Number(process.env.AUTH_PHONE_REQUEST_RATE_LIMIT_MAX || 5),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => buildPhoneLimiterKey(req, "phone-request"),
+  message: { error: "Too many phone verification requests, please try again later" },
+});
+
+const phoneConfirmLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: Number(process.env.AUTH_PHONE_CONFIRM_RATE_LIMIT_MAX || 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => buildPhoneLimiterKey(req, "phone-confirm"),
+  message: { error: "Too many phone verification attempts, please try again later" },
+});
+
+const phoneRegisterLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: Number(process.env.AUTH_PHONE_REGISTER_RATE_LIMIT_MAX || 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) =>
+    [
+      "phone-register",
+      req.ip || "unknown-ip",
+      String(req.body?.email || "").trim().toLowerCase() || "unknown-email",
+      normalizeDeviceLimiterValue(req),
+    ].join("|"),
+  message: { error: "Too many phone signup attempts, please try again later" },
+});
+
+const phoneLinkRequestLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: Number(process.env.AUTH_PHONE_LINK_REQUEST_RATE_LIMIT_MAX || 5),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) =>
+    [
+      "phone-link-request",
+      req.user?.id || "unknown-user",
+      normalizePhoneLimiterValue(req),
+      normalizeDeviceLimiterValue(req),
+    ].join("|"),
+  message: { error: "Too many phone link requests, please try again later" },
+});
+
+const phoneLinkConfirmLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: Number(process.env.AUTH_PHONE_LINK_CONFIRM_RATE_LIMIT_MAX || 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) =>
+    [
+      "phone-link-confirm",
+      req.user?.id || "unknown-user",
+      normalizePhoneLimiterValue(req),
+      normalizeDeviceLimiterValue(req),
+    ].join("|"),
+  message: { error: "Too many phone link attempts, please try again later" },
+});
+
 import {
   registerStaff,
   loginStaff,
@@ -44,6 +128,11 @@ import {
   logoutAllSessions,
   requestEmailVerificationCode,
   confirmEmailVerificationCode,
+  requestPhoneAuthCode,
+  confirmPhoneAuthCode,
+  registerUserFromPhoneTicket,
+  requestCurrentUserPhoneVerificationCode,
+  confirmCurrentUserPhoneVerificationCode,
 } from "../controllers/auth.controller.js";
 
 import { autoSignupOrLogin } from "../controllers/auth.auto.controller.js";
@@ -95,6 +184,57 @@ router.post(
   requestPasswordReset,
 );
 
+router.post(
+  "/phone/request",
+  phoneRequestLimiter,
+  [
+    body().custom((_, { req }) => {
+      if (String(req.body?.phoneNumber || req.body?.phone || "").trim()) return true;
+      throw new Error("phoneNumber is required");
+    }),
+    body("phoneNumber").optional().isString(),
+    body("phone").optional().isString(),
+    body("channel").optional().isString(),
+  ],
+  requestPhoneAuthCode,
+);
+router.post(
+  "/phone/confirm",
+  phoneConfirmLimiter,
+  [
+    body().custom((_, { req }) => {
+      if (String(req.body?.phoneNumber || req.body?.phone || "").trim()) return true;
+      throw new Error("phoneNumber is required");
+    }),
+    body("phoneNumber").optional().isString(),
+    body("phone").optional().isString(),
+    body("code").notEmpty(),
+  ],
+  confirmPhoneAuthCode,
+);
+router.post(
+  "/phone/register",
+  phoneRegisterLimiter,
+  [
+    body("signupTicket").notEmpty(),
+    body("email").isEmail(),
+    body("referralCode").optional().isString(),
+    body("countryCode").optional().isInt(),
+    body("countryOfResidenceCode").optional().isInt(),
+    body("name").optional().isString(),
+    body("firstName").optional().isString(),
+    body("lastName").optional().isString(),
+    body().custom((_, { req }) => {
+      const name = String(req.body?.name || "").trim();
+      const firstName = String(req.body?.firstName || "").trim();
+      const lastName = String(req.body?.lastName || "").trim();
+      if (name || (firstName && lastName)) return true;
+      throw new Error("Name is required");
+    }),
+  ],
+  registerUserFromPhoneTicket,
+);
+
 // Social login
 router.post(
   "/google/exchange",
@@ -142,6 +282,36 @@ router.post("/logout-all", authenticate, logoutAllSessions);
 // Email verification (code-based)
 router.post("/verify-email/request", authenticate, requestEmailVerificationCode);
 router.post("/verify-email/confirm", authenticate, confirmEmailVerificationCode);
+router.post(
+  "/me/phone/request",
+  authenticate,
+  phoneLinkRequestLimiter,
+  [
+    body().custom((_, { req }) => {
+      if (String(req.body?.phoneNumber || req.body?.phone || "").trim()) return true;
+      throw new Error("phoneNumber is required");
+    }),
+    body("phoneNumber").optional().isString(),
+    body("phone").optional().isString(),
+    body("channel").optional().isString(),
+  ],
+  requestCurrentUserPhoneVerificationCode,
+);
+router.post(
+  "/me/phone/confirm",
+  authenticate,
+  phoneLinkConfirmLimiter,
+  [
+    body().custom((_, { req }) => {
+      if (String(req.body?.phoneNumber || req.body?.phone || "").trim()) return true;
+      throw new Error("phoneNumber is required");
+    }),
+    body("phoneNumber").optional().isString(),
+    body("phone").optional().isString(),
+    body("code").notEmpty(),
+  ],
+  confirmCurrentUserPhoneVerificationCode,
+);
 
 // Token validation and email verify
 router.get("/validate-token/:token", validateToken);

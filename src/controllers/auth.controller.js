@@ -18,6 +18,12 @@ import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 import { buildHostOnboardingState } from "../utils/hostOnboarding.js";
 import { deriveRoleCodes } from "../utils/userCapabilities.js";
 import { resolveMailFrom } from "../helpers/mailFrom.js";
+import {
+  confirmPhoneVerificationCode,
+  isPhoneVerificationConfigured,
+  requestPhoneVerificationCode,
+} from "../services/phoneVerification.service.js";
+import { maskPhone, normalizePhoneE164, samePhoneIdentity } from "../utils/phone.js";
 
 dotenv.config();
 
@@ -75,6 +81,26 @@ const EMAIL_VERIFICATION_MAX_ATTEMPTS =
     ? EMAIL_VERIFICATION_MAX_ATTEMPTS_RAW
     : 5;
 const EMAIL_VERIFICATION_SECRET = process.env.EMAIL_VERIFICATION_SECRET || process.env.JWT_SECRET;
+const PHONE_CHANNELS = new Set(["sms", "call"]);
+const PHONE_CODE_PATTERN = /^\d{4,10}$/;
+const PHONE_RESEND_SECONDS_RAW = Number(process.env.PHONE_VERIFICATION_RESEND_SECONDS);
+const PHONE_RESEND_SECONDS =
+  Number.isFinite(PHONE_RESEND_SECONDS_RAW) && PHONE_RESEND_SECONDS_RAW >= 30
+    ? Math.min(PHONE_RESEND_SECONDS_RAW, 300)
+    : 60;
+const PHONE_SIGNUP_TICKET_SECRET =
+  process.env.PHONE_SIGNUP_TICKET_SECRET || process.env.JWT_SECRET;
+const PHONE_SIGNUP_TICKET_TTL_MINUTES_RAW = Number(
+  process.env.PHONE_SIGNUP_TICKET_TTL_MINUTES
+);
+const PHONE_SIGNUP_TICKET_TTL_MINUTES =
+  Number.isFinite(PHONE_SIGNUP_TICKET_TTL_MINUTES_RAW) &&
+  PHONE_SIGNUP_TICKET_TTL_MINUTES_RAW > 0
+    ? Math.min(PHONE_SIGNUP_TICKET_TTL_MINUTES_RAW, 60)
+    : 15;
+const PHONE_SIGNUP_TICKET_TTL = `${PHONE_SIGNUP_TICKET_TTL_MINUTES}m`;
+const PHONE_SIGNUP_TICKET_TYPE = "phone-signup-ticket";
+const phoneVerificationCooldowns = new Map();
 
 const DEFAULT_GOOGLE_ANDROID_CLIENT_ID =
   "991272630331-46dbrise1ms2rvmctru26rlg36poanca.apps.googleusercontent.com";
@@ -111,7 +137,11 @@ const USER_SAFE_ATTRIBUTES = [
   "first_name",
   "last_name",
   "email",
+  "password_hash",
   "phone",
+  "phone_e164",
+  "phone_verified",
+  "phone_verified_at",
   "role",
   "avatar_url",
   "is_active",
@@ -207,7 +237,11 @@ const presentUser = (user) => {
     firstName: derivedName.firstName,
     lastName: derivedName.lastName,
     email: plain.email,
+    hasPassword: Boolean(plain.password_hash),
     phone: plain.phone,
+    phoneE164: plain.phone_e164 ?? null,
+    phoneVerified: plain.phone_verified ?? false,
+    phoneVerifiedAt: plain.phone_verified_at ?? null,
     role: plain.role ?? 0,
     roleCodes: deriveRoleCodes(plain),
     avatar_url: plain.avatar_url ?? null,
@@ -303,10 +337,22 @@ const normalizeDeviceId = (value) => {
   return trimmed.slice(0, 120);
 };
 
+const getRequestIpAddress = (req) => {
+  const forwarded = req?.headers?.["x-forwarded-for"];
+  if (Array.isArray(forwarded)) return forwarded[0] || null;
+  return forwarded || req?.socket?.remoteAddress || null;
+};
+
 const asPlainObject = (value) =>
   value && typeof value === "object" && !Array.isArray(value) ? value : {};
 
 const normalizeVerificationCode = (value) => String(value || "").trim();
+const normalizePhoneChannel = (value) => {
+  const raw = String(value || "").trim().toLowerCase();
+  return PHONE_CHANNELS.has(raw) ? raw : "sms";
+};
+const resolvePhoneNumberInput = (body) =>
+  normalizePhoneE164(body?.phoneNumber || body?.phone || null);
 
 const generateEmailVerificationCode = () =>
   Math.floor(100000 + Math.random() * 900000).toString();
@@ -319,6 +365,79 @@ const hashEmailVerificationCode = (code) => {
     .createHmac("sha256", EMAIL_VERIFICATION_SECRET)
     .update(code)
     .digest("hex");
+};
+
+const recordAuthAnalyticsEvent = async ({
+  req,
+  eventType,
+  userId = null,
+  metadata = null,
+}) => {
+  if (!models.AnalyticsEvent || !eventType) return;
+  try {
+    await models.AnalyticsEvent.create({
+      event_type: String(eventType).slice(0, 50),
+      user_id: userId || null,
+      session_id: normalizeDeviceId(req?.headers?.["x-device-id"]),
+      metadata,
+      url: req?.originalUrl || req?.url || null,
+      ip_address: getRequestIpAddress(req),
+    });
+  } catch (error) {
+    console.error("recordAuthAnalyticsEvent error:", error);
+  }
+};
+
+const getPhoneRequestCooldownRemainingSeconds = (phoneNumber) => {
+  if (!phoneNumber) return 0;
+  const requestedAtMs = Number(phoneVerificationCooldowns.get(phoneNumber) || 0);
+  if (!requestedAtMs) return 0;
+  const expiresAtMs = requestedAtMs + PHONE_RESEND_SECONDS * 1000;
+  if (expiresAtMs <= Date.now()) {
+    phoneVerificationCooldowns.delete(phoneNumber);
+    return 0;
+  }
+  return Math.max(1, Math.ceil((expiresAtMs - Date.now()) / 1000));
+};
+
+const notePhoneRequestCooldown = (phoneNumber) => {
+  if (!phoneNumber) return;
+  phoneVerificationCooldowns.set(phoneNumber, Date.now());
+};
+
+const signPhoneSignupTicket = ({ phoneNumber, verifiedAt = new Date() }) => {
+  if (!PHONE_SIGNUP_TICKET_SECRET) {
+    throw new Error("Missing PHONE_SIGNUP_TICKET_SECRET or JWT_SECRET");
+  }
+  const resolvedVerifiedAt =
+    verifiedAt instanceof Date ? verifiedAt : new Date(verifiedAt || Date.now());
+  return jwt.sign(
+    {
+      type: PHONE_SIGNUP_TICKET_TYPE,
+      phoneNumber,
+      verifiedAt: resolvedVerifiedAt.toISOString(),
+    },
+    PHONE_SIGNUP_TICKET_SECRET,
+    { expiresIn: PHONE_SIGNUP_TICKET_TTL }
+  );
+};
+
+const verifyPhoneSignupTicket = (ticket) => {
+  if (!PHONE_SIGNUP_TICKET_SECRET) {
+    throw new Error("Missing PHONE_SIGNUP_TICKET_SECRET or JWT_SECRET");
+  }
+  const decoded = jwt.verify(ticket, PHONE_SIGNUP_TICKET_SECRET);
+  if (decoded?.type !== PHONE_SIGNUP_TICKET_TYPE) {
+    throw new Error("Invalid phone signup ticket");
+  }
+  const phoneNumber = normalizePhoneE164(decoded?.phoneNumber);
+  if (!phoneNumber) {
+    throw new Error("Invalid phone signup ticket");
+  }
+  return {
+    phoneNumber,
+    verifiedAt: decoded?.verifiedAt ? new Date(decoded.verifiedAt) : new Date(),
+  };
 };
 
 const getClientType = (req) =>
@@ -448,6 +567,32 @@ export const issueUserSession = async ({ user, req, res, referral, deviceId }) =
     refreshToken,
     deviceId: resolvedDeviceId,
   };
+};
+
+const buildAuthenticatedSessionResponse = async ({
+  user,
+  req,
+  res,
+  referral,
+  logLabel = null,
+}) => {
+  await ensureGuestProfile(user.id);
+  await user.update({ last_login_at: new Date() });
+  const { accessToken, refreshToken } = await issueUserSession({
+    user,
+    req,
+    res,
+    referral,
+  });
+  if (logLabel) logLoginToken(logLabel, accessToken);
+  const safeUser = await loadSafeUser(user.id);
+  const response = {
+    status: "authenticated",
+    token: accessToken,
+    user: safeUser,
+  };
+  if (shouldExposeRefreshToken(req)) response.refreshToken = refreshToken;
+  return { response, safeUser };
 };
 
 const revokeRefreshTokens = async ({ userId, deviceId }) => {
@@ -775,7 +920,9 @@ export const loginUser = async (req, res) => {
     }
     if (!user.password_hash) {
       return res.status(409).json({
-        error: "This account does not have a local password. Please use social login.",
+        error: user.phone_verified
+          ? "This account does not have a local password yet. Please continue with your phone number or use social login."
+          : "This account does not have a local password. Please use social login.",
       });
     }
 
@@ -841,6 +988,663 @@ export const requestPasswordReset = async (req, res) => {
 /* ────────────────────────────────────────────────────────────────
    TOKEN: Validar token (lectura)
    ──────────────────────────────────────────────────────────────── */
+export const requestPhoneAuthCode = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ error: errors.array()[0].msg });
+  }
+
+  const phoneNumber = resolvePhoneNumberInput(req.body);
+  if (!phoneNumber) {
+    return res.status(400).json({
+      error: "Use a valid phone number in international format (example: +14155552671).",
+    });
+  }
+
+  if (!isPhoneVerificationConfigured()) {
+    return res.status(503).json({
+      error: "Phone verification is temporarily unavailable.",
+      code: "PHONE_VERIFICATION_UNAVAILABLE",
+    });
+  }
+
+  const channel = normalizePhoneChannel(req.body?.channel);
+  const phoneMasked = maskPhone(phoneNumber);
+
+  try {
+    const remaining = getPhoneRequestCooldownRemainingSeconds(phoneNumber);
+    if (remaining > 0) {
+      return res.status(429).json({
+        error: `Please wait ${remaining}s before requesting another code.`,
+        resendAfterSeconds: remaining,
+      });
+    }
+
+    const verification = await requestPhoneVerificationCode({ phoneNumber, channel });
+    notePhoneRequestCooldown(phoneNumber);
+
+    const existingUser = await models.User.findOne({
+      where: { phone_e164: phoneNumber },
+      attributes: ["id"],
+    });
+
+    await recordAuthAnalyticsEvent({
+      req,
+      eventType: "auth_phone_request",
+      userId: existingUser?.id ?? null,
+      metadata: {
+        phoneMasked,
+        channel,
+        existingUser: Boolean(existingUser),
+        providerStatus: verification.status || "pending",
+      },
+    });
+
+    return res.json({
+      status: "pending",
+      channel,
+      phoneMasked,
+      resendAfterSeconds: PHONE_RESEND_SECONDS,
+    });
+  } catch (error) {
+    const status = Number(error?.status || error?.response?.status || 500);
+    const message =
+      error?.message || error?.response?.data?.error || "Unable to start phone verification right now.";
+
+    await recordAuthAnalyticsEvent({
+      req,
+      eventType: "auth_phone_request_fail",
+      metadata: {
+        phoneMasked,
+        channel,
+        errorCode: error?.code || null,
+        status,
+      },
+    });
+
+    return res.status(status).json({
+      error: message,
+      code: error?.code || "PHONE_AUTH_REQUEST_FAILED",
+    });
+  }
+};
+
+export const confirmPhoneAuthCode = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ error: errors.array()[0].msg });
+  }
+
+  const phoneNumber = resolvePhoneNumberInput(req.body);
+  if (!phoneNumber) {
+    return res.status(400).json({
+      error: "Use a valid phone number in international format (example: +14155552671).",
+    });
+  }
+
+  const code = normalizeVerificationCode(req.body?.code);
+  if (!PHONE_CODE_PATTERN.test(code)) {
+    return res.status(400).json({ error: "Enter a valid verification code." });
+  }
+
+  if (!isPhoneVerificationConfigured()) {
+    return res.status(503).json({
+      error: "Phone verification is temporarily unavailable.",
+      code: "PHONE_VERIFICATION_UNAVAILABLE",
+    });
+  }
+
+  const phoneMasked = maskPhone(phoneNumber);
+
+  try {
+    const verification = await confirmPhoneVerificationCode({
+      phoneNumber,
+      code,
+    });
+
+    if (!verification.valid) {
+      await recordAuthAnalyticsEvent({
+        req,
+        eventType: "auth_phone_confirm_fail",
+        metadata: {
+          phoneMasked,
+          reason: "invalid_code",
+        },
+      });
+      return res.status(400).json({ error: "Invalid verification code." });
+    }
+
+    const user = await models.User.findOne({
+      where: { phone_e164: phoneNumber },
+    });
+
+    if (!user) {
+      const signupTicket = signPhoneSignupTicket({
+        phoneNumber,
+        verifiedAt: new Date(),
+      });
+
+      await recordAuthAnalyticsEvent({
+        req,
+        eventType: "auth_phone_signup_ticket",
+        metadata: {
+          phoneMasked,
+        },
+      });
+
+      return res.json({
+        status: "signup_required",
+        signupTicket,
+        phoneMasked,
+        expiresInMinutes: PHONE_SIGNUP_TICKET_TTL_MINUTES,
+      });
+    }
+
+    const currentPhoneIdentity = user.phone_e164 || user.phone || null;
+    const keepVerifiedAt =
+      user.phone_verified &&
+      samePhoneIdentity(currentPhoneIdentity, phoneNumber) &&
+      user.phone_verified_at;
+
+    await user.update({
+      phone: phoneNumber,
+      phone_e164: phoneNumber,
+      phone_verified: true,
+      phone_verified_at: keepVerifiedAt || new Date(),
+    });
+
+    const { response } = await buildAuthenticatedSessionResponse({
+      user,
+      req,
+      res,
+      logLabel: "phone",
+    });
+
+    await recordAuthAnalyticsEvent({
+      req,
+      eventType: "auth_phone_login",
+      userId: user.id,
+      metadata: {
+        phoneMasked,
+      },
+    });
+
+    return res.json(response);
+  } catch (error) {
+    const status = Number(error?.status || error?.response?.status || 500);
+    const message =
+      error?.message || error?.response?.data?.error || "Unable to verify the phone code.";
+
+    await recordAuthAnalyticsEvent({
+      req,
+      eventType: "auth_phone_confirm_fail",
+      metadata: {
+        phoneMasked,
+        errorCode: error?.code || null,
+        status,
+      },
+    });
+
+    return res.status(status).json({
+      error: message,
+      code: error?.code || "PHONE_AUTH_CONFIRM_FAILED",
+    });
+  }
+};
+
+export const registerUserFromPhoneTicket = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ error: errors.array()[0].msg });
+  }
+
+  const signupTicket = String(req.body?.signupTicket || "").trim();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const { name, firstName, lastName, referralCode, countryCode, countryOfResidenceCode } = req.body;
+  const resolvedName = resolveNameParts({ name, firstName, lastName });
+
+  if (!signupTicket) {
+    return res.status(400).json({
+      error: "Signup ticket is required.",
+      code: "PHONE_SIGNUP_TICKET_REQUIRED",
+    });
+  }
+
+  if (!resolvedName.fullName) {
+    return res.status(400).json({ error: "Name is required" });
+  }
+
+  const normalizeCountryCode = (value) => {
+    if (value === undefined || value === null || value === "") return null;
+    const trimmed = String(value).trim();
+    if (!/^\d+$/.test(trimmed)) {
+      throw new Error("Country codes must be numeric");
+    }
+    return trimmed;
+  };
+
+  let ticketPayload;
+  try {
+    ticketPayload = verifyPhoneSignupTicket(signupTicket);
+  } catch (_) {
+    await recordAuthAnalyticsEvent({
+      req,
+      eventType: "auth_phone_register_fail",
+      metadata: {
+        reason: "invalid_signup_ticket",
+      },
+    });
+    return res.status(400).json({
+      error: "Signup ticket is invalid or expired.",
+      code: "PHONE_SIGNUP_TICKET_INVALID",
+    });
+  }
+
+  const phoneNumber = ticketPayload.phoneNumber;
+  const phoneMasked = maskPhone(phoneNumber);
+
+  let normalizedCountryCode = null;
+  let normalizedResidenceCode = null;
+  try {
+    normalizedCountryCode = normalizeCountryCode(countryCode);
+    normalizedResidenceCode = normalizeCountryCode(countryOfResidenceCode);
+  } catch (validationError) {
+    return res.status(400).json({ error: validationError.message });
+  }
+
+  try {
+    const existingPhoneUser = await models.User.findOne({
+      where: { phone_e164: phoneNumber },
+      attributes: ["id"],
+    });
+    if (existingPhoneUser) {
+      await recordAuthAnalyticsEvent({
+        req,
+        eventType: "auth_phone_register_fail",
+        userId: existingPhoneUser.id,
+        metadata: {
+          phoneMasked,
+          reason: "phone_conflict",
+        },
+      });
+      return res.status(409).json({
+        error: "This phone number is already linked to another account.",
+        code: "PHONE_ALREADY_LINKED",
+      });
+    }
+
+    const existingEmailUser = await models.User.findOne({
+      where: { email: { [iLikeOp]: email } },
+      attributes: ["id"],
+    });
+    if (existingEmailUser) {
+      await recordAuthAnalyticsEvent({
+        req,
+        eventType: "auth_phone_register_fail",
+        userId: existingEmailUser.id,
+        metadata: {
+          phoneMasked,
+          reason: "email_taken",
+        },
+      });
+      return res.status(409).json({
+        error: "Email already in use.",
+        code: "EMAIL_TAKEN",
+      });
+    }
+
+    const normalizedReferral = referralCode ? String(referralCode).trim().toUpperCase() : "";
+    let referral = { influencerId: null, code: null, at: null };
+    let userId = null;
+
+    try {
+      await sequelize.transaction(async (transaction) => {
+        const user = await models.User.create(
+          {
+            name: resolvedName.fullName,
+            first_name: resolvedName.firstName,
+            last_name: resolvedName.lastName,
+            email,
+            phone: phoneNumber,
+            phone_e164: phoneNumber,
+            phone_verified: true,
+            phone_verified_at: ticketPayload.verifiedAt || new Date(),
+            country_code: normalizedCountryCode,
+            residence_country_code: normalizedResidenceCode,
+            last_login_at: new Date(),
+          },
+          { transaction }
+        );
+
+        userId = Number(user.id) || null;
+
+        if (normalizedReferral) {
+          await linkReferralCodeForUser({
+            userId: user.id,
+            referralCode: normalizedReferral,
+            transaction,
+          });
+          await user.reload({ transaction });
+          referral = {
+            influencerId: user.referred_by_influencer_id ?? null,
+            code: user.referred_by_code ?? normalizedReferral,
+            at: user.referred_at ?? new Date(),
+          };
+        }
+
+        await ensureGuestProfile(user.id, transaction);
+      });
+    } catch (error) {
+      if (error instanceof ReferralError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      if (error?.name === "SequelizeUniqueConstraintError") {
+        return res.status(409).json({
+          error: "This phone number or email is already linked to another account.",
+          code: "PHONE_REGISTER_CONFLICT",
+        });
+      }
+      throw error;
+    }
+
+    if (!userId) {
+      return res.status(500).json({ error: "Unable to create account" });
+    }
+
+    const user = await models.User.findByPk(userId);
+    if (!user) {
+      return res.status(500).json({ error: "Unable to create account" });
+    }
+
+    const { response, safeUser } = await buildAuthenticatedSessionResponse({
+      user,
+      req,
+      res,
+      referral: {
+        influencerId: referral.influencerId ?? null,
+        code: referral.code ?? null,
+        at: referral.at ? referral.at.toISOString?.() ?? referral.at : null,
+      },
+      logLabel: "phone-register",
+    });
+
+    emitAdminActivity({
+      type: "user",
+      user: { name: safeUser.name || "New User" },
+      action: "joined Insider",
+      location: safeUser.countryCode || "Global",
+      status: "SUCCESS",
+      timestamp: new Date(),
+    });
+
+    await recordAuthAnalyticsEvent({
+      req,
+      eventType: "auth_phone_register",
+      userId: user.id,
+      metadata: {
+        phoneMasked,
+        referred: Boolean(referral.code),
+      },
+    });
+
+    return res.status(201).json(response);
+  } catch (error) {
+    console.error("registerUserFromPhoneTicket error:", error);
+    await recordAuthAnalyticsEvent({
+      req,
+      eventType: "auth_phone_register_fail",
+      metadata: {
+        phoneMasked,
+        reason: "server_error",
+      },
+    });
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const requestCurrentUserPhoneVerificationCode = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ error: errors.array()[0].msg });
+  }
+
+  const userId = Number(req.user?.id);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const phoneNumber = resolvePhoneNumberInput(req.body);
+  if (!phoneNumber) {
+    return res.status(400).json({
+      error: "Use a valid phone number in international format (example: +14155552671).",
+    });
+  }
+
+  if (!isPhoneVerificationConfigured()) {
+    return res.status(503).json({
+      error: "Phone verification is temporarily unavailable.",
+      code: "PHONE_VERIFICATION_UNAVAILABLE",
+    });
+  }
+
+  const channel = normalizePhoneChannel(req.body?.channel);
+  const phoneMasked = maskPhone(phoneNumber);
+
+  try {
+    const user = await models.User.findByPk(userId, {
+      attributes: ["id", "phone", "phone_e164", "phone_verified"],
+    });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const existingPhoneUser = await models.User.findOne({
+      where: { phone_e164: phoneNumber },
+      attributes: ["id"],
+    });
+    if (existingPhoneUser && Number(existingPhoneUser.id) !== userId) {
+      await recordAuthAnalyticsEvent({
+        req,
+        eventType: "auth_phone_link_conflict",
+        userId,
+        metadata: {
+          phoneMasked,
+          stage: "request",
+        },
+      });
+      return res.status(409).json({
+        error: "This phone number is already linked to another account.",
+        code: "PHONE_ALREADY_LINKED",
+      });
+    }
+
+    const currentPhoneIdentity = user.phone_e164 || user.phone || null;
+    if (user.phone_verified && samePhoneIdentity(currentPhoneIdentity, phoneNumber)) {
+      const safeUser = await loadSafeUser(userId);
+      return res.json({
+        status: "approved",
+        channel,
+        phoneMasked,
+        user: safeUser,
+      });
+    }
+
+    const remaining = getPhoneRequestCooldownRemainingSeconds(phoneNumber);
+    if (remaining > 0) {
+      return res.status(429).json({
+        error: `Please wait ${remaining}s before requesting another code.`,
+        resendAfterSeconds: remaining,
+      });
+    }
+
+    const verification = await requestPhoneVerificationCode({ phoneNumber, channel });
+    notePhoneRequestCooldown(phoneNumber);
+
+    await recordAuthAnalyticsEvent({
+      req,
+      eventType: "auth_phone_link_request",
+      userId,
+      metadata: {
+        phoneMasked,
+        channel,
+        providerStatus: verification.status || "pending",
+      },
+    });
+
+    return res.json({
+      status: "pending",
+      channel,
+      phoneMasked,
+      resendAfterSeconds: PHONE_RESEND_SECONDS,
+    });
+  } catch (error) {
+    const status = Number(error?.status || error?.response?.status || 500);
+    const message =
+      error?.message || error?.response?.data?.error || "Unable to start phone verification right now.";
+
+    await recordAuthAnalyticsEvent({
+      req,
+      eventType: "auth_phone_link_fail",
+      userId,
+      metadata: {
+        phoneMasked,
+        stage: "request",
+        errorCode: error?.code || null,
+        status,
+      },
+    });
+
+    return res.status(status).json({
+      error: message,
+      code: error?.code || "PHONE_LINK_REQUEST_FAILED",
+    });
+  }
+};
+
+export const confirmCurrentUserPhoneVerificationCode = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ error: errors.array()[0].msg });
+  }
+
+  const userId = Number(req.user?.id);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const phoneNumber = resolvePhoneNumberInput(req.body);
+  if (!phoneNumber) {
+    return res.status(400).json({
+      error: "Use a valid phone number in international format (example: +14155552671).",
+    });
+  }
+
+  const code = normalizeVerificationCode(req.body?.code);
+  if (!PHONE_CODE_PATTERN.test(code)) {
+    return res.status(400).json({ error: "Enter a valid verification code." });
+  }
+
+  if (!isPhoneVerificationConfigured()) {
+    return res.status(503).json({
+      error: "Phone verification is temporarily unavailable.",
+      code: "PHONE_VERIFICATION_UNAVAILABLE",
+    });
+  }
+
+  const phoneMasked = maskPhone(phoneNumber);
+
+  try {
+    const user = await models.User.findByPk(userId, {
+      attributes: ["id", "phone", "phone_e164", "phone_verified", "phone_verified_at"],
+    });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const existingPhoneUser = await models.User.findOne({
+      where: { phone_e164: phoneNumber },
+      attributes: ["id"],
+    });
+    if (existingPhoneUser && Number(existingPhoneUser.id) !== userId) {
+      await recordAuthAnalyticsEvent({
+        req,
+        eventType: "auth_phone_link_conflict",
+        userId,
+        metadata: {
+          phoneMasked,
+          stage: "confirm",
+        },
+      });
+      return res.status(409).json({
+        error: "This phone number is already linked to another account.",
+        code: "PHONE_ALREADY_LINKED",
+      });
+    }
+
+    const verification = await confirmPhoneVerificationCode({
+      phoneNumber,
+      code,
+    });
+
+    if (!verification.valid) {
+      await recordAuthAnalyticsEvent({
+        req,
+        eventType: "auth_phone_link_fail",
+        userId,
+        metadata: {
+          phoneMasked,
+          stage: "confirm",
+          reason: "invalid_code",
+        },
+      });
+      return res.status(400).json({ error: "Invalid verification code." });
+    }
+
+    const currentPhoneIdentity = user.phone_e164 || user.phone || null;
+    const keepVerifiedAt =
+      user.phone_verified &&
+      samePhoneIdentity(currentPhoneIdentity, phoneNumber) &&
+      user.phone_verified_at;
+
+    await user.update({
+      phone: phoneNumber,
+      phone_e164: phoneNumber,
+      phone_verified: true,
+      phone_verified_at: keepVerifiedAt || new Date(),
+    });
+
+    const safeUser = await loadSafeUser(userId);
+
+    await recordAuthAnalyticsEvent({
+      req,
+      eventType: "auth_phone_link_confirm",
+      userId,
+      metadata: {
+        phoneMasked,
+      },
+    });
+
+    return res.json({
+      status: "approved",
+      phoneMasked,
+      user: safeUser,
+    });
+  } catch (error) {
+    const status = Number(error?.status || error?.response?.status || 500);
+    const message =
+      error?.message || error?.response?.data?.error || "Unable to verify the phone code.";
+
+    await recordAuthAnalyticsEvent({
+      req,
+      eventType: "auth_phone_link_fail",
+      userId,
+      metadata: {
+        phoneMasked,
+        stage: "confirm",
+        errorCode: error?.code || null,
+        status,
+      },
+    });
+
+    return res.status(status).json({
+      error: message,
+      code: error?.code || "PHONE_LINK_CONFIRM_FAILED",
+    });
+  }
+};
+
 export const validateToken = async (req, res) => {
   const { token } = req.params;
 

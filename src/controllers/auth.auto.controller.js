@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import { v4 as uuid } from "uuid";
 import models from "../models/index.js";
 import { issueUserSession, loadSafeUser, shouldExposeRefreshToken } from "./auth.controller.js";
+import { resolveStoredPhone } from "../utils/phone.js";
 
 const { User, Booking } = models;
 
@@ -15,6 +16,21 @@ export const autoSignupOrLogin = async (req, res) => {
 
   try {
     let user = await User.findOne({ where: { email } });
+    const phoneState = resolveStoredPhone(phone);
+    let createPhoneState = phoneState;
+
+    if (!user && phoneState.phoneE164) {
+      const existingPhoneUser = await User.findOne({
+        where: { phone_e164: phoneState.phoneE164 },
+        attributes: ["id"],
+      });
+      if (existingPhoneUser) {
+        createPhoneState = {
+          phone: phoneState.phone,
+          phoneE164: null,
+        };
+      }
+    }
 
     if (!user) {
       const tempPassword = uuid();
@@ -25,7 +41,8 @@ export const autoSignupOrLogin = async (req, res) => {
         first_name: firstName,
         last_name: lastName,
         email,
-        phone,
+        phone: createPhoneState.phone,
+        phone_e164: createPhoneState.phoneE164,
         password_hash,
       });
     }

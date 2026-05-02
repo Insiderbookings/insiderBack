@@ -15,6 +15,11 @@ import {
   isBookingGptHost,
   resolveInfluencerIdentityReturnUrl as resolveInfluencerIdentityReturnTarget,
 } from "../helpers/appUrls.js"
+import {
+  isPlausiblePhoneInput,
+  resolveStoredPhone,
+  samePhoneIdentity,
+} from "../utils/phone.js"
 
 const DISCOUNT_REMINDER_GRACE_DAYS = 1
 const LOGIN_TOUCH_INTERVAL_MS = 5 * 60 * 1000
@@ -225,7 +230,11 @@ export const getCurrentUser = async (req, res) => {
         ["last_name", "lastName"],
         "email",
         ["email_verified", "emailVerified"],
+        ["password_hash", "hasPassword"],
         "phone",
+        ["phone_e164", "phoneE164"],
+        ["phone_verified", "phoneVerified"],
+        ["phone_verified_at", "phoneVerifiedAt"],
         "role",                    // ðŸ‘ˆ importante
         ["is_active", "isActive"], // opcional alias
         "avatar_url",
@@ -275,6 +284,7 @@ export const getCurrentUser = async (req, res) => {
     if (!plain.firstName && derivedName.firstName) plain.firstName = derivedName.firstName
     if (!plain.lastName && derivedName.lastName) plain.lastName = derivedName.lastName
     if (!plain.name && derivedName.fullName) plain.name = derivedName.fullName
+    plain.hasPassword = Boolean(plain.hasPassword)
     plain.roleCodes = deriveRoleCodes(plain)
     plain.hotelPricingTier = plain.hotelPricingTier ?? plain.hotel_pricing_tier ?? null
     plain.hotelPricingRequestStatus = plain.hotelPricingRequestStatus ?? plain.hotel_pricing_request_status ?? null
@@ -480,25 +490,37 @@ export const lookupUserByEmail = async (req, res) => {
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ PUT /api/users/me â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const updateUserProfile = async (req, res) => {
   try {
-    const { name, firstName, lastName, email, phone, countryCode, countryOfResidenceCode } = req.body
+    const requestBody = req.body || {}
+    const { name, firstName, lastName, email, phone, countryCode, countryOfResidenceCode } = requestBody
     const userId = req.user.id
+    const normalizedEmail = String(email || "").trim().toLowerCase()
+    const hasPhone = Object.prototype.hasOwnProperty.call(requestBody, "phone")
+    const hasCountryCode = Object.prototype.hasOwnProperty.call(requestBody, "countryCode")
+    const hasResidenceCode = Object.prototype.hasOwnProperty.call(requestBody, "countryOfResidenceCode")
 
     // Validaciones bÃ¡sicas
     const resolvedName = resolveNameParts({ name, firstName, lastName })
-    if (!resolvedName.fullName || !email) {
+    if (!resolvedName.fullName || !normalizedEmail) {
       return res.status(400).json({ error: "Name and email are required" })
     }
 
     // Validar formato de email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
+    if (!emailRegex.test(normalizedEmail)) {
       return res.status(400).json({ error: "Invalid email format" })
+    }
+
+    const currentUser = await models.User.findByPk(userId, {
+      attributes: ["id", "phone", "phone_e164", "phone_verified", "phone_verified_at"],
+    })
+    if (!currentUser) {
+      return res.status(404).json({ error: "User not found" })
     }
 
     // Validar que el email no estÃ© en uso por otro usuario
     const existingUser = await models.User.findOne({
       where: {
-        email,
+        email: normalizedEmail,
         id: { [Op.ne]: userId }, // â† Usar Op importado directamente
       },
     })
@@ -508,10 +530,23 @@ export const updateUserProfile = async (req, res) => {
     }
 
     // Validar telÃ©fono si se proporciona
-    if (phone && phone.trim()) {
-      const phoneRegex = /^\+?[0-9\s\-()]{10,15}$/
-      if (!phoneRegex.test(phone.replace(/\s/g, ""))) {
+    if (hasPhone && phone && phone.trim()) {
+      if (!isPlausiblePhoneInput(phone)) {
         return res.status(400).json({ error: "Invalid phone number format" })
+      }
+    }
+
+    const phoneState = hasPhone ? resolveStoredPhone(phone) : null
+    if (phoneState?.phoneE164) {
+      const conflictingPhoneUser = await models.User.findOne({
+        where: {
+          phone_e164: phoneState.phoneE164,
+          id: { [Op.ne]: userId },
+        },
+        attributes: ["id"],
+      })
+      if (conflictingPhoneUser) {
+        return res.status(409).json({ error: "Phone number already in use" })
       }
     }
 
@@ -528,23 +563,44 @@ export const updateUserProfile = async (req, res) => {
     let normalizedCountryCode = null
     let normalizedResidenceCode = null
     try {
-      normalizedCountryCode = normalizeCode(countryCode)
-      normalizedResidenceCode = normalizeCode(countryOfResidenceCode)
+      normalizedCountryCode = hasCountryCode ? normalizeCode(countryCode) : null
+      normalizedResidenceCode = hasResidenceCode ? normalizeCode(countryOfResidenceCode) : null
     } catch (validationError) {
       return res.status(400).json({ error: validationError.message })
     }
 
+    const currentPhoneIdentity = currentUser.phone_e164 || currentUser.phone || null
+    const nextPhoneIdentity = hasPhone
+      ? (phoneState?.phoneE164 || phoneState?.phone || null)
+      : currentPhoneIdentity
+    const phoneChanged = hasPhone && !samePhoneIdentity(currentPhoneIdentity, nextPhoneIdentity)
+
+    const updates = {
+      name: resolvedName.fullName,
+      first_name: resolvedName.firstName,
+      last_name: resolvedName.lastName,
+      email: normalizedEmail,
+    }
+
+    if (hasPhone) {
+      updates.phone = phoneState.phone
+      updates.phone_e164 = phoneState.phoneE164
+    }
+    if (hasCountryCode) {
+      updates.country_code = normalizedCountryCode
+    }
+    if (hasResidenceCode) {
+      updates.residence_country_code = normalizedResidenceCode
+    }
+
+    if (phoneChanged) {
+      updates.phone_verified = false
+      updates.phone_verified_at = null
+    }
+
     // Actualizar usuario
     const [updatedRowsCount] = await models.User.update(
-      {
-        name: resolvedName.fullName,
-        first_name: resolvedName.firstName,
-        last_name: resolvedName.lastName,
-        email: email.trim().toLowerCase(),
-        phone: phone ? phone.trim() : null,
-        country_code: normalizedCountryCode,
-        residence_country_code: normalizedResidenceCode,
-      },
+      updates,
       {
         where: { id: userId },
         returning: true,
@@ -563,7 +619,11 @@ export const updateUserProfile = async (req, res) => {
         ["first_name", "firstName"],
         ["last_name", "lastName"],
         "email",
+        ["password_hash", "hasPassword"],
         "phone",
+        ["phone_e164", "phoneE164"],
+        ["phone_verified", "phoneVerified"],
+        ["phone_verified_at", "phoneVerifiedAt"],
         "role",
         "avatar_url",
         "createdAt",
@@ -579,9 +639,14 @@ export const updateUserProfile = async (req, res) => {
       ],
     })
 
+    const updatedPlainUser = updatedUser?.get ? updatedUser.get({ plain: true }) : updatedUser
+    if (updatedPlainUser) {
+      updatedPlainUser.hasPassword = Boolean(updatedPlainUser.hasPassword)
+    }
+
     return res.json({
       message: "Profile updated successfully",
-      user: updatedUser,
+      user: updatedPlainUser,
     })
   } catch (err) {
     console.error("Error updating user profile:", err)
@@ -594,46 +659,49 @@ export const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body
     const userId = req.user.id
+    const normalizedCurrentPassword = String(currentPassword || "")
+    const normalizedNewPassword = String(newPassword || "")
 
-    // Validaciones bÃ¡sicas
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: "Current password and new password are required" })
+    if (!normalizedNewPassword) {
+      return res.status(400).json({ error: "New password is required" })
     }
 
-    if (newPassword.length < 8) {
+    if (normalizedNewPassword.length < 8) {
       return res.status(400).json({ error: "New password must be at least 8 characters long" })
     }
 
-    // Obtener usuario con contraseÃ±a
     const user = await models.User.findByPk(userId)
     if (!user) {
       return res.status(404).json({ error: "User not found" })
     }
 
-    if (!user.password_hash) {
-      return res.status(400).json({ error: "Password not set for this account" })
+    const hadPassword = Boolean(user.password_hash)
+
+    if (hadPassword) {
+      if (!normalizedCurrentPassword) {
+        return res.status(400).json({ error: "Current password and new password are required" })
+      }
+
+      const isCurrentPasswordValid = await bcrypt.compare(normalizedCurrentPassword, user.password_hash)
+      if (!isCurrentPasswordValid) {
+        return res.status(400).json({ error: "Current password is incorrect" })
+      }
+
+      const isSamePassword = await bcrypt.compare(normalizedNewPassword, user.password_hash)
+      if (isSamePassword) {
+        return res.status(400).json({ error: "New password must be different from current password" })
+      }
     }
 
-    // Verificar contraseÃ±a actual
-    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password_hash)
-    if (!isCurrentPasswordValid) {
-      return res.status(400).json({ error: "Current password is incorrect" })
-    }
-
-    // Verificar que la nueva contraseÃ±a sea diferente
-    const isSamePassword = await bcrypt.compare(newPassword, user.password_hash)
-    if (isSamePassword) {
-      return res.status(400).json({ error: "New password must be different from current password" })
-    }
-
-    // Hashear nueva contraseÃ±a
     const saltRounds = 12
-    const newPasswordHash = await bcrypt.hash(newPassword, saltRounds)
+    const newPasswordHash = await bcrypt.hash(normalizedNewPassword, saltRounds)
 
-    // Actualizar contraseÃ±a
     await user.update({ password_hash: newPasswordHash })
 
-    return res.json({ message: "Password changed successfully" })
+    return res.json({
+      hasPassword: true,
+      message: hadPassword ? "Password changed successfully" : "Password created successfully",
+    })
   } catch (err) {
     console.error("Error changing password:", err)
     return res.status(500).json({ error: "Server error" })
