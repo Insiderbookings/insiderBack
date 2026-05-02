@@ -25,6 +25,7 @@ import {
   PARTNER_HOTEL_PROFILE_IMAGE_SOURCE,
   savePartnerHotelProfileEditorPayload,
 } from "../services/partnerHotelProfile.service.js";
+import { presignIfS3Url } from "../utils/s3Presign.js";
 import {
   getPartnerPlanByCode,
   getPartnerPlans,
@@ -42,6 +43,9 @@ import {
 import { sendPartnerInternalManualReviewAlert } from "../services/partnerEmail.service.js";
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+const DEBUG_PARTNER_GALLERY =
+  ["1", "true", "yes", "on"].includes(String(process.env.DEBUG_PARTNER_GALLERY || "").trim().toLowerCase()) ||
+  process.env.NODE_ENV !== "production";
 
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 const parseBooleanFlag = (value, fallback = false) => {
@@ -68,6 +72,69 @@ const getBearerTokenFromRequest = (req) => {
   if (!header.startsWith("Bearer ")) return null;
   const token = header.slice(7).trim();
   return token || null;
+};
+
+const summarizeGalleryDebugUrl = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return { empty: true };
+  try {
+    const url = new URL(raw);
+    return {
+      host: url.host,
+      path: url.pathname,
+      hasSignature: url.searchParams.has("X-Amz-Signature"),
+      queryKeys: Array.from(url.searchParams.keys()),
+    };
+  } catch {
+    return {
+      raw: raw.slice(0, 180),
+    };
+  }
+};
+
+const summarizeGalleryDebugItem = (item, index = 0) => ({
+  index,
+  sourceType: item?.sourceType || null,
+  isCover: Boolean(item?.isCover),
+  isActive: item?.isActive !== false,
+  imageUrl: summarizeGalleryDebugUrl(item?.imageUrl),
+  providerImageUrl: summarizeGalleryDebugUrl(item?.providerImageUrl),
+});
+
+const probeGalleryDebugItem = async (item, index = 0) => ({
+  ...summarizeGalleryDebugItem(item, index),
+  imageProbe: await probeGalleryDebugUrl(item?.imageUrl),
+  providerImageProbe: await probeGalleryDebugUrl(item?.providerImageUrl),
+});
+
+const logGalleryDebug = (label, payload) => {
+  if (!DEBUG_PARTNER_GALLERY) return;
+  console.log(`[partners-gallery-debug] ${label} ${JSON.stringify(payload, null, 2)}`);
+};
+
+const probeGalleryDebugUrl = async (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return { empty: true };
+  try {
+    const response = await fetch(raw, {
+      method: "HEAD",
+      redirect: "follow",
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      redirected: response.redirected,
+      location: response.headers.get("location") || null,
+      bucketRegion: response.headers.get("x-amz-bucket-region") || null,
+      contentType: response.headers.get("content-type") || null,
+      contentLength: response.headers.get("content-length") || null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error?.message || String(error),
+    };
+  }
 };
 
 const resolveOptionalUserTokenPayload = (req) => {
@@ -383,15 +450,17 @@ const loadPartnerClaimForProfileManagement = async ({
   return claim;
 };
 
-const buildPartnerGalleryUploadDraftItems = (uploaded = []) =>
-  (Array.isArray(uploaded) ? uploaded : []).map((item) => ({
-    sourceType: PARTNER_HOTEL_PROFILE_IMAGE_SOURCE.partnerUpload,
-    providerImageUrl: null,
-    imageUrl: item?.url || null,
-    caption: "",
-    isCover: false,
-    isActive: true,
-  }));
+const buildPartnerGalleryUploadDraftItems = async (uploaded = []) =>
+  Promise.all(
+    (Array.isArray(uploaded) ? uploaded : []).map(async (item) => ({
+      sourceType: PARTNER_HOTEL_PROFILE_IMAGE_SOURCE.partnerUpload,
+      providerImageUrl: null,
+      imageUrl: (await presignIfS3Url(item?.url || null)) || item?.url || null,
+      caption: "",
+      isCover: false,
+      isActive: true,
+    })),
+  );
 
 export const listPartnerClaimsAdminController = async (req, res, next) => {
   try {
@@ -530,6 +599,15 @@ export const getMyPartnerHotelProfileController = async (req, res, next) => {
     await loadPartnerClaimForProfileManagement({ userId, hotelId });
 
     const payload = await getPartnerHotelProfileEditorPayload({ userId, hotelId });
+    const galleryItems = Array.isArray(payload?.editor?.galleryItems) ? payload.editor.galleryItems : [];
+    const galleryDebugItems = await Promise.all(
+      galleryItems.slice(-3).map((item, index) => probeGalleryDebugItem(item, index)),
+    );
+    logGalleryDebug("profile-payload", {
+      hotelId,
+      galleryCount: galleryItems.length,
+      items: galleryDebugItems,
+    });
     return res.json(payload);
   } catch (error) {
     if (error?.status) {
@@ -624,13 +702,36 @@ export const loadMyPartnerHotelProfileClaimController = async (req, res, next) =
   }
 };
 
-export const uploadMyPartnerHotelProfileGalleryController = (req, res) => {
+export const uploadMyPartnerHotelProfileGalleryController = async (req, res) => {
   try {
     const uploaded = Array.isArray(req.uploadedImages) ? req.uploadedImages : [];
+    const signedUploaded = await Promise.all(
+      uploaded.map(async (item) => ({
+        ...item,
+        url: (await presignIfS3Url(item?.url || null)) || item?.url || null,
+      })),
+    );
+    const draftItems = await buildPartnerGalleryUploadDraftItems(signedUploaded);
+    const uploadedDebug = await Promise.all(
+      signedUploaded.map(async (item, index) => ({
+        index,
+        key: item?.key || null,
+        url: summarizeGalleryDebugUrl(item?.url),
+        urlProbe: await probeGalleryDebugUrl(item?.url),
+      })),
+    );
+    const itemDebug = await Promise.all(
+      draftItems.map((item, index) => probeGalleryDebugItem(item, index)),
+    );
+    logGalleryDebug("upload-response", {
+      hotelId: String(req.partnerHotelId || resolvePartnerHotelIdFromRequest(req) || "").trim(),
+      uploaded: uploadedDebug,
+      items: itemDebug,
+    });
     return res.json({
       hotelId: String(req.partnerHotelId || resolvePartnerHotelIdFromRequest(req) || "").trim(),
-      uploaded,
-      items: buildPartnerGalleryUploadDraftItems(uploaded),
+      uploaded: signedUploaded,
+      items: draftItems,
     });
   } catch (error) {
     console.error("[uploadMyPartnerHotelProfileGalleryController]", error);
