@@ -957,6 +957,14 @@ export const buildPartnerDashboardPayload = (claim) => {
   const review = getPartnerClaimReviewState(claim);
   const performance =
     claim?.partnerPerformance || buildPartnerPerformanceSnapshot(resolvePartnerPerformanceAdjustments(claim));
+  const storedBillingDetails = toObject(claim?.billing_details);
+  const dashboardBillingDetails = {
+    billingName: storedBillingDetails.billingName || null,
+    billingEmail: storedBillingDetails.billingEmail || null,
+    billingAddress: storedBillingDetails.billingAddress || null,
+    accountManagerEmail: storedBillingDetails.accountManagerEmail || null,
+  };
+  const hasDashboardBillingDetails = Object.values(dashboardBillingDetails).some(Boolean);
   return {
     claimId: claim.id,
     hotelId: claim.hotel_id != null ? String(claim.hotel_id) : null,
@@ -1003,6 +1011,7 @@ export const buildPartnerDashboardPayload = (claim) => {
       nextBillingAt: claim.next_billing_at || null,
       invoiceRequestedAt: claim.invoice_requested_at || null,
       invoicePaidAt: claim.invoice_paid_at || null,
+      billingDetails: hasDashboardBillingDetails ? dashboardBillingDetails : null,
     },
   };
 };

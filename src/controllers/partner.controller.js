@@ -22,6 +22,7 @@ import {
 } from "../services/partnerLifecycle.service.js";
 import {
   getPartnerHotelProfileEditorPayload,
+  PARTNER_HOTEL_PROFILE_IMAGE_SOURCE,
   savePartnerHotelProfileEditorPayload,
 } from "../services/partnerHotelProfile.service.js";
 import {
@@ -353,6 +354,45 @@ const assertPartnerClaimManagementEnabled = (claim, actionLabel = "manage this h
   throw error;
 };
 
+const resolvePartnerHotelIdFromRequest = (req) =>
+  String(req.query?.hotelId || req.body?.hotelId || "").trim();
+
+const loadPartnerClaimForProfileManagement = async ({
+  userId,
+  hotelId,
+  actionLabel = "edit the hotel profile",
+}) => {
+  if (!userId) {
+    const error = new Error("Unauthorized");
+    error.status = 401;
+    throw error;
+  }
+  if (!hotelId) {
+    const error = new Error("hotelId is required");
+    error.status = 400;
+    throw error;
+  }
+  const claims = await listPartnerClaimsForUser({ userId, hotelId });
+  const claim = claims[0] || null;
+  if (!claim) {
+    const error = new Error("Partner claim not found");
+    error.status = 404;
+    throw error;
+  }
+  assertPartnerClaimManagementEnabled(claim, actionLabel);
+  return claim;
+};
+
+const buildPartnerGalleryUploadDraftItems = (uploaded = []) =>
+  (Array.isArray(uploaded) ? uploaded : []).map((item) => ({
+    sourceType: PARTNER_HOTEL_PROFILE_IMAGE_SOURCE.partnerUpload,
+    providerImageUrl: null,
+    imageUrl: item?.url || null,
+    caption: "",
+    isCover: false,
+    isActive: true,
+  }));
+
 export const listPartnerClaimsAdminController = async (req, res, next) => {
   try {
     const claims = await listPartnerClaimsForAdmin({
@@ -392,6 +432,12 @@ export const selectPartnerSubscriptionController = async (req, res, next) => {
       : {};
 
     if (paymentMethod === "invoice") {
+      const accountManagerEmail = normalizeEmail(
+        req.body?.accountManagerEmail ||
+          requestBilling.accountManagerEmail ||
+          requestBilling.accountManager ||
+          "",
+      );
       const invoiceResult = await requestPartnerInvoice({
         claim,
         user,
@@ -415,6 +461,7 @@ export const selectPartnerSubscriptionController = async (req, res, next) => {
             requestBilling.billingAddress ||
             requestBilling.notes ||
             null,
+          accountManagerEmail: accountManagerEmail || null,
         },
       });
       await sendPartnerInvoiceRequestedEmail({ claim: invoiceResult.claim }).catch(() => {});
@@ -479,13 +526,8 @@ export const getOrCreatePartnerVerificationCodeController = async (req, res, nex
 export const getMyPartnerHotelProfileController = async (req, res, next) => {
   try {
     const userId = Number(req.user?.id || 0);
-    const hotelId = String(req.query?.hotelId || "").trim();
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    if (!hotelId) return res.status(400).json({ error: "hotelId is required" });
-    const claims = await listPartnerClaimsForUser({ userId, hotelId });
-    const claim = claims[0] || null;
-    if (!claim) return res.status(404).json({ error: "Partner claim not found" });
-    assertPartnerClaimManagementEnabled(claim, "edit the hotel profile");
+    const hotelId = resolvePartnerHotelIdFromRequest(req);
+    await loadPartnerClaimForProfileManagement({ userId, hotelId });
 
     const payload = await getPartnerHotelProfileEditorPayload({ userId, hotelId });
     return res.json(payload);
@@ -549,13 +591,8 @@ export const downloadMyPartnerMonthlyReportController = async (req, res, next) =
 export const updateMyPartnerHotelProfileController = async (req, res, next) => {
   try {
     const userId = Number(req.user?.id || 0);
-    const hotelId = String(req.body?.hotelId || req.query?.hotelId || "").trim();
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    if (!hotelId) return res.status(400).json({ error: "hotelId is required" });
-    const claims = await listPartnerClaimsForUser({ userId, hotelId });
-    const claim = claims[0] || null;
-    if (!claim) return res.status(404).json({ error: "Partner claim not found" });
-    assertPartnerClaimManagementEnabled(claim, "edit the hotel profile");
+    const hotelId = resolvePartnerHotelIdFromRequest(req);
+    await loadPartnerClaimForProfileManagement({ userId, hotelId });
 
     const payload = await savePartnerHotelProfileEditorPayload({
       userId,
@@ -568,6 +605,36 @@ export const updateMyPartnerHotelProfileController = async (req, res, next) => {
       return res.status(error.status).json({ error: error.message });
     }
     return next(error);
+  }
+};
+
+export const loadMyPartnerHotelProfileClaimController = async (req, res, next) => {
+  try {
+    const userId = Number(req.user?.id || 0);
+    const hotelId = resolvePartnerHotelIdFromRequest(req);
+    const claim = await loadPartnerClaimForProfileManagement({ userId, hotelId });
+    req.partnerClaim = claim;
+    req.partnerHotelId = hotelId;
+    return next();
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
+export const uploadMyPartnerHotelProfileGalleryController = (req, res) => {
+  try {
+    const uploaded = Array.isArray(req.uploadedImages) ? req.uploadedImages : [];
+    return res.json({
+      hotelId: String(req.partnerHotelId || resolvePartnerHotelIdFromRequest(req) || "").trim(),
+      uploaded,
+      items: buildPartnerGalleryUploadDraftItems(uploaded),
+    });
+  } catch (error) {
+    console.error("[uploadMyPartnerHotelProfileGalleryController]", error);
+    return res.status(500).json({ error: "Failed to process gallery upload" });
   }
 };
 

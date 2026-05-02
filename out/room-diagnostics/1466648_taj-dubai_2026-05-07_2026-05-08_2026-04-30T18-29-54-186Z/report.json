@@ -1,0 +1,408 @@
+{
+  "generatedAt": "2026-04-30T18:29:54.182Z",
+  "input": {
+    "hotelId": "1466648",
+    "hotelName": "Taj Dubai",
+    "checkIn": "2026-05-07",
+    "checkOut": "2026-05-08",
+    "occupancies": "1|0",
+    "currency": "520",
+    "nationality": "102",
+    "residence": "102",
+    "requestId": "rooms-diag-1466648-1777573792862"
+  },
+  "hotel": {
+    "hotelId": "1466648",
+    "name": "Taj Dubai",
+    "city": "DUBAI",
+    "country": "UNITED ARAB EMIRATES"
+  },
+  "provider": {
+    "metadata": {
+      "command": "getrooms",
+      "transactionId": "1777573794100007",
+      "elapsedTime": "0.46147704124451",
+      "ip": "179.36.65.1",
+      "timestamp": "2026-04-30 18:29:55"
+    }
+  },
+  "staticRawSummary": {
+    "totalRows": 273,
+    "uniqueCodes": 273,
+    "rowsWithImages": 43,
+    "rowsWithoutImages": 230,
+    "rowsWithDescription": 12,
+    "rowsWithoutDescription": 261
+  },
+  "staticFormattedSummary": {
+    "roomTypesCount": 273,
+    "roomTypesWithImages": 253,
+    "roomTypesWithDescription": 76
+  },
+  "liveSummary": {
+    "roomsCount": 1,
+    "roomTypesCount": 7,
+    "rateBasesCount": 17,
+    "currency": "USD"
+  },
+  "issues": [
+    {
+      "level": "high",
+      "code": "missing_static_descriptions",
+      "message": "7/7 live roomTypeCode(s) have no raw static description."
+    },
+    {
+      "level": "medium",
+      "code": "missing_static_images",
+      "message": "4/7 live roomTypeCode(s) have no raw static images."
+    },
+    {
+      "level": "medium",
+      "code": "sparse_static_image_coverage",
+      "message": "Only 43/273 static room rows have images."
+    },
+    {
+      "level": "medium",
+      "code": "sparse_static_description_coverage",
+      "message": "Only 12/273 static room rows have descriptions."
+    },
+    {
+      "level": "medium",
+      "code": "profile_fallback_images",
+      "message": "3/7 live roomTypeCode(s) rely on profile-based inherited images in formatted static data."
+    }
+  ],
+  "comparison": [
+    {
+      "live": {
+        "roomTypeCode": "11480818",
+        "name": "LUXURY CITY VIEW ROOM",
+        "twin": false,
+        "rateBasesCount": 3,
+        "roomInfo": {
+          "maxOccupancy": 4,
+          "maxAdultWithChildren": 2,
+          "minChildAge": 0,
+          "maxChildAge": 11,
+          "maxAdults": 2,
+          "maxExtraBed": 0,
+          "maxChildren": 2
+        }
+      },
+      "staticRaw": {
+        "exists": true,
+        "matchCount": 1,
+        "roomTypeCode": "11480818",
+        "name": "LUXURY CITY VIEW ROOM",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/2caea0fd-fb27-4893-9f27-4d1ff5116fd0.jpeg",
+          "https://static-images.webbeds.com/0/image/7a5a865e-1281-4680-8a92-88681bb99f05.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null
+      },
+      "staticFormatted": {
+        "exists": true,
+        "roomTypeCode": "11480818",
+        "name": "LUXURY CITY VIEW ROOM",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/2caea0fd-fb27-4893-9f27-4d1ff5116fd0.jpeg",
+          "https://static-images.webbeds.com/0/image/7a5a865e-1281-4680-8a92-88681bb99f05.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null,
+        "imageInheritance": null,
+        "imageInheritanceSource": null
+      }
+    },
+    {
+      "live": {
+        "roomTypeCode": "11480828",
+        "name": "LUXURY BURJ VIEW ROOM",
+        "twin": false,
+        "rateBasesCount": 3,
+        "roomInfo": {
+          "maxOccupancy": 3,
+          "maxAdultWithChildren": 2,
+          "minChildAge": 0,
+          "maxChildAge": 11,
+          "maxAdults": 2,
+          "maxExtraBed": 0,
+          "maxChildren": 2
+        }
+      },
+      "staticRaw": {
+        "exists": true,
+        "matchCount": 1,
+        "roomTypeCode": "11480828",
+        "name": "LUXURY BURJ VIEW ROOM",
+        "imagesCount": 0,
+        "firstImages": [],
+        "hasDescription": false,
+        "descriptionPreview": null
+      },
+      "staticFormatted": {
+        "exists": true,
+        "roomTypeCode": "11480828",
+        "name": "LUXURY BURJ VIEW ROOM",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/e587b2e5-c26d-4421-83ce-89cda22dcd19.jpg",
+          "https://static-images.webbeds.com/0/image/a8fbd2b7-54eb-4f4f-85da-96322030b71e.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null,
+        "imageInheritance": {
+          "source": "roomProfile",
+          "profile": {
+            "normalizedName": "luxury burj view room",
+            "bedType": "generic",
+            "tier": "room",
+            "hasSeaView": true,
+            "hasSuite": false,
+            "hasConnecting": false,
+            "hasFamily": false,
+            "hasApartment": false
+          },
+          "hasInheritedDescription": false
+        },
+        "imageInheritanceSource": "roomProfile"
+      }
+    },
+    {
+      "live": {
+        "roomTypeCode": "11480838",
+        "name": "LUXURY FAMILY CITY VIEW ROOM",
+        "twin": false,
+        "rateBasesCount": 3,
+        "roomInfo": {
+          "maxOccupancy": 4,
+          "maxAdultWithChildren": 3,
+          "minChildAge": 0,
+          "maxChildAge": 11,
+          "maxAdults": 3,
+          "maxExtraBed": 0,
+          "maxChildren": 2
+        }
+      },
+      "staticRaw": {
+        "exists": true,
+        "matchCount": 1,
+        "roomTypeCode": "11480838",
+        "name": "LUXURY FAMILY CITY VIEW ROOM",
+        "imagesCount": 0,
+        "firstImages": [],
+        "hasDescription": false,
+        "descriptionPreview": null
+      },
+      "staticFormatted": {
+        "exists": true,
+        "roomTypeCode": "11480838",
+        "name": "LUXURY FAMILY CITY VIEW ROOM",
+        "imagesCount": 3,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/3c3d83d3-50f9-42cf-8fe9-6da3cd770ae2.jpg",
+          "https://static-images.webbeds.com/0/image/17f699c2-9ff9-4d6f-a728-7666636787d3.jpg",
+          "https://static-images.webbeds.com/0/image/af58ab4c-0151-4f5a-9afb-386920b1e979.jpg"
+        ],
+        "hasDescription": true,
+        "descriptionPreview": "This 624-square-foot non-smoking room offers city views and features one king bed, a separate sitting area with a day bed and twin sofa bed, and a private bathroom with a deep soaking bathtub and separate shower. Ameniti",
+        "imageInheritance": {
+          "source": "roomProfile",
+          "profile": {
+            "normalizedName": "luxury family city view room",
+            "bedType": "generic",
+            "tier": "room",
+            "hasSeaView": true,
+            "hasSuite": false,
+            "hasConnecting": false,
+            "hasFamily": true,
+            "hasApartment": false
+          },
+          "hasInheritedDescription": true
+        },
+        "imageInheritanceSource": "roomProfile"
+      }
+    },
+    {
+      "live": {
+        "roomTypeCode": "11480848",
+        "name": "TAJ CLUB ROOM",
+        "twin": false,
+        "rateBasesCount": 2,
+        "roomInfo": {
+          "maxOccupancy": 3,
+          "maxAdultWithChildren": 2,
+          "minChildAge": 0,
+          "maxChildAge": 11,
+          "maxAdults": 2,
+          "maxExtraBed": 0,
+          "maxChildren": 2
+        }
+      },
+      "staticRaw": {
+        "exists": true,
+        "matchCount": 1,
+        "roomTypeCode": "11480848",
+        "name": "TAJ CLUB ROOM",
+        "imagesCount": 0,
+        "firstImages": [],
+        "hasDescription": false,
+        "descriptionPreview": null
+      },
+      "staticFormatted": {
+        "exists": true,
+        "roomTypeCode": "11480848",
+        "name": "TAJ CLUB ROOM",
+        "imagesCount": 0,
+        "firstImages": [],
+        "hasDescription": false,
+        "descriptionPreview": null,
+        "imageInheritance": null,
+        "imageInheritanceSource": null
+      }
+    },
+    {
+      "live": {
+        "roomTypeCode": "14358258",
+        "name": "JUNIOR SUITE",
+        "twin": false,
+        "rateBasesCount": 2,
+        "roomInfo": {
+          "maxOccupancy": 4,
+          "maxAdultWithChildren": 3,
+          "minChildAge": 0,
+          "maxChildAge": 11,
+          "maxAdults": 3,
+          "maxExtraBed": 1,
+          "maxChildren": 2
+        }
+      },
+      "staticRaw": {
+        "exists": true,
+        "matchCount": 1,
+        "roomTypeCode": "14358258",
+        "name": "JUNIOR SUITE",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/b9b92a93-e657-43f2-9045-33a2b6035e2a.jpg",
+          "https://static-images.webbeds.com/0/image/8cbbce3e-56f3-4774-b489-d57bb1ba6a10.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null
+      },
+      "staticFormatted": {
+        "exists": true,
+        "roomTypeCode": "14358258",
+        "name": "JUNIOR SUITE",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/b9b92a93-e657-43f2-9045-33a2b6035e2a.jpg",
+          "https://static-images.webbeds.com/0/image/8cbbce3e-56f3-4774-b489-d57bb1ba6a10.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null,
+        "imageInheritance": null,
+        "imageInheritanceSource": null
+      }
+    },
+    {
+      "live": {
+        "roomTypeCode": "11480908",
+        "name": "LUXURY JUNIOR SUITE",
+        "twin": false,
+        "rateBasesCount": 2,
+        "roomInfo": {
+          "maxOccupancy": 4,
+          "maxAdultWithChildren": 3,
+          "minChildAge": 0,
+          "maxChildAge": 11,
+          "maxAdults": 3,
+          "maxExtraBed": 0,
+          "maxChildren": 2
+        }
+      },
+      "staticRaw": {
+        "exists": true,
+        "matchCount": 1,
+        "roomTypeCode": "11480908",
+        "name": "LUXURY JUNIOR SUITE",
+        "imagesCount": 1,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/149d06ef-f590-434f-b677-b98cf80766bd.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null
+      },
+      "staticFormatted": {
+        "exists": true,
+        "roomTypeCode": "11480908",
+        "name": "LUXURY JUNIOR SUITE",
+        "imagesCount": 1,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/149d06ef-f590-434f-b677-b98cf80766bd.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null,
+        "imageInheritance": null,
+        "imageInheritanceSource": null
+      }
+    },
+    {
+      "live": {
+        "roomTypeCode": "11480998",
+        "name": "LUXURY BURJ VIEW SUITE",
+        "twin": false,
+        "rateBasesCount": 2,
+        "roomInfo": {
+          "maxOccupancy": 4,
+          "maxAdultWithChildren": 2,
+          "minChildAge": 0,
+          "maxChildAge": 11,
+          "maxAdults": 3,
+          "maxExtraBed": 1,
+          "maxChildren": 2
+        }
+      },
+      "staticRaw": {
+        "exists": true,
+        "matchCount": 1,
+        "roomTypeCode": "11480998",
+        "name": "LUXURY BURJ VIEW SUITE",
+        "imagesCount": 0,
+        "firstImages": [],
+        "hasDescription": false,
+        "descriptionPreview": null
+      },
+      "staticFormatted": {
+        "exists": true,
+        "roomTypeCode": "11480998",
+        "name": "LUXURY BURJ VIEW SUITE",
+        "imagesCount": 2,
+        "firstImages": [
+          "https://static-images.webbeds.com/0/image/4e5c8dd8-76e7-489e-9d49-279773207e2e.jpg",
+          "https://static-images.webbeds.com/0/image/9fa04f85-445c-4e55-99aa-71253f813e1f.jpg"
+        ],
+        "hasDescription": false,
+        "descriptionPreview": null,
+        "imageInheritance": {
+          "source": "roomProfile",
+          "profile": {
+            "normalizedName": "luxury burj view suite",
+            "bedType": "generic",
+            "tier": "base",
+            "hasSeaView": true,
+            "hasSuite": true,
+            "hasConnecting": false,
+            "hasFamily": false,
+            "hasApartment": false
+          },
+          "hasInheritedDescription": false
+        },
+        "imageInheritanceSource": "roomProfile"
+      }
+    }
+  ]
+}

@@ -27,7 +27,8 @@ function* chunkArray(items = [], size = 200) {
   }
 }
 
-const STATIC_LOOKAHEAD_DAYS = Number(process.env.WEBBEDS_STATIC_LOOKAHEAD_DAYS || 120)
+// DOTW recommends static sync with current day / next day and a single 1-adult room.
+const STATIC_LOOKAHEAD_DAYS = Number(process.env.WEBBEDS_STATIC_LOOKAHEAD_DAYS || 0)
 const normalizeBoolean = (value) => {
   if (typeof value === "boolean") return value
   if (typeof value === "string") {
@@ -53,7 +54,7 @@ let hotelClassificationCodeCache = null
 const missingCatalogCodeWarned = new Set()
 const STATIC_CURRENCY = process.env.WEBBEDS_STATIC_CURRENCY || "520"
 const STATIC_OCCUPANCIES =
-  process.env.WEBBEDS_STATIC_OCCUPANCIES || "1|0,1|0,2|0"
+  process.env.WEBBEDS_STATIC_OCCUPANCIES || "1|0"
 const NAMESPACE_ATOMIC = "http://us.dotwconnect.com/xsd/atomicCondition"
 const NAMESPACE_COMPLEX = "http://us.dotwconnect.com/xsd/complexCondition"
 const MAX_NOTIN_VALUES = Number(process.env.WEBBEDS_NOTIN_MAX || 20000)
@@ -89,6 +90,79 @@ const hashPayload = (payload) => {
   if (!payload) return null
   const serialized = JSON.stringify(payload)
   return createHash("md5").update(serialized).digest("hex")
+}
+
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+const resolveHotelNodeId = (hotel) => {
+  const hotelId = hotel?.["@_hotelid"] ?? hotel?.hotelid ?? hotel?.id ?? null
+  if (hotelId == null) return null
+  const normalized = String(hotelId).trim()
+  return normalized || null
+}
+
+const extractHotelXmlFragment = (responseXml, hotelId) => {
+  if (!responseXml || !hotelId) return null
+  const escapedHotelId = escapeRegex(String(hotelId).trim())
+  const regex = new RegExp(
+    `<hotel\\b[^>]*\\bhotelid=(["'])${escapedHotelId}\\1[^>]*>[\\s\\S]*?<\\/hotel>`,
+    "i",
+  )
+  const match = String(responseXml).match(regex)
+  return match?.[0] ?? null
+}
+
+const dumpMatchedHotelXmlDebug = ({
+  xmlDebug,
+  responseXml,
+  hotels = [],
+  cityCode,
+  mode,
+  page,
+}) => {
+  const hotelIds = ensureArray(xmlDebug?.hotelIds)
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+
+  if (!xmlDebug?.enabled || !xmlDebug?.directory || !hotelIds.length) return
+
+  const hotelsById = new Map(
+    ensureArray(hotels)
+      .map((hotel) => [resolveHotelNodeId(hotel), hotel])
+      .filter(([hotelId]) => Boolean(hotelId)),
+  )
+
+  const matchedHotelIds = hotelIds.filter((hotelId) => hotelsById.has(hotelId))
+  if (!matchedHotelIds.length) return
+
+  const safeMode = String(mode || "full").replace(/[^a-z0-9_-]/gi, "_")
+  const safeCity = String(cityCode || "unknown").replace(/[^a-z0-9_-]/gi, "_")
+  const hotelsDir = path.join(xmlDebug.directory, "matched-hotels")
+  fs.mkdirSync(hotelsDir, { recursive: true })
+
+  matchedHotelIds.forEach((hotelId) => {
+    const hotelNode = hotelsById.get(hotelId)
+    const baseName = `searchhotels-city-${safeCity}-mode-${safeMode}-page-${String(page).padStart(4, "0")}-hotel-${hotelId}`
+    const xmlPath = path.join(hotelsDir, `${baseName}.response.hotel.xml`)
+    const jsonPath = path.join(hotelsDir, `${baseName}.provider-hotel.json`)
+    const xmlFragment = extractHotelXmlFragment(responseXml, hotelId)
+
+    if (xmlFragment) {
+      fs.writeFileSync(xmlPath, xmlFragment, "utf8")
+    }
+    if (hotelNode) {
+      fs.writeFileSync(jsonPath, `${JSON.stringify(hotelNode, null, 2)}\n`, "utf8")
+    }
+
+    console.info("[webbeds][static] matched hotel debug dumped", {
+      cityCode,
+      mode,
+      page,
+      hotelId,
+      xmlPath: xmlFragment ? xmlPath : null,
+      jsonPath: hotelNode ? jsonPath : null,
+    })
+  })
 }
 
 const getOptionValue = (option) => {
@@ -182,10 +256,9 @@ const buildStaticHotelsPayload = ({
     throw new Error("cityCode or countryCode is required to sync hotels")
   }
 
-  const today = dayjs().format("YYYY-MM-DD")
-  const futureStart = dayjs().add(STATIC_LOOKAHEAD_DAYS, "day")
-  const fromDate = futureStart.format("YYYY-MM-DD")
-  const toDate = futureStart.add(1, "day").format("YYYY-MM-DD")
+  const startDate = dayjs().add(STATIC_LOOKAHEAD_DAYS, "day")
+  const fromDate = startDate.format("YYYY-MM-DD")
+  const toDate = startDate.add(1, "day").format("YYYY-MM-DD")
 
   const filters = {
     "@xmlns:a": NAMESPACE_ATOMIC,
@@ -336,6 +409,20 @@ const buildStaticHotelsPayload = ({
       },
     },
     return: returnNode,
+  }
+}
+
+const buildHotelIdFilterCondition = (hotelIds = []) => {
+  const values = ensureArray(hotelIds)
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+
+  if (!values.length) return null
+
+  return {
+    fieldName: "hotelId",
+    fieldTest: values.length === 1 ? "equals" : "in",
+    fieldValues: values.length === 1 ? [values[0]] : values,
   }
 }
 
@@ -843,6 +930,14 @@ const executeHotelSync = async ({
       }
 
       const hotels = ensureArray(result?.hotels?.hotel)
+      dumpMatchedHotelXmlDebug({
+        xmlDebug,
+        responseXml,
+        hotels,
+        cityCode,
+        mode,
+        page,
+      })
       if (!hotels.length) {
         if (page === 1) {
           console.warn("[webbeds][static] searchhotels returned empty list", { cityCode, mode })
@@ -1139,9 +1234,19 @@ export const syncWebbedsCities = async ({ countryCode, dryRun = false } = {}) =>
   }
 }
 
-export const syncWebbedsHotels = async ({ cityCode, dryRun = false, hotelLimit, xmlDebug } = {}) => {
+export const syncWebbedsHotels = async ({
+  cityCode,
+  dryRun = false,
+  hotelLimit,
+  xmlDebug,
+  filterHotelIds = [],
+} = {}) => {
   if (!cityCode) throw new Error("cityCode is required to sync hotels")
-  const payload = buildStaticHotelsPayload({ cityCode })
+  const hotelIdCondition = buildHotelIdFilterCondition(filterHotelIds)
+  const payload = buildStaticHotelsPayload({
+    cityCode,
+    filterConditions: hotelIdCondition ? [hotelIdCondition] : [],
+  })
   return executeHotelSync({ cityCode, payload, dryRun, mode: "full", hotelLimit, xmlDebug })
 }
 
@@ -1153,6 +1258,7 @@ export const syncWebbedsHotelsIncremental = async ({
   excludeHotelIds = [],
   hotelLimit,
   xmlDebug,
+  filterHotelIds = [],
 } = {}) => {
   if (!cityCode) throw new Error("cityCode is required to sync hotels")
   if (!["new", "updated"].includes(mode)) {
@@ -1166,6 +1272,10 @@ export const syncWebbedsHotelsIncremental = async ({
   }
   let filterConditions = []
   let lastUpdatedRange = null
+  const hotelIdCondition = buildHotelIdFilterCondition(filterHotelIds)
+  if (hotelIdCondition) {
+    filterConditions.push(hotelIdCondition)
+  }
 
   if (mode === "updated") {
     const resolvedSince =
@@ -1193,7 +1303,7 @@ export const syncWebbedsHotelsIncremental = async ({
 
     if (!existingIds.length) {
       console.warn("[webbeds][static] no existing hotels found, falling back to full sync", { cityCode })
-      return syncWebbedsHotels({ cityCode, dryRun, hotelLimit, xmlDebug })
+      return syncWebbedsHotels({ cityCode, dryRun, hotelLimit, xmlDebug, filterHotelIds })
     }
 
     if (existingIds.length > MAX_NOTIN_VALUES) {

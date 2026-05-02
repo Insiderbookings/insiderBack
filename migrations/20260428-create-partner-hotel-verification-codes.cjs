@@ -1,3 +1,18 @@
+const TABLE = "partner_hotel_verification_code";
+
+const LEGACY_COLUMN_RENAMES = [
+  ["verification_code", "code"],
+  ["generated_by_user_id", "created_by_user_id"],
+  ["used_by_user_id", "claimed_by_user_id"],
+  ["used_at", "claimed_at"],
+];
+
+const LEGACY_INDEXES = [
+  "uq_partner_hotel_verification_code_value",
+  "idx_partner_hotel_verification_code_generated_by_user",
+  "idx_partner_hotel_verification_code_used_by_user",
+];
+
 async function up(queryInterface) {
   const { Sequelize } = queryInterface.sequelize;
   const dialect = queryInterface.sequelize.getDialect();
@@ -14,74 +29,166 @@ async function up(queryInterface) {
     return Number.isFinite(count) && count > 0;
   };
 
-  if (await tableExists("partner_hotel_verification_code")) return;
+  const describeTable = async () => {
+    if (!(await tableExists(TABLE))) return null;
+    return queryInterface.describeTable(TABLE);
+  };
 
-  await queryInterface.createTable("partner_hotel_verification_code", {
-    id: {
-      type: Sequelize.INTEGER,
-      allowNull: false,
-      primaryKey: true,
-      autoIncrement: true,
-    },
-    hotel_id: {
-      type: Sequelize.BIGINT,
-      allowNull: false,
-      references: { model: "webbeds_hotel", key: "hotel_id" },
-      onDelete: "CASCADE",
-      onUpdate: "CASCADE",
-    },
-    code: {
+  const indexExists = async (name) => {
+    const indexes = await queryInterface.showIndex(TABLE).catch(() => []);
+    return Array.isArray(indexes) && indexes.some((index) => index?.name === name);
+  };
+
+  const removeIndexIfExists = async (name) => {
+    if (await indexExists(name)) {
+      await queryInterface.removeIndex(TABLE, name);
+    }
+  };
+
+  const addIndexIfMissing = async (fields, options) => {
+    if (!(await indexExists(options.name))) {
+      await queryInterface.addIndex(TABLE, fields, options);
+    }
+  };
+
+  const addColumnIfMissing = async (description, column, definition) => {
+    if (description?.[column]) return description;
+    await queryInterface.addColumn(TABLE, column, definition);
+    return describeTable();
+  };
+
+  const renameLegacyColumns = async () => {
+    for (const [legacyColumn, targetColumn] of LEGACY_COLUMN_RENAMES) {
+      let description = await describeTable();
+      if (description?.[legacyColumn] && !description?.[targetColumn]) {
+        await queryInterface.renameColumn(TABLE, legacyColumn, targetColumn);
+      } else if (description?.[legacyColumn] && description?.[targetColumn]) {
+        const qTable = queryInterface.quoteIdentifier(TABLE);
+        const qLegacy = queryInterface.quoteIdentifier(legacyColumn);
+        const qTarget = queryInterface.quoteIdentifier(targetColumn);
+        await queryInterface.sequelize.query(
+          `UPDATE ${qTable} SET ${qTarget} = ${qLegacy} WHERE ${qTarget} IS NULL AND ${qLegacy} IS NOT NULL`,
+        );
+      }
+    }
+  };
+
+  if (!(await tableExists(TABLE))) {
+    await queryInterface.createTable(TABLE, {
+      id: {
+        type: Sequelize.INTEGER,
+        allowNull: false,
+        primaryKey: true,
+        autoIncrement: true,
+      },
+      hotel_id: {
+        type: Sequelize.BIGINT,
+        allowNull: false,
+        references: { model: "webbeds_hotel", key: "hotel_id" },
+        onDelete: "CASCADE",
+        onUpdate: "CASCADE",
+      },
+      code: {
+        type: Sequelize.STRING(8),
+        allowNull: false,
+      },
+      created_by_user_id: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+        references: { model: "user", key: "id" },
+        onDelete: "SET NULL",
+        onUpdate: "CASCADE",
+      },
+      claimed_by_user_id: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+        references: { model: "user", key: "id" },
+        onDelete: "SET NULL",
+        onUpdate: "CASCADE",
+      },
+      claimed_at: {
+        type: Sequelize.DATE,
+        allowNull: true,
+      },
+      created_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
+      },
+      updated_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
+      },
+      deleted_at: {
+        type: Sequelize.DATE,
+        allowNull: true,
+      },
+    });
+  } else {
+    for (const legacyIndex of LEGACY_INDEXES) {
+      await removeIndexIfExists(legacyIndex);
+    }
+
+    await renameLegacyColumns();
+
+    let description = await describeTable();
+    description = await addColumnIfMissing(description, "code", {
       type: Sequelize.STRING(8),
-      allowNull: false,
-    },
-    created_by_user_id: {
+      allowNull: true,
+    });
+    description = await addColumnIfMissing(description, "created_by_user_id", {
       type: Sequelize.INTEGER,
       allowNull: true,
       references: { model: "user", key: "id" },
       onDelete: "SET NULL",
       onUpdate: "CASCADE",
-    },
-    claimed_by_user_id: {
+    });
+    description = await addColumnIfMissing(description, "claimed_by_user_id", {
       type: Sequelize.INTEGER,
       allowNull: true,
       references: { model: "user", key: "id" },
       onDelete: "SET NULL",
       onUpdate: "CASCADE",
-    },
-    claimed_at: {
+    });
+    description = await addColumnIfMissing(description, "claimed_at", {
       type: Sequelize.DATE,
       allowNull: true,
-    },
-    created_at: {
+    });
+    description = await addColumnIfMissing(description, "created_at", {
       type: Sequelize.DATE,
       allowNull: false,
       defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
-    },
-    updated_at: {
+    });
+    description = await addColumnIfMissing(description, "updated_at", {
       type: Sequelize.DATE,
       allowNull: false,
       defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
-    },
-  });
+    });
+    await addColumnIfMissing(description, "deleted_at", {
+      type: Sequelize.DATE,
+      allowNull: true,
+    });
+  }
 
-  await queryInterface.addIndex("partner_hotel_verification_code", ["hotel_id"], {
+  await addIndexIfMissing(["hotel_id"], {
     name: "uq_partner_hotel_verification_code_hotel",
     unique: true,
   });
-  await queryInterface.addIndex("partner_hotel_verification_code", ["code"], {
+  await addIndexIfMissing(["code"], {
     name: "uq_partner_hotel_verification_code_code",
     unique: true,
   });
-  await queryInterface.addIndex("partner_hotel_verification_code", ["created_by_user_id"], {
+  await addIndexIfMissing(["created_by_user_id"], {
     name: "idx_partner_hotel_verification_code_created_by_user",
   });
-  await queryInterface.addIndex("partner_hotel_verification_code", ["claimed_by_user_id"], {
+  await addIndexIfMissing(["claimed_by_user_id"], {
     name: "idx_partner_hotel_verification_code_claimed_by_user",
   });
 }
 
 async function down(queryInterface) {
-  await queryInterface.dropTable("partner_hotel_verification_code").catch(() => {});
+  await queryInterface.dropTable(TABLE).catch(() => {});
 }
 
 module.exports = { up, down };

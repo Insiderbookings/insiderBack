@@ -1,0 +1,2698 @@
+{
+  "currency": "USD",
+  "hotel": {
+    "id": "1466648",
+    "name": "Taj Dubai",
+    "allowBook": true,
+    "rooms": [
+      {
+        "runno": "0",
+        "count": 7,
+        "adults": 1,
+        "children": 0,
+        "childrenAges": "",
+        "extrabeds": 0,
+        "lookedForText": "Room Number 1: 1 adult/s",
+        "from": null,
+        "fromFormatted": null,
+        "roomTypes": [
+          {
+            "runno": "0",
+            "roomTypeCode": "11480818",
+            "name": "LUXURY CITY VIEW ROOM",
+            "twin": false,
+            "roomInfo": {
+              "maxOccupancy": 4,
+              "maxAdultWithChildren": 2,
+              "minChildAge": 0,
+              "maxChildAge": 11,
+              "maxAdults": 2,
+              "maxExtraBed": 0,
+              "maxChildren": 2
+            },
+            "specialsCount": 3,
+            "specials": [
+              "Stay 1 get 50% off"
+            ],
+            "rateBases": [
+              {
+                "id": "0",
+                "description": "Room Only",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B0",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "114.47"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "114.47"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "114.47",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "114.47",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "114.47",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  0
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 0,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [],
+                "includedMeal": null,
+                "mealPlan": null,
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 114.47,
+                    "priceFormatted": "114.47",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": []
+                  }
+                ],
+                "leftToSell": 9995,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              },
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B1",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "128.77"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "128.77"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "128.77",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "128.77",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "128.77",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  1
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 1,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Buffet",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Buffet",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Buffet",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 128.77,
+                    "priceFormatted": "128.77",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Buffet",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9995,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B2",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "173.96"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "173.96"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "173.96",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "173.96",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "173.96",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  2
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 2,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 173.96,
+                    "priceFormatted": "173.96",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9995,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              }
+            ]
+          },
+          {
+            "runno": "1",
+            "roomTypeCode": "11480828",
+            "name": "LUXURY BURJ VIEW ROOM",
+            "twin": false,
+            "roomInfo": {
+              "maxOccupancy": 3,
+              "maxAdultWithChildren": 2,
+              "minChildAge": 0,
+              "maxChildAge": 11,
+              "maxAdults": 2,
+              "maxExtraBed": 0,
+              "maxChildren": 2
+            },
+            "specialsCount": 3,
+            "specials": [
+              "Stay 1 get 50% off"
+            ],
+            "rateBases": [
+              {
+                "id": "0",
+                "description": "Room Only",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B3",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "143.08"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "143.08"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "143.08",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "143.08",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "143.08",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  0
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 0,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [],
+                "includedMeal": null,
+                "mealPlan": null,
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 143.08,
+                    "priceFormatted": "143.08",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": []
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              },
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B4",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "157.39"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "157.39"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "157.39",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "157.39",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "157.39",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  1
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 1,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Buffet",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Buffet",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Buffet",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 157.39,
+                    "priceFormatted": "157.39",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Buffet",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B5",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "202.57"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "202.57"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "202.57",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "202.57",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "202.57",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  2
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 2,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 202.57,
+                    "priceFormatted": "202.57",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              }
+            ]
+          },
+          {
+            "runno": "2",
+            "roomTypeCode": "11480838",
+            "name": "LUXURY FAMILY CITY VIEW ROOM",
+            "twin": false,
+            "roomInfo": {
+              "maxOccupancy": 4,
+              "maxAdultWithChildren": 3,
+              "minChildAge": 0,
+              "maxChildAge": 11,
+              "maxAdults": 3,
+              "maxExtraBed": 0,
+              "maxChildren": 2
+            },
+            "specialsCount": 3,
+            "specials": [
+              "Stay 1 get 50% off"
+            ],
+            "rateBases": [
+              {
+                "id": "0",
+                "description": "Room Only",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B6",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "150.31"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "150.31"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "150.31",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "150.31",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "150.31",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  0
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 0,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [],
+                "includedMeal": null,
+                "mealPlan": null,
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 150.31,
+                    "priceFormatted": "150.31",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": []
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              },
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B7",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "164.62"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "164.62"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "164.62",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "164.62",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "164.62",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  1
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 1,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Buffet",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Buffet",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Buffet",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 164.62,
+                    "priceFormatted": "164.62",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Buffet",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B8",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "209.80"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "209.80"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "209.80",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "209.80",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "209.80",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  2
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 2,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 209.8,
+                    "priceFormatted": "209.80",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              }
+            ]
+          },
+          {
+            "runno": "3",
+            "roomTypeCode": "11480848",
+            "name": "TAJ CLUB ROOM",
+            "twin": false,
+            "roomInfo": {
+              "maxOccupancy": 3,
+              "maxAdultWithChildren": 2,
+              "minChildAge": 0,
+              "maxChildAge": 11,
+              "maxAdults": 2,
+              "maxExtraBed": 0,
+              "maxChildren": 2
+            },
+            "specialsCount": 2,
+            "specials": [
+              "Stay 1 get 50% off"
+            ],
+            "rateBases": [
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B9",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "221.85"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "221.85"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "221.85",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "221.85",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "221.85",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  0
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 0,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Buffet",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Buffet",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Buffet",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 221.85,
+                    "priceFormatted": "221.85",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Buffet",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B10",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "267.03"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "267.03"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "267.03",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "267.03",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "267.03",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  1
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 1,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 267.03,
+                    "priceFormatted": "267.03",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 9999,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              }
+            ]
+          },
+          {
+            "runno": "4",
+            "roomTypeCode": "14358258",
+            "name": "JUNIOR SUITE",
+            "twin": false,
+            "roomInfo": {
+              "maxOccupancy": 4,
+              "maxAdultWithChildren": 3,
+              "minChildAge": 0,
+              "maxChildAge": 11,
+              "maxAdults": 3,
+              "maxExtraBed": 1,
+              "maxChildren": 2
+            },
+            "specialsCount": 2,
+            "specials": [
+              "Stay 1 get 50% off"
+            ],
+            "rateBases": [
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B15",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "264.78"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "264.78"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "264.78",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "264.78",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "264.78",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  0
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 0,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Buffet",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Buffet",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Buffet",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 264.78,
+                    "priceFormatted": "264.78",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Buffet",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 2,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B16",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "309.96"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "309.96"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "309.96",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "309.96",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "309.96",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  1
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 1,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 309.96,
+                    "priceFormatted": "309.96",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 2,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              }
+            ]
+          },
+          {
+            "runno": "5",
+            "roomTypeCode": "11480908",
+            "name": "LUXURY JUNIOR SUITE",
+            "twin": false,
+            "roomInfo": {
+              "maxOccupancy": 4,
+              "maxAdultWithChildren": 3,
+              "minChildAge": 0,
+              "maxChildAge": 11,
+              "maxAdults": 3,
+              "maxExtraBed": 0,
+              "maxChildren": 2
+            },
+            "specialsCount": 2,
+            "specials": [
+              "Stay 1 get 50% off"
+            ],
+            "rateBases": [
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B11",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "279.08"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "279.08"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "279.08",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "279.08",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "279.08",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  0
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 0,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Buffet",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Buffet",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Buffet",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 279.08,
+                    "priceFormatted": "279.08",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Buffet",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 2,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B12",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "324.27"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "324.27"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "324.27",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "324.27",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "324.27",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  1
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 1,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 324.27,
+                    "priceFormatted": "324.27",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 2,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              }
+            ]
+          },
+          {
+            "runno": "6",
+            "roomTypeCode": "11480998",
+            "name": "LUXURY BURJ VIEW SUITE",
+            "twin": false,
+            "roomInfo": {
+              "maxOccupancy": 4,
+              "maxAdultWithChildren": 2,
+              "minChildAge": 0,
+              "maxChildAge": 11,
+              "maxAdults": 3,
+              "maxExtraBed": 1,
+              "maxChildren": 2
+            },
+            "specialsCount": 2,
+            "specials": [
+              "Stay 1 get 50% off"
+            ],
+            "rateBases": [
+              {
+                "id": "1331",
+                "description": "Breakfast",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B13",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "414.94"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "414.94"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "414.94",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "414.94",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "414.94",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  0
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 0,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Buffet",
+                    "mealTypeName": "Breakfast",
+                    "mealTypeCode": "1331"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Buffet",
+                  "mealTypeName": "Breakfast",
+                  "mealTypeCode": "1331"
+                },
+                "mealPlan": "Buffet",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 414.94,
+                    "priceFormatted": "414.94",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Buffet",
+                        "mealTypeName": "Breakfast",
+                        "mealTypeCode": "1331"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 2,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              },
+              {
+                "id": "1334",
+                "description": "Half Board",
+                "status": "unchecked",
+                "rateType": {
+                  "id": null,
+                  "description": "XML",
+                  "currencyId": "520",
+                  "currencyShort": "USD",
+                  "nonRefundable": false,
+                  "notes": null
+                },
+                "paymentMode": null,
+                "allowsExtraMeals": true,
+                "allowsSpecialRequests": true,
+                "allowsBeddingPreference": true,
+                "allocationDetails": "1777573664000001B1000B14",
+                "minStay": 0,
+                "dateApplyMinStay": "",
+                "cancellationRules": [
+                  {
+                    "runno": "0",
+                    "fromDate": null,
+                    "fromDateDetails": null,
+                    "toDate": "2026-05-02 05:59:59",
+                    "toDateDetails": "Sat, 02 May 2026 05:59:59",
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "0.00"
+                  },
+                  {
+                    "runno": "1",
+                    "fromDate": "2026-05-02 06:00:00",
+                    "fromDateDetails": "Sat, 02 May 2026 06:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": false,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "460.12"
+                  },
+                  {
+                    "runno": "2",
+                    "fromDate": "2026-05-07 15:00:00",
+                    "fromDateDetails": "Thu, 07 May 2026 15:00:00",
+                    "toDate": null,
+                    "toDateDetails": null,
+                    "amendRestricted": false,
+                    "cancelRestricted": false,
+                    "noShowPolicy": true,
+                    "amendCharge": null,
+                    "cancelCharge": null,
+                    "currency": null,
+                    "formatted": "460.12"
+                  }
+                ],
+                "withinCancellationDeadline": false,
+                "validForOccupancy": null,
+                "validForOccupancyDetails": null,
+                "changedOccupancy": false,
+                "changedOccupancyValue": null,
+                "changedOccupancyText": null,
+                "isBookable": true,
+                "onRequest": false,
+                "total": null,
+                "totalFormatted": "460.12",
+                "totalMinimumSelling": null,
+                "totalMinimumSellingFormatted": "460.12",
+                "totalInRequestedCurrency": null,
+                "totalMinimumSellingInRequestedCurrency": null,
+                "minimumSelling": null,
+                "minimumSellingFormatted": "460.12",
+                "totalTaxes": null,
+                "totalFee": null,
+                "propertyFees": [],
+                "specials": [
+                  "Stay 1 get 50% off"
+                ],
+                "promotionSummary": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialPromotions": [
+                  "Stay 1 get 50% off"
+                ],
+                "specialsApplied": [
+                  1
+                ],
+                "appliedSpecials": [
+                  {
+                    "runno": 1,
+                    "type": "stayXGetDiscountPromotion",
+                    "specialName": "PROMOTION 2026",
+                    "condition": null,
+                    "description": null,
+                    "notes": null,
+                    "stay": 1,
+                    "pay": null,
+                    "discount": 50,
+                    "discountedNights": null,
+                    "upgradeToMealId": null,
+                    "upgradeToRoomId": null,
+                    "label": "Stay 1 get 50% off"
+                  }
+                ],
+                "includedMeals": [
+                  {
+                    "runno": "0",
+                    "mealName": "Breakfast + Dinner",
+                    "mealTypeName": "Half Board",
+                    "mealTypeCode": "1334"
+                  }
+                ],
+                "includedMeal": {
+                  "runno": "0",
+                  "mealName": "Breakfast + Dinner",
+                  "mealTypeName": "Half Board",
+                  "mealTypeCode": "1334"
+                },
+                "mealPlan": "Breakfast + Dinner",
+                "dates": [
+                  {
+                    "datetime": "2026-05-07",
+                    "day": "May, 07 2026",
+                    "wday": "Thursday",
+                    "price": 460.12,
+                    "priceFormatted": "460.12",
+                    "priceMinimumSelling": null,
+                    "priceMinimumSellingFormatted": null,
+                    "discount": null,
+                    "freeStay": false,
+                    "freeUpgrade": null,
+                    "dayOnRequest": false,
+                    "includedMeals": [
+                      {
+                        "runno": "0",
+                        "mealName": "Breakfast + Dinner",
+                        "mealTypeName": "Half Board",
+                        "mealTypeCode": "1334"
+                      }
+                    ]
+                  }
+                ],
+                "leftToSell": 2,
+                "tariffNotes": "Rate Notes:\n\nHotel Tariff Notes:\nCompulsory Tourism Dirham to be paid by guest directly to the hotel per room per night valid from 31st March 2014 Onward. No show and early departure will be subjected to 100% charge.No date,name and room change allowed. Bookings including children will be based on sharing parents bedding, no separate bed for children is provided unless otherwise stated. Early check in and late check-out will be charged at 100% of the applicable room rate, and has to be requested in advance. Early Departure of the Guest(s) will subject to Full length of stay booked will be charged.\n\nCheck-in for Taj club rooms &amp; Suites will be done at the main reception at the lobby.\nExisting reservation cannot be cancelled and rebooked under lower promotion.\nHalf board supplement cannot be applied on 31 DEC and 1 JAN\n\n*NOTE: Hotels&#039; Restaurant Treehouse, Tesoro and Miss Tes are closed and breakfast is served in the Opera ballroom during this time. (22/05/2023-30/09/2023)\nPlease note guests are not allowed to cancel existing bookings and rebook. The hotel has the right to reject the booking.\nThe Tourism Dirham Fee charged per room per night is applicable when booking guest rooms &amp; suites and it will be collected directly at the property and is not reflected in the room rate."
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "extraMeals": []
+  }
+}

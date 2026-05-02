@@ -79,6 +79,10 @@ const run = async () => {
       type: "number",
       describe: "Limit number of hotels processed per city (useful for test runs)",
     })
+    .option("filterHotelId", {
+      type: "string",
+      describe: "Comma separated hotel IDs to restrict the static sync result set",
+    })
     .option("xmlDebug", {
       type: "boolean",
       default: false,
@@ -87,6 +91,10 @@ const run = async () => {
     .option("xmlDebugDir", {
       type: "string",
       describe: "Directory where XML debug files will be written",
+    })
+    .option("xmlDebugHotelId", {
+      type: "string",
+      describe: "Comma separated hotel IDs to extract raw <hotel> XML fragments before normalization",
     })
     .check((args) => {
       if (!args.city && !args.country && !args.catalog) {
@@ -103,14 +111,18 @@ const run = async () => {
 
   await sequelize.authenticate()
 
+  const filterHotelIds = parseListArg(argv.filterHotelId)
+  const xmlDebugHotelIds = parseListArg(argv.xmlDebugHotelId)
+
   const xmlDebug =
-    argv.xmlDebug
+    argv.xmlDebug || xmlDebugHotelIds.length
       ? {
           enabled: true,
           directory: path.resolve(
             process.cwd(),
             argv.xmlDebugDir || "tmp/webbeds-static-xml",
           ),
+          hotelIds: xmlDebugHotelIds.length ? xmlDebugHotelIds : filterHotelIds,
         }
       : null
 
@@ -177,6 +189,8 @@ const run = async () => {
     dryRun: argv.dryRun,
     cityCount: cityCodes.length,
     hotelLimit: argv.hotelLimit ?? null,
+    filterHotelIds: filterHotelIds.length ? filterHotelIds : null,
+    xmlDebugHotelIds: xmlDebug?.hotelIds?.length ? xmlDebug.hotelIds : null,
   })
 
   let failures = 0
@@ -190,6 +204,7 @@ const run = async () => {
           dryRun: argv.dryRun,
           hotelLimit: argv.hotelLimit,
           xmlDebug,
+          filterHotelIds,
         })
       } else {
         summary = await syncWebbedsHotelsIncremental({
@@ -199,6 +214,7 @@ const run = async () => {
           since: argv.since,
           hotelLimit: argv.hotelLimit,
           xmlDebug,
+          filterHotelIds,
         })
       }
       console.log("[webbeds-sync] ok", { cityCode, summary })

@@ -546,7 +546,9 @@ export const buildEffectivePartnerHotelProfile = ({
       .map((entry) => ({
         name: entry.label,
         label: entry.label,
+        providerCategory: entry.providerCategory || "General",
         category: entry.providerCategory || "General",
+        sortOrder: entry.sortOrder,
         isHighlighted: Boolean(entry.isHighlighted),
         sourceType: entry.sourceType,
       })),
@@ -624,16 +626,24 @@ const buildGalleryKey = (item) =>
     .filter(Boolean)
     .join("::");
 
-const buildAmenityKey = (item) =>
-  [
-    String(item?.sourceType || "").trim().toLowerCase(),
-    normalizeAmenityCategory(item?.providerCategory || null),
+const buildAmenityKey = (item) => {
+  const sourceType = String(item?.sourceType || "").trim().toLowerCase();
+  const category = normalizeAmenityCategory(item?.providerCategory || null);
+  const label = normalizeTrimmedString(item?.label || null);
+  if (sourceType === PARTNER_HOTEL_PROFILE_AMENITY_SOURCE.custom) {
+    return [sourceType, category, label].filter(Boolean).join("::").toLowerCase();
+  }
+  return [
+    sourceType,
+    category,
     normalizeTrimmedString(item?.providerCatalogCode || null),
     normalizeTrimmedString(item?.providerItemId || null),
-    normalizeTrimmedString(item?.label || null),
+    label,
   ]
     .filter(Boolean)
-    .join("::");
+    .join("::")
+    .toLowerCase();
+};
 
 const dedupeByKey = (items = [], buildKey) => {
   const seen = new Set();
