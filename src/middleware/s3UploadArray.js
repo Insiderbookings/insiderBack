@@ -91,7 +91,19 @@ const keyFrom = (ownerId, ext = "webp", folder = "homes") => {
   return `${folder}/${ownerId || "public"}/${yyyy}/${mm}/${randomUUID()}.${ext}`;
 };
 
-export const uploadImagesArray = (fieldName = "photos", { maxFiles = 12, folder = "homes", quality = 82 } = {}) => {
+const resolveUploadOwnerId = async (req, resolveOwnerId) => {
+  if (typeof resolveOwnerId === "function") {
+    const customOwnerId = await resolveOwnerId(req);
+    const normalizedCustomOwnerId = String(customOwnerId || "").trim();
+    if (normalizedCustomOwnerId) return normalizedCustomOwnerId;
+  }
+  return req.user?.id ? `host-${req.user.id}` : "public";
+};
+
+export const uploadImagesArray = (
+  fieldName = "photos",
+  { maxFiles = 12, folder = "homes", quality = 82, resolveOwnerId } = {},
+) => {
   const parser = memoryUpload.array(fieldName, maxFiles);
 
   return (req, res, next) => {
@@ -105,7 +117,7 @@ export const uploadImagesArray = (fieldName = "photos", { maxFiles = 12, folder 
 
       try {
         const s3 = await ensureS3();
-        const ownerId = req.user?.id ? `host-${req.user.id}` : "public";
+        const ownerId = await resolveUploadOwnerId(req, resolveOwnerId);
         const uploaded = [];
 
         for (const file of files) {

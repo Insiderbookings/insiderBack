@@ -17,8 +17,11 @@ import {
   searchPartnerHotelsController,
   selectPartnerSubscriptionController,
   simulatePartnerClaimTrialController,
+  loadMyPartnerHotelProfileClaimController,
+  uploadMyPartnerHotelProfileGalleryController,
   updateMyPartnerHotelProfileController,
 } from "../controllers/partner.controller.js";
+import { uploadImagesArray } from "../middleware/s3UploadArray.js";
 
 const router = Router();
 const partnerPublicLimiter = rateLimit({
@@ -55,6 +58,22 @@ router.put(
   "/me/profile",
   partnerControllerMiddleware.authenticate,
   updateMyPartnerHotelProfileController,
+);
+router.post(
+  "/me/profile/gallery/upload",
+  partnerControllerMiddleware.authenticate,
+  loadMyPartnerHotelProfileClaimController,
+  uploadImagesArray("photos", {
+    folder: "partners",
+    maxFiles: 12,
+    resolveOwnerId: (req) =>
+      req.user?.id && req.partnerHotelId
+        ? `partner-${req.user.id}/hotel-${req.partnerHotelId}`
+        : req.user?.id
+          ? `partner-${req.user.id}`
+          : "public",
+  }),
+  uploadMyPartnerHotelProfileGalleryController,
 );
 router.post(
   "/subscriptions/select",
