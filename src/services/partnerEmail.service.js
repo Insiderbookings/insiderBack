@@ -63,6 +63,17 @@ const formatCount = (value) => {
   }).format(Math.round(numeric));
 };
 
+const normalizeEmail = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized || null;
+};
+
+const formatDayCount = (value) => {
+  const numeric = Number(value);
+  const rounded = Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 0;
+  return `${rounded} day${rounded === 1 ? "" : "s"}`;
+};
+
 export const resolvePartnerDashboardUrl = (hotelId = null, extraParams = {}) => {
   const params = { ...extraParams };
   if (hotelId) params.hotelId = String(hotelId);
@@ -247,34 +258,204 @@ const getPlanPricingStats = () =>
     };
   });
 
-const getWeeklyPerformanceStats = ({ claim, program }) => {
+const getPartnerPerformanceSnapshot = (claim) => {
   const performance = claim?.partnerPerformance || {};
-  const reachTotal = performance?.bookingGptReach?.total || 0;
-  const last7Days = performance?.bookingGptReach?.last7Days || performance?.views?.last7Days || 0;
-  const clicks = performance?.clicks?.total || 0;
-  const trialDaysLeft = Number(program?.trialDaysLeft || 0);
-  const trialEndLabel = formatDate(program?.trialEndsAt);
+  return {
+    reachTotal: Number(performance?.bookingGptReach?.total || 0) || 0,
+    last7Days: Number(performance?.bookingGptReach?.last7Days || performance?.views?.last7Days || 0) || 0,
+    clicks: Number(performance?.clicks?.total || 0) || 0,
+    favorites: Number(performance?.favorites?.total || 0) || 0,
+  };
+};
 
+const normalizeProfileCompletion = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.max(0, Math.min(100, Math.round(numeric)));
+};
+
+const getPartnerSetupSnapshot = ({ claim, program }) => {
+  const profile = claim?.hotelProfile || null;
+  const profileCompletion = profile ? normalizeProfileCompletion(profile?.profile_completion) : null;
+  const partnerInbox = normalizeEmail(profile?.contact_email || claim?.contact_email || null);
+  const inquiryFeatureEnabled = Boolean(program?.capabilities?.bookingInquiry);
+  const inquiryEnabled = profile ? Boolean(profile?.inquiry_enabled) : null;
+  const inquiryDestination = normalizeEmail(
+    profile?.inquiry_email || profile?.contact_email || claim?.contact_email || null,
+  );
+  let inquiryLabel = "Review now";
+  let inquiryNote = "confirm the traveler inquiry path in the dashboard";
+
+  if (!inquiryFeatureEnabled) {
+    inquiryLabel = "Locked";
+    inquiryNote = "available once the active plan enables direct traveler inquiries";
+  } else if (inquiryEnabled === true && inquiryDestination) {
+    inquiryLabel = "Ready";
+    inquiryNote = `traveler messages route to ${inquiryDestination}`;
+  } else if (inquiryEnabled === true) {
+    inquiryLabel = "Needs inbox";
+    inquiryNote = "add a destination email before more traveler intent arrives";
+  } else if (inquiryEnabled === false) {
+    inquiryLabel = "Off";
+    inquiryNote = "turn on direct inquiries so travelers can reach the hotel";
+  }
+
+  const specialOfferFeatureEnabled = Boolean(program?.capabilities?.specialOffers);
+  const specialOffersEnabled = profile ? Boolean(profile?.special_offers_enabled) : null;
+  let specialOfferLabel = specialOfferFeatureEnabled ? "Review now" : "Locked";
+  let specialOfferNote = specialOfferFeatureEnabled
+    ? "consider adding a public offer before more trial traffic arrives"
+    : "available on plans with special offers enabled";
+
+  if (specialOfferFeatureEnabled && specialOffersEnabled === true) {
+    specialOfferLabel = "Live";
+    specialOfferNote = "traveler-facing promotion is already active";
+  } else if (specialOfferFeatureEnabled && specialOffersEnabled === false) {
+    specialOfferLabel = "Off";
+    specialOfferNote = "no public promotion is live yet";
+  }
+
+  return {
+    profileCompletion,
+    partnerInbox,
+    inquiryFeatureEnabled,
+    inquiryLabel,
+    inquiryNote,
+    inquiryReady: inquiryLabel === "Ready",
+    specialOfferFeatureEnabled,
+    specialOfferLabel,
+    specialOfferNote,
+    specialOffersEnabled: specialOffersEnabled === true,
+  };
+};
+
+const buildWeekOneSetupStats = ({ claim, program }) => {
+  const performance = getPartnerPerformanceSnapshot(claim);
+  const setup = getPartnerSetupSnapshot({ claim, program });
+  return [
+    setup.profileCompletion != null
+      ? {
+          label: "Profile completion",
+          value: `${setup.profileCompletion}%`,
+          note: "public listing setup progress",
+        }
+      : {
+          label: "BookingGPT Reach",
+          value: formatCount(performance.reachTotal),
+          note: "visibility recorded in the trial so far",
+        },
+    {
+      label: "Inquiry routing",
+      value: setup.inquiryLabel,
+      note: setup.inquiryNote,
+    },
+    setup.specialOfferFeatureEnabled
+      ? {
+          label: "Special offer",
+          value: setup.specialOfferLabel,
+          note: setup.specialOfferNote,
+        }
+      : {
+          label: "Clicks",
+          value: formatCount(performance.clicks),
+          note: "travelers who clicked through so far",
+        },
+    {
+      label: "Partner inbox",
+      value: setup.partnerInbox || "Missing",
+      note: setup.partnerInbox
+        ? "main partner contact on file"
+        : "add a working contact email in the dashboard",
+    },
+  ];
+};
+
+const buildWeekTwoPerformanceStats = ({ claim }) => {
+  const performance = getPartnerPerformanceSnapshot(claim);
   return [
     {
       label: "BookingGPT Reach",
-      value: formatCount(reachTotal),
-      note: "tracked visibility in the current window",
+      value: formatCount(performance.reachTotal),
+      note: "visibility accumulated in the trial so far",
     },
     {
       label: "Last 7 days",
-      value: formatCount(last7Days),
-      note: "recent visibility during the trial",
+      value: formatCount(performance.last7Days),
+      note: "recent visibility during the second week",
     },
     {
       label: "Clicks",
-      value: formatCount(clicks),
+      value: formatCount(performance.clicks),
       note: "travelers who clicked through so far",
     },
     {
+      label: "Favorites",
+      value: formatCount(performance.favorites),
+      note: "travelers who saved the hotel",
+    },
+  ];
+};
+
+const buildMidpointReviewStats = ({ claim, program }) => {
+  const setup = getPartnerSetupSnapshot({ claim, program });
+  const trialEndLabel = formatDate(program?.trialEndsAt);
+  return [
+    {
       label: "Trial time left",
-      value: `${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"}`,
-      note: trialEndLabel ? `trial ends ${trialEndLabel}` : "trial still active",
+      value: formatDayCount(program?.trialDaysLeft),
+      note: trialEndLabel ? `trial ends ${trialEndLabel}` : "midpoint reached",
+    },
+    {
+      label: "Badge status",
+      value: program?.badgeLabel || "Featured",
+      note: "still live in the trial",
+    },
+    setup.profileCompletion != null
+      ? {
+          label: "Profile completion",
+          value: `${setup.profileCompletion}%`,
+          note: "listing setup progress",
+        }
+      : {
+          label: "Partner inbox",
+          value: setup.partnerInbox || "Missing",
+          note: setup.partnerInbox
+            ? "main partner contact on file"
+            : "add a working contact email in the dashboard",
+        },
+    {
+      label: "Inquiry routing",
+      value: setup.inquiryLabel,
+      note: setup.inquiryNote,
+    },
+  ];
+};
+
+const buildWeekThreeConversionStats = ({ claim, program }) => {
+  const performance = getPartnerPerformanceSnapshot(claim);
+  const trialEndLabel = formatDate(program?.trialEndsAt);
+  return [
+    {
+      label: "BookingGPT Reach",
+      value: formatCount(performance.reachTotal),
+      note: "visibility accumulated before plan selection",
+    },
+    {
+      label: "Clicks",
+      value: formatCount(performance.clicks),
+      note: "traveler interest already reaching the listing",
+    },
+    {
+      label: "Favorites",
+      value: formatCount(performance.favorites),
+      note: "travelers who want to return to the hotel",
+    },
+    {
+      label: "Trial ends",
+      value: trialEndLabel || formatDayCount(program?.trialDaysLeft),
+      note: trialEndLabel
+        ? `${formatDayCount(program?.trialDaysLeft)} left before the badge review`
+        : "plan pricing unlocks on day 25",
     },
   ];
 };
@@ -310,33 +491,6 @@ const getRequestedPlanLabel = (claim) =>
   claim?.current_plan_code ||
   null;
 
-const resolveWeeklyCopy = (emailKey) => {
-  switch (emailKey) {
-    case "day_7_report":
-      return {
-        weekLabel: "Week 1",
-        intro: "Week 1 is complete and your Featured trial is still active on BookingGPT.",
-        outro:
-          "Open your dashboard to review the lifecycle timeline, visibility status and any listing updates for the hotel.",
-      };
-    case "day_14_report":
-      return {
-        weekLabel: "Week 2",
-        intro: "Week 2 is complete and your Featured trial is still active on BookingGPT.",
-        outro:
-          "Open your dashboard to keep your listing details current and monitor how the trial is progressing.",
-      };
-    case "day_21_report":
-    default:
-      return {
-        weekLabel: "Week 3",
-        intro: "Week 3 is complete and your Featured trial is still active on BookingGPT.",
-        outro:
-          "Pricing unlocks on day 25, so this is a good time to review the dashboard and prepare for plan selection.",
-      };
-  }
-};
-
 export const resolvePartnerLifecycleTemplate = ({
   emailKey,
   claim,
@@ -351,7 +505,6 @@ export const resolvePartnerLifecycleTemplate = ({
     focus: "plans",
   });
   const trialEndLabel = formatDate(program?.trialEndsAt);
-  const trialDaysLeft = Number(program?.trialDaysLeft || 0);
   const requestedPlan = getRequestedPlanLabel(claim);
 
   switch (emailKey) {
@@ -382,44 +535,111 @@ export const resolvePartnerLifecycleTemplate = ({
         ctaLabel: "Open dashboard",
         ctaUrl: dashboardUrl,
       };
-    case "day_7_report":
-    case "day_14_report":
-    case "day_21_report": {
-      const weeklyCopy = resolveWeeklyCopy(emailKey);
-      const favorites = claim?.partnerPerformance?.favorites?.total || 0;
+    case "day_7_report": {
+      const performance = getPartnerPerformanceSnapshot(claim);
+      const setup = getPartnerSetupSnapshot({ claim, program });
       return {
-        subject: `${hotelName}: your ${weeklyCopy.weekLabel.toLowerCase()} BookingGPT trial report`,
-        preheader: `${weeklyCopy.weekLabel} performance update for ${hotelName}, with live trial status and dashboard access.`,
-        intro: `${weeklyCopy.intro} Here is the latest visibility snapshot for ${hotelName}.`,
-        stats: getWeeklyPerformanceStats({ claim, program }),
+        subject: `${hotelName}: your week 1 BookingGPT trial report`,
+        preheader: `Week 1 setup review for ${hotelName}, with the trial still live and the dashboard ready.`,
+        intro: `Week 1 is complete and your Featured trial is still active on BookingGPT. This first check-in is about tightening the listing setup while visibility is already building for ${hotelName}.`,
+        stats: buildWeekOneSetupStats({ claim, program }),
         bullets: [
-          `Featured badge status: active.`,
-          `Saved to favorites so far: ${formatCount(favorites)}.`,
-          trialEndLabel
-            ? `Trial time remaining: ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"}, until ${trialEndLabel}.`
-            : `Trial time remaining: ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"}.`,
+          `BookingGPT Reach so far: ${formatCount(performance.reachTotal)}, with ${formatCount(performance.clicks)} traveler clicks already recorded.`,
+          setup.profileCompletion != null
+            ? setup.profileCompletion >= 80
+              ? `Your listing is already ${setup.profileCompletion}% complete, which is a strong base for the rest of the trial.`
+              : `Your listing is ${setup.profileCompletion}% complete. Tightening the profile now will make the remaining trial traffic more useful.`
+            : "Use the dashboard this week to tighten the listing before more trial traffic arrives.",
+          !setup.inquiryFeatureEnabled
+            ? "Direct traveler inquiries stay locked until the active plan enables them."
+            : setup.inquiryReady
+              ? "Direct inquiry routing is already live, so traveler messages can reach the hotel inbox without delay."
+              : setup.inquiryLabel === "Needs inbox"
+                ? "Direct inquiries are enabled but still need a delivery inbox before they become reliable."
+                : "Turn on direct inquiry routing so future traveler intent has a clear path to the hotel.",
         ],
-        outro: weeklyCopy.outro,
+        outro:
+          "Open the dashboard to review the profile section, confirm inquiry routing and make sure the next two weeks of the trial land on a stronger listing.",
         ctaLabel: "Review dashboard",
         ctaUrl: dashboardUrl,
       };
     }
-    case "day_15_midpoint":
+    case "day_14_report": {
+      const performance = getPartnerPerformanceSnapshot(claim);
+      const setup = getPartnerSetupSnapshot({ claim, program });
       return {
-        subject: `${hotelName}: you are halfway through your trial`,
-        preheader: `${hotelName} has reached the midpoint of the BookingGPT Featured trial.`,
-        intro: `You are halfway through the 30-day BookingGPT Featured trial for ${hotelName}.`,
-        stats: getWeeklyPerformanceStats({ claim, program }),
+        subject: `${hotelName}: your week 2 BookingGPT trial report`,
+        preheader: `Week 2 traction update for ${hotelName}, with live visibility and traveler intent signals so far.`,
+        intro: `Week 2 is complete and your Featured trial is still active on BookingGPT. This update focuses on the visibility and traveler traction building around ${hotelName}.`,
+        stats: buildWeekTwoPerformanceStats({ claim }),
         bullets: [
-          "Your hotel remains visible with the Featured badge.",
-          "No action is required yet if you are still reviewing the setup and visibility.",
-          "Plan pricing stays hidden until day 25, so you can keep focusing on the listing before the subscription decision.",
+          `Saved to favorites so far: ${formatCount(performance.favorites)}.`,
+          performance.clicks > 0 || performance.favorites > 0
+            ? `Traveler intent is starting to show up beyond raw visibility${performance.clicks > 0 && performance.favorites > 0 ? ", in both clicks and saves." : "."}`
+            : "Visibility is building, but traveler intent is still light enough that listing improvements can matter before the second half of the trial.",
+          setup.profileCompletion != null && setup.profileCompletion < 80
+            ? `The listing is still ${setup.profileCompletion}% complete. Improving copy, photos and amenities can help the traffic already coming in convert better.`
+            : setup.inquiryFeatureEnabled && !setup.inquiryReady
+              ? "Finish the inquiry setup now so any late-trial traveler interest has a direct route into the hotel inbox."
+              : "Your listing fundamentals are in good shape, so the next focus is keeping the message current while the trial keeps running.",
         ],
         outro:
-          "Use the dashboard to review performance, keep the listing up to date and prepare for plan selection later in the trial.",
+          "Open the dashboard to review the latest reach, update the listing and make sure the visibility already building has the best chance to convert.",
         ctaLabel: "Review dashboard",
         ctaUrl: dashboardUrl,
       };
+    }
+    case "day_15_midpoint": {
+      const performance = getPartnerPerformanceSnapshot(claim);
+      const setup = getPartnerSetupSnapshot({ claim, program });
+      const hasSetupGaps =
+        (setup.profileCompletion != null && setup.profileCompletion < 80) ||
+        (setup.inquiryFeatureEnabled && !setup.inquiryReady) ||
+        (setup.specialOfferFeatureEnabled && !setup.specialOffersEnabled);
+      return {
+        subject: `${hotelName}: you are halfway through your trial`,
+        preheader: `${hotelName} has reached the midpoint of the BookingGPT Featured trial.`,
+        intro: `You are halfway through the 30-day BookingGPT Featured trial for ${hotelName}. This checkpoint is about reviewing what the trial has already produced and what still needs attention before pricing appears on day 25.`,
+        stats: buildMidpointReviewStats({ claim, program }),
+        bullets: [
+          "Your hotel remains visible with the Featured badge.",
+          `So far the trial has generated ${formatCount(performance.reachTotal)} tracked views, ${formatCount(performance.clicks)} clicks and ${formatCount(performance.favorites)} traveler saves.`,
+          hasSetupGaps
+            ? "The midpoint is the right moment to close setup gaps before pricing appears on day 25."
+            : "The setup is largely in place, so the next move is monitoring performance and preparing for the day 25 plan decision.",
+          setup.inquiryFeatureEnabled && !setup.inquiryReady
+            ? "If you want traveler intent to become direct leads, finish the inquiry setup before the last stretch of the trial."
+            : "Plan pricing stays hidden until day 25, so you can keep focusing on the listing before the subscription decision.",
+        ],
+        outro:
+          "Use the dashboard to review setup quality, keep the listing current and make sure the second half of the trial compounds on a stronger hotel page.",
+        ctaLabel: "Review dashboard",
+        ctaUrl: dashboardUrl,
+      };
+    }
+    case "day_21_report": {
+      const performance = getPartnerPerformanceSnapshot(claim);
+      const setup = getPartnerSetupSnapshot({ claim, program });
+      return {
+        subject: `${hotelName}: your week 3 BookingGPT trial report`,
+        preheader: `Week 3 partner summary for ${hotelName}, with the final pre-plan-selection visibility snapshot.`,
+        intro: `Week 3 is complete and your Featured trial is still active on BookingGPT. This is the last full weekly update before pricing unlocks, so the goal now is understanding what momentum already exists and what should be protected.`,
+        stats: buildWeekThreeConversionStats({ claim, program }),
+        bullets: [
+          "Partner pricing unlocks on day 25, so this is the last full week to review the trial before plan selection opens.",
+          performance.clicks > 0 || performance.favorites > 0
+            ? `The hotel has already generated ${formatCount(performance.clicks)} clicks and ${formatCount(performance.favorites)} traveler saves, which is the demand signal worth protecting if the listing keeps growing.`
+            : "The remaining trial days should focus on tightening the listing so the visibility already earned has a better chance to convert.",
+          setup.inquiryFeatureEnabled && setup.inquiryReady
+            ? "Direct inquiry routing is ready, so late-trial traveler intent already has a clean path into the hotel inbox."
+            : "If you want late-trial traveler intent to become direct leads, complete the inquiry setup before the trial ends.",
+        ],
+        outro:
+          "Open the dashboard to review the full trial snapshot, prepare the plan decision and make sure the final stretch of visibility supports the hotel's next step.",
+        ctaLabel: "Review dashboard",
+        ctaUrl: dashboardUrl,
+      };
+    }
     case "day_25_choose_plan":
       return {
         subject: `${hotelName}: 5 days left to keep your badge`,
