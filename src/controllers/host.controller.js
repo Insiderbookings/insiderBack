@@ -10,6 +10,7 @@ import {
   isPhoneVerificationConfigured,
   requestPhoneVerificationCode,
 } from "../services/phoneVerification.service.js";
+import { maskPhone, normalizePhoneE164 } from "../utils/phone.js";
 import { createCurrencyConverter } from "../services/currency.service.js";
 import { computeHomeFinancialsFromStay } from "../utils/homePricing.js";
 import {
@@ -137,25 +138,6 @@ const PHONE_RESEND_SECONDS =
 const normalizePhoneChannel = (value) => {
   const raw = String(value || "").trim().toLowerCase();
   return PHONE_CHANNELS.has(raw) ? raw : "sms";
-};
-
-const normalizePhoneE164 = (value) => {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  const compact = raw.replace(/[\s\-()]/g, "");
-  if (!compact.startsWith("+")) return "";
-  const normalized = `+${compact.slice(1).replace(/\D/g, "")}`;
-  if (!/^\+[1-9]\d{7,14}$/.test(normalized)) return "";
-  return normalized;
-};
-
-const maskPhone = (value) => {
-  const raw = String(value || "").trim();
-  if (!raw) return "your phone number";
-  const digits = raw.replace(/\D/g, "");
-  if (!digits) return "your phone number";
-  if (digits.length <= 4) return `+${digits}`;
-  return `+${digits.slice(0, 2)}******${digits.slice(-2)}`;
 };
 
 const resolveIdentityReturnUrl = () => {
@@ -1103,6 +1085,21 @@ export const confirmHostPhoneVerificationCode = async (req, res) => {
       return res.status(400).json({ error: "Invalid verification code." });
     }
 
+    const conflictingUser = await models.User.findOne({
+      where: {
+        phone_e164: resolvedPhone,
+        id: { [Op.ne]: hostId },
+      },
+      attributes: ["id"],
+    });
+
+    if (conflictingUser) {
+      return res.status(409).json({
+        error: "This phone number is already linked to another account.",
+        code: "PHONE_ALREADY_LINKED",
+      });
+    }
+
     const nextMetadata = normalizeHostOnboardingMetadata({
       ...metadata,
       phoneVerified: true,
@@ -1132,6 +1129,9 @@ export const confirmHostPhoneVerificationCode = async (req, res) => {
       models.User.update(
         {
           phone: resolvedPhone,
+          phone_e164: resolvedPhone,
+          phone_verified: true,
+          phone_verified_at: new Date(),
         },
         {
           where: { id: hostId },

@@ -24,6 +24,7 @@ import { startJobScheduler } from "./services/jobScheduler.service.js";
 import { startTripHubPackWorker } from "./services/tripHubPacksQueue.service.js";
 import ensureHomeFavoriteIndexes from "./utils/ensureHomeFavoriteIndexes.js";
 import ensurePartnerHotelVerificationCodeSchema from "./utils/ensurePartnerHotelVerificationCodeSchema.js";
+import ensureUserPhoneVerificationSchema from "./utils/ensureUserPhoneVerificationSchema.js";
 import { initSocketServer } from "./websocket/index.js";
 import diagnoseForeignKeyError from "./utils/diagnoseForeignKeyError.js";
 import { warmSalutationsCache } from "./providers/webbeds/salutations.js";
@@ -271,6 +272,7 @@ const PORT = process.env.PORT || 3000;
       console.warn('[sequelize] alter sync was requested but ignored in this environment');
     }
     await ensurePartnerHotelVerificationCodeSchema();
+    await ensureUserPhoneVerificationSchema();
     await sequelize.sync({ alter: allowAlter });
     await ensureHomeFavoriteIndexes();
     await ensureDefaultPlatforms();

@@ -36,6 +36,19 @@ export default (sequelize) => {
         allowNull: true,
       },
       phone: DataTypes.STRING(20),
+      phone_e164: {
+        type: DataTypes.STRING(20),
+        allowNull: true,
+      },
+      phone_verified: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      phone_verified_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
 
       /* ───────── Código opcional de usuario ───────── */
       user_code: {
@@ -230,6 +243,11 @@ export default (sequelize) => {
           name: "user_provider_sub_unique",
           unique: true,
           fields: ["auth_provider", "provider_sub"],
+        },
+        {
+          name: "uq_user_phone_e164",
+          unique: true,
+          fields: ["phone_e164"],
         },
       ],
     }

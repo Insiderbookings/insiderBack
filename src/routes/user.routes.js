@@ -118,7 +118,7 @@ router.post("/me/wallet/preview/hotel", previewGuestWalletForHotel)
 // User profile
 router.get("/me", getCurrentUser)
 router.put("/me", requireVerifiedEmail, updateUserProfile)
-router.put("/me/password", requireVerifiedEmail, changePassword)
+router.put("/me/password", changePassword)
 router.delete("/me", deleteAccount)
 router.post("/me/become-host", requireVerifiedEmail, becomeHost)
 

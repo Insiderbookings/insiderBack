@@ -1,5 +1,6 @@
 const guestWalletHotelsEnabled =
   String(process.env.GUEST_WALLET_HOTELS_ENABLED || "false").trim().toLowerCase() === "true";
+const phoneFirstAuthEnabled = process.env.FEATURE_PHONE_FIRST_AUTH_ENABLED !== "false";
 
 const parseBoolean = (value, defaultValue = false) => {
   if (value == null || value === "") return defaultValue;
@@ -65,6 +66,7 @@ export const getFeatureFlags = (req, res) => {
       homesEnabled: process.env.FEATURE_HOMES_ENABLED !== "false",
       hostEnabled: process.env.FEATURE_HOST_ENABLED !== "false",
       guestWalletHotelsEnabled,
+      phoneFirstAuthEnabled,
     },
   });
 };
