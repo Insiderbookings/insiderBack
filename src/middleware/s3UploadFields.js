@@ -61,11 +61,24 @@ async function getS3() {
     return _s3
 }
 
+function resolvePublicBaseUrl(region) {
+    const base = (process.env.S3_PUBLIC_BASE_URL || '').trim()
+    if (!base) return `https://${BUCKET}.s3.${region}.amazonaws.com`
+
+    try {
+        const parsed = new URL(base)
+        if (parsed.hostname === `${BUCKET}.s3.amazonaws.com` && region !== 'us-east-1') {
+            return `https://${BUCKET}.s3.${region}.amazonaws.com`
+        }
+        return base.replace(/\/$/, '')
+    } catch {
+        return base.replace(/\/$/, '')
+    }
+}
+
 function publicUrl(key) {
     const region = _bucketRegion || FALLBACK_REGION
-    const base = (process.env.S3_PUBLIC_BASE_URL || '').trim()
-    if (base) return `${base.replace(/\/$/, '')}/${key}`
-    return `https://${BUCKET}.s3.${region}.amazonaws.com/${key}`
+    return `${resolvePublicBaseUrl(region)}/${key}`
 }
 
 const upload = multer({

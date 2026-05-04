@@ -13,6 +13,7 @@ import {
   filterPartnerHotelProfileWritePayload,
 } from "./partnerHotelProfileSchema.service.js";
 import cache from "./cache.js";
+import { presignIfS3Url } from "../utils/s3Presign.js";
 
 export const PARTNER_HOTEL_PROFILE_STATUS = Object.freeze({
   draft: "DRAFT",
@@ -1022,7 +1023,20 @@ const buildEditorCollections = ({
   };
 };
 
-const buildDashboardProfilePayload = ({
+const presignEditorGalleryItems = async (items = []) =>
+  Promise.all(
+    (Array.isArray(items) ? items : []).map(async (item) => {
+      const imageUrl = normalizeTrimmedString(item?.imageUrl || null);
+      const providerImageUrl = normalizeTrimmedString(item?.providerImageUrl || null);
+      return {
+        ...item,
+        imageUrl: (await presignIfS3Url(imageUrl)) || imageUrl || providerImageUrl || null,
+        providerImageUrl: (await presignIfS3Url(providerImageUrl)) || providerImageUrl || null,
+      };
+    }),
+  );
+
+const buildDashboardProfilePayload = async ({
   claim,
   profile,
   partnerProgram,
@@ -1031,12 +1045,16 @@ const buildDashboardProfilePayload = ({
   inquirySummary = null,
 }) => {
   const baseHotel = claim?.hotel ? formatStaticHotel(claim.hotel) : null;
-  const editor = buildEditorCollections({
+  const editorDraft = buildEditorCollections({
     providerImages,
     providerAmenities,
     profile,
     partnerProgram,
   });
+  const editor = {
+    ...editorDraft,
+    galleryItems: await presignEditorGalleryItems(editorDraft.galleryItems),
+  };
   const effectiveProfile = buildEffectivePartnerHotelProfile({
     item: baseHotel || {},
     claim,

@@ -29,6 +29,13 @@ const buildTrialClaim = (overrides = {}) => ({
       total: 16,
     },
   },
+  hotelProfile: {
+    profile_completion: 68,
+    inquiry_enabled: false,
+    inquiry_email: null,
+    contact_email: "reservations@hotel.example",
+    special_offers_enabled: false,
+  },
   ...overrides,
 });
 
@@ -55,7 +62,7 @@ test("resolves partner dashboard links to the dashboard route", () => {
   });
 });
 
-test("builds weekly lifecycle copy with real metrics and no placeholder language", () => {
+test("builds the week 1 lifecycle email around setup quality instead of reusing the generic performance block", () => {
   return withPartnerClientUrl("https://bookinggpt.app", async () => {
     const template = resolvePartnerLifecycleTemplate({
       emailKey: "day_7_report",
@@ -65,12 +72,16 @@ test("builds weekly lifecycle copy with real metrics and no placeholder language
     });
 
     assert.match(template.subject, /week 1/i);
-    assert.equal(template.stats[0].label, "BookingGPT Reach");
-    assert.equal(template.stats[0].value, "1,250");
-    assert.equal(template.stats[1].value, "215");
-    assert.equal(template.stats[2].value, "48");
-    assert.equal(template.stats[3].value, "4 days");
-    assert.match(template.bullets.join(" "), /Saved to favorites so far: 16/i);
+    assert.equal(template.stats[0].label, "Profile completion");
+    assert.equal(template.stats[0].value, "68%");
+    assert.equal(template.stats[1].label, "Inquiry routing");
+    assert.equal(template.stats[1].value, "Off");
+    assert.equal(template.stats[2].label, "Special offer");
+    assert.equal(template.stats[2].value, "Off");
+    assert.equal(template.stats[3].label, "Partner inbox");
+    assert.equal(template.stats[3].value, "reservations@hotel.example");
+    assert.match(template.bullets.join(" "), /BookingGPT Reach so far: 1,250/i);
+    assert.match(template.bullets.join(" "), /Turn on direct inquiry routing/i);
     assert.equal(
       template.ctaUrl,
       "https://bookinggpt.app/partners/dashboard?hotelId=335115",
@@ -78,6 +89,58 @@ test("builds weekly lifecycle copy with real metrics and no placeholder language
 
     const combinedCopy = [template.intro, template.outro, ...template.bullets].join(" ").toLowerCase();
     assert.doesNotMatch(combinedCopy, /placeholder|partners spec|expanded later/);
+  });
+});
+
+test("builds the week 2 lifecycle email around traction metrics and favorites", () => {
+  return withPartnerClientUrl("https://bookinggpt.app", async () => {
+    const template = resolvePartnerLifecycleTemplate({
+      emailKey: "day_14_report",
+      claim: buildTrialClaim(),
+      hotel: { name: "474 Buenos Aires Hotel" },
+      now: new Date("2026-04-27T20:27:42.917Z"),
+    });
+
+    assert.match(template.subject, /week 2/i);
+    assert.deepEqual(
+      template.stats.map((item) => item.label),
+      ["BookingGPT Reach", "Last 7 days", "Clicks", "Favorites"],
+    );
+    assert.equal(template.stats[0].value, "1,250");
+    assert.equal(template.stats[1].value, "215");
+    assert.equal(template.stats[2].value, "48");
+    assert.equal(template.stats[3].value, "16");
+    assert.match(template.bullets.join(" "), /Saved to favorites so far: 16/i);
+  });
+});
+
+test("builds the midpoint and week 3 emails with different operational goals", () => {
+  return withPartnerClientUrl("https://bookinggpt.app", async () => {
+    const midpoint = resolvePartnerLifecycleTemplate({
+      emailKey: "day_15_midpoint",
+      claim: buildTrialClaim(),
+      hotel: { name: "474 Buenos Aires Hotel" },
+      now: new Date("2026-04-15T12:00:00.000Z"),
+    });
+    const weekThree = resolvePartnerLifecycleTemplate({
+      emailKey: "day_21_report",
+      claim: buildTrialClaim(),
+      hotel: { name: "474 Buenos Aires Hotel" },
+      now: new Date("2026-04-27T20:27:42.917Z"),
+    });
+
+    assert.equal(midpoint.stats[0].label, "Trial time left");
+    assert.equal(midpoint.stats[1].label, "Badge status");
+    assert.equal(midpoint.stats[2].label, "Profile completion");
+    assert.equal(midpoint.stats[3].label, "Inquiry routing");
+    assert.match(midpoint.bullets.join(" "), /pricing appears on day 25/i);
+
+    assert.match(weekThree.subject, /week 3/i);
+    assert.equal(weekThree.stats[0].label, "BookingGPT Reach");
+    assert.equal(weekThree.stats[1].label, "Clicks");
+    assert.equal(weekThree.stats[2].label, "Favorites");
+    assert.equal(weekThree.stats[3].label, "Trial ends");
+    assert.match(weekThree.bullets.join(" "), /pricing unlocks on day 25/i);
   });
 });
 
