@@ -1,0 +1,360 @@
+{
+  "summary": {
+    "liveRoomTypes": 35,
+    "exactRawMatches": 35,
+    "missingExactRawMatches": 0,
+    "formattedWithImageInheritance": 11
+  },
+  "rows": [
+    {
+      "roomTypeCode": "11480818",
+      "liveName": "LUXURY CITY VIEW ROOM",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 2,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 2,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "791865465",
+      "liveName": "luxury, city view",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 2,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 2,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1442561185",
+      "liveName": "LUXURY, BURJ VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 2,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 2,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1135329995",
+      "liveName": "LUXURY, KING BED, CITY VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": true,
+      "rawImagesCount": 4,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 4,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1135329075",
+      "liveName": "LUXURY, TWIN BEDS, CITY VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": true,
+      "rawImagesCount": 4,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 4,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1442409125",
+      "liveName": "LUXURY, TWIN BEDS, BURJ VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 5,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 5,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1442600315",
+      "liveName": "LUXURY, KING BED, BURJ VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 2,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 2,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1239828025",
+      "liveName": "LUXURY, DOUBLE OR TWIN BED, CITY VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 0,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 4,
+      "imageInheritanceSource": "roomProfile"
+    },
+    {
+      "roomTypeCode": "1239828015",
+      "liveName": "LUXURY, DOUBLE BED",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 2,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 2,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1328782115",
+      "liveName": "LUXURY, TWIN BEDS",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 0,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 4,
+      "imageInheritanceSource": "roomProfile"
+    },
+    {
+      "roomTypeCode": "1329418175",
+      "liveName": "LUXURY, FAMILY, KING BED, CITY VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": true,
+      "rawImagesCount": 3,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 3,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1515136835",
+      "liveName": "ROOM, TWIN BEDS, DOWNTOWN VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 0,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 4,
+      "imageInheritanceSource": "roomProfile"
+    },
+    {
+      "roomTypeCode": "1239812425",
+      "liveName": "BURJ, LUXURY, KING BED",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": true,
+      "rawImagesCount": 5,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 5,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1239812455",
+      "liveName": "BURJ, LUXURY, TWIN BEDS",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": true,
+      "rawImagesCount": 4,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 4,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1330405355",
+      "liveName": "LUXURY, FAMILY",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 3,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 3,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1330362175",
+      "liveName": "LUXURY, FAMILY, CITY VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 0,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 3,
+      "imageInheritanceSource": "roomProfile"
+    },
+    {
+      "roomTypeCode": "1329459795",
+      "liveName": "LUXURY, FAMILY, TWIN BEDS, CITY VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": true,
+      "rawImagesCount": 4,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 4,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1515128585",
+      "liveName": "ROOM, KING BED, DOWNTOWN VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 0,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 2,
+      "imageInheritanceSource": "roomProfile"
+    },
+    {
+      "roomTypeCode": "1529289865",
+      "liveName": "ROOM, TWIN BEDS, WITH VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 0,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 4,
+      "imageInheritanceSource": "roomProfile"
+    },
+    {
+      "roomTypeCode": "1546813955",
+      "liveName": "LUXURY, 2 QUEEN BEDS, BURJ VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 0,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 2,
+      "imageInheritanceSource": "roomProfile"
+    },
+    {
+      "roomTypeCode": "1239811605",
+      "liveName": "TAJ CLUB",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 0,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 0,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1276643885",
+      "liveName": "ROOM, TWIN BEDS",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 0,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 4,
+      "imageInheritanceSource": "roomProfile"
+    },
+    {
+      "roomTypeCode": "1442604765",
+      "liveName": "TAJ CLUB, TWIN BEDS, BURJ VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 2,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 2,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "791290395",
+      "liveName": "junior suite",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 2,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 2,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1442512165",
+      "liveName": "CLUB, TWIN BEDS, BURJ VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 5,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 5,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1330733165",
+      "liveName": "JUNIOR SUITE, LUXURY",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 1,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 1,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1282285455",
+      "liveName": "JUNIOR SUITE, KING BED, CITY VIEW, CLUB LOUNGE ACCESS",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 0,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 3,
+      "imageInheritanceSource": "roomProfile"
+    },
+    {
+      "roomTypeCode": "1291729035",
+      "liveName": "JUNIOR SUITE, CITY VIEW, CLUB LOUNGE ACCESS",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 3,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 3,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1239811415",
+      "liveName": "JUNIOR SUITE, KING BED, CITY VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": true,
+      "rawImagesCount": 2,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 2,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1548780735",
+      "liveName": "TAJ CLUB, TWIN BEDS, 2 QUEEN BEDS, BURJ VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 0,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 2,
+      "imageInheritanceSource": "roomProfile"
+    },
+    {
+      "roomTypeCode": "1329782495",
+      "liveName": "JUNIOR SUITE, LUXURY, KING BED, CITY VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 1,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 1,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1443326195",
+      "liveName": "LUXURY, SUITE, BURJ VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 4,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 4,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1239812615",
+      "liveName": "LUXURY, SUITE, KING BED",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": true,
+      "rawImagesCount": 5,
+      "formattedHasDescription": true,
+      "formattedImagesCount": 5,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1443733425",
+      "liveName": "LUXURY, SUITE, KING BED, BURJ VIEW",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 3,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 3,
+      "imageInheritanceSource": null
+    },
+    {
+      "roomTypeCode": "1239813335",
+      "liveName": "GRAND, LUXURY, SUITE",
+      "rawExactMatchCount": 1,
+      "rawHasDescription": false,
+      "rawImagesCount": 0,
+      "formattedHasDescription": false,
+      "formattedImagesCount": 1,
+      "imageInheritanceSource": "roomProfile"
+    }
+  ]
+}
