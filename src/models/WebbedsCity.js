@@ -18,6 +18,9 @@ export default (sequelize) => {
       region_code: { type: DataTypes.STRING(60) },
       lat: { type: DataTypes.DECIMAL(11, 8) },
       lng: { type: DataTypes.DECIMAL(11, 8) },
+      cover_image_url: { type: DataTypes.STRING(1024) },
+      cover_image_source: { type: DataTypes.STRING(60) },
+      cover_image_attribution: { type: DataTypes.STRING(255) },
       metadata: { type: JSON_TYPE },
     },
     {
