@@ -3050,8 +3050,13 @@ export const listCities = async (req, res, next) => {
           MAX(h.region_code) AS "regionCode",
           AVG(h.lat)::float AS lat,
           AVG(h.lng)::float AS lng,
+          MAX(c.cover_image_url) AS "coverImageUrl",
+          MAX(c.cover_image_source) AS "coverImageSource",
+          MAX(c.cover_image_attribution) AS "coverImageAttribution",
           COUNT(h.hotel_id)::int AS "hotelCount"
         FROM webbeds_hotel h
+        LEFT JOIN webbeds_city c
+          ON c.code::text = h.city_code::text AND c.deleted_at IS NULL
         WHERE ${whereSql}
         GROUP BY h.city_code
         HAVING COUNT(h.hotel_id) >= :minHotelCount
@@ -3080,6 +3085,9 @@ export const listCities = async (req, res, next) => {
         regionCode: row.regionCode ?? null,
         lat: row.lat != null ? Number(row.lat) : null,
         lng: row.lng != null ? Number(row.lng) : null,
+        coverImageUrl: row.coverImageUrl ?? null,
+        coverImageSource: row.coverImageSource ?? null,
+        coverImageAttribution: row.coverImageAttribution ?? null,
         hotelCount: Number(row.hotelCount ?? 0) || 0,
       }))
       const total = Number(totalRows?.[0]?.total ?? 0) || 0
@@ -3110,6 +3118,9 @@ export const listCities = async (req, res, next) => {
         "region_code",
         "lat",
         "lng",
+        "cover_image_url",
+        "cover_image_source",
+        "cover_image_attribution",
         [hotelCountLiteral, "hotel_count"],
       ],
       order: prioritizeHotelCount
@@ -3137,6 +3148,9 @@ export const listCities = async (req, res, next) => {
       regionCode: row.region_code,
       lat: row.lat != null ? Number(row.lat) : null,
       lng: row.lng != null ? Number(row.lng) : null,
+      coverImageUrl: row.cover_image_url ?? null,
+      coverImageSource: row.cover_image_source ?? null,
+      coverImageAttribution: row.cover_image_attribution ?? null,
       hotelCount: Number(row.get?.("hotel_count") ?? row.hotel_count ?? 0) || 0,
     }))
 
