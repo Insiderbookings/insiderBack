@@ -18,6 +18,7 @@ import { getCaseInsensitiveLikeOp } from "../utils/sequelizeHelpers.js";
 import { buildHostOnboardingState } from "../utils/hostOnboarding.js";
 import { deriveRoleCodes } from "../utils/userCapabilities.js";
 import { resolveMailFrom } from "../helpers/mailFrom.js";
+import { resolveBookingGptClientUrl } from "../helpers/appUrls.js";
 import {
   confirmPhoneVerificationCode,
   isPhoneVerificationConfigured,
@@ -109,6 +110,15 @@ const DEFAULT_GOOGLE_IOS_CLIENT_ID =
 const toTrimmedString = (value) => {
   const normalized = String(value || "").trim();
   return normalized || null;
+};
+const normalizeUrlOrigin = (value) => {
+  const normalized = toTrimmedString(value);
+  if (!normalized) return null;
+  try {
+    return new URL(normalized).origin;
+  } catch {
+    return null;
+  }
 };
 const GOOGLE_WEB_CLIENT_ID = toTrimmedString(process.env.GOOGLE_CLIENT_ID);
 const GOOGLE_WEB_CLIENT_SECRET = toTrimmedString(process.env.GOOGLE_CLIENT_SECRET);
@@ -1899,11 +1909,23 @@ export const googleExchange = async (req, res) => {
         });
       }
     } else {
-      // Allow web popup/mobile legacy clients to send their own redirect_uri.
+      // GIS popup mode uses the page origin as redirect_uri during code exchange.
+      const requestOrigin =
+        normalizeUrlOrigin(req.get("origin")) ||
+        normalizeUrlOrigin(req.get("referer")) ||
+        normalizeUrlOrigin(resolveBookingGptClientUrl());
+      const normalizedClientRedirectUri = toTrimmedString(clientRedirectUri);
       const redirectUri =
-        typeof clientRedirectUri === "string" && clientRedirectUri.length
-          ? clientRedirectUri
-          : "postmessage";
+        normalizedClientRedirectUri && normalizedClientRedirectUri !== "postmessage"
+          ? normalizedClientRedirectUri
+          : clientSecret
+            ? requestOrigin
+            : normalizedClientRedirectUri || "postmessage";
+      if (!redirectUri) {
+        return res.status(400).json({
+          error: "Missing redirect URI for Google OAuth client",
+        });
+      }
 
       const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
