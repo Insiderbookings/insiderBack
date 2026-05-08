@@ -7,22 +7,12 @@
     <product>hotel</product>
     <request command="searchhotels">
         <bookingDetails>
-            <fromDate>2026-08-12</fromDate>
-            <toDate>2026-08-13</toDate>
+            <fromDate>2026-05-04</fromDate>
+            <toDate>2026-05-05</toDate>
             <currency>520</currency>
-            <rooms no="3">
+            <rooms no="1">
                 <room runno="0">
                     <adultsCode>1</adultsCode>
-                    <children no="0" />
-                    <rateBasis>-1</rateBasis>
-                </room>
-                <room runno="1">
-                    <adultsCode>1</adultsCode>
-                    <children no="0" />
-                    <rateBasis>-1</rateBasis>
-                </room>
-                <room runno="2">
-                    <adultsCode>2</adultsCode>
                     <children no="0" />
                     <rateBasis>-1</rateBasis>
                 </room>
@@ -32,8 +22,17 @@
             <getRooms>true</getRooms>
             <filters xmlns:a="http://us.dotwconnect.com/xsd/atomicCondition"
                 xmlns:c="http://us.dotwconnect.com/xsd/complexCondition">
-                <city>17024</city>
+                <city>364</city>
                 <noPrice>true</noPrice>
+                <c:condition>
+                    <a:condition>
+                        <fieldName>hotelId</fieldName>
+                        <fieldTest>equals</fieldTest>
+                        <fieldValues>
+                            <fieldValue>1466648</fieldValue>
+                        </fieldValues>
+                    </a:condition>
+                </c:condition>
             </filters>
             <fields>
                 <field>preferred</field>
@@ -88,8 +87,8 @@
                 <roomField>roomDescription</roomField>
                 <roomField>roomImages</roomField>
             </fields>
-            <resultsPerPage>50</resultsPerPage>
-            <page>2</page>
+            <resultsPerPage>20</resultsPerPage>
+            <page>1</page>
         </return>
     </request>
 </customer>

@@ -1,0 +1,23 @@
+{
+  "bookingDetails": {
+    "fromDate": "2026-05-04",
+    "toDate": "2026-05-05",
+    "currency": "520",
+    "rooms": {
+      "@no": "1",
+      "room": [
+        {
+          "@runno": "0",
+          "adultsCode": "1",
+          "children": {
+            "@no": "0"
+          },
+          "rateBasis": "-1",
+          "passengerNationality": "102",
+          "passengerCountryOfResidence": "102"
+        }
+      ]
+    },
+    "productId": "1466648"
+  }
+}
