@@ -11,6 +11,7 @@ import {
   createPartnerCardCheckout,
   ensurePartnerClaim,
   getPartnerClaimReviewState,
+  listPartnerHotelSamples,
   listPartnerClaimsForAdmin,
   listPartnerClaimsForUser,
   requestPartnerInvoice,
@@ -246,6 +247,17 @@ export const searchPartnerHotelsController = async (req, res, next) => {
   try {
     const items = await searchPartnerHotels({
       query: req.query?.q ?? req.query?.query,
+      limit: req.query?.limit,
+    });
+    return res.json({ items });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const listPartnerHotelSamplesController = async (req, res, next) => {
+  try {
+    const items = await listPartnerHotelSamples({
       limit: req.query?.limit,
     });
     return res.json({ items });

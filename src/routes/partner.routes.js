@@ -10,6 +10,7 @@ import {
   getMyPartnerHotelProfileController,
   getMyPartnerMonthlyReportsController,
   getMyPartnerClaimsController,
+  listPartnerHotelSamplesController,
   listPartnerClaimsAdminController,
   listPartnerPlans,
   partnerControllerMiddleware,
@@ -33,6 +34,7 @@ const partnerPublicLimiter = rateLimit({
 });
 
 router.get("/plans", listPartnerPlans);
+router.get("/hotels/samples", partnerPublicLimiter, listPartnerHotelSamplesController);
 router.get("/hotels/search", partnerPublicLimiter, searchPartnerHotelsController);
 router.post("/verification/lookup", partnerPublicLimiter, previewPartnerVerificationCodeController);
 router.post("/claim", partnerPublicLimiter, claimPartnerHotelController);

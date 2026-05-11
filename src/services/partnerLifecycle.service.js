@@ -384,6 +384,78 @@ const buildClaimInclude = ({
   return include;
 };
 
+const PARTNER_PUBLIC_HOTEL_ATTRIBUTES = Object.freeze([
+  "hotel_id",
+  "name",
+  "city_name",
+  "country_name",
+  "address",
+  "rating",
+  "priority",
+  "images",
+]);
+
+const resolvePartnerImageCandidate = (value) => {
+  if (!value) return null;
+  if (typeof value === "string" || typeof value === "number") return String(value).trim() || null;
+  if (typeof value !== "object") return null;
+  return (
+    value.url ??
+    value["@_url"] ??
+    value["#text"] ??
+    value.text ??
+    value.value ??
+    value["#cdata-section"] ??
+    null
+  );
+};
+
+const pickFirstPartnerImage = (value) => {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const image = resolvePartnerImageCandidate(entry);
+      if (image) return image;
+    }
+    return null;
+  }
+  return resolvePartnerImageCandidate(value);
+};
+
+const resolvePartnerHotelPrimaryImage = (imagesPayload) => {
+  if (!imagesPayload) return null;
+  const hotelImages = imagesPayload?.hotelImages ?? imagesPayload;
+  const firstImage =
+    pickFirstPartnerImage(hotelImages?.image) ??
+    pickFirstPartnerImage(hotelImages?.images) ??
+    pickFirstPartnerImage(imagesPayload?.image) ??
+    pickFirstPartnerImage(imagesPayload?.images) ??
+    pickFirstPartnerImage(imagesPayload);
+  if (firstImage) return firstImage;
+
+  const thumb =
+    resolvePartnerImageCandidate(hotelImages?.thumb) ??
+    resolvePartnerImageCandidate(imagesPayload?.thumb);
+  return thumb;
+};
+
+const mapPartnerPublicHotel = (row) => {
+  const plain = row?.get ? row.get({ plain: true }) : row;
+  if (!plain?.hotel_id) return null;
+  const claim = plain.partnerClaim || null;
+  return {
+    hotelId: String(plain.hotel_id),
+    name: plain.name,
+    city: plain.city_name || null,
+    country: plain.country_name || null,
+    address: plain.address || null,
+    rating: plain.rating || null,
+    image: resolvePartnerHotelPrimaryImage(plain.images),
+    alreadyClaimed: Boolean(claim),
+    claimStatus: claim?.claim_status || null,
+  };
+};
+
 export const searchPartnerHotels = async ({ query, limit = 12 }) => {
   const trimmed = String(query || "").trim();
   if (!trimmed) return [];
@@ -391,15 +463,7 @@ export const searchPartnerHotels = async ({ query, limit = 12 }) => {
     where: {
       name: { [iLikeOp]: `%${trimmed}%` },
     },
-    attributes: [
-      "hotel_id",
-      "name",
-      "city_name",
-      "country_name",
-      "address",
-      "priority",
-      "images",
-    ],
+    attributes: PARTNER_PUBLIC_HOTEL_ATTRIBUTES,
     include: [
       {
         model: models.PartnerHotelClaim,
@@ -415,24 +479,47 @@ export const searchPartnerHotels = async ({ query, limit = 12 }) => {
     limit: Math.max(1, Math.min(Number(limit) || 12, 20)),
   });
 
-  return rows.map((row) => {
-    const plain = row.get ? row.get({ plain: true }) : row;
-    const cover =
-      plain?.images?.hotelImages?.thumb ||
-      (Array.isArray(plain?.images?.hotelImages?.image) && plain.images.hotelImages.image[0]?.url) ||
-      null;
-    const claim = plain.partnerClaim || null;
-    return {
-      hotelId: String(plain.hotel_id),
-      name: plain.name,
-      city: plain.city_name || null,
-      country: plain.country_name || null,
-      address: plain.address || null,
-      image: cover,
-      alreadyClaimed: Boolean(claim),
-      claimStatus: claim?.claim_status || null,
-    };
+  return rows.map(mapPartnerPublicHotel).filter(Boolean);
+};
+
+export const listPartnerHotelSamples = async ({ limit = 2 } = {}) => {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 2, 6));
+  const rows = await models.WebbedsHotel.findAll({
+    where: {
+      images: { [Op.ne]: null },
+    },
+    attributes: PARTNER_PUBLIC_HOTEL_ATTRIBUTES,
+    order: [models.WebbedsHotel.sequelize.random()],
+    limit: safeLimit * 5,
   });
+
+  const items = rows
+    .map(mapPartnerPublicHotel)
+    .filter((item) => item?.name && item?.image);
+
+  if (items.length >= safeLimit) return items.slice(0, safeLimit);
+
+  const fallbackRows = await models.WebbedsHotel.findAll({
+    where: {
+      images: { [Op.ne]: null },
+    },
+    attributes: PARTNER_PUBLIC_HOTEL_ATTRIBUTES,
+    order: [
+      ["priority", "DESC"],
+      ["name", "ASC"],
+    ],
+    limit: safeLimit * 10,
+  });
+
+  const seen = new Set(items.map((item) => item.hotelId));
+  for (const item of fallbackRows.map(mapPartnerPublicHotel)) {
+    if (!item?.name || !item?.image || seen.has(item.hotelId)) continue;
+    seen.add(item.hotelId);
+    items.push(item);
+    if (items.length >= safeLimit) break;
+  }
+
+  return items.slice(0, safeLimit);
 };
 
 export const ensurePartnerClaim = async ({
