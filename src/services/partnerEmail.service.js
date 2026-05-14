@@ -8,8 +8,9 @@ import {
   resolvePartnerProgramFromClaim,
 } from "./partnerCatalog.service.js";
 
-const PARTNERS_FROM_EMAIL =
-  resolveMailFrom(process.env.PARTNERS_FROM_EMAIL || process.env.SMTP_FROM || null);
+const PARTNERS_FROM_EMAIL = resolveMailFrom(
+  process.env.PARTNERS_FROM_EMAIL || process.env.SMTP_FROM || null,
+);
 const PARTNERS_REPLY_TO_EMAIL =
   process.env.PARTNERS_REPLY_TO_EMAIL || "partners@insiderbookings.com";
 const PARTNERS_INTERNAL_EMAIL =
@@ -64,17 +65,23 @@ const formatCount = (value) => {
 };
 
 const normalizeEmail = (value) => {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   return normalized || null;
 };
 
 const formatDayCount = (value) => {
   const numeric = Number(value);
-  const rounded = Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 0;
+  const rounded =
+    Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 0;
   return `${rounded} day${rounded === 1 ? "" : "s"}`;
 };
 
-export const resolvePartnerDashboardUrl = (hotelId = null, extraParams = {}) => {
+export const resolvePartnerDashboardUrl = (
+  hotelId = null,
+  extraParams = {},
+) => {
   const params = { ...extraParams };
   if (hotelId) params.hotelId = String(hotelId);
   let dashboardPath = "partners/dashboard";
@@ -209,7 +216,8 @@ const buildPartnerEmailHtml = ({
       accentColor: "#ef4444",
       backgroundColor: "#f8fafc",
       bodyBackground: "#ffffff",
-      supportText: "Questions? Reply to this email and the BookingGPT team will help.",
+      supportText:
+        "Questions? Reply to this email and the BookingGPT team will help.",
       footerText: `Copyright ${new Date().getFullYear()} BookingGPT. All rights reserved.`,
       preheader,
       socialLinks: [],
@@ -262,7 +270,12 @@ const getPartnerPerformanceSnapshot = (claim) => {
   const performance = claim?.partnerPerformance || {};
   return {
     reachTotal: Number(performance?.bookingGptReach?.total || 0) || 0,
-    last7Days: Number(performance?.bookingGptReach?.last7Days || performance?.views?.last7Days || 0) || 0,
+    last7Days:
+      Number(
+        performance?.bookingGptReach?.last7Days ||
+          performance?.views?.last7Days ||
+          0,
+      ) || 0,
     clicks: Number(performance?.clicks?.total || 0) || 0,
     favorites: Number(performance?.favorites?.total || 0) || 0,
   };
@@ -276,19 +289,27 @@ const normalizeProfileCompletion = (value) => {
 
 const getPartnerSetupSnapshot = ({ claim, program }) => {
   const profile = claim?.hotelProfile || null;
-  const profileCompletion = profile ? normalizeProfileCompletion(profile?.profile_completion) : null;
-  const partnerInbox = normalizeEmail(profile?.contact_email || claim?.contact_email || null);
+  const profileCompletion = profile
+    ? normalizeProfileCompletion(profile?.profile_completion)
+    : null;
+  const partnerInbox = normalizeEmail(
+    profile?.contact_email || claim?.contact_email || null,
+  );
   const inquiryFeatureEnabled = Boolean(program?.capabilities?.bookingInquiry);
   const inquiryEnabled = profile ? Boolean(profile?.inquiry_enabled) : null;
   const inquiryDestination = normalizeEmail(
-    profile?.inquiry_email || profile?.contact_email || claim?.contact_email || null,
+    profile?.inquiry_email ||
+      profile?.contact_email ||
+      claim?.contact_email ||
+      null,
   );
   let inquiryLabel = "Review now";
   let inquiryNote = "confirm the traveler inquiry path in the dashboard";
 
   if (!inquiryFeatureEnabled) {
     inquiryLabel = "Locked";
-    inquiryNote = "available once the active plan enables direct traveler inquiries";
+    inquiryNote =
+      "available once the active plan enables direct traveler inquiries";
   } else if (inquiryEnabled === true && inquiryDestination) {
     inquiryLabel = "Ready";
     inquiryNote = `traveler messages route to ${inquiryDestination}`;
@@ -300,8 +321,12 @@ const getPartnerSetupSnapshot = ({ claim, program }) => {
     inquiryNote = "turn on direct inquiries so travelers can reach the hotel";
   }
 
-  const specialOfferFeatureEnabled = Boolean(program?.capabilities?.specialOffers);
-  const specialOffersEnabled = profile ? Boolean(profile?.special_offers_enabled) : null;
+  const specialOfferFeatureEnabled = Boolean(
+    program?.capabilities?.specialOffers,
+  );
+  const specialOffersEnabled = profile
+    ? Boolean(profile?.special_offers_enabled)
+    : null;
   let specialOfferLabel = specialOfferFeatureEnabled ? "Review now" : "Locked";
   let specialOfferNote = specialOfferFeatureEnabled
     ? "consider adding a public offer before more trial traffic arrives"
@@ -460,20 +485,29 @@ const buildWeekThreeConversionStats = ({ claim, program }) => {
   ];
 };
 
-const getPlanSelectionStats = ({ program, includeDaysLeft = false, badgeStatus = null }) => {
+const getPlanSelectionStats = ({
+  program,
+  includeDaysLeft = false,
+  badgeStatus = null,
+  discountOffer = null,
+}) => {
   const stats = [];
   if (includeDaysLeft) {
     const trialDaysLeft = Number(program?.trialDaysLeft || 0);
     stats.push({
       label: "Time left",
       value: `${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"}`,
-      note: program?.trialEndsAt ? `trial ends ${formatDate(program.trialEndsAt)}` : "trial still active",
+      note: program?.trialEndsAt
+        ? `trial ends ${formatDate(program.trialEndsAt)}`
+        : "trial still active",
     });
   } else if (badgeStatus) {
     stats.push({
       label: "Badge status",
       value: badgeStatus,
-      note: program?.trialEndsAt ? `trial ended ${formatDate(program.trialEndsAt)}` : "",
+      note: program?.trialEndsAt
+        ? `trial ended ${formatDate(program.trialEndsAt)}`
+        : "",
     });
   } else if (program?.trialEndsAt) {
     stats.push({
@@ -482,11 +516,19 @@ const getPlanSelectionStats = ({ program, includeDaysLeft = false, badgeStatus =
       note: "partner pricing is now available",
     });
   }
+  if (discountOffer) {
+    stats.push({
+      label: discountOffer.label,
+      value: discountOffer.value,
+      note: discountOffer.note,
+    });
+  }
   return [...stats, ...getPlanPricingStats()];
 };
 
 const getRequestedPlanLabel = (claim) =>
-  getPartnerPlanByCode(claim?.pending_plan_code || claim?.current_plan_code)?.label ||
+  getPartnerPlanByCode(claim?.pending_plan_code || claim?.current_plan_code)
+    ?.label ||
   claim?.pending_plan_code ||
   claim?.current_plan_code ||
   null;
@@ -522,13 +564,15 @@ export const resolvePartnerLifecycleTemplate = ({
           {
             label: "Trial status",
             value: program?.statusLabel || "Trial active",
-            note: trialEndLabel ? `scheduled to end ${trialEndLabel}` : "no card required now",
+            note: trialEndLabel
+              ? `scheduled to end ${trialEndLabel}`
+              : "no card required now",
           },
         ],
         bullets: [
           "Your partner dashboard is ready right now.",
           "No card is required to explore the dashboard or complete setup.",
-          "We will send weekly performance updates during the trial and reveal pricing on day 25.",
+          "Top 3 first actions: confirm your hotel contact, review the public profile, and prepare inquiry routing.",
         ],
         outro:
           "Use the dashboard to review your listing, understand the lifecycle timeline and prepare for plan selection later in the trial.",
@@ -545,11 +589,8 @@ export const resolvePartnerLifecycleTemplate = ({
         stats: buildWeekOneSetupStats({ claim, program }),
         bullets: [
           `BookingGPT Reach so far: ${formatCount(performance.reachTotal)}, with ${formatCount(performance.clicks)} traveler clicks already recorded.`,
-          setup.profileCompletion != null
-            ? setup.profileCompletion >= 80
-              ? `Your listing is already ${setup.profileCompletion}% complete, which is a strong base for the rest of the trial.`
-              : `Your listing is ${setup.profileCompletion}% complete. Tightening the profile now will make the remaining trial traffic more useful.`
-            : "Use the dashboard this week to tighten the listing before more trial traffic arrives.",
+          "Hotels at this stage that complete setup early tend to keep more visibility after the trial.",
+          `Your listing is ${setup.profileCompletion != null ? `${setup.profileCompletion}% complete` : "still being built"}. Review the profile, inquiry routing and public offer fields this week.`,
           !setup.inquiryFeatureEnabled
             ? "Direct traveler inquiries stay locked until the active plan enables them."
             : setup.inquiryReady
@@ -574,6 +615,7 @@ export const resolvePartnerLifecycleTemplate = ({
         stats: buildWeekTwoPerformanceStats({ claim }),
         bullets: [
           `Saved to favorites so far: ${formatCount(performance.favorites)}.`,
+          "Review this week what similar hotels are doing: clean photos, strong amenities and a clear contact workflow.",
           performance.clicks > 0 || performance.favorites > 0
             ? `Traveler intent is starting to show up beyond raw visibility${performance.clicks > 0 && performance.favorites > 0 ? ", in both clicks and saves." : "."}`
             : "Visibility is building, but traveler intent is still light enough that listing improvements can matter before the second half of the trial.",
@@ -604,6 +646,7 @@ export const resolvePartnerLifecycleTemplate = ({
         bullets: [
           "Your hotel remains visible with the Featured badge.",
           `So far the trial has generated ${formatCount(performance.reachTotal)} tracked views, ${formatCount(performance.clicks)} clicks and ${formatCount(performance.favorites)} traveler saves.`,
+          "Partners who finish their setup by midpoint are more likely to keep the badge after trial day 30.",
           hasSetupGaps
             ? "The midpoint is the right moment to close setup gaps before pricing appears on day 25."
             : "The setup is largely in place, so the next move is monitoring performance and preparing for the day 25 plan decision.",
@@ -627,6 +670,7 @@ export const resolvePartnerLifecycleTemplate = ({
         stats: buildWeekThreeConversionStats({ claim, program }),
         bullets: [
           "Partner pricing unlocks on day 25, so this is the last full week to review the trial before plan selection opens.",
+          "Protect the momentum you have now: the visibility earned during the trial is the strongest asset before pricing begins.",
           performance.clicks > 0 || performance.favorites > 0
             ? `The hotel has already generated ${formatCount(performance.clicks)} clicks and ${formatCount(performance.favorites)} traveler saves, which is the demand signal worth protecting if the listing keeps growing.`
             : "The remaining trial days should focus on tightening the listing so the visibility already earned has a better chance to convert.",
@@ -642,15 +686,23 @@ export const resolvePartnerLifecycleTemplate = ({
     }
     case "day_25_choose_plan":
       return {
-        subject: `${hotelName}: 5 days left to keep your badge`,
-        preheader: `Partner pricing is now visible. Choose a plan for ${hotelName} before the trial ends.`,
+        subject: `${hotelName}: 5 days left to keep your badge — 5% off first month today`,
+        preheader: `Partner pricing is now visible. Activate today to keep your badge and get 5% off the first month.`,
         intro: `Your BookingGPT trial is entering its final stretch. Choose a plan now to keep partner badge visibility active when the trial ends${trialEndLabel ? ` on ${trialEndLabel}` : ""}.`,
-        stats: getPlanSelectionStats({ program }),
+        stats: getPlanSelectionStats({
+          program,
+          discountOffer: {
+            label: "Today only",
+            value: "5% off first month",
+            note: "available when you activate the first subscription today",
+          },
+        }),
         bullets: [
+          "Activate any plan today and receive 5% off the first month's subscription.",
           "Verified keeps an active partner badge on the listing.",
           "Preferred adds stronger visibility and enhanced partner lifecycle features.",
           "Featured keeps the strongest placement and the full premium partner feature set.",
-          "You can activate instantly by card or request an invoice from the dashboard.",
+          "Card payments lock the discount immediately; invoice requests are still available.",
         ],
         outro:
           "If no plan is selected, the badge is removed automatically on day 30 and the hotel continues without premium partner visibility.",
@@ -661,12 +713,13 @@ export const resolvePartnerLifecycleTemplate = ({
       return {
         subject: `${hotelName}: 3 days left before badge removal`,
         preheader: `${hotelName} has 3 days left before the BookingGPT partner badge is removed.`,
-        intro: `There are 3 days left before the partner badge is removed from ${hotelName}.`,
+        intro: `There are 3 days left before the partner badge is removed from ${hotelName}. This is your last window to protect the visibility earned during the trial.`,
         stats: getPlanSelectionStats({ program, includeDaysLeft: true }),
         bullets: [
           "Card activation keeps the badge live immediately.",
           "Invoice requests stay pending until payment is confirmed.",
-          "Manual follow-up remains scheduled, but the fastest way to keep visibility is activating the plan from the dashboard today.",
+          "Compare with and without the badge: the active plan preserves visibility and traveler signal.",
+          "If you want help choosing the best plan, reply to this email or open the dashboard today.",
         ],
         outro:
           "If you still want partner visibility on BookingGPT, now is the right time to choose the plan that fits this property.",
@@ -683,6 +736,7 @@ export const resolvePartnerLifecycleTemplate = ({
           "Verified, Preferred and Featured are all available from the dashboard.",
           "Card payments activate immediately after checkout completes.",
           "A second manual call attempt is still scheduled, but the dashboard is the fastest way to secure the badge.",
+          "If you'd like help, reply to this email and we will support your plan choice.",
         ],
         outro:
           "Once the trial expires, the hotel remains listed on BookingGPT but without the premium partner badge.",
@@ -693,12 +747,13 @@ export const resolvePartnerLifecycleTemplate = ({
       return {
         subject: `${hotelName}: your badge has been removed`,
         preheader: `${hotelName} is still listed on BookingGPT, but the partner badge has now been removed.`,
-        intro: `The 30-day trial has ended and the partner badge has now been removed from ${hotelName}.`,
+        intro: `The 30-day trial has ended and the partner badge has now been removed from ${hotelName}. Your hotel is still visible, but without premium placement.`,
         stats: getPlanSelectionStats({ program, badgeStatus: "Removed" }),
         bullets: [
           "Your hotel is still listed on BookingGPT.",
           "The premium partner badge and boosted placement return as soon as a plan is activated.",
-          "You can restore visibility with Verified, Preferred or Featured directly from the dashboard.",
+          "Restore visibility now from the dashboard and recover the momentum already built.",
+          "If you want help choosing the fastest restoration option, reply to this email.",
         ],
         outro:
           "If you want to keep discovery momentum and premium partner treatment, restore the badge now.",
@@ -715,6 +770,7 @@ export const resolvePartnerLifecycleTemplate = ({
           "Verified reactivates the entry partner badge.",
           "Preferred restores stronger visibility and enhanced lifecycle benefits.",
           "Featured restores the strongest placement and the full premium feature set.",
+          "Reactivating now can recover the momentum from your trial period.",
         ],
         outro:
           "Open the dashboard when you are ready to reactivate the plan that fits this property.",
@@ -724,13 +780,14 @@ export const resolvePartnerLifecycleTemplate = ({
     case "day_37_last_message":
       return {
         subject: `${hotelName}: final message about your badge`,
-        preheader: `Final BookingGPT follow-up for ${hotelName} before automated reminders stop.`,
-        intro: `This is the final automated follow-up for ${hotelName} in the BookingGPT launch sequence.`,
+        preheader: `Final partner follow-up for ${hotelName}. The badge can still return.`,
+        intro: `This is the final automated follow-up for ${hotelName} in the BookingGPT launch sequence. The badge can still return once the right plan is selected.`,
         stats: getPlanSelectionStats({ program, badgeStatus: "Inactive" }),
         bullets: [
           "Your badge is ready to return as soon as you pick a plan.",
           "Verified, Preferred and Featured remain available in the dashboard.",
           "After this message, the automatic follow-up sequence stops.",
+          "If you'd like support, reply to this email and our team will help you choose the next step.",
         ],
         outro:
           "If this hotel still wants premium partner visibility on BookingGPT, the next step is simply selecting the right plan in the dashboard.",
@@ -746,11 +803,14 @@ export const resolvePartnerLifecycleTemplate = ({
           {
             label: "Plan",
             value: program?.planLabel || "Active",
-            note: program?.badgeLabel ? `${program.badgeLabel} badge` : "partner plan active",
+            note: program?.badgeLabel
+              ? `${program.badgeLabel} badge`
+              : "partner plan active",
           },
           {
             label: "Monthly billing",
-            value: formatMoney(program?.priceMonthly, program?.currency) || "Custom",
+            value:
+              formatMoney(program?.priceMonthly, program?.currency) || "Custom",
             note: "per month",
           },
           {
@@ -760,7 +820,9 @@ export const resolvePartnerLifecycleTemplate = ({
           },
           {
             label: "Payment method",
-            value: claim?.billing_method ? String(claim.billing_method).toUpperCase() : "CARD",
+            value: claim?.billing_method
+              ? String(claim.billing_method).toUpperCase()
+              : "CARD",
             note: "managed in the dashboard",
           },
         ],
@@ -812,11 +874,15 @@ export const resolvePartnerLifecycleTemplate = ({
         ctaUrl: dashboardUrl,
       };
     default: {
-      const fallback = PARTNER_EMAIL_SEQUENCE.find((entry) => entry.key === emailKey);
+      const fallback = PARTNER_EMAIL_SEQUENCE.find(
+        (entry) => entry.key === emailKey,
+      );
       return {
         subject: fallback?.subject || "BookingGPT Partners update",
-        preheader: fallback?.preview || "Your BookingGPT partner status was updated.",
-        intro: fallback?.preview || "Your BookingGPT partner status was updated.",
+        preheader:
+          fallback?.preview || "Your BookingGPT partner status was updated.",
+        intro:
+          fallback?.preview || "Your BookingGPT partner status was updated.",
         ctaLabel: "Open dashboard",
         ctaUrl: dashboardUrl,
       };
@@ -825,7 +891,9 @@ export const resolvePartnerLifecycleTemplate = ({
 };
 
 export const sendPartnerLifecycleEmail = async ({ claim, hotel, emailKey }) => {
-  const toEmail = String(claim?.contact_email || "").trim().toLowerCase();
+  const toEmail = String(claim?.contact_email || "")
+    .trim()
+    .toLowerCase();
   if (!toEmail) return { skipped: true, reason: "missing-contact-email" };
 
   const template = resolvePartnerLifecycleTemplate({ emailKey, claim, hotel });
@@ -842,14 +910,26 @@ export const sendPartnerLifecycleEmail = async ({ claim, hotel, emailKey }) => {
   return { skipped: false };
 };
 
-export const sendPartnerInternalManualReviewAlert = async ({ claim, hotel, user, review }) => {
+export const sendPartnerInternalManualReviewAlert = async ({
+  claim,
+  hotel,
+  user,
+  review,
+}) => {
   const hotelName = hotel?.name || `Hotel ${claim?.hotel_id || ""}`.trim();
   const dashboardUrl = resolvePartnerDashboardUrl(claim?.hotel_id);
   const rows = [
     ["Hotel", hotelName],
     ["Hotel ID", claim?.hotel_id],
     ["Claim ID", claim?.id],
-    ["Source", PARTNER_CLAIM_SOURCE_LABELS[String(review?.source || "").trim().toLowerCase()] || "-"],
+    [
+      "Source",
+      PARTNER_CLAIM_SOURCE_LABELS[
+        String(review?.source || "")
+          .trim()
+          .toLowerCase()
+      ] || "-",
+    ],
     ["Contact name", claim?.contact_name || user?.name || "-"],
     ["Contact email", claim?.contact_email || user?.email || "-"],
     ["Contact phone", claim?.contact_phone || user?.phone || "-"],
@@ -900,11 +980,16 @@ export const sendPartnerInternalManualReviewAlert = async ({ claim, hotel, user,
   });
 };
 
-export const sendPartnerInternalInvoiceAlert = async ({ claim, hotel, billingDetails }) => {
+export const sendPartnerInternalInvoiceAlert = async ({
+  claim,
+  hotel,
+  billingDetails,
+}) => {
   const hotelName = hotel?.name || `Hotel ${claim?.hotel_id || ""}`.trim();
   const dashboardUrl = resolvePartnerDashboardUrl(claim?.hotel_id);
   const requestedPlan =
-    getPartnerPlanByCode(claim?.pending_plan_code || claim?.current_plan_code)?.label ||
+    getPartnerPlanByCode(claim?.pending_plan_code || claim?.current_plan_code)
+      ?.label ||
     claim?.pending_plan_code ||
     claim?.current_plan_code ||
     "-";
@@ -914,7 +999,10 @@ export const sendPartnerInternalInvoiceAlert = async ({ claim, hotel, billingDet
     ["Claim ID", claim?.id],
     ["Requested plan", requestedPlan],
     ["Billing name", billingDetails?.billingName || "-"],
-    ["Billing email", billingDetails?.billingEmail || claim?.contact_email || "-"],
+    [
+      "Billing email",
+      billingDetails?.billingEmail || claim?.contact_email || "-",
+    ],
     ["Account manager email", billingDetails?.accountManagerEmail || "-"],
     ["Billing address", billingDetails?.billingAddress || "-"],
   ];
@@ -967,7 +1055,9 @@ export const sendPartnerHotelInquiryEmail = async ({
   inquiry,
   destinationEmail,
 } = {}) => {
-  const toEmail = String(destinationEmail || "").trim().toLowerCase();
+  const toEmail = String(destinationEmail || "")
+    .trim()
+    .toLowerCase();
   if (!toEmail) {
     throw new Error("Missing inquiry destination email");
   }
@@ -1033,7 +1123,8 @@ export const sendPartnerHotelInquiryEmail = async ({
       accentColor: "#1877F2",
       backgroundColor: "#f8fafc",
       bodyBackground: "#ffffff",
-      supportText: "Reply directly to the traveler to continue the conversation.",
+      supportText:
+        "Reply directly to the traveler to continue the conversation.",
       footerText: `Copyright ${new Date().getFullYear()} BookingGPT. All rights reserved.`,
       preheader: `${travelerName} sent a direct inquiry for ${hotelName}.`,
       socialLinks: [],
@@ -1067,7 +1158,9 @@ export const sendPartnerMonthlyReportEmail = async ({
   pdfBuffer,
   destinationEmail,
 } = {}) => {
-  const toEmail = String(destinationEmail || "").trim().toLowerCase();
+  const toEmail = String(destinationEmail || "")
+    .trim()
+    .toLowerCase();
   if (!toEmail) {
     throw new Error("Missing monthly report destination email");
   }

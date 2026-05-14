@@ -8,6 +8,7 @@ import {
   PARTNER_PAYMENT_METHODS,
   PARTNER_SUBSCRIPTION_STATUSES,
   PARTNER_TRIAL_DAYS,
+  PARTNER_PRICE_DISCLOSURE_DAY,
   getPartnerPlanByCode,
   getPartnerPlans,
   normalizePartnerPlanCode,
@@ -31,14 +32,61 @@ const iLikeOp = getCaseInsensitiveLikeOp();
 
 const getStripeClient = async () => {
   const { default: Stripe } = await import("stripe");
-  return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2022-11-15" });
+  return new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: "2022-11-15",
+  });
 };
 
 const normalizePlanCode = (value) =>
-  normalizePartnerPlanCode(value) || String(value || "").trim().toLowerCase();
+  normalizePartnerPlanCode(value) ||
+  String(value || "")
+    .trim()
+    .toLowerCase();
 const normalizePaymentMethod = (value) =>
-  String(value || "").trim().toLowerCase() || PARTNER_PAYMENT_METHODS.card;
+  String(value || "")
+    .trim()
+    .toLowerCase() || PARTNER_PAYMENT_METHODS.card;
 const toNow = () => new Date();
+const PARTNER_DAY25_DISCOUNT_PERCENT = 5;
+const PARTNER_DAY25_DISCOUNT_COUPON_ID = "partner_day25_first_month_5off";
+
+const isPartnerDay25DiscountEligible = (claim, now = new Date()) => {
+  if (!claim) return false;
+  const program = resolvePartnerProgramFromClaim(claim, now);
+  const ageDays = Number(program?.ageDays || 0);
+  const hasActiveSubscription =
+    String(claim?.claim_status || "").toUpperCase() ===
+      PARTNER_CLAIM_STATUSES.subscribed ||
+    [
+      PARTNER_SUBSCRIPTION_STATUSES.active,
+      PARTNER_SUBSCRIPTION_STATUSES.trialing,
+    ].includes(String(claim?.subscription_status || "").toLowerCase());
+  return !hasActiveSubscription && ageDays === PARTNER_PRICE_DISCLOSURE_DAY;
+};
+
+const getOrCreatePartnerDay25DiscountCoupon = async (stripe) => {
+  if (!stripe) return null;
+  try {
+    const existing = await stripe.coupons.retrieve(
+      PARTNER_DAY25_DISCOUNT_COUPON_ID,
+    );
+    if (existing && existing.id) return existing.id;
+  } catch (error) {
+    const message = String(error?.message || "");
+    if (error?.statusCode === 404 || /No such coupon/i.test(message)) {
+      const created = await stripe.coupons.create({
+        id: PARTNER_DAY25_DISCOUNT_COUPON_ID,
+        percent_off: PARTNER_DAY25_DISCOUNT_PERCENT,
+        duration: "once",
+        name: "BookingGPT Day 25 5% Off",
+      });
+      return created.id;
+    }
+    return null;
+  }
+  return null;
+};
+
 const PARTNER_REACH_WINDOW_DAYS = Math.max(
   30,
   Number(process.env.PARTNER_REACH_WINDOW_DAYS || 90),
@@ -75,8 +123,11 @@ export const PARTNER_CLAIM_SOURCES = Object.freeze({
 });
 
 const normalizePartnerClaimSource = (value) => {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (normalized === PARTNER_CLAIM_SOURCES.verify) return PARTNER_CLAIM_SOURCES.verify;
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === PARTNER_CLAIM_SOURCES.verify)
+    return PARTNER_CLAIM_SOURCES.verify;
   if (
     [
       PARTNER_CLAIM_SOURCES.search,
@@ -96,17 +147,21 @@ export const getPartnerClaimReviewState = (claim) => {
   const review = toObject(meta.review);
   const source =
     normalizePartnerClaimSource(review.source || meta.claimSource) ||
-    (claim?.trial_started_at ? PARTNER_CLAIM_SOURCES.verify : PARTNER_CLAIM_SOURCES.search);
+    (claim?.trial_started_at
+      ? PARTNER_CLAIM_SOURCES.verify
+      : PARTNER_CLAIM_SOURCES.search);
   const requiresManualApproval = Boolean(review.requiresManualApproval);
   const approvedAt = review.approvedAt || review.approved_at || null;
-  const requestedAt = review.requestedAt || review.requested_at || claim?.claimed_at || null;
+  const requestedAt =
+    review.requestedAt || review.requested_at || claim?.claimed_at || null;
   const blocked = requiresManualApproval && !approvedAt;
   return {
     source,
     requiresManualApproval,
     approvedAt,
     requestedAt,
-    approvedByUserId: review.approvedByUserId || review.approved_by_user_id || null,
+    approvedByUserId:
+      review.approvedByUserId || review.approved_by_user_id || null,
     blocked,
   };
 };
@@ -223,7 +278,8 @@ const resolvePartnerPerformanceAdjustments = (claim) => {
   return {
     manualViews,
     socialViews,
-    clicks: directClicks || manualClicks + socialClicks + destinationEmailClicks,
+    clicks:
+      directClicks || manualClicks + socialClicks + destinationEmailClicks,
   };
 };
 
@@ -263,9 +319,16 @@ export const fetchPartnerPerformanceByHotelIds = async (
             .map((claim) => [String(claim.hotel_id), claim]),
         );
 
-  const safeWindowDays = Math.max(7, Number(reachWindowDays) || PARTNER_REACH_WINDOW_DAYS);
-  const reachSince = new Date(now.getTime() - safeWindowDays * 24 * 60 * 60 * 1000);
-  const weeklySince = new Date(now.getTime() - PARTNER_WEEKLY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const safeWindowDays = Math.max(
+    7,
+    Number(reachWindowDays) || PARTNER_REACH_WINDOW_DAYS,
+  );
+  const reachSince = new Date(
+    now.getTime() - safeWindowDays * 24 * 60 * 60 * 1000,
+  );
+  const weeklySince = new Date(
+    now.getTime() - PARTNER_WEEKLY_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+  );
   const todayStart = getUtcStartOfDay(now);
 
   const [reachRows, weeklyRows, todayRows, favoritesRows] = await Promise.all([
@@ -333,7 +396,10 @@ export const fetchPartnerPerformanceByHotelIds = async (
   return statsByHotelId;
 };
 
-export const hydratePartnerClaimsPerformance = async (claims = [], options = {}) => {
+export const hydratePartnerClaimsPerformance = async (
+  claims = [],
+  options = {},
+) => {
   const list = Array.isArray(claims) ? claims.filter(Boolean) : [];
   if (!list.length) return list;
   const statsByHotelId = await fetchPartnerPerformanceByHotelIds(
@@ -344,7 +410,9 @@ export const hydratePartnerClaimsPerformance = async (claims = [], options = {})
   list.forEach((claim) => {
     claim.partnerPerformance =
       statsByHotelId.get(String(claim.hotel_id)) ||
-      buildPartnerPerformanceSnapshot(resolvePartnerPerformanceAdjustments(claim));
+      buildPartnerPerformanceSnapshot(
+        resolvePartnerPerformanceAdjustments(claim),
+      );
   });
   return list;
 };
@@ -378,7 +446,9 @@ const buildClaimInclude = ({
       model: models.PartnerEmailLog,
       as: "emailLogs",
       required: false,
-      attributes: Array.isArray(emailLogAttributes) ? emailLogAttributes : undefined,
+      attributes: Array.isArray(emailLogAttributes)
+        ? emailLogAttributes
+        : undefined,
     });
   }
   return include;
@@ -395,9 +465,29 @@ const PARTNER_PUBLIC_HOTEL_ATTRIBUTES = Object.freeze([
   "images",
 ]);
 
+const ACTIVE_PARTNER_SUBSCRIPTION_CLAIM_ATTRIBUTES = Object.freeze([
+  "id",
+  "hotel_id",
+  "claim_status",
+  "subscription_status",
+  "claimed_at",
+  "trial_started_at",
+  "trial_ends_at",
+  "subscription_started_at",
+  "next_billing_at",
+  "current_plan_code",
+  "pending_plan_code",
+  "billing_method",
+  "invoice_requested_at",
+  "invoice_paid_at",
+  "last_badge_activated_at",
+  "cancelled_at",
+]);
+
 const resolvePartnerImageCandidate = (value) => {
   if (!value) return null;
-  if (typeof value === "string" || typeof value === "number") return String(value).trim() || null;
+  if (typeof value === "string" || typeof value === "number")
+    return String(value).trim() || null;
   if (typeof value !== "object") return null;
   return (
     value.url ??
@@ -443,6 +533,7 @@ const mapPartnerPublicHotel = (row) => {
   const plain = row?.get ? row.get({ plain: true }) : row;
   if (!plain?.hotel_id) return null;
   const claim = plain.partnerClaim || null;
+  const program = claim ? resolvePartnerProgramFromClaim(claim) : null;
   return {
     hotelId: String(plain.hotel_id),
     name: plain.name,
@@ -453,8 +544,50 @@ const mapPartnerPublicHotel = (row) => {
     image: resolvePartnerHotelPrimaryImage(plain.images),
     alreadyClaimed: Boolean(claim),
     claimStatus: claim?.claim_status || null,
+    subscriptionStatus: claim?.subscription_status || null,
+    planCode:
+      program?.planCode ||
+      normalizePartnerPlanCode(claim?.current_plan_code) ||
+      null,
+    planLabel:
+      program?.planLabel ||
+      getPartnerPlanByCode(claim?.current_plan_code)?.label ||
+      null,
+    badgeLabel: program?.badgeLabel || null,
+    badgeColorHex: program?.badgeColorHex || null,
   };
 };
+
+const mapPartnerPublicHotelFromClaim = (row) => {
+  const claim = row?.get ? row.get({ plain: true }) : row;
+  const hotel = claim?.hotel || null;
+  if (!hotel) return null;
+  return mapPartnerPublicHotel({
+    ...hotel,
+    partnerClaim: claim,
+  });
+};
+
+const buildActivePartnerSubscriptionWhere = () => ({
+  [Op.and]: [
+    { current_plan_code: { [Op.ne]: null } },
+    { current_plan_code: { [Op.ne]: "" } },
+    { cancelled_at: null },
+    {
+      [Op.or]: [
+        { claim_status: PARTNER_CLAIM_STATUSES.subscribed },
+        {
+          subscription_status: {
+            [Op.in]: [
+              PARTNER_SUBSCRIPTION_STATUSES.active,
+              PARTNER_SUBSCRIPTION_STATUSES.trialing,
+            ],
+          },
+        },
+      ],
+    },
+  ],
+});
 
 export const searchPartnerHotels = async ({ query, limit = 12 }) => {
   const trimmed = String(query || "").trim();
@@ -469,7 +602,13 @@ export const searchPartnerHotels = async ({ query, limit = 12 }) => {
         model: models.PartnerHotelClaim,
         as: "partnerClaim",
         required: false,
-        attributes: ["id", "claim_status", "user_id", "trial_ends_at", "current_plan_code"],
+        attributes: [
+          "id",
+          "claim_status",
+          "user_id",
+          "trial_ends_at",
+          "current_plan_code",
+        ],
       },
     ],
     order: [
@@ -484,35 +623,53 @@ export const searchPartnerHotels = async ({ query, limit = 12 }) => {
 
 export const listPartnerHotelSamples = async ({ limit = 2 } = {}) => {
   const safeLimit = Math.max(1, Math.min(Number(limit) || 2, 6));
-  const rows = await models.WebbedsHotel.findAll({
-    where: {
-      images: { [Op.ne]: null },
-    },
-    attributes: PARTNER_PUBLIC_HOTEL_ATTRIBUTES,
-    order: [models.WebbedsHotel.sequelize.random()],
+  const rows = await models.PartnerHotelClaim.findAll({
+    where: buildActivePartnerSubscriptionWhere(),
+    attributes: ACTIVE_PARTNER_SUBSCRIPTION_CLAIM_ATTRIBUTES,
+    include: [
+      {
+        model: models.WebbedsHotel,
+        as: "hotel",
+        required: true,
+        attributes: PARTNER_PUBLIC_HOTEL_ATTRIBUTES,
+        where: {
+          images: { [Op.ne]: null },
+        },
+      },
+    ],
+    order: [models.PartnerHotelClaim.sequelize.random()],
     limit: safeLimit * 5,
   });
 
   const items = rows
-    .map(mapPartnerPublicHotel)
+    .map(mapPartnerPublicHotelFromClaim)
     .filter((item) => item?.name && item?.image);
 
   if (items.length >= safeLimit) return items.slice(0, safeLimit);
 
-  const fallbackRows = await models.WebbedsHotel.findAll({
-    where: {
-      images: { [Op.ne]: null },
-    },
-    attributes: PARTNER_PUBLIC_HOTEL_ATTRIBUTES,
+  const fallbackRows = await models.PartnerHotelClaim.findAll({
+    where: buildActivePartnerSubscriptionWhere(),
+    attributes: ACTIVE_PARTNER_SUBSCRIPTION_CLAIM_ATTRIBUTES,
+    include: [
+      {
+        model: models.WebbedsHotel,
+        as: "hotel",
+        required: true,
+        attributes: PARTNER_PUBLIC_HOTEL_ATTRIBUTES,
+        where: {
+          images: { [Op.ne]: null },
+        },
+      },
+    ],
     order: [
-      ["priority", "DESC"],
-      ["name", "ASC"],
+      [{ model: models.WebbedsHotel, as: "hotel" }, "priority", "DESC"],
+      [{ model: models.WebbedsHotel, as: "hotel" }, "name", "ASC"],
     ],
     limit: safeLimit * 10,
   });
 
   const seen = new Set(items.map((item) => item.hotelId));
-  for (const item of fallbackRows.map(mapPartnerPublicHotel)) {
+  for (const item of fallbackRows.map(mapPartnerPublicHotelFromClaim)) {
     if (!item?.name || !item?.image || seen.has(item.hotelId)) continue;
     seen.add(item.hotelId);
     items.push(item);
@@ -545,7 +702,14 @@ export const ensurePartnerClaim = async ({
   }
 
   const hotel = await models.WebbedsHotel.findByPk(resolvedHotelId, {
-    attributes: ["hotel_id", "name", "city_name", "country_name", "address", "images"],
+    attributes: [
+      "hotel_id",
+      "name",
+      "city_name",
+      "country_name",
+      "address",
+      "images",
+    ],
   });
   if (!hotel) {
     const error = new Error("Hotel not found");
@@ -561,7 +725,9 @@ export const ensurePartnerClaim = async ({
   const now = toNow();
   const normalizedSource =
     normalizePartnerClaimSource(claimSource) ||
-    (requiresManualApproval ? PARTNER_CLAIM_SOURCES.search : PARTNER_CLAIM_SOURCES.verify);
+    (requiresManualApproval
+      ? PARTNER_CLAIM_SOURCES.search
+      : PARTNER_CLAIM_SOURCES.verify);
   if (existing && Number(existing.user_id) !== resolvedUserId) {
     const error = new Error("This hotel is already claimed");
     error.status = 409;
@@ -577,36 +743,61 @@ export const ensurePartnerClaim = async ({
         ...toObject(toObject(existing.meta).review),
         source: nextReviewState.source || normalizedSource,
         requestedAt: nextReviewState.requestedAt || existing.claimed_at || now,
-        requiresManualApproval: nextReviewState.requiresManualApproval || Boolean(requiresManualApproval),
+        requiresManualApproval:
+          nextReviewState.requiresManualApproval ||
+          Boolean(requiresManualApproval),
         approvedAt:
           nextReviewState.approvedAt ||
-          (nextReviewState.requiresManualApproval || requiresManualApproval ? null : now.toISOString()),
+          (nextReviewState.requiresManualApproval || requiresManualApproval
+            ? null
+            : now.toISOString()),
         approvedByUserId: nextReviewState.approvedByUserId || null,
       },
     };
     if (contactName) updates.contact_name = contactName;
-    if (contactEmail) updates.contact_email = String(contactEmail).trim().toLowerCase();
+    if (contactEmail)
+      updates.contact_email = String(contactEmail).trim().toLowerCase();
     if (contactPhone) updates.contact_phone = contactPhone;
     if (!existing.claimed_at) updates.claimed_at = now;
-    if (!existing.trial_started_at && !nextReviewState.requiresManualApproval && !requiresManualApproval) {
+    if (
+      !existing.trial_started_at &&
+      !nextReviewState.requiresManualApproval &&
+      !requiresManualApproval
+    ) {
       updates.trial_started_at = now;
     }
-    if (!existing.trial_ends_at && !nextReviewState.requiresManualApproval && !requiresManualApproval) {
-      updates.trial_ends_at = dayjs(now).add(PARTNER_TRIAL_DAYS, "day").toDate();
+    if (
+      !existing.trial_ends_at &&
+      !nextReviewState.requiresManualApproval &&
+      !requiresManualApproval
+    ) {
+      updates.trial_ends_at = dayjs(now)
+        .add(PARTNER_TRIAL_DAYS, "day")
+        .toDate();
     }
-    if (!existing.last_badge_activated_at && !nextReviewState.requiresManualApproval && !requiresManualApproval) {
+    if (
+      !existing.last_badge_activated_at &&
+      !nextReviewState.requiresManualApproval &&
+      !requiresManualApproval
+    ) {
       updates.last_badge_activated_at = now;
     }
     if (
       !existing.claim_status ||
-      [PARTNER_CLAIM_STATUSES.cancelled, PARTNER_CLAIM_STATUSES.pendingReview].includes(existing.claim_status)
+      [
+        PARTNER_CLAIM_STATUSES.cancelled,
+        PARTNER_CLAIM_STATUSES.pendingReview,
+      ].includes(existing.claim_status)
     ) {
       updates.claim_status =
         nextReviewState.requiresManualApproval || requiresManualApproval
           ? PARTNER_CLAIM_STATUSES.pendingReview
           : PARTNER_CLAIM_STATUSES.trialActive;
     }
-    if (!existing.onboarding_step || existing.onboarding_step === "MANUAL_REVIEW_PENDING") {
+    if (
+      !existing.onboarding_step ||
+      existing.onboarding_step === "MANUAL_REVIEW_PENDING"
+    ) {
       updates.onboarding_step =
         nextReviewState.requiresManualApproval || requiresManualApproval
           ? "MANUAL_REVIEW_PENDING"
@@ -626,13 +817,19 @@ export const ensurePartnerClaim = async ({
     claim_status: requiresManualApproval
       ? PARTNER_CLAIM_STATUSES.pendingReview
       : PARTNER_CLAIM_STATUSES.trialActive,
-    onboarding_step: requiresManualApproval ? "MANUAL_REVIEW_PENDING" : "CLAIMED",
+    onboarding_step: requiresManualApproval
+      ? "MANUAL_REVIEW_PENDING"
+      : "CLAIMED",
     contact_name: contactName || null,
-    contact_email: contactEmail ? String(contactEmail).trim().toLowerCase() : null,
+    contact_email: contactEmail
+      ? String(contactEmail).trim().toLowerCase()
+      : null,
     contact_phone: contactPhone || null,
     claimed_at: now,
     trial_started_at: requiresManualApproval ? null : now,
-    trial_ends_at: requiresManualApproval ? null : dayjs(now).add(PARTNER_TRIAL_DAYS, "day").toDate(),
+    trial_ends_at: requiresManualApproval
+      ? null
+      : dayjs(now).add(PARTNER_TRIAL_DAYS, "day").toDate(),
     last_badge_activated_at: requiresManualApproval ? null : now,
     meta: {
       review: {
@@ -719,7 +916,8 @@ export const activatePartnerClaimPlan = async ({
     onboarding_step: "PLAN_ACTIVE",
     current_plan_code: plan.code,
     pending_plan_code: null,
-    billing_method: billingMethod || claim.billing_method || PARTNER_PAYMENT_METHODS.card,
+    billing_method:
+      billingMethod || claim.billing_method || PARTNER_PAYMENT_METHODS.card,
     subscription_status: subscriptionStatus,
     subscription_started_at: claim.subscription_started_at || toNow(),
     next_billing_at:
@@ -771,29 +969,42 @@ export const createPartnerCardCheckout = async ({
     throw error;
   }
 
-  const hotel = claim?.hotel || (await models.WebbedsHotel.findByPk(claim.hotel_id));
-  const { stripe, customerId } = await getOrCreateStripeCustomer({ claim, user, hotel });
+  const hotel =
+    claim?.hotel || (await models.WebbedsHotel.findByPk(claim.hotel_id));
+  const { stripe, customerId } = await getOrCreateStripeCustomer({
+    claim,
+    user,
+    hotel,
+  });
 
-  if (claim?.stripe_subscription_id && claim?.subscription_status === PARTNER_SUBSCRIPTION_STATUSES.active) {
-    const subscription = await stripe.subscriptions.retrieve(claim.stripe_subscription_id);
+  if (
+    claim?.stripe_subscription_id &&
+    claim?.subscription_status === PARTNER_SUBSCRIPTION_STATUSES.active
+  ) {
+    const subscription = await stripe.subscriptions.retrieve(
+      claim.stripe_subscription_id,
+    );
     const subscriptionItemId = subscription?.items?.data?.[0]?.id || null;
     if (!subscriptionItemId) {
       const error = new Error("Could not resolve Stripe subscription item");
       error.status = 500;
       throw error;
     }
-    const updated = await stripe.subscriptions.update(claim.stripe_subscription_id, {
-      items: [{ id: subscriptionItemId, price: priceId }],
-      metadata: {
-        type: "partner_subscription",
-        partnerClaimId: String(claim.id),
-        hotelId: String(claim.hotel_id),
-        userId: String(claim.user_id),
-        planCode: plan.code,
+    const updated = await stripe.subscriptions.update(
+      claim.stripe_subscription_id,
+      {
+        items: [{ id: subscriptionItemId, price: priceId }],
+        metadata: {
+          type: "partner_subscription",
+          partnerClaimId: String(claim.id),
+          hotelId: String(claim.hotel_id),
+          userId: String(claim.user_id),
+          planCode: plan.code,
+        },
+        cancel_at_period_end: false,
+        proration_behavior: "none",
       },
-      cancel_at_period_end: false,
-      proration_behavior: "none",
-    });
+    );
     const refreshed = await activatePartnerClaimPlan({
       claim,
       planCode: plan.code,
@@ -803,16 +1014,28 @@ export const createPartnerCardCheckout = async ({
       nextBillingAt: updated.current_period_end
         ? dayjs.unix(updated.current_period_end).toDate()
         : null,
-      subscriptionStatus: updated.status || PARTNER_SUBSCRIPTION_STATUSES.active,
+      subscriptionStatus:
+        updated.status || PARTNER_SUBSCRIPTION_STATUSES.active,
     });
     return { mode: "updated", claim: refreshed, url: null };
+  }
+
+  let discounts = undefined;
+  if (isPartnerDay25DiscountEligible(claim)) {
+    const couponId = await getOrCreatePartnerDay25DiscountCoupon(stripe);
+    if (couponId) {
+      discounts = [{ coupon: couponId }];
+    }
   }
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: buildSuccessUrl({ hotelId: claim.hotel_id, success: successUrl }),
+    success_url: buildSuccessUrl({
+      hotelId: claim.hotel_id,
+      success: successUrl,
+    }),
     cancel_url: buildCancelUrl({ hotelId: claim.hotel_id, cancel: cancelUrl }),
     metadata: {
       type: "partner_subscription",
@@ -830,6 +1053,7 @@ export const createPartnerCardCheckout = async ({
         planCode: plan.code,
       },
     },
+    discounts,
   });
 
   await claim.update({
@@ -854,8 +1078,13 @@ export const requestPartnerInvoice = async ({
     error.status = 400;
     throw error;
   }
-  const hotel = claim?.hotel || (await models.WebbedsHotel.findByPk(claim.hotel_id));
-  const { stripe, customerId } = await getOrCreateStripeCustomer({ claim, user, hotel });
+  const hotel =
+    claim?.hotel || (await models.WebbedsHotel.findByPk(claim.hotel_id));
+  const { stripe, customerId } = await getOrCreateStripeCustomer({
+    claim,
+    user,
+    hotel,
+  });
 
   await stripe.invoiceItems.create({
     customer: customerId,
@@ -871,10 +1100,19 @@ export const requestPartnerInvoice = async ({
     },
   });
 
+  let invoiceDiscounts = undefined;
+  if (isPartnerDay25DiscountEligible(claim)) {
+    const couponId = await getOrCreatePartnerDay25DiscountCoupon(stripe);
+    if (couponId) {
+      invoiceDiscounts = [{ coupon: couponId }];
+    }
+  }
+
   const invoice = await stripe.invoices.create({
     customer: customerId,
     collection_method: "send_invoice",
     days_until_due: 7,
+    discounts: invoiceDiscounts,
     metadata: {
       type: "partner_invoice",
       partnerClaimId: String(claim.id),
@@ -894,7 +1132,9 @@ export const requestPartnerInvoice = async ({
     stripe_invoice_id: finalized.id,
     invoice_requested_at: toNow(),
     billing_details: {
-      ...(claim.billing_details && typeof claim.billing_details === "object" ? claim.billing_details : {}),
+      ...(claim.billing_details && typeof claim.billing_details === "object"
+        ? claim.billing_details
+        : {}),
       ...billingDetails,
       customerId,
       requestedPlanCode: plan.code,
@@ -937,7 +1177,9 @@ export const listPartnerClaimsForUser = async ({ userId, hotelId = null }) => {
 };
 
 const claimMatchesAdminQuery = (claim, query) => {
-  const normalizedQuery = String(query || "").trim().toLowerCase();
+  const normalizedQuery = String(query || "")
+    .trim()
+    .toLowerCase();
   if (!normalizedQuery) return true;
   const haystacks = [
     claim?.id,
@@ -953,7 +1195,11 @@ const claimMatchesAdminQuery = (claim, query) => {
     claim?.user?.name,
     claim?.user?.email,
   ];
-  return haystacks.some((value) => String(value || "").toLowerCase().includes(normalizedQuery));
+  return haystacks.some((value) =>
+    String(value || "")
+      .toLowerCase()
+      .includes(normalizedQuery),
+  );
 };
 
 const buildAdminClaimSearchWhere = (query) => {
@@ -991,7 +1237,9 @@ export const listPartnerClaimsForAdmin = async ({
   limit = 120,
 } = {}) => {
   const where = {};
-  const normalizedStatus = String(status || "").trim().toUpperCase();
+  const normalizedStatus = String(status || "")
+    .trim()
+    .toUpperCase();
   if (normalizedStatus) {
     where.claim_status = normalizedStatus;
   }
@@ -1014,7 +1262,10 @@ export const listPartnerClaimsForAdmin = async ({
       },
     ],
     subQuery: false,
-    order: [["updated_at", "DESC"], ["id", "DESC"]],
+    order: [
+      ["updated_at", "DESC"],
+      ["id", "DESC"],
+    ],
     limit: Math.max(1, Math.min(Number(limit) || 120, 250)),
   });
 
@@ -1024,14 +1275,19 @@ export const listPartnerClaimsForAdmin = async ({
 
 const buildEmailTimeline = (claim) => {
   const sentMap = new Map(
-    (Array.isArray(claim?.emailLogs) ? claim.emailLogs : []).map((entry) => [entry.email_key, entry]),
+    (Array.isArray(claim?.emailLogs) ? claim.emailLogs : []).map((entry) => [
+      entry.email_key,
+      entry,
+    ]),
   );
   return PARTNER_EMAIL_SEQUENCE.map((step) => ({
     key: step.key,
     day: step.day,
     subject: step.subject,
     preview: step.preview,
-    sent: String(sentMap.get(step.key)?.delivery_status || "").toUpperCase() === "SENT",
+    sent:
+      String(sentMap.get(step.key)?.delivery_status || "").toUpperCase() ===
+      "SENT",
     deliveryStatus: sentMap.get(step.key)?.delivery_status || null,
     sentAt: sentMap.get(step.key)?.sent_at || null,
     manualCall: step.day >= 27,
@@ -1043,7 +1299,10 @@ export const buildPartnerDashboardPayload = (claim) => {
   const hotel = claim?.hotel || null;
   const review = getPartnerClaimReviewState(claim);
   const performance =
-    claim?.partnerPerformance || buildPartnerPerformanceSnapshot(resolvePartnerPerformanceAdjustments(claim));
+    claim?.partnerPerformance ||
+    buildPartnerPerformanceSnapshot(
+      resolvePartnerPerformanceAdjustments(claim),
+    );
   const storedBillingDetails = toObject(claim?.billing_details);
   const dashboardBillingDetails = {
     billingName: storedBillingDetails.billingName || null,
@@ -1051,7 +1310,9 @@ export const buildPartnerDashboardPayload = (claim) => {
     billingAddress: storedBillingDetails.billingAddress || null,
     accountManagerEmail: storedBillingDetails.accountManagerEmail || null,
   };
-  const hasDashboardBillingDetails = Object.values(dashboardBillingDetails).some(Boolean);
+  const hasDashboardBillingDetails = Object.values(
+    dashboardBillingDetails,
+  ).some(Boolean);
   return {
     claimId: claim.id,
     hotelId: claim.hotel_id != null ? String(claim.hotel_id) : null,
@@ -1083,22 +1344,32 @@ export const buildPartnerDashboardPayload = (claim) => {
     plans: getPartnerPlans(),
     emailTimeline: buildEmailTimeline(claim),
     invoicePending:
-      String(claim.claim_status || "").toUpperCase() === PARTNER_CLAIM_STATUSES.invoicePending,
-    canChoosePlan: !review.blocked && Boolean(program?.trialActive || claim?.claim_status === PARTNER_CLAIM_STATUSES.expired),
+      String(claim.claim_status || "").toUpperCase() ===
+      PARTNER_CLAIM_STATUSES.invoicePending,
+    canChoosePlan:
+      !review.blocked &&
+      Boolean(
+        program?.trialActive ||
+        claim?.claim_status === PARTNER_CLAIM_STATUSES.expired,
+      ),
     performance,
     subscription: {
       billingMethod: claim.billing_method || null,
       stripeCustomerId: claim.stripe_customer_id || null,
       stripeSubscriptionId: claim.stripe_subscription_id || null,
       stripeInvoiceId: claim.stripe_invoice_id || null,
-      currentPlanCode: normalizePartnerPlanCode(claim.current_plan_code) || null,
+      currentPlanCode:
+        normalizePartnerPlanCode(claim.current_plan_code) || null,
       currentPlanLegacyCode: claim.current_plan_code || null,
-      pendingPlanCode: normalizePartnerPlanCode(claim.pending_plan_code) || null,
+      pendingPlanCode:
+        normalizePartnerPlanCode(claim.pending_plan_code) || null,
       pendingPlanLegacyCode: claim.pending_plan_code || null,
       nextBillingAt: claim.next_billing_at || null,
       invoiceRequestedAt: claim.invoice_requested_at || null,
       invoicePaidAt: claim.invoice_paid_at || null,
-      billingDetails: hasDashboardBillingDetails ? dashboardBillingDetails : null,
+      billingDetails: hasDashboardBillingDetails
+        ? dashboardBillingDetails
+        : null,
     },
   };
 };
@@ -1108,7 +1379,12 @@ export const attachPartnerProgramToHotelItems = async (items = []) => {
     new Set(
       (Array.isArray(items) ? items : [])
         .map((item) => extractHotelId(item))
-        .filter((value) => value !== null && value !== undefined && String(value).trim() !== "")
+        .filter(
+          (value) =>
+            value !== null &&
+            value !== undefined &&
+            String(value).trim() !== "",
+        )
         .map((value) => String(value).trim()),
     ),
   );
@@ -1117,7 +1393,10 @@ export const attachPartnerProgramToHotelItems = async (items = []) => {
   const claims = await getPartnerClaimsWithProfilesByHotelIds(hotelIds);
 
   const claimMap = new Map(
-    claims.map((claim) => [String(claim.hotel_id), resolvePartnerProgramFromClaim(claim)]),
+    claims.map((claim) => [
+      String(claim.hotel_id),
+      resolvePartnerProgramFromClaim(claim),
+    ]),
   );
 
   const enriched = (Array.isArray(items) ? items : []).map((item) => {
@@ -1137,16 +1416,23 @@ export const attachPartnerProgramToHotelItems = async (items = []) => {
     return {
       ...item,
       badge: partnerProgram.badgeLabel || item?.badge || null,
-      badgeColorHex: partnerProgram.badgeColorHex || item?.badgeColorHex || null,
+      badgeColorHex:
+        partnerProgram.badgeColorHex || item?.badgeColorHex || null,
       partnerProgram,
       hotelDetails: nextHotelDetails,
     };
   });
 
-  const withProfiles = await applyEffectivePartnerProfilesToHotelItems(enriched, claims);
+  const withProfiles = await applyEffectivePartnerProfilesToHotelItems(
+    enriched,
+    claims,
+  );
   const claimedHotelIds = claims.map((claim) => String(claim.hotel_id));
   if (!claimedHotelIds.length) return withProfiles;
-  const statsByHotelId = await fetchPartnerPerformanceByHotelIds(claimedHotelIds, claims);
+  const statsByHotelId = await fetchPartnerPerformanceByHotelIds(
+    claimedHotelIds,
+    claims,
+  );
 
   return withProfiles.map((item) => {
     const hotelId = extractHotelId(item);
@@ -1175,23 +1461,31 @@ export const attachPartnerProgramToHotelItems = async (items = []) => {
 };
 
 export const comparePartnerAwareHotelItems = (a, b, fallbackCompare) => {
-  const badgeDiff = resolveProgramBadgePriority(b) - resolveProgramBadgePriority(a);
+  const badgeDiff =
+    resolveProgramBadgePriority(b) - resolveProgramBadgePriority(a);
   if (badgeDiff !== 0) return badgeDiff;
   return typeof fallbackCompare === "function" ? fallbackCompare(a, b) : 0;
 };
 
 const updateClaimStateBeforeEmails = async (claim, now = new Date()) => {
   const trialEndsAt = claim?.trial_ends_at ? dayjs(claim.trial_ends_at) : null;
-  const subscriptionStatus = String(claim?.subscription_status || "").toLowerCase();
+  const subscriptionStatus = String(
+    claim?.subscription_status || "",
+  ).toLowerCase();
   const claimStatus = String(claim?.claim_status || "").toUpperCase();
   const isSubscribed =
     claimStatus === PARTNER_CLAIM_STATUSES.subscribed ||
-    [PARTNER_SUBSCRIPTION_STATUSES.active, PARTNER_SUBSCRIPTION_STATUSES.trialing].includes(
-      subscriptionStatus,
-    );
+    [
+      PARTNER_SUBSCRIPTION_STATUSES.active,
+      PARTNER_SUBSCRIPTION_STATUSES.trialing,
+    ].includes(subscriptionStatus);
   if (isSubscribed) return claim;
 
-  if (trialEndsAt && dayjs(now).isAfter(trialEndsAt) && claimStatus !== PARTNER_CLAIM_STATUSES.expired) {
+  if (
+    trialEndsAt &&
+    dayjs(now).isAfter(trialEndsAt) &&
+    claimStatus !== PARTNER_CLAIM_STATUSES.expired
+  ) {
     await claim.update({
       claim_status:
         claimStatus === PARTNER_CLAIM_STATUSES.invoicePending
@@ -1205,7 +1499,10 @@ const updateClaimStateBeforeEmails = async (claim, now = new Date()) => {
   if (
     trialEndsAt &&
     dayjs(now).isAfter(trialEndsAt.subtract(5, "day")) &&
-    [PARTNER_CLAIM_STATUSES.trialActive, PARTNER_CLAIM_STATUSES.paymentDue].includes(claimStatus)
+    [
+      PARTNER_CLAIM_STATUSES.trialActive,
+      PARTNER_CLAIM_STATUSES.paymentDue,
+    ].includes(claimStatus)
   ) {
     await claim.update({ claim_status: PARTNER_CLAIM_STATUSES.trialEnding });
   }
@@ -1213,11 +1510,15 @@ const updateClaimStateBeforeEmails = async (claim, now = new Date()) => {
 };
 
 const findEmailLog = (claim, emailKey) =>
-  (Array.isArray(claim?.emailLogs) ? claim.emailLogs : []).find((entry) => entry.email_key === emailKey) || null;
+  (Array.isArray(claim?.emailLogs) ? claim.emailLogs : []).find(
+    (entry) => entry.email_key === emailKey,
+  ) || null;
 
 const syncEmailLogOnClaim = (claim, log) => {
   if (!claim || !log || !Array.isArray(claim.emailLogs)) return;
-  const nextLogs = claim.emailLogs.filter((entry) => entry.email_key !== log.email_key);
+  const nextLogs = claim.emailLogs.filter(
+    (entry) => entry.email_key !== log.email_key,
+  );
   nextLogs.push(log);
   claim.emailLogs = nextLogs;
   claim.setDataValue("emailLogs", nextLogs);
@@ -1258,21 +1559,34 @@ export const logPartnerEmail = async ({
   return created;
 };
 
-export const sendPartnerSequenceEmailIfDue = async ({ claim, hotel, step, now = new Date() }) => {
+export const sendPartnerSequenceEmailIfDue = async ({
+  claim,
+  hotel,
+  step,
+  now = new Date(),
+}) => {
   const ageDays = resolvePartnerProgramFromClaim(claim, now)?.ageDays;
-  if (!Number.isFinite(ageDays) || ageDays < step.day) return { skipped: true, reason: "not-due" };
+  if (!Number.isFinite(ageDays) || ageDays < step.day)
+    return { skipped: true, reason: "not-due" };
   const existingLog = findEmailLog(claim, step.key);
   if (String(existingLog?.delivery_status || "").toUpperCase() === "SENT") {
     return { skipped: true, reason: "already-sent" };
   }
 
   const program = resolvePartnerProgramFromClaim(claim, now);
-  if (step.stopWhenSubscribed && program?.claimStatus === PARTNER_CLAIM_STATUSES.subscribed) {
+  if (
+    step.stopWhenSubscribed &&
+    program?.claimStatus === PARTNER_CLAIM_STATUSES.subscribed
+  ) {
     return { skipped: true, reason: "already-subscribed" };
   }
 
   try {
-    const deliveryResult = await sendPartnerLifecycleEmail({ claim, hotel, emailKey: step.key });
+    const deliveryResult = await sendPartnerLifecycleEmail({
+      claim,
+      hotel,
+      emailKey: step.key,
+    });
     if (deliveryResult?.skipped) {
       return {
         skipped: true,
@@ -1303,7 +1617,8 @@ export const sendPartnerSequenceEmailIfDue = async ({ claim, hotel, step, now = 
 };
 
 export const sendPartnerPlanConfirmationEmail = async ({ claim }) => {
-  const hotel = claim?.hotel || (await models.WebbedsHotel.findByPk(claim.hotel_id));
+  const hotel =
+    claim?.hotel || (await models.WebbedsHotel.findByPk(claim.hotel_id));
   await sendPartnerLifecycleEmail({
     claim,
     hotel,
@@ -1312,7 +1627,8 @@ export const sendPartnerPlanConfirmationEmail = async ({ claim }) => {
 };
 
 export const sendPartnerInvoiceRequestedEmail = async ({ claim }) => {
-  const hotel = claim?.hotel || (await models.WebbedsHotel.findByPk(claim.hotel_id));
+  const hotel =
+    claim?.hotel || (await models.WebbedsHotel.findByPk(claim.hotel_id));
   await sendPartnerLifecycleEmail({
     claim,
     hotel,
@@ -1321,8 +1637,13 @@ export const sendPartnerInvoiceRequestedEmail = async ({ claim }) => {
 };
 
 export const handlePartnerStripeEvent = async ({ eventType, object }) => {
-  const meta = object?.metadata && typeof object.metadata === "object" ? object.metadata : {};
-  const type = String(meta.type || "").trim().toLowerCase();
+  const meta =
+    object?.metadata && typeof object.metadata === "object"
+      ? object.metadata
+      : {};
+  const type = String(meta.type || "")
+    .trim()
+    .toLowerCase();
   if (!type.startsWith("partner_")) return { handled: false };
 
   const claimId = Number(meta.partnerClaimId || meta.partner_claim_id || 0);
@@ -1333,14 +1654,19 @@ export const handlePartnerStripeEvent = async ({ eventType, object }) => {
   });
   if (!claim) return { handled: false };
 
-  if (eventType === "checkout.session.completed" && type === "partner_subscription") {
+  if (
+    eventType === "checkout.session.completed" &&
+    type === "partner_subscription"
+  ) {
     const stripe = await getStripeClient();
     const subscriptionId = object?.subscription || null;
     const planCode = normalizePlanCode(meta.planCode);
     let nextBillingAt = null;
     let subscriptionStatus = PARTNER_SUBSCRIPTION_STATUSES.active;
     if (subscriptionId) {
-      const subscription = await stripe.subscriptions.retrieve(String(subscriptionId));
+      const subscription = await stripe.subscriptions.retrieve(
+        String(subscriptionId),
+      );
       nextBillingAt = subscription?.current_period_end
         ? dayjs.unix(subscription.current_period_end).toDate()
         : null;
@@ -1360,7 +1686,9 @@ export const handlePartnerStripeEvent = async ({ eventType, object }) => {
   }
 
   if (eventType === "invoice.paid" && type === "partner_invoice") {
-    const planCode = normalizePlanCode(meta.planCode || claim.pending_plan_code || claim.current_plan_code);
+    const planCode = normalizePlanCode(
+      meta.planCode || claim.pending_plan_code || claim.current_plan_code,
+    );
     const refreshed = await activatePartnerClaimPlan({
       claim,
       planCode,
@@ -1400,7 +1728,10 @@ export const handlePartnerStripeEvent = async ({ eventType, object }) => {
   return { handled: false };
 };
 
-export const runPartnerLifecycleForClaim = async ({ claim, now = new Date() }) => {
+export const runPartnerLifecycleForClaim = async ({
+  claim,
+  now = new Date(),
+}) => {
   if (!claim) {
     return {
       processed: 0,
@@ -1486,7 +1817,11 @@ export const approvePendingPartnerClaim = async ({
   }
 
   const reviewState = getPartnerClaimReviewState(claim);
-  if (!reviewState.blocked && String(claim.claim_status || "").toUpperCase() !== PARTNER_CLAIM_STATUSES.pendingReview) {
+  if (
+    !reviewState.blocked &&
+    String(claim.claim_status || "").toUpperCase() !==
+      PARTNER_CLAIM_STATUSES.pendingReview
+  ) {
     const refreshed = await models.PartnerHotelClaim.findByPk(claim.id, {
       include: buildClaimInclude(),
     });
@@ -1509,7 +1844,8 @@ export const approvePendingPartnerClaim = async ({
     claim_status: PARTNER_CLAIM_STATUSES.trialActive,
     onboarding_step: "CLAIMED",
     trial_started_at: claim.trial_started_at || now,
-    trial_ends_at: claim.trial_ends_at || dayjs(now).add(PARTNER_TRIAL_DAYS, "day").toDate(),
+    trial_ends_at:
+      claim.trial_ends_at || dayjs(now).add(PARTNER_TRIAL_DAYS, "day").toDate(),
     last_badge_activated_at: claim.last_badge_activated_at || now,
     badge_removed_at: null,
     meta: nextMeta,
@@ -1519,7 +1855,9 @@ export const approvePendingPartnerClaim = async ({
     include: buildClaimInclude(),
   });
 
-  const hotel = refreshed?.hotel || (await models.WebbedsHotel.findByPk(refreshed.hotel_id));
+  const hotel =
+    refreshed?.hotel ||
+    (await models.WebbedsHotel.findByPk(refreshed.hotel_id));
   const welcomeAlreadySent = Array.isArray(refreshed?.emailLogs)
     ? refreshed.emailLogs.some((entry) => entry.email_key === "day_1_welcome")
     : false;
@@ -1559,7 +1897,9 @@ export const simulatePartnerClaimTrial = async ({
   }
 
   const claimStatus = String(claim.claim_status || "").toUpperCase();
-  const subscriptionStatus = String(claim.subscription_status || "").toLowerCase();
+  const subscriptionStatus = String(
+    claim.subscription_status || "",
+  ).toLowerCase();
   const billingLocked =
     claimStatus === PARTNER_CLAIM_STATUSES.subscribed ||
     claimStatus === PARTNER_CLAIM_STATUSES.invoicePending ||

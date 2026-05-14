@@ -9,11 +9,13 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ## 🎯 Emails del Trial Period (Días 1-37)
 
 ### **Día 1: Welcome Email** ✅
+
 **Trigger**: Inmediatamente después de crear la claim
 
 **Asunto**: `Your Featured badge is live for {hotelName}`
 
 **Información mostrada**:
+
 - ✔️ Badge status (Featured)
 - ✔️ Trial status y fecha de término
 - ✔️ Explicación: no se requiere tarjeta ahora
@@ -22,16 +24,19 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 
 **Tono**: Bienvenida, explicación básica de la timeline
 
-**Mejora propuesta**: 
+**Mejora propuesta**:
+
 - Incluir **1 stat temprana** (ej: "Featured badge reached 2,500+ other properties this month")
 - Destacar **3 quick wins** que pueden hacer hoy (completar profile, activar inquiries, etc.)
 
 ---
 
 ### **Día 7: Week 1 Report** 📊
+
 **Trigger**: 7 días después de creación de claim
 
 **Información mostrada**:
+
 - 📈 BookingGPT Reach (total traveler visibility)
 - 📈 Traveler clicks
 - ✅ Profile completion %
@@ -40,6 +45,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 - 💡 Contextual bullets basados en setup
 
 **Estadísticas destacadas**:
+
 - Reach total en 7 días
 - Clicks de viajeros
 - % de profile completado
@@ -48,6 +54,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 **Tono**: Educativo, primeros resultados, ahora es momento de setup
 
 **Mejora propuesta**:
+
 - Agregar **benchmark comparativo**: "Hotels at this stage average X visibility"
 - Mostrar **low-hanging fruits**: "Guests are looking for [amenity] that's missing from your profile"
 - Incluir **case study mini**: "Similar hotels increased clicks by 45% by completing profile in week 1"
@@ -55,9 +62,11 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ---
 
 ### **Día 14: Week 2 Report** 📊
+
 **Trigger**: 14 días después de creación de claim
 
 **Información mostrada**:
+
 - 📈 Tracked views (visibility total)
 - ⭐ Nuevos favoritos por viajeros
 - 🔄 Traveler intent signals
@@ -65,6 +74,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 - 💡 Recommendaciones para mejorar conversión
 
 **Estadísticas destacadas**:
+
 - Views
 - Clicks (total)
 - Favorites (total)
@@ -73,6 +83,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 **Tono**: Enfoque en momentum, ahora es momento de optimizar
 
 **Mejora propuesta**:
+
 - Mostrar **"Conversion path analysis"**: qué viajeros guardaron pero no completaron booking
 - Incluir **"Competitors are using..."**: Smart Copy suggestions
 - Destacar **urgencia suave**: "Next 14 days are crucial for momentum"
@@ -80,9 +91,11 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ---
 
 ### **Día 15: Midpoint Checkpoint** 🎯
+
 **Trigger**: 15 días después de creación de claim
 
 **Información mostrada**:
+
 - ✅ Badge status confirmado
 - 📈 Total reach/clicks/favorites hasta ahora
 - ⚠️ Setup gaps identification
@@ -90,6 +103,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 - 💡 Contexto: es momento de cerrar gaps antes de pricing
 
 **Estadísticas destacadas**:
+
 - Total Reach desde inicio
 - Total Clicks
 - Total Favorites
@@ -99,6 +113,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 **Tono**: Checkpoint reflexivo, prepararse para decisión de pricing
 
 **Mejora propuesta**:
+
 - **"Here's what successful partners do by day 15"** (checklist interactivo)
 - **ROI preview**: "If this momentum continues, your 12-month value would be ~$X"
 - **Social proof**: "37% of partners who complete setup by day 15 upgrade"
@@ -106,9 +121,11 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ---
 
 ### **Día 21: Week 3 Final Report** 📊
+
 **Trigger**: 21 días después de creación de claim
 
 **Información mostrada**:
+
 - 📈 Reach/clicks/favorites acumulado
 - ⭐ Week 3 specific performance
 - 📧 Inquiry setup status
@@ -116,6 +133,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 - 🎯 Enfoque: entender momentum y protegerlo
 
 **Estadísticas destacadas**:
+
 - Total accumulated reach
 - Total clicks generados
 - Total favorites
@@ -124,6 +142,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 **Tono**: Final push antes de pricing, enfoque en proteger momentum
 
 **Mejora propuesta**:
+
 - **"Your momentum by the numbers"**: Proyección lineal de viajeros en próximos 30/90/365 días
 - **"What you unlock at each tier"**: Detalle de qué características Premium/Featured añaden a su visibility actual
 - **"72-hour window"**: "Most partners who upgrade, upgrade within 72h after day 25"
@@ -131,11 +150,13 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ---
 
 ### **🔴 Día 25: PLAN SELECTION EMAIL (CRÍTICO)** 💰
+
 **Trigger**: 25 días después de creación de claim
 
 **Asunto**: `{hotelName}: 5 days left to keep your badge`
 
 **Información mostrada**:
+
 - 💵 Plan pricing reveal (PRIMERA VEZ)
 - 📊 Plan feature comparison (Verified vs Preferred vs Featured)
 - ⚡ Instant activation options
@@ -145,6 +166,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 - 📉 Consequence if no action: badge removal en day 30
 
 **Stats mostrados**:
+
 - Pricing de cada tier
 - Features de cada tier
 - Trial end date
@@ -154,6 +176,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 **🎯 OPORTUNIDAD CRÍTICA - Mejora propuesta**:
 
 **A. En el email directamente:**
+
 - ✅ **"Performance vs. Default"** stat: Mostrar su reach/clicks vs promedio hotel no-partner
 - ✅ **"ROI Calculator"**: "Based on your clicks, Preferred ROI = X% in year 1"
 - ✅ **Social proof**: "89% of partners who reach this point upgrade within 48h"
@@ -161,11 +184,13 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 - ✅ **Clear consequence with option**: "Without a plan, your badge removes on day 30, but you can restore anytime"
 
 **B. Segmentación por performance:**
+
 - 🌟 High performers (clicks > 100): Recomendar Featured, destacar competitive advantage
 - 🟡 Medium performers (clicks 20-100): Recomendar Preferred, enfatizar inquiry routing
 - 💤 Low performers (clicks < 20): Recomendar Verified, pero con análisis: "Let's find what's working"
 
 **C. Post-email dentro de 24-48h:**
+
 - Enviar **second touchpoint** con case study de hotel similar
 - Incluir **"Limited time: Free setup call with our team"** (día 25-26)
 - Ofrecer **"First month 30% discount if activated before day 27"** (crear urgencia)
@@ -173,11 +198,13 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ---
 
 ### **Día 27: Urgent Warning** ⚠️
+
 **Trigger**: 27 días después de creación de claim (3 días antes de removal)
 
 **Asunto**: `{hotelName}: 3 days left before badge removal`
 
 **Información mostrada**:
+
 - ⏰ 3 días restantes
 - 💳 Payment options (card = instant, invoice = pending)
 - 📧 Manual follow-up still scheduled
@@ -186,6 +213,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 **Tono**: Urgencia clara y directa
 
 **Mejora propuesta**:
+
 - **"What changes when your badge is gone"**: Mostrar lado-a-lado comparison de visible reduction
 - **"One-click restoration"**: Enlace directo al plan exacto que más conversiones tiene
 - **"Last-minute offer"**: Flash discount o extended payment terms
@@ -193,11 +221,13 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ---
 
 ### **Día 28: Final Warning** 🚨
+
 **Trigger**: 28 días después de creación de claim (1 día antes de removal)
 
 **Asunto**: `{hotelName}: tomorrow your badge disappears`
 
 **Información mostrada**:
+
 - ⏰ ÚLTIMA oportunidad hoy
 - 💳 Plan opciones
 - 📊 Planification: badge removal automático mañana
@@ -206,6 +236,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 **Tono**: Urgencia máxima, última oportunidad clara
 
 **Mejora propuesta**:
+
 - **"This is it"**: Mensaje ultra-directo sin fluff
 - **"Here's the math"**: Mostrar exactamente qué pierden si no actúan
 - **"Talk to us NOW"**: Número de teléfono o chat en vivo directo, no solo email
@@ -213,9 +244,11 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ---
 
 ### **Día 30: Badge Removed** ❌
+
 **Trigger**: 30 días después de creación de claim
 
 **Información mostrada**:
+
 - ❌ Badge status: Removed
 - 📌 Hotel still listed (sin badge)
 - ✅ Badge & visibility can return si se activa plan
@@ -224,6 +257,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 **Tono**: Neutral, claridad sobre opción de restauración
 
 **Mejora propuesta**:
+
 - **Automation trigger para Zoho/CRM**: Marcar este hotel para **human follow-up**
 - Incluir **"We noticed you didn't activate..."** + survey button: "Tell us what stopped you"
 - Ofrecer **custom solution**: "Schedule a 15-min call to find the right plan for your property"
@@ -231,9 +265,11 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ---
 
 ### **Día 32: Restoration Offer** 🔄
+
 **Trigger**: 32 días después de creación de claim (2 días post-removal)
 
 **Información mostrada**:
+
 - 🔄 Hotel still listed sin badge
 - 💡 Restauración disponible en cualquier momento
 - ✅ Plan options para restaurar
@@ -242,6 +278,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 **Tono**: Invitación amable, sin urgencia
 
 **Mejora propuesta**:
+
 - **"Special windows for late activation"**: Extended trial (5 extra días) si activan ahora
 - **"Catch-up offer"**: "We'll backfill your performance data so you can see full trial results"
 - **"Partner success story"**: Case study de hotel que restauró badge y después tuvo éxito
@@ -249,9 +286,11 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ---
 
 ### **Día 37: Final Automated Message** 📝
+
 **Trigger**: 37 días después de creación de claim
 
 **Información mostrada**:
+
 - ⏸️ Final mensaje automatizado
 - 📌 Después de esto, stops automated follow-up
 - ✅ Plans aún disponibles
@@ -260,6 +299,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 **Tono**: Cierre formal, pero puerta abierta
 
 **Mejora propuesta**:
+
 - **"You haven't seen the best part yet"**: Tease 1 premium feature que maybe no entendieron
 - **"From our side: we're here"**: Contact info para soporte humano
 - **"Inactive doesn't mean lost"**: Promesa que pueden volver cuando quieran
@@ -269,9 +309,11 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ## 📧 Otros Emails (Fuera de Trial Lifecycle)
 
 ### **Plan Confirmation Email** ✅
+
 **Trigger**: Cuando partner activa un plan (cualquier momento)
 
 **Información mostrada**:
+
 - ✅ Plan name (Verified/Preferred/Featured)
 - 💵 Billing: Monthly amount
 - 📅 Next billing date
@@ -282,9 +324,11 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ---
 
 ### **Invoice Requested Email** 📄
+
 **Trigger**: Partner solicita invoice en lugar de tarjeta
 
 **Información mostrada**:
+
 - 💼 Requested plan details
 - 📧 Billing email
 - 📅 Request date/deadline
@@ -295,9 +339,11 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ---
 
 ### **Traveler Inquiry Email** 💬
+
 **Trigger**: Viajero envía inquiry a través de hotel detail
 
 **Información mostrada**:
+
 - 👤 Traveler name, email, phone
 - 📅 Check-in/check-out dates
 - 👥 Guest count
@@ -307,15 +353,18 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 **Tono**: Notificación transaccional
 
 **Mejora propuesta**:
+
 - Incluir **reply template** preformateado en email
 - Agregar **"Quick tips to convert this inquiry"** (timing, rates, etc.)
 
 ---
 
 ### **Monthly PDF Report Email** 📊
+
 **Trigger**: Monthly (si partner tiene monthlyPdfReport capability)
 
 **Información mostrada**:
+
 - 📈 Tracked views (mes)
 - ⭐ New favorites
 - 💬 Traveler inquiries (total + delivered)
@@ -328,19 +377,19 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 
 ## 🎯 SÍNTESIS: Información por Email
 
-| Día | Email | Información Principal | Enfoque | Conversión? |
-|-----|-------|---------------------|---------|------------|
-| **1** | Welcome | Badge, Trial, Timeline | Educación | No |
-| **7** | Report | Reach, Clicks, Profile%, Setup | Motivación | No |
-| **14** | Report | Views, Favorites, Traction | Optimización | No |
-| **15** | Midpoint | Total acumulado + Setup gaps | Preparación | No |
-| **21** | Report | Acumulado, Week 3, Inquiry status | Final push | ⚠️ Bajo |
-| **25** | 🔴 Plan Select | **PRICING REVEAL + Plan features** | **DECISIÓN** | ✅ Alto |
-| **27** | Urgent | 3 días, Badge removal notice | Urgencia | ✅ Alto |
-| **28** | Final | 1 día, Last chance | Urgencia máx | ✅ Alto |
-| **30** | Removed | Badge gone, Can restore | Recuperación | ⚠️ Bajo |
-| **32** | Restore | Restore available | Recuperación | ⚠️ Bajo |
-| **37** | Last Msg | Final automated message | Cierre | ❌ Muy bajo |
+| Día    | Email          | Información Principal              | Enfoque      | Conversión? |
+| ------ | -------------- | ---------------------------------- | ------------ | ----------- |
+| **1**  | Welcome        | Badge, Trial, Timeline             | Educación    | No          |
+| **7**  | Report         | Reach, Clicks, Profile%, Setup     | Motivación   | No          |
+| **14** | Report         | Views, Favorites, Traction         | Optimización | No          |
+| **15** | Midpoint       | Total acumulado + Setup gaps       | Preparación  | No          |
+| **21** | Report         | Acumulado, Week 3, Inquiry status  | Final push   | ⚠️ Bajo     |
+| **25** | 🔴 Plan Select | **PRICING REVEAL + Plan features** | **DECISIÓN** | ✅ Alto     |
+| **27** | Urgent         | 3 días, Badge removal notice       | Urgencia     | ✅ Alto     |
+| **28** | Final          | 1 día, Last chance                 | Urgencia máx | ✅ Alto     |
+| **30** | Removed        | Badge gone, Can restore            | Recuperación | ⚠️ Bajo     |
+| **32** | Restore        | Restore available                  | Recuperación | ⚠️ Bajo     |
+| **37** | Last Msg       | Final automated message            | Cierre       | ❌ Muy bajo |
 
 ---
 
@@ -382,12 +431,13 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
    - **Segment C** (Reach < 100): "Verified keeps your badge - let's debug together"
 
 2. **Day 25 Email Enhancement**:
+
    ```
    ANTES (actual):
    - Pricing reveal
    - Feature list
    - CTA: Choose plan
-   
+
    DESPUÉS (propuesta):
    - HEADLINE: "Your 30-day trial summary + day 25 pricing"
    - ROI WIDGET: "Based on your 47 clicks, Preferred = 127% ROI in year 1"
@@ -438,35 +488,38 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 
 **Propuesta**: Cada email debe tener 1-2 piezas de **información única** que no aparece en otros:
 
-| Día | Información Única |
-|-----|-------------------|
-| 1 | Educación: Timeline + "no CC required" |
-| 7 | **Setup completion checklist** + benchmarks |
-| 14 | **"Your hidden competitors" analysis** |
-| 15 | **ROI preview + success rate callout** |
-| 21 | **"Momentum protection strategy"** |
-| **25** | **PRICING + Segmented recommendations** |
-| 27 | **"What you lose" side-by-side** |
-| 28 | **Last-minute offer + direct hotline** |
-| 30 | **CRM automation trigger + callback offer** |
-| 32 | **"Catch-up data" + late-stage incentive** |
-| 37 | **"Still open" + sales team intro** |
+| Día    | Información Única                           |
+| ------ | ------------------------------------------- |
+| 1      | Educación: Timeline + "no CC required"      |
+| 7      | **Setup completion checklist** + benchmarks |
+| 14     | **"Your hidden competitors" analysis**      |
+| 15     | **ROI preview + success rate callout**      |
+| 21     | **"Momentum protection strategy"**          |
+| **25** | **PRICING + Segmented recommendations**     |
+| 27     | **"What you lose" side-by-side**            |
+| 28     | **Last-minute offer + direct hotline**      |
+| 30     | **CRM automation trigger + callback offer** |
+| 32     | **"Catch-up data" + late-stage incentive**  |
+| 37     | **"Still open" + sales team intro**         |
 
 ---
 
 ## 🚀 Quick Wins to Implement
 
 **Priority 1 (Immediate)**:
+
 1. Enhance Day 25 email con segmentación + ROI calc
 2. Add Day 26 follow-up si no hay acción
 3. Add flash discount window (días 25-27)
 
 **Priority 2 (Week 1)**:
+
 1. Add Day 10-12 micro-email para mantener engagement
 2. Improve Day 15 con interactive checklist
 3. Setup CRM automation para Day 30 recovery
 
 **Priority 3 (Ongoing)**:
+
 1. A/B test subject lines en día 25-27
 2. Measure "time to activation" from each email
 3. Build feedback survey post-Day 30
@@ -476,6 +529,7 @@ Se envían **11 emails automatizados** durante el período de trial de 30 días 
 ## 📞 Contacto / Preguntas
 
 Para implementar estas mejoras:
+
 - Revisar templates en `src/emailTemplates/`
 - Update logic en `partnerEmail.service.js` (función `resolvePartnerLifecycleTemplate`)
 - Test con datos reales de hotel de staging

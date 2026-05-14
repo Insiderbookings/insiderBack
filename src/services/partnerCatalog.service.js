@@ -47,14 +47,18 @@ export const PARTNER_CAPABILITIES = Object.freeze({
 
 const PARTNER_CAPABILITY_LABELS = Object.freeze({
   [PARTNER_CAPABILITIES.listedInSearch]: "Listed in BookingGPT search results",
-  [PARTNER_CAPABILITIES.basicProfile]: "Basic profile - photos, description, amenities, contact",
-  [PARTNER_CAPABILITIES.weeklyStatsEmail]: "Weekly stats email - BookingGPT Reach and clicks",
+  [PARTNER_CAPABILITIES.basicProfile]:
+    "Basic profile - photos, description, amenities, contact",
+  [PARTNER_CAPABILITIES.weeklyStatsEmail]:
+    "Weekly stats email - BookingGPT Reach and clicks",
   [PARTNER_CAPABILITIES.fullProfileEditor]: "Full profile editor",
-  [PARTNER_CAPABILITIES.ranksAboveVerified]: "Ranks above Verified hotels in search",
+  [PARTNER_CAPABILITIES.ranksAboveVerified]:
+    "Ranks above Verified hotels in search",
   [PARTNER_CAPABILITIES.bookingInquiry]: "Booking inquiry button",
   [PARTNER_CAPABILITIES.responseTimeBadge]: "Response time badge",
   [PARTNER_CAPABILITIES.specialOffers]: "Special offers field",
-  [PARTNER_CAPABILITIES.destinationEmails]: "Included in BookingGPT destination emails",
+  [PARTNER_CAPABILITIES.destinationEmails]:
+    "Included in BookingGPT destination emails",
   [PARTNER_CAPABILITIES.topOfSearchResults]: "Top of all search results",
   [PARTNER_CAPABILITIES.monthlyPdfReport]: "Monthly PDF performance report",
   [PARTNER_CAPABILITIES.dedicatedAccountManager]: "Dedicated account manager",
@@ -63,7 +67,11 @@ const PARTNER_CAPABILITY_LABELS = Object.freeze({
   [PARTNER_CAPABILITIES.upsellCapability]: "Upsell capability",
 });
 
-const PARTNER_PLAN_SEQUENCE = Object.freeze(["verified", "preferred", "featured"]);
+const PARTNER_PLAN_SEQUENCE = Object.freeze([
+  "verified",
+  "preferred",
+  "featured",
+]);
 
 const PARTNER_PLAN_PARENT_CODES = Object.freeze({
   verified: null,
@@ -110,20 +118,23 @@ const PARTNER_PLAN_ADDITIONAL_CAPABILITY_KEYS = Object.freeze({
 const PARTNER_PLAN_UI_COPY = Object.freeze({
   verified: Object.freeze({
     summary: "Base visibility with a public badge and a clean hotel profile.",
-    bestFor: "Hotels that want verified presence without advanced sales tooling.",
+    bestFor:
+      "Hotels that want verified presence without advanced sales tooling.",
     landingBody: "Base visibility + public profile",
     landingNote: "",
     ctaLabel: "Choose Verified",
   }),
   preferred: Object.freeze({
     summary: "Adds stronger placement and direct lead-generation tools.",
-    bestFor: "Hotels that want more control over presentation and traveler contact.",
+    bestFor:
+      "Hotels that want more control over presentation and traveler contact.",
     landingBody: "Boosted placement + direct lead capture",
     landingNote: "",
     ctaLabel: "Choose Preferred",
   }),
   featured: Object.freeze({
-    summary: "Maximum visibility with premium reporting and strategic partner tools.",
+    summary:
+      "Maximum visibility with premium reporting and strategic partner tools.",
     bestFor: "Hotels that want top placement and higher-touch support.",
     landingBody: "Top placement + premium reporting",
     landingNote: "30 days free",
@@ -140,7 +151,10 @@ export const PARTNER_PLANS = Object.freeze({
     currency: "USD",
     badgeCode: "verified",
     billingMode: "subscription",
-    stripePriceEnvs: ["STRIPE_PARTNER_PRICE_VERIFIED", "STRIPE_PARTNER_PRICE_STARTER"],
+    stripePriceEnvs: [
+      "STRIPE_PARTNER_PRICE_VERIFIED",
+      "STRIPE_PARTNER_PRICE_STARTER",
+    ],
   },
   preferred: {
     code: "preferred",
@@ -150,7 +164,10 @@ export const PARTNER_PLANS = Object.freeze({
     currency: "USD",
     badgeCode: "preferred",
     billingMode: "subscription",
-    stripePriceEnvs: ["STRIPE_PARTNER_PRICE_PREFERRED", "STRIPE_PARTNER_PRICE_PRO"],
+    stripePriceEnvs: [
+      "STRIPE_PARTNER_PRICE_PREFERRED",
+      "STRIPE_PARTNER_PRICE_PRO",
+    ],
   },
   featured: {
     code: "featured",
@@ -160,7 +177,10 @@ export const PARTNER_PLANS = Object.freeze({
     currency: "USD",
     badgeCode: "featured",
     billingMode: "subscription",
-    stripePriceEnvs: ["STRIPE_PARTNER_PRICE_FEATURED", "STRIPE_PARTNER_PRICE_ELITE"],
+    stripePriceEnvs: [
+      "STRIPE_PARTNER_PRICE_FEATURED",
+      "STRIPE_PARTNER_PRICE_ELITE",
+    ],
   },
 });
 
@@ -178,77 +198,79 @@ export const PARTNER_EMAIL_SEQUENCE = Object.freeze([
     key: "day_1_welcome",
     day: 1,
     subject: "Your Featured badge is live on BookingGPT",
-    preview: "Welcome. Your Featured badge is live. Here is your dashboard link.",
+    preview:
+      "Welcome. Your Featured badge is live and your trial has started with no card required.",
     stopWhenSubscribed: true,
   },
   {
     key: "day_7_report",
     day: 7,
     subject: "Week 1 report for your BookingGPT trial",
-    preview: "Week 1 report. Your BookingGPT Reach and clicks this week.",
+    preview: "Week 1 setup review and the next actions to improve visibility.",
     stopWhenSubscribed: true,
   },
   {
     key: "day_14_report",
     day: 14,
     subject: "Week 2 report for your BookingGPT trial",
-    preview: "Week 2 report. Your BookingGPT Reach and clicks this week.",
+    preview: "Week 2 traction update and what to improve before pricing.",
     stopWhenSubscribed: true,
   },
   {
     key: "day_15_midpoint",
     day: 15,
     subject: "You are halfway through your trial",
-    preview: "You are halfway through your trial. Here is what you have gotten so far.",
+    preview: "Midpoint checkpoint. Close setup gaps before day 25.",
     stopWhenSubscribed: true,
   },
   {
     key: "day_21_report",
     day: 21,
     subject: "Week 3 report for your BookingGPT trial",
-    preview: "Week 3 report. Your BookingGPT Reach and clicks this week.",
+    preview: "Week 3 trial snapshot — protect your momentum before pricing.",
     stopWhenSubscribed: true,
   },
   {
     key: "day_25_choose_plan",
     day: 25,
     subject: "Your trial ends in 5 days",
-    preview: "Choose your plan to keep your badge.",
+    preview:
+      "Choose your plan to keep your badge and get 5% off the first month today.",
     stopWhenSubscribed: true,
   },
   {
     key: "day_27_urgent",
     day: 27,
     subject: "3 days left before your badge disappears",
-    preview: "Your badge disappears soon. A manual call is scheduled too.",
+    preview: "3 days left to keep your badge; act now.",
     stopWhenSubscribed: true,
   },
   {
     key: "day_28_final_warning",
     day: 28,
     subject: "Tomorrow your badge disappears",
-    preview: "Last chance before removal. A second call attempt is scheduled too.",
+    preview: "Final day before removal. Keep your badge now.",
     stopWhenSubscribed: true,
   },
   {
     key: "day_30_removed",
     day: 30,
     subject: "Your badge has been removed",
-    preview: "Restore it here. A third call attempt is scheduled too.",
+    preview: "Your hotel is still listed; restore premium visibility now.",
     stopWhenSubscribed: true,
   },
   {
     key: "day_32_restore",
     day: 32,
     subject: "Your hotel is still on BookingGPT without a badge",
-    preview: "Restore it to get visibility back.",
+    preview: "Your hotel is still listed; restore your badge now.",
     stopWhenSubscribed: true,
   },
   {
     key: "day_37_last_message",
     day: 37,
     subject: "Final message about restoring your badge",
-    preview: "Last call and final message before we stop follow-ups.",
+    preview: "Final follow-up. The badge can still return.",
     stopWhenSubscribed: true,
   },
 ]);
@@ -280,13 +302,21 @@ export const PARTNER_SUBSCRIPTION_STATUSES = Object.freeze({
 });
 
 export const normalizePartnerPlanCode = (code) =>
-  PARTNER_PLAN_CODE_ALIASES[String(code || "").trim().toLowerCase()] || null;
+  PARTNER_PLAN_CODE_ALIASES[
+    String(code || "")
+      .trim()
+      .toLowerCase()
+  ] || null;
 
 export const getPartnerPlanByCode = (code) =>
   PARTNER_PLANS[normalizePartnerPlanCode(code)] || null;
 
 export const getPartnerBadgeByCode = (code) =>
-  PARTNER_BADGES[String(code || "").trim().toLowerCase()] || null;
+  PARTNER_BADGES[
+    String(code || "")
+      .trim()
+      .toLowerCase()
+  ] || null;
 
 export const resolvePartnerStripePriceId = (plan) => {
   const keys = Array.isArray(plan?.stripePriceEnvs)
@@ -301,7 +331,9 @@ export const resolvePartnerStripePriceId = (plan) => {
 
 export const getPartnerPlanParentCode = (planCode) => {
   const normalizedCode = normalizePartnerPlanCode(planCode);
-  return normalizedCode ? PARTNER_PLAN_PARENT_CODES[normalizedCode] || null : null;
+  return normalizedCode
+    ? PARTNER_PLAN_PARENT_CODES[normalizedCode] || null
+    : null;
 };
 
 export const getPartnerPlanCapabilityKeys = (planCode) => {
@@ -330,7 +362,11 @@ export const getPartnerPlanNewFeatureKeys = (planCode) => {
 
 const getCapabilityIntroducedInPlanCode = (capabilityKey) => {
   for (const code of PARTNER_PLAN_SEQUENCE) {
-    if ((PARTNER_PLAN_ADDITIONAL_CAPABILITY_KEYS[code] || []).includes(capabilityKey)) {
+    if (
+      (PARTNER_PLAN_ADDITIONAL_CAPABILITY_KEYS[code] || []).includes(
+        capabilityKey,
+      )
+    ) {
       return code;
     }
   }
@@ -343,7 +379,9 @@ const serializePartnerFeature = (key, { planCode = null } = {}) => {
     key,
     label: PARTNER_CAPABILITY_LABELS[key] || key,
     introducedInPlanCode,
-    inherited: Boolean(planCode && introducedInPlanCode && introducedInPlanCode !== planCode),
+    inherited: Boolean(
+      planCode && introducedInPlanCode && introducedInPlanCode !== planCode,
+    ),
   };
 };
 
@@ -363,13 +401,17 @@ export const getPartnerPlanCapabilities = (planCode) => {
 export const getPartnerIncludedFeatures = (planCode) => {
   const normalizedCode = normalizePartnerPlanCode(planCode);
   const enabled = getPartnerPlanCapabilityKeys(normalizedCode);
-  return enabled.map((key) => serializePartnerFeature(key, { planCode: normalizedCode }));
+  return enabled.map((key) =>
+    serializePartnerFeature(key, { planCode: normalizedCode }),
+  );
 };
 
 export const getPartnerNewFeatures = (planCode) => {
   const normalizedCode = normalizePartnerPlanCode(planCode);
   const enabled = getPartnerPlanNewFeatureKeys(normalizedCode);
-  return enabled.map((key) => serializePartnerFeature(key, { planCode: normalizedCode }));
+  return enabled.map((key) =>
+    serializePartnerFeature(key, { planCode: normalizedCode }),
+  );
 };
 
 const serializePartnerPlan = (plan) => {
@@ -414,19 +456,22 @@ export const resolvePartnerProgramFromClaim = (claim, now = new Date()) => {
   const ageDays = getPartnerClaimAgeDays(claim, now);
   const trialEndsAt = normalizeDate(claim?.trial_ends_at);
   const hasActiveSubscription =
-    String(claim?.claim_status || "").toUpperCase() === PARTNER_CLAIM_STATUSES.subscribed ||
-    [PARTNER_SUBSCRIPTION_STATUSES.active, PARTNER_SUBSCRIPTION_STATUSES.trialing].includes(
-      String(claim?.subscription_status || "").toLowerCase(),
-    );
+    String(claim?.claim_status || "").toUpperCase() ===
+      PARTNER_CLAIM_STATUSES.subscribed ||
+    [
+      PARTNER_SUBSCRIPTION_STATUSES.active,
+      PARTNER_SUBSCRIPTION_STATUSES.trialing,
+    ].includes(String(claim?.subscription_status || "").toLowerCase());
   const pendingInvoice =
-    String(claim?.claim_status || "").toUpperCase() === PARTNER_CLAIM_STATUSES.invoicePending;
+    String(claim?.claim_status || "").toUpperCase() ===
+    PARTNER_CLAIM_STATUSES.invoicePending;
 
   const currentPlan = getPartnerPlanByCode(claim?.current_plan_code);
   const pendingPlan = getPartnerPlanByCode(claim?.pending_plan_code);
   const trialIsActive = Boolean(
     !hasActiveSubscription &&
-      trialEndsAt &&
-      dayjs(now).isBefore(trialEndsAt.add(1, "second")),
+    trialEndsAt &&
+    dayjs(now).isBefore(trialEndsAt.add(1, "second")),
   );
 
   let badge = null;
@@ -444,11 +489,17 @@ export const resolvePartnerProgramFromClaim = (claim, now = new Date()) => {
     badge = null;
     plan = pendingPlan;
     statusLabel = "Invoice pending";
-  } else if (String(claim?.claim_status || "").toUpperCase() === PARTNER_CLAIM_STATUSES.pendingReview) {
+  } else if (
+    String(claim?.claim_status || "").toUpperCase() ===
+    PARTNER_CLAIM_STATUSES.pendingReview
+  ) {
     badge = null;
     plan = null;
     statusLabel = "Review pending";
-  } else if (String(claim?.claim_status || "").toUpperCase() === PARTNER_CLAIM_STATUSES.expired) {
+  } else if (
+    String(claim?.claim_status || "").toUpperCase() ===
+    PARTNER_CLAIM_STATUSES.expired
+  ) {
     badge = null;
     statusLabel = "Badge removed";
   }
@@ -482,7 +533,9 @@ export const resolvePartnerProgramFromClaim = (claim, now = new Date()) => {
     trialEndsAt: claim.trial_ends_at || null,
     trialDaysLeft,
     ageDays,
-    priceVisible: Boolean(ageDays != null && ageDays >= PARTNER_PRICE_DISCLOSURE_DAY),
+    priceVisible: Boolean(
+      ageDays != null && ageDays >= PARTNER_PRICE_DISCLOSURE_DAY,
+    ),
     nextBillingAt: claim.next_billing_at || null,
     invoiceRequestedAt: claim.invoice_requested_at || null,
     invoicePaidAt: claim.invoice_paid_at || null,
@@ -501,6 +554,8 @@ export const resolvePartnerBadgePriority = (item) => {
   const badgeKey =
     item?.partnerProgram?.badgeCode ||
     item?.hotelDetails?.partnerProgram?.badgeCode ||
-    String(item?.badge || "").trim().toLowerCase();
+    String(item?.badge || "")
+      .trim()
+      .toLowerCase();
   return getPartnerBadgeByCode(badgeKey)?.priority || 0;
 };
