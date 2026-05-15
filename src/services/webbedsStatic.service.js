@@ -92,6 +92,13 @@ const hashPayload = (payload) => {
   return createHash("md5").update(serialized).digest("hex")
 }
 
+const redactSensitiveXml = (xml) => {
+  if (!xml) return xml
+  return String(xml)
+    .replace(/<password>[\s\S]*?<\/password>/i, "<password>[REDACTED]</password>")
+    .replace(/<username>[\s\S]*?<\/username>/i, "<username>[REDACTED]</username>")
+}
+
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 const resolveHotelNodeId = (hotel) => {
@@ -784,7 +791,7 @@ const logDryRun = ({ command, payload }) => {
     url,
     command,
     headers,
-    xmlPreview: envelope.slice(0, 2000),
+    xmlPreview: redactSensitiveXml(envelope).slice(0, 2000),
     xmlBytes: Buffer.byteLength(envelope, "utf8"),
     gzBytes: gzBuffer.length,
   })
