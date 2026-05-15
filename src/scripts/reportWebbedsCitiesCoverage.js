@@ -35,6 +35,7 @@ function buildCoverageQuery({
   includeSync,
   onlySynced,
   countOnly,
+  limit,
 }) {
   const replacements = { minHotels }
   const where = [
@@ -121,7 +122,7 @@ function buildCoverageQuery({
     `GROUP BY ${groupBy.join(", ")}`,
     `HAVING ${countExpression} >= :minHotels`,
     "ORDER BY hotels DESC, c.country_name ASC, c.name ASC",
-    "LIMIT :limit",
+    Number.isFinite(limit) ? "LIMIT :limit" : null,
   ]
     .filter(Boolean)
     .join("\n")
@@ -135,6 +136,11 @@ async function main() {
       type: "number",
       default: 200,
       describe: "Cantidad maxima de ciudades a listar",
+    })
+    .option("all", {
+      type: "boolean",
+      default: false,
+      describe: "No limita resultados; devuelve todas las ciudades que hagan match",
     })
     .option("minHotels", {
       type: "number",
@@ -183,7 +189,9 @@ async function main() {
     .help()
     .parseSync()
 
-  const limit = Math.max(1, Math.min(10000, Number(argv.limit) || 200))
+  const limit = argv.all
+    ? null
+    : Math.max(1, Math.min(10000, Number(argv.limit) || 200))
   const minHotels = Math.max(1, Number(argv.minHotels) || 1)
 
   await sequelize.authenticate()
@@ -218,8 +226,11 @@ async function main() {
     const { sql, replacements } = buildCoverageQuery({
       ...baseOptions,
       countOnly: false,
+      limit,
     })
-    replacements.limit = limit
+    if (Number.isFinite(limit)) {
+      replacements.limit = limit
+    }
 
     const [rows] = await sequelize.query(sql, { replacements })
 
