@@ -10,6 +10,7 @@
     "payments:reconcile-once": "node src/scripts/reconcilePendingPayments.js",
     "hotels:export:csv": "node src/scripts/exportHotelsToCsv.js",
     "hotels:export:xlsx": "node src/scripts/exportHotelsToXlsx.js",
+    "hotels:report:cities": "node src/scripts/reportWebbedsCitiesCoverage.js",
     "hotels:report:us-cities": "node src/scripts/reportUsCitiesWithHotels.js",
     "rooms:diagnose": "node src/scripts/diagnoseHotelRooms.js",
     "webbeds:hotel:debug": "node src/scripts/webbedsHotelDebug.js",
